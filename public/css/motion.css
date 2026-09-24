@@ -1,0 +1,157 @@
+/* ==========================================================================
+   全站动效层 v1 —— 「葡萄园式」优雅慢动效
+   --------------------------------------------------------------------------
+   灵感：segerman.dev/work/vineyard（Estrela Studio 设计）—— 慢、稳、克制
+   原则：
+     · 慢时长（0.55–0.9s）+ 大 ease-out，不用弹跳抢戏
+     · 只动 transform / opacity（GPU 合成层），绝不碰 layout 属性
+     · 滚动入场由 IntersectionObserver 驱动（motion.js），这里只管样式
+     · 全部可在 prefers-reduced-motion 下一键关闭
+   回滚：删除本文件 + library.html 的 <link> 一行。
+   ========================================================================== */
+
+:root {
+    --mv-slow: .8s;
+    --mv-mid: .55s;
+    --mv-ease-out: cubic-bezier(.16, 1, .3, 1);      /* vineyard 式长尾巴减速 */
+    --mv-ease-soft: cubic-bezier(.32, .72, 0, 1);
+}
+
+/* ---------- 1. 滚动入场（motion.js 加 .mv-reveal / .mv-visible） ----------
+   ⚠️ 性能约束（2026-09-22）：
+   长列表里同时挂几十个 transition 会拖垮合成层。这里做了三处收敛：
+     · 不再常驻 will-change（只在过渡进行的那一帧才需要）；
+     · 位移从 18px 减到 10px，并去掉 opacity 的 0 起点（0→1 会强制重绘整层）；
+     · 延迟上限 10 级 → 4 级（180ms），避免"越往下越慢"的观感。 */
+.mv-reveal {
+    opacity: 0.001;
+    transform: translateY(10px);
+    transition: opacity .55s var(--mv-ease-out),
+                transform .55s var(--mv-ease-out);
+    transition-delay: var(--mv-delay, 0ms);
+}
+.mv-reveal.mv-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+/* 已进入过视口的元素不再重复动画（motion.js 打完卡就摘掉） */
+.mv-reveal.mv-visible { will-change: auto; }
+
+/* ---------- 2. 视图切换：整个内容区轻微上浮淡入（motion.js 加 .view-in） ---------- */
+@keyframes viewIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.view-in {
+    animation: viewIn .45s var(--mv-ease-soft);
+}
+
+/* ---------- 3. 卡片悬停：海报慢推近（vineyard 标志性的 image zoom） ---------- */
+.movie-poster-wrap { overflow: hidden; }
+.movie-card .movie-poster {
+    transition: transform .7s var(--mv-ease-out);
+}
+.movie-card:hover .movie-poster {
+    transform: scale(1.055);
+}
+/* 卡片本体：原来的 180ms 太快，换成 vineyard 慢节奏 + 柔和阴影 */
+.movie-card {
+    transition: transform .45s var(--mv-ease-out),
+                box-shadow .45s var(--mv-ease-out),
+                border-color .3s ease !important;
+}
+.movie-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 22px 44px -18px rgba(0, 0, 0, .5);
+}
+
+/* ---------- 4. 侧边导航：左侧竖条扫入 + 文字微移 ---------- */
+.nav-item {
+    position: relative;
+    overflow: hidden;
+}
+.nav-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--primary);
+    transform: scaleY(0);
+    transform-origin: center;
+    transition: transform .28s var(--mv-ease-soft);
+}
+.nav-item:hover::before,
+.nav-item.active::before {
+    transform: scaleY(1);
+}
+.nav-item > span:first-child {
+    display: inline-block;
+    transition: transform .28s var(--mv-ease-soft);
+}
+.nav-item:hover > span:first-child {
+    transform: translateX(4px);
+}
+
+/* ---------- 5. 按钮：按下压扁（Aardvark 实测 squash） + 悬停轻浮 ---------- */
+.btn {
+    transition: transform .18s var(--mv-ease-soft), background .18s ease,
+                border-color .18s ease, box-shadow .18s ease, opacity .18s ease !important;
+}
+.btn:not(:disabled):hover { transform: translateY(-1px); }
+.btn:not(:disabled):active { transform: scale(.955, .925); }
+.theme-toggle, .ic-btn {
+    transition: transform .2s var(--mv-ease-soft), background .18s ease !important;
+}
+.theme-toggle:hover, .ic-btn:hover { transform: translateY(-1px) rotate(-4deg); }
+.theme-toggle:active, .ic-btn:active { transform: scale(.92); }
+
+/* ---------- 6. 标签 / 女优卡：入场错峰 + 悬停 ---------- */
+.tag-item {
+    transition: transform .3s var(--mv-ease-soft), background .2s ease,
+                border-color .2s ease !important;
+}
+.tag-item:hover { transform: translateY(-2px); }
+.actress-card {
+    transition: transform .35s var(--mv-ease-soft), box-shadow .35s ease,
+                border-color .2s ease !important;
+}
+.actress-card:hover { transform: translateY(-4px); }
+
+/* ---------- 7. 画廊：箭头淡入更柔、圆点弹跳 ---------- */
+.gallery-arrow {
+    transition: opacity .3s ease, transform .3s var(--mv-ease-soft),
+                background .2s ease !important;
+}
+.gallery-arrow:hover { transform: translateY(-50%) scale(1.08); }
+.gallery-dots > * {
+    transition: transform .3s var(--mv-ease-soft), background .2s ease !important;
+}
+
+/* ---------- 8. 工具栏标题：视图切换时的呼吸感（motion.js 加 .title-swap） ---------- */
+@keyframes titleSwap {
+    0% { opacity: 0; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+.title-swap { animation: titleSwap .4s var(--mv-ease-soft); }
+
+/* ---------- 9. 模态/抽屉遮罩：backdrop 渐入 ---------- */
+.modal { transition: background .25s ease; }
+.modal.show { animation: scrimIn .25s ease; }
+@keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 10. Toast：从右下弹性滑入 ---------- */
+.notification {
+    transition: transform .45s var(--mv-ease-soft), opacity .3s ease !important;
+}
+
+/* ---------- 减少动态效果：一键全关 ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .mv-reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .view-in, .title-swap, .modal.show { animation: none !important; }
+    .movie-card:hover .movie-poster { transform: none; }
+    .movie-card:hover { transform: none; }
+    .nav-item::before, .nav-item > span:first-child { transition: none; }
+}

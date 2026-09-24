@@ -1,0 +1,40 @@
+# ===== 依赖与构建产物 =====
+node_modules/
+packaging/payload/
+packaging/dist/
+dist/
+
+# ===== 真实配置：含登录口令与 API Key，绝不入库 =====
+config.json
+config.docker.json
+.env
+.env.*
+
+# ===== 个人数据 =====
+db/*.db
+db/*.db-*
+db/*.bak*
+db/*.repair
+posters/
+cache/
+backups/
+data/
+tmp-render/
+logs/
+*.log
+
+# ===== 浏览器 profile（含 cookie / CF 通行证）=====
+.playwright-profile/
+.user-browser-data/
+.quark-login-profile/
+quark-cookie.json
+*cookie*.json
+
+# ===== 系统 / 编辑器 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~

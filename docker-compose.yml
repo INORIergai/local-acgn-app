@@ -1,0 +1,26 @@
+﻿services:
+  movie-library:
+    build: .
+    container_name: local-movie-library
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      - CONFIG_FILE=/app/config.docker.json
+      # 自动增量扫描必须开启；需要禁用时手动设置 DISABLE_AUTO_SCAN=true
+      - TZ=Asia/Shanghai
+    volumes:
+      # 项目目录（代码、数据库、缓存）
+      - .:/app
+      # node_modules匿名卷（避免被宿主机覆盖）
+      - /app/node_modules
+      # 媒体扫描目录（根据实际情况修改）
+      - D:\Movies:/media/movies
+      - D:\Movies2:/media/movies2
+      - D:\Anime:/media/anime
+      - D:\Comics:/media/comic
+      - D:\Novels:/media/novel
+      - D:\Downloads\Movies:/media/downloads
+    # 如需访问宿主机的ollama/代理，取消下面注释
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

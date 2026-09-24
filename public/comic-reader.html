@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫画阅读器</title>
+    <style>
+        /* ==========================================================
+           漫画阅读器 · 暖夜版 v2（2026-09-21 重构）
+           设计基调：Aardvark 实测色板 —— 暖琥珀 #F9A220 / 桃红 #ff008c
+           原则：默认暗色护住画面本身，所有强调色来自暖色系，拒绝通用蓝
+           ========================================================== */
+        :root {
+            --rd-bg: #12100c;
+            --rd-surface: rgba(24, 20, 14, 0.82);
+            --rd-line: rgba(255, 240, 214, 0.1);
+            --rd-text: #f3ecdd;
+            --rd-text-dim: rgba(243, 236, 221, 0.62);
+            --rd-amber: #F9A220;
+            --rd-amber-soft: rgba(249, 162, 32, 0.16);
+            --rd-pink: #ff008c;
+            --rd-ease-pop: cubic-bezier(.32, .72, 0, 1);
+            --rd-ease-over: cubic-bezier(.34, 1.56, .64, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--rd-bg);
+            color: var(--rd-text);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .reader-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* 顶部工具栏：暖色磨砂，不再死黑 */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 18px;
+            background: var(--rd-surface);
+            backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--rd-line);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            transition: transform 0.34s var(--rd-ease-pop);
+        }
+
+        .toolbar.hidden {
+            transform: translateY(-100%);
+        }
+
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .toolbar-title {
+            font-size: 14px;
+            font-weight: 600;
+            max-width: 420px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            letter-spacing: .01em;
+        }
+
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 7px 14px;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            background: rgba(255, 240, 214, 0.07);
+            color: var(--rd-text);
+            font-size: 13px;
+            cursor: pointer;
+            transition: transform .18s var(--rd-ease-over), background .18s ease, border-color .18s ease;
+        }
+
+        .btn:hover {
+            background: var(--rd-amber-soft);
+            border-color: rgba(249, 162, 32, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn:active { transform: scale(.955, .925); }
+
+        .btn-primary {
+            background: var(--rd-amber);
+            color: #1a1206;
+            font-weight: 700;
+        }
+
+        .btn-primary:hover {
+            background: #ffb03a;
+            border-color: transparent;
+        }
+
+        /* 阅读区域 */
+        .reader-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            padding-top: 60px;
+            padding-bottom: 60px;
+        }
+
+        .comic-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            transition: transform 0.18s ease;
+            user-select: none;
+            -webkit-user-drag: none;
+            border-radius: 4px;
+            box-shadow: 0 18px 60px -18px rgba(0, 0, 0, 0.85);
+            cursor: grab;
+        }
+        .comic-image.panning { cursor: grabbing; }
+
+        /* 翻页动画：新页从翻页方向滑入并淡入（由 JS 加 .page-in-* 触发） */
+        .comic-image.page-in-next { animation: pageInNext .3s var(--rd-ease-pop); }
+        .comic-image.page-in-prev { animation: pageInPrev .3s var(--rd-ease-pop); }
+        @keyframes pageInNext {
+            from { opacity: 0; transform: translateX(34px) scale(.985); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes pageInPrev {
+            from { opacity: 0; transform: translateX(-34px) scale(.985); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+
+        /* 翻页区域 */
+        .page-nav {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 15%;
+            cursor: pointer;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.22s ease;
+        }
+
+        .page-nav:hover { opacity: 1; }
+
+        .page-nav.prev {
+            left: 0;
+            background: linear-gradient(to right, rgba(10, 8, 5, 0.55), transparent);
+        }
+
+        .page-nav.next {
+            right: 0;
+            background: linear-gradient(to left, rgba(10, 8, 5, 0.55), transparent);
+        }
+
+        .page-nav-arrow {
+            font-size: 44px;
+            color: var(--rd-amber);
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+            transition: transform .2s var(--rd-ease-over);
+        }
+        .page-nav:hover .page-nav-arrow { transform: scale(1.18); }
+
+        /* 底部进度栏 */
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 18px 12px;
+            background: var(--rd-surface);
+            backdrop-filter: blur(14px);
+            border-top: 1px solid var(--rd-line);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            z-index: 100;
+            transition: transform 0.34s var(--rd-ease-pop);
+        }
+
+        .progress-bar.hidden {
+            transform: translateY(100%);
+        }
+
+        .page-info {
+            font-family: ui-monospace, 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            color: var(--rd-text-dim);
+            min-width: 76px;
+            text-align: center;
+            letter-spacing: .04em;
+        }
+
+        .progress-slider {
+            flex: 1;
+            height: 5px;
+            background: rgba(255, 240, 214, 0.14);
+            border-radius: 99px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--rd-amber), var(--rd-pink));
+            border-radius: 99px;
+            width: 0%;
+            transition: width 0.25s var(--rd-ease-pop);
+        }
+
+        .progress-slider::after {
+            content: '';
+            position: absolute;
+            right: calc(100% - var(--knob, 0%) - 7px);
+            top: 50%;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--rd-amber);
+            transform: translateY(-50%) scale(0);
+            transition: transform .18s var(--rd-ease-over);
+            box-shadow: 0 2px 8px rgba(0,0,0,.5);
+        }
+        .progress-slider:hover::after { transform: translateY(-50%) scale(1); }
+
+        .reading-time {
+            font-family: ui-monospace, monospace;
+            font-size: 11.5px;
+            color: var(--rd-text-dim);
+            min-width: 52px;
+            text-align: right;
+        }
+
+        /* 加载提示：暖色脉冲代替生硬的旋转圈（保留 spinner 备用） */
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            color: var(--rd-text-dim);
+            font-size: 13px;
+        }
+
+        .spinner {
+            width: 38px;
+            height: 38px;
+            border: 3px solid rgba(255, 240, 214, 0.14);
+            border-top-color: var(--rd-amber);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 夜间模式 */
+        body.night-mode {
+            background: #000;
+        }
+
+        /* 缩放控制 */
+        .zoom-controls {
+            position: fixed;
+            right: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.22s ease;
+        }
+
+        .zoom-controls.visible { opacity: 1; }
+
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid var(--rd-line);
+            background: var(--rd-surface);
+            color: var(--rd-text);
+            font-size: 19px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.18s ease;
+        }
+
+        .zoom-btn:hover {
+            background: var(--rd-amber-soft);
+            border-color: rgba(249, 162, 32, 0.4);
+            transform: scale(1.08);
+        }
+        .zoom-btn:active { transform: scale(.92); }
+
+        /* 缩略图侧边栏 */
+        .thumbnail-sidebar {
+            position: fixed;
+            right: -260px;
+            top: 0;
+            bottom: 0;
+            width: 252px;
+            background: rgba(16, 13, 9, 0.96);
+            backdrop-filter: blur(14px);
+            border-left: 1px solid var(--rd-line);
+            /* ⚠️ 必须低于 .toolbar 的 z-index:100。
+               原来是 200，打开后会盖住工具栏右侧的「📑 目录」按钮本身，
+               按钮点不到 → 目录打开就关不掉（2026-09-22 实测复现：
+               按钮中心 elementFromPoint 命中的是 .thumbnail-title）。 */
+            z-index: 90;
+            transition: right 0.34s var(--rd-ease-pop);
+            overflow-y: auto;
+            /* 顶部让出工具栏高度，否则标题被工具栏压住 */
+            padding: 66px 18px 18px;
+        }
+
+        .thumbnail-sidebar.open { right: 0; }
+
+        /* 目录头：标题 + 关闭按钮 */
+        .thumbnail-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .thumbnail-close {
+            flex: 0 0 auto;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            border: 1px solid var(--rd-line);
+            background: rgba(255, 240, 214, 0.06);
+            color: var(--rd-text);
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+            transition: all .18s ease;
+        }
+        .thumbnail-close:hover {
+            background: var(--rd-amber-soft);
+            border-color: rgba(249, 162, 32, 0.4);
+            transform: rotate(90deg);
+        }
+
+        /* 被激活的工具栏按钮（目录处于打开状态时） */
+        .btn.active {
+            background: var(--rd-amber-soft);
+            border-color: rgba(249, 162, 32, 0.5);
+            color: var(--rd-amber);
+        }
+
+        /* 目录遮罩：盖住阅读区（但不盖工具栏），点一下即收起 */
+        .thumbnail-scrim {
+            position: fixed;
+            inset: 0;
+            z-index: 80;          /* 低于侧边栏 90、低于工具栏 100 */
+            background: rgba(0, 0, 0, .22);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity .26s ease, visibility .26s ease;
+        }
+        .thumbnail-scrim.show {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .thumbnail-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            color: var(--rd-text);
+        }
+
+        .thumbnail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .thumbnail-item {
+            aspect-ratio: 2/3;
+            background: rgba(255, 240, 214, 0.05);
+            border-radius: 6px;
+            cursor: pointer;
+            overflow: hidden;
+            border: 2px solid transparent;
+            transition: all 0.18s ease;
+        }
+
+        .thumbnail-item:hover {
+            border-color: rgba(249, 162, 32, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .thumbnail-item.current {
+            border-color: var(--rd-amber);
+        }
+
+        .thumbnail-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .thumbnail-page-num {
+            font-family: ui-monospace, monospace;
+            font-size: 10px;
+            text-align: center;
+            padding: 2px;
+            color: var(--rd-text-dim);
+        }
+
+        /* 轻量提示 toast */
+        .reader-toast {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(20, 16, 10, 0.88);
+            border: 1px solid var(--rd-line);
+            color: var(--rd-text);
+            padding: 12px 22px;
+            border-radius: 999px;
+            font-size: 14px;
+            z-index: 300;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease, transform 0.22s var(--rd-ease-over);
+            white-space: nowrap;
+        }
+        .reader-toast.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        /* 读完一整本的结算卡（代替原来的"无路可走"） */
+        .finish-card {
+            position: fixed;
+            inset: 0;
+            z-index: 250;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(8, 6, 3, 0.72);
+            backdrop-filter: blur(8px);
+        }
+        .finish-card.show { display: flex; }
+        .finish-inner {
+            background: #fff8ec;
+            color: #1a1206;
+            border-radius: 22px;
+            padding: 34px 38px 28px;
+            text-align: center;
+            max-width: 380px;
+            animation: finishPop .45s var(--rd-ease-over);
+            box-shadow: 0 30px 80px -20px rgba(0,0,0,.6);
+        }
+        @keyframes finishPop {
+            from { opacity: 0; transform: translateY(26px) scale(.92); }
+            to { opacity: 1; transform: none; }
+        }
+        .finish-inner .f-title {
+            font-size: 21px;
+            font-weight: 900;
+            letter-spacing: -.01em;
+            margin-bottom: 6px;
+        }
+        .finish-inner .f-sub {
+            font-size: 13px;
+            color: rgba(26, 18, 6, 0.6);
+            margin-bottom: 22px;
+        }
+        .finish-inner .f-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .finish-inner .f-btn {
+            border: 0;
+            border-radius: 999px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform .16s var(--rd-ease-over), background .16s ease;
+        }
+        .finish-inner .f-btn:hover { transform: translateY(-2px); }
+        .finish-inner .f-btn:active { transform: scale(.96, .92); }
+        .finish-inner .f-btn.main { background: var(--rd-pink); color: #fff; }
+        .finish-inner .f-btn.warm { background: var(--rd-amber); color: #1a1206; }
+        .finish-inner .f-btn.ghost { background: rgba(26, 18, 6, 0.08); color: #1a1206; }
+
+        /* 减少动态效果 */
+        @media (prefers-reduced-motion: reduce) {
+            .comic-image.page-in-next, .comic-image.page-in-prev,
+            .finish-inner { animation: none; }
+            .toolbar, .progress-bar, .thumbnail-sidebar { transition: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="reader-container">
+        <!-- 顶部工具栏 -->
+        <div class="toolbar" id="toolbar">
+            <div class="toolbar-left">
+                <button class="btn" onclick="closeReader()">← 返回</button>
+                <div class="toolbar-title" id="comicTitle">加载中...</div>
+            </div>
+            <div class="toolbar-right">
+                <button class="btn" id="btnPrevBook" onclick="prevBook()" style="display:none;">◀ 上一本</button>
+                <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;">下一本 ▶</button>
+                <button class="btn" id="btnToc" onclick="toggleThumbnails()" aria-expanded="false" aria-controls="thumbnailSidebar">📑 目录</button>
+                <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
+                <button class="btn" onclick="resetZoom()">🔍 重置</button>
+            </div>
+        </div>
+        
+        <!-- 阅读区域 -->
+        <div class="reader-area" id="readerArea">
+            <div class="page-nav prev" onclick="prevBook()">
+                <div class="page-nav-arrow">‹</div>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>加载中...</div>
+            </div>
+            
+            <img class="comic-image" id="comicImage" style="display:none;" alt="漫画页面">
+            
+            <div class="page-nav next" onclick="nextBook()">
+                <div class="page-nav-arrow">›</div>
+            </div>
+        </div>
+        
+        <!-- 缩放控制 -->
+        <div class="zoom-controls" id="zoomControls">
+            <button class="zoom-btn" onclick="zoomIn()">+</button>
+            <button class="zoom-btn" onclick="zoomOut()">−</button>
+        </div>
+        
+        <!-- 缩略图侧边栏 -->
+        <div class="thumbnail-sidebar" id="thumbnailSidebar">
+            <div class="thumbnail-head">
+                <div class="thumbnail-title">📑 目录</div>
+                <button class="thumbnail-close" id="thumbnailClose" title="收起目录（Esc）" aria-label="收起目录">✕</button>
+            </div>
+            <div class="thumbnail-grid" id="thumbnailGrid">
+                <!-- 缩略图动态生成 -->
+            </div>
+        </div>
+        <!-- 点击目录面板以外的区域也能收起 -->
+        <div class="thumbnail-scrim" id="thumbnailScrim"></div>
+        
+        <!-- 底部进度栏 -->
+        <div class="progress-bar" id="progressBar">
+            <button class="btn" onclick="prevPage()">‹ 上一页</button>
+            <div class="page-info" id="pageInfo">0 / 0</div>
+            <div class="progress-slider" id="progressSlider" onclick="seekPage(event)">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="reading-time" id="readingTime">00:00</div>
+            <button class="btn btn-primary" onclick="nextPage()">下一页 ›</button>
+        </div>
+    </div>
+    
+    <!-- 轻量提示 -->
+    <div id="toast" class="reader-toast"></div>
+
+    <!-- 读完整本结算卡 -->
+    <div id="finishCard" class="finish-card">
+        <div class="finish-inner">
+            <div class="f-title">🎉 读完了这一本</div>
+            <div class="f-sub">已经翻到最后一页了，接下来呢？</div>
+            <div class="f-actions">
+                <button class="f-btn main" id="finishNext" onclick="hideFinishCard(); nextBook();">下一本 ▶</button>
+                <button class="f-btn warm" onclick="restartBook()">从头再读一遍</button>
+                <button class="f-btn ghost" onclick="hideFinishCard(); closeReader();">返回书库</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 全局状态
+        let comicId = null;
+        let comicInfo = null;
+        let currentPage = 0;
+        let totalPages = 0;
+        let zoomLevel = 1;
+        let isNightMode = false;
+        let readingStartTime = null;
+        let totalReadingTime = 0;
+        let readingTimer = null;
+        let isToolbarVisible = true;
+        let thumbnailsLoaded = false;
+        let isPdfMode = false;
+        let pdfDoc = null;
+        let pdfjsLib = null;
+        // 同级作品（上一本/下一本）
+        let siblings = [];
+        let currentBookIndex = -1;
+        let toastTimer = null;
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            comicId = urlParams.get('id');
+            
+            if (!comicId) {
+                alert('缺少漫画ID');
+                return;
+            }
+            
+            parseSiblings(urlParams.get('siblings'));
+            
+            loadComicInfo();
+            setupKeyboardControls();
+            setupMouseControls();
+        });
+        
+        // 解析同级列表参数，初始化上一本/下一本
+        function parseSiblings(raw) {
+            if (!raw) return;
+            try {
+                const list = JSON.parse(raw);
+                if (Array.isArray(list) && list.length > 1) {
+                    siblings = list;
+                    currentBookIndex = siblings.findIndex(s => String(s.id) === String(comicId));
+                    document.getElementById('btnPrevBook').style.display = '';
+                    document.getElementById('btnNextBook').style.display = '';
+                }
+            } catch (e) {
+                console.log('同级列表解析失败:', e.message);
+            }
+        }
+        
+        // 轻量提示
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.add('show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+        }
+        
+        // 切到上一本/下一本
+        function prevBook() {
+            if (currentBookIndex > 0) {
+                switchBook(currentBookIndex - 1);
+            } else {
+                showToast('已是第一本');
+            }
+        }
+        
+        function nextBook() {
+            if (currentBookIndex >= 0 && currentBookIndex < siblings.length - 1) {
+                switchBook(currentBookIndex + 1);
+            } else {
+                showToast('已是最后一本');
+            }
+        }
+        
+        function switchBook(index) {
+            const target = siblings[index];
+            if (!target) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set('id', target.id);
+            url.searchParams.set('siblings', JSON.stringify(siblings));
+            window.location.href = url.toString();
+        }
+        
+        // 加载漫画信息
+        async function loadComicInfo() {
+            try {
+                const res = await fetch(`/api/comic/${comicId}/info`);
+                const data = await res.json();
+                
+                if (data.code === 0) {
+                    comicInfo = data.data;
+                    totalPages = comicInfo.totalPages;
+                    currentPage = comicInfo.currentPage || 0;
+                    isPdfMode = comicInfo.format === 'pdf';
+                    
+                    document.getElementById('comicTitle').textContent = comicInfo.title;
+                    document.getElementById('pageInfo').textContent = `${currentPage + 1} / ${totalPages}`;
+                    
+                    if (isPdfMode) {
+                        // PDF 模式：用 pdf.js 打开并渲染
+                        try {
+                            await initPdf();
+                            totalPages = pdfDoc.numPages;
+                            document.getElementById('pageInfo').textContent = `${currentPage + 1} / ${totalPages}`;
+                            if (totalPages > 0) {
+                                loadPage(currentPage);
+                                startReadingTimer();
+                            } else {
+                                document.getElementById('loading').innerHTML = '<div style="color:#ef4444;">无法读取PDF</div>';
+                            }
+                        } catch (e) {
+                            console.log('PDF加载失败:', e);
+                            document.getElementById('loading').innerHTML = `<div style="color:#ef4444;">PDF加载失败: ${e.message}</div>`;
+                        }
+                    } else if (totalPages > 0) {
+                        loadPage(currentPage);
+                        startReadingTimer();
+                    } else {
+                        document.getElementById('loading').innerHTML = '<div style="color:#ef4444;">无法读取漫画内容</div>';
+                    }
+                } else {
+                    document.getElementById('loading').innerHTML = `<div style="color:#ef4444;">加载失败: ${data.msg}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('loading').innerHTML = `<div style="color:#ef4444;">加载失败: ${e.message}</div>`;
+            }
+        }
+        
+        // 初始化 pdf.js
+        async function initPdf() {
+            pdfjsLib = await import('/pdfjs/pdf.mjs');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.mjs';
+            const pdfRes = await fetch(`/api/comic/${comicId}/pdf`);
+            if (!pdfRes.ok) throw new Error('HTTP ' + pdfRes.status);
+            const buf = await pdfRes.arrayBuffer();
+            pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+        }
+        
+        // 渲染PDF指定页为图片URL
+        async function renderPdfPageUrl(pageIndex, maxWidth) {
+            const page = await pdfDoc.getPage(pageIndex + 1);
+            const baseViewport = page.getViewport({ scale: 1 });
+            const scale = (maxWidth || 1600) / baseViewport.width;
+            const viewport = page.getViewport({ scale: Math.min(scale, 3) });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            return canvas.toDataURL('image/jpeg', 0.9);
+        }
+        
+        // 加载指定页（dir：1 向前翻 / -1 向后翻，决定新页滑入方向）
+        function loadPage(pageIndex, dir) {
+            if (pageIndex < 0 || pageIndex >= totalPages) return;
+            if (dir === undefined) dir = 1;
+
+            currentPage = pageIndex;
+            const img = document.getElementById('comicImage');
+            const loading = document.getElementById('loading');
+
+            loading.style.display = 'flex';
+            img.style.display = 'none';
+            img.classList.remove('page-in-next', 'page-in-prev');
+
+            const onShown = () => {
+                loading.style.display = 'none';
+                img.style.display = 'block';
+                resetZoom();
+                // 翻页动画：重触发 keyframes
+                void img.offsetWidth;
+                img.classList.add(dir < 0 ? 'page-in-prev' : 'page-in-next');
+                // 预取相邻页：翻页零等待的关键（图片模式靠浏览器缓存，PDF 模式缓存 dataURL）
+                prefetchPage(currentPage + 1);
+                prefetchPage(currentPage + 2);
+                prefetchPage(currentPage - 1);
+            };
+
+            if (isPdfMode) {
+                renderPdfPageUrlCached(pageIndex).then(url => {
+                    img.src = url;
+                    onShown();
+                }).catch(err => {
+                    loading.innerHTML = '<div style="color:#ef4444;">PDF渲染失败: ' + err.message + '</div>';
+                });
+            } else {
+                img.src = `/api/comic/${comicId}/page/${pageIndex}`;
+                img.onload = onShown;
+                img.onerror = () => {
+                    loading.innerHTML = '<div style="color:#ef4444;">图片加载失败</div>';
+                };
+            }
+
+            // 更新进度
+            const pct = ((currentPage + 1) / totalPages) * 100;
+            document.getElementById('pageInfo').textContent = `${currentPage + 1} / ${totalPages}`;
+            document.getElementById('progressFill').style.width = `${pct}%`;
+            document.getElementById('progressSlider').style.setProperty('--knob', `${pct}%`);
+
+            // 保存进度
+            saveProgress();
+
+            // 更新缩略图高亮
+            updateThumbnailHighlight();
+        }
+
+        // 预取（PDF 模式同时填充 dataURL 缓存）
+        const pdfPageCache = {};
+        const prefetched = new Set();
+        function prefetchPage(idx) {
+            if (idx < 0 || idx >= totalPages || prefetched.has(idx)) return;
+            prefetched.add(idx);
+            if (isPdfMode) {
+                renderPdfPageUrlCached(idx).catch(() => prefetched.delete(idx));
+            } else {
+                const im = new Image();
+                im.src = `/api/comic/${comicId}/page/${idx}`;
+            }
+        }
+
+        // PDF 页渲染结果缓存：翻过一次的页不再重渲染（大图重渲染是翻页卡顿的主因）
+        async function renderPdfPageUrlCached(pageIndex) {
+            if (pdfPageCache[pageIndex]) return pdfPageCache[pageIndex];
+            const url = await renderPdfPageUrl(pageIndex);
+            pdfPageCache[pageIndex] = url;
+            return url;
+        }
+        
+        // 上一页
+        function prevPage() {
+            if (currentPage > 0) {
+                loadPage(currentPage - 1, -1);
+            }
+        }
+
+        // 下一页（最后一页 → 弹结算卡，而不是无声无息停在原地）
+        function nextPage() {
+            if (currentPage < totalPages - 1) {
+                loadPage(currentPage + 1, 1);
+            } else {
+                showFinishCard();
+            }
+        }
+
+        // 结算卡
+        function showFinishCard() {
+            const hasNext = currentBookIndex >= 0 && currentBookIndex < siblings.length - 1;
+            document.getElementById('finishNext').style.display = hasNext ? '' : 'none';
+            document.getElementById('finishCard').classList.add('show');
+        }
+
+        function hideFinishCard() {
+            document.getElementById('finishCard').classList.remove('show');
+        }
+
+        function restartBook() {
+            hideFinishCard();
+            loadPage(0, -1);
+        }
+        
+        // 跳转到指定页
+        function seekPage(event) {
+            const slider = document.getElementById('progressSlider');
+            const rect = slider.getBoundingClientRect();
+            const percent = (event.clientX - rect.left) / rect.width;
+            const targetPage = Math.floor(percent * totalPages);
+            loadPage(Math.max(0, Math.min(totalPages - 1, targetPage)));
+        }
+        
+        // 保存阅读进度
+        async function saveProgress() {
+            try {
+                await fetch(`/api/comic/${comicId}/progress`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page: currentPage })
+                });
+            } catch (e) {
+                console.log('保存进度失败:', e.message);
+            }
+        }
+        
+        // 开始阅读计时
+        function startReadingTimer() {
+            readingStartTime = Date.now();
+            readingTimer = setInterval(() => {
+                const elapsed = Date.now() - readingStartTime + totalReadingTime;
+                const minutes = Math.floor(elapsed / 60000);
+                const seconds = Math.floor((elapsed % 60000) / 1000);
+                document.getElementById('readingTime').textContent = 
+                    `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }, 1000);
+            // 通知服务器开始阅读（服务端开始计时）
+            fetch(`/api/comic/${comicId}/start-reading`, { method: 'POST' }).catch(() => {});
+        }
+        
+        // 停止阅读计时
+        function stopReadingTimer() {
+            if (readingTimer) {
+                clearInterval(readingTimer);
+                totalReadingTime += Date.now() - readingStartTime;
+                readingTimer = null;
+                // 通知服务器结束阅读并记录本次时长
+                fetch(`/api/comic/${comicId}/stop-reading`, { method: 'POST' }).catch(() => {});
+            }
+        }
+        
+        // 缩放
+        function zoomIn() {
+            zoomLevel = Math.min(zoomLevel + 0.25, 3);
+            applyZoom();
+        }
+        
+        function zoomOut() {
+            zoomLevel = Math.max(zoomLevel - 0.25, 0.5);
+            applyZoom();
+        }
+        
+        function resetZoom() {
+            zoomLevel = 1;
+            applyZoom();
+        }
+        
+        function applyZoom() {
+            const img = document.getElementById('comicImage');
+            if (zoomLevel === 1) { panX = 0; panY = 0; }
+            img.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+        }
+
+        // 放大后的拖拽平移（zoom>1 时图片溢出可视区，不拖动就等于锁死）
+        let panX = 0, panY = 0, panDrag = null, suppressImgClick = false;
+        function setupPan() {
+            const img = document.getElementById('comicImage');
+            img.addEventListener('pointerdown', (e) => {
+                if (zoomLevel <= 1) return;
+                panDrag = { x: e.clientX - panX, y: e.clientY - panY, moved: 0 };
+                img.classList.add('panning');
+                try { img.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+                e.preventDefault();
+            });
+            img.addEventListener('pointermove', (e) => {
+                if (!panDrag) return;
+                panX = e.clientX - panDrag.x;
+                panY = e.clientY - panDrag.y;
+                panDrag.moved++;
+                if (panDrag.moved > 3) suppressImgClick = true;
+                applyZoom();
+            });
+            const endPan = () => {
+                if (panDrag) {
+                    panDrag = null;
+                    img.classList.remove('panning');
+                    // 拖动刚结束时吞掉这次 click，否则平移完会误触工具栏开关
+                    setTimeout(() => { suppressImgClick = false; }, 60);
+                }
+            };
+            img.addEventListener('pointerup', endPan);
+            img.addEventListener('pointercancel', endPan);
+        }
+        
+        // 夜间模式
+        function toggleNightMode() {
+            isNightMode = !isNightMode;
+            document.body.classList.toggle('night-mode', isNightMode);
+            const img = document.getElementById('comicImage');
+            if (isNightMode) {
+                img.style.filter = 'invert(1) hue-rotate(180deg)';
+            } else {
+                img.style.filter = 'none';
+            }
+        }
+        
+        // 切换工具栏显示
+        function toggleToolbar() {
+            isToolbarVisible = !isToolbarVisible;
+            document.getElementById('toolbar').classList.toggle('hidden', !isToolbarVisible);
+            document.getElementById('progressBar').classList.toggle('hidden', !isToolbarVisible);
+            document.getElementById('zoomControls').classList.toggle('visible', isToolbarVisible);
+        }
+        
+        // 缩略图侧边栏
+        // force === undefined → 切换；true → 强制展开；false → 强制收起
+        function toggleThumbnails(force) {
+            const sidebar = document.getElementById('thumbnailSidebar');
+            const want = (force === undefined) ? !sidebar.classList.contains('open') : !!force;
+
+            sidebar.classList.toggle('open', want);
+
+            const scrim = document.getElementById('thumbnailScrim');
+            if (scrim) scrim.classList.toggle('show', want);
+
+            const btn = document.getElementById('btnToc');
+            if (btn) {
+                btn.classList.toggle('active', want);
+                btn.setAttribute('aria-expanded', want ? 'true' : 'false');
+            }
+
+            if (want && !thumbnailsLoaded) {
+                loadThumbnails();
+            }
+        }
+        
+        // 加载缩略图
+        function loadThumbnails() {
+            const grid = document.getElementById('thumbnailGrid');
+            grid.innerHTML = '';
+            
+            // 只加载前50页的缩略图，避免加载过多
+            const limit = Math.min(totalPages, 50);
+            for (let i = 0; i < limit; i++) {
+                const item = document.createElement('div');
+                item.className = 'thumbnail-item' + (i === currentPage ? ' current' : '');
+                item.innerHTML = `
+                    <img src="" loading="lazy" alt="第${i+1}页" style="width:100%;height:auto;">
+                    <div class="thumbnail-page-num">${i + 1}</div>
+                `;
+                item.onclick = () => {
+                    loadPage(i);
+                    toggleThumbnails(false);   // 选完一页明确收起，不用 toggle
+                };
+                grid.appendChild(item);
+                
+                const img = item.querySelector('img');
+                if (isPdfMode) {
+                    renderPdfPageUrl(i, 300).then(url => { img.src = url; }).catch(() => {});
+                } else {
+                    img.src = `/api/comic/${comicId}/page/${i}`;
+                }
+            }
+            
+            thumbnailsLoaded = true;
+        }
+        
+        // 更新缩略图高亮
+        function updateThumbnailHighlight() {
+            document.querySelectorAll('.thumbnail-item').forEach((item, index) => {
+                item.classList.toggle('current', index === currentPage);
+            });
+        }
+        
+        // 键盘控制
+        function setupKeyboardControls() {
+            document.addEventListener('keydown', (e) => {
+                switch (e.key) {
+                    case 'ArrowLeft':
+                    case 'a':
+                        if (e.shiftKey) { e.preventDefault(); prevBook(); }
+                        else prevPage();
+                        break;
+                    case 'ArrowRight':
+                    case 'd':
+                        if (e.shiftKey) { e.preventDefault(); nextBook(); }
+                        else nextPage();
+                        break;
+                    case ' ':
+                        e.preventDefault();
+                        nextPage();
+                        break;
+                    case 'ArrowUp':
+                    case 'w':
+                        zoomIn();
+                        break;
+                    case 'ArrowDown':
+                    case 's':
+                        zoomOut();
+                        break;
+                    case '0':
+                        resetZoom();
+                        break;
+                    case 'Escape':
+                        if (document.getElementById('thumbnailSidebar').classList.contains('open')) {
+                            toggleThumbnails(false);
+                        } else {
+                            closeReader();
+                        }
+                        break;
+                    case 'f':
+                        toggleToolbar();
+                        break;
+                }
+            });
+        }
+        
+        // 鼠标控制
+        function setupMouseControls() {
+            // 点击中间区域切换工具栏（平移刚结束时不触发）
+            document.getElementById('readerArea').addEventListener('click', (e) => {
+                if (suppressImgClick) return;
+                if (e.target.classList.contains('comic-image')) {
+                    toggleToolbar();
+                }
+            });
+
+            // 目录：点遮罩（阅读区）或 ✕ 都收起。
+            // 「📑 目录」按钮本身靠 z-index 层级保证始终可点，三种方式任选。
+            const tocScrim = document.getElementById('thumbnailScrim');
+            if (tocScrim) tocScrim.addEventListener('click', () => toggleThumbnails(false));
+            const tocClose = document.getElementById('thumbnailClose');
+            if (tocClose) tocClose.addEventListener('click', () => toggleThumbnails(false));
+
+            // 滚轮缩放
+            document.getElementById('readerArea').addEventListener('wheel', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    if (e.deltaY < 0) {
+                        zoomIn();
+                    } else {
+                        zoomOut();
+                    }
+                }
+            });
+
+            setupPan();
+        }
+        
+        // 关闭阅读器
+        function closeReader() {
+            stopReadingTimer();
+            saveProgress();
+            // 如果是在iframe中，通知父页面关闭
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'closeReader' }, '*');
+            } else {
+                window.close();
+                // 如果无法关闭（不是弹窗打开的），返回上一页
+                setTimeout(() => {
+                    if (!window.closed) {
+                        window.history.back();
+                    }
+                }, 100);
+            }
+        }
+        
+        // 页面关闭时保存进度
+        window.addEventListener('beforeunload', () => {
+            stopReadingTimer();
+            saveProgress();
+        });
+    </script>
+</body>
+</html>
