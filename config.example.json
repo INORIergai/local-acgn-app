@@ -1,0 +1,201 @@
+{
+  "_comment": "配置模板。复制为 config.json 后填入真实值（桌面版实际读的是 %APPDATA%\\CinemaVault\\runtime\\config.json，首次启动会自动生成，一般不用手动改）。真实配置文件已被 .gitignore 排除，不会入库。媒体目录一律填 Windows 真实路径。",
+  "scanFolders": [
+    "E:\\Movies",
+    "F:\\Downloads\\Movies"
+  ],
+  "animeFolders": [
+    "F:\\Anime"
+  ],
+  "comicFolders": [
+    "G:\\Manga"
+  ],
+  "novelFolders": [
+    "G:\\Novels"
+  ],
+  "serverPort": 3000,
+  "lan": {
+    "host": "192.168.1.100",
+    "port": 3002
+  },
+  "_comment_auth": "访问密码（可选）。enabled=false 表示进入影库不需要密码；要启用就 enabled=true 并填 password（至少 4 位）。未写 enabled 的老配置按“有 password 即启用”处理。不要提交真实值。",
+  "auth": {
+    "enabled": false,
+    "password": ""
+  },
+  "_comment_tmdb": "TMDB API Key，用于影视元数据刮削。",
+  "tmdbApiKey": "CHANGE_ME",
+  "_comment_network": "proxyServer 留空表示直连。爬取 Cloudflare 站点时可能需要代理。",
+  "network": {
+    "proxyServer": "",
+    "timeout": 15000,
+    "requestInterval": 1000
+  },
+  "ollama": {
+    "baseUrl": "http://host.docker.internal:11434",
+    "model": "qwen2.5:3b",
+    "enableTranslate": true
+  },
+  "_comment_ai": "AI 助手配置。apiKey 不要提交真实值。",
+  "ai": {
+    "provider": "ollama",
+    "ollama": {
+      "baseUrl": "http://host.docker.internal:11434",
+      "model": "qwen2.5:3b"
+    },
+    "deepseek": {
+      "apiKey": "",
+      "baseUrl": "https://api.deepseek.com",
+      "model": "deepseek-chat"
+    },
+    "openai": {
+      "apiKey": "",
+      "baseUrl": "",
+      "model": ""
+    },
+    "enableAgent": true,
+    "agentSystemPrompt": "你是一个本地媒体库管理助手，可以帮助用户搜索、播放、管理影片、动漫、漫画和小说。"
+  },
+  "posterCacheDir": "./posters",
+  "ffmpeg": "ffmpeg",
+  "allowedVideoExt": [
+    ".mp4",
+    ".mkv",
+    ".avi",
+    ".wmv",
+    ".mov",
+    ".ts",
+    ".m2ts",
+    ".rmvb",
+    ".flv"
+  ],
+  "scraper": {
+    "enabledSources": [
+      "jav321",
+      "javbus",
+      "javdb",
+      "netflav",
+      "onejav",
+      "javcl",
+      "jable",
+      "javmenu",
+      "tmdb"
+    ],
+    "sourcePriority": [
+      "jav321",
+      "javbus",
+      "javdb",
+      "netflav",
+      "onejav",
+      "javcl",
+      "jable",
+      "javmenu",
+      "tmdb"
+    ],
+    "requiredFields": [
+      "title",
+      "poster"
+    ],
+    "useJavdbCover": true
+  },
+  "sources": {
+    "javdb": {
+      "baseUrl": "https://javdb.com"
+    },
+    "javbus": {
+      "baseUrl": "https://www.javbus.com"
+    },
+    "jav321": {
+      "baseUrl": "https://www.jav321.com"
+    },
+    "javlibrary": {
+      "baseUrl": "https://www.javlibrary.com"
+    },
+    "dmm": {
+      "baseUrl": "https://www.dmm.co.jp"
+    },
+    "d2pass": {
+      "baseUrl": "https://www.d2pass.com"
+    },
+    "heyzo": {
+      "baseUrl": "https://www.heyzo.com"
+    },
+    "fc2": {
+      "baseUrl": "https://adult.contents.fc2.com"
+    },
+    "avsox": {
+      "baseUrl": "https://avsox.click"
+    },
+    "hanime": {
+      "baseUrl": "https://hanime1.me"
+    },
+    "zlibrary": {
+      "baseUrl": "https://z-lib.io"
+    },
+    "kmoe": {
+      "baseUrl": "https://kox.moe"
+    },
+    "quark": {
+      "baseUrl": "https://drive.quark.cn"
+    },
+    "netflav": {
+      "baseUrl": "https://netflav.com"
+    },
+    "onejav": {
+      "baseUrl": "https://onejav.com"
+    },
+    "javcl": {
+      "baseUrl": "https://javcl.com"
+    },
+    "jable": {
+      "baseUrl": "https://jable.tv"
+    },
+    "javmenu": {
+      "baseUrl": "https://javmenu.com"
+    },
+    "dongman": {
+      "baseUrl": "https://91dongman.net"
+    },
+    "fanza": {
+      "baseUrl": "https://api.dmm.com/affiliate/v3/ItemList",
+      "enabled": false,
+      "unavailable": true,
+      "apiId": "",
+      "affiliateId": "",
+      "configFields": [],
+      "note": "已搁置：affiliate.dmm.com 需日本地区才能注册，国内无法申请凭证"
+    }
+  },
+  "naming": {
+    "pattern": "{avid} {title}",
+    "replaceInvalidChars": true
+  },
+  "export": {
+    "csvEncoding": "utf8"
+  },
+  "_comment_watch": "目录监控：应用启动即自动运行，不需要手动开启。靠 Windows 文件系统事件做到秒级发现；轮询是兜底 —— 每轮没扫到新增，间隔就翻倍（intervalMs → ×2 → …），直到 maxIntervalMs 封顶；一旦扫到新增立刻回到 intervalMs。types 可以按库单独关掉。",
+  "watch": {
+    "enabled": true,
+    "intervalMs": 5000,
+    "maxIntervalMs": 3600000,
+    "maxPerTick": 200,
+    "stableGapMs": 1200,
+    "types": { "jav": true, "anime": true, "comic": true, "novel": true }
+  },
+  "player": {
+    "defaultVolume": 0.8,
+    "autoNext": false
+  },
+  "push": {
+    "enabled": false
+  },
+  "_comment_update": "应用内更新：设置 → 版本 里可查询 GitHub 最新 Release 并一键下载。enabled 关掉后不再联网检查；autoCheck 控制启动时是否静默查一次（只比版本，不下载）；直连 GitHub 很慢时，可把 downloadPrefix 填成镜像前缀（会拼在下载链接前面）；GitHub 接口未登录限 60 次/小时，配 token 可提到 5000 次。",
+  "update": {
+    "enabled": true,
+    "autoCheck": true,
+    "repo": "INORIergai/local-acgn-app",
+    "apiBase": "https://api.github.com",
+    "downloadPrefix": "",
+    "token": ""
+  }
+}

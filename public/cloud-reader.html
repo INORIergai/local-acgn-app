@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网盘阅读器</title>
+<style>
+    :root { --bg:#f7f7f7; --card:#fff; --ink:#111; --muted:#6b7280; --line:#e5e5e5; --accent:#d62e67; }
+    @media (prefers-color-scheme: dark) {
+        :root { --bg:#141414; --card:#1c1c1c; --ink:#ededed; --muted:#9ca3af; --line:#2c2c2c; --accent:#ff5b8f; }
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--ink); font-family:"Segoe UI Variable","Segoe UI","Microsoft YaHei",system-ui,sans-serif; height:100vh; overflow:hidden; }
+    #bar { height:44px; display:flex; align-items:center; gap:12px; padding:0 14px; background:var(--card); border-bottom:1px solid var(--line); font-size:13px; }
+    #bar .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    #bar .page { color:var(--muted); font-variant-numeric:tabular-nums; }
+    #bar button { border:1px solid var(--line); background:transparent; color:var(--ink); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:13px; }
+    #bar button:hover { border-color:var(--accent); color:var(--accent); }
+    #stage { height:calc(100vh - 44px); overflow:auto; }
+    #msg { padding:48px 24px; text-align:center; color:var(--muted); line-height:1.9; }
+    #msg b { color:var(--ink); }
+    /* PDF：整页纵向连续渲染 */
+    #pages { display:flex; flex-direction:column; align-items:center; gap:14px; padding:16px 0; }
+    #pages canvas { background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.18); border-radius:2px; }
+    .ph { width:min(92vw,900px); background:#0001; border-radius:2px; }
+    /* EPUB/TXT */
+    #read { display:none; height:100%; }
+    #read.on { display:flex; }
+    #toc { width:260px; overflow:auto; border-right:1px solid var(--line); background:var(--card); padding:10px; }
+    #toc div { padding:8px 10px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--muted); }
+    #toc div:hover { background:var(--bg); }
+    #toc div.on { color:var(--accent); font-weight:600; }
+    #body { flex:1; overflow:auto; padding:28px 32px 80px; line-height:1.85; font-size:16px; }
+    #body img { max-width:100%; height:auto; }
+    #body p { margin:0 0 1em; }
+</style>
+</head>
+<body>
+<div id="bar">
+    <span class="name" id="name">网盘文件</span>
+    <span class="page" id="page"></span>
+    <button id="zoomOut" style="display:none">－</button>
+    <button id="zoomIn" style="display:none">＋</button>
+</div>
+<div id="stage">
+    <div id="msg">正在加载…</div>
+    <div id="pages" style="display:none"></div>
+    <div id="read"><div id="toc"></div><div id="body"></div></div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const fid = params.get('fid') || '';
+const name = params.get('name') || '网盘文件';
+document.getElementById('name').textContent = name;
+document.title = name;
+const ext = (name.split('.').pop() || '').toLowerCase();
+const streamUrl = `/api/cloud/quark/stream?fid=${encodeURIComponent(fid)}`;
+const $ = id => document.getElementById(id);
+
+function fail(html) { $('msg').innerHTML = html; $('msg').style.display = 'block'; $('pages').style.display = 'none'; }
+
+// 服务端拿不到直链时返回 JSON（例如非会员超过 50MB），把原因原样告诉用户
+async function explainFailure() {
+    try {
+        const r = await fetch(streamUrl, { headers: { Range: 'bytes=0-0' } });
+        const ct = r.headers.get('content-type') || '';
+        if (ct.includes('json')) {
+            const j = await r.json();
+            return j.msg || '读取失败';
+        }
+        if (!r.ok) return `读取失败：HTTP ${r.status}`;
+    } catch (e) { return '读取失败：' + e.message; }
+    return '读取失败';
+}
+
+/* ★ round26 续 #7：失败要说人话，并且给出「怎么修」。
+   背景（已实测定位）：夸克直链由阿里 OSS 签名，CDN 会回呼 drive-auth.quark.cn
+   校验 cookie；会话过期时回呼拒绝，返回 RequestDeniedByCallback / auth expired。
+   而夸克普通 API 对过期 cookie 仍然 200 ⇒ 界面看着「已登录」，一取流就 403。
+   所以这里识别到登录问题时，直接把「去重新扫码登录」端到用户面前。 */
+function hintBlock(title, msg, why) {
+    // 覆盖两类真实文案：Docker 侧（会话过期 → QUARK_AUTH_EXPIRED / auth expired）
+    // 与桌面版侧（压根没配 cookie → crawler 抛「认证失败，请重新设置Cookie」）
+    const authIssue = /登录已过期|尚未登录|重新扫码登录|认证失败|重新设置\s*Cookie|auth\s*expired|auth\s*not\s*found|QUARK_AUTH_EXPIRED|RequestDeniedByCallback/i.test(String(msg) + ' ' + String(why || ''));
+    const dup = (why && why !== msg) ? `<br><span style="opacity:.75">${why}</span>` : '';
+    const fix = authIssue
+        ? '<div style="margin:18px auto 0;padding:14px 18px;border:1px solid var(--accent);border-radius:10px;'
+        + 'text-align:left;display:block;max-width:520px;line-height:1.8">'
+        + '<b style="color:var(--accent)">怎么修：</b><br>'
+        + '① 夸克网盘的登录已过期 —— 文件列表还能读，但下载 / 在线阅读会被 CDN 拒绝。<br>'
+        + '② 回到项目目录，<b>双击「夸克登录.bat」</b>，扫码重新登录（它会自动把新 Cookie 写回配置）。<br>'
+        + '③ 重启容器（或刷新本页）后重试即可。</div>'
+        : '';
+    return `<b>${title}</b><br>${msg}${dup}${fix}`;
+}
+
+init();
+
+async function init() {
+    if (!fid) return fail('缺少文件参数');
+    if (ext === 'pdf') return initPdf();
+    if (ext === 'txt') return initTxt();
+    if (ext === 'epub') return initEpub();
+    fail('不支持的格式：' + ext);
+}
+
+// ---------------- PDF ----------------
+async function initPdf() {
+    let pdfjsLib, pdfDoc;
+    try {
+        pdfjsLib = await import('/pdfjs/pdf.mjs');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.mjs';
+        const res = await fetch(streamUrl);
+        if (!res.ok) throw new Error(await explainFailure());
+        pdfDoc = await pdfjsLib.getDocument({ data: await res.arrayBuffer() }).promise;
+    } catch (e) {
+        const why = await explainFailure();
+        const msg = (e && e.message && e.message !== '读取失败') ? e.message : why;
+        return fail(hintBlock('PDF 打开失败', msg, why));
+    }
+
+    $('msg').style.display = 'none';
+    const holder = $('pages');
+    holder.style.display = 'flex';
+    $('zoomIn').style.display = '';
+    $('zoomOut').style.display = '';
+
+    const first = await pdfDoc.getPage(1);
+    const baseVp = first.getViewport({ scale: 1 });
+    const fitWidth = Math.min(window.innerWidth * 0.92, 900);
+    let scale = fitWidth / baseVp.width;
+
+    const placeholders = [];
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const vp = (i === 1 ? first : await pdfDoc.getPage(i)).getViewport({ scale });
+        const ph = document.createElement('div');
+        ph.className = 'ph';
+        ph.style.height = vp.height + 'px';
+        ph.style.width = vp.width + 'px';
+        ph.dataset.page = i;
+        holder.appendChild(ph);
+        placeholders.push(ph);
+    }
+
+    // 只渲染进入视口的页
+    const seen = new Set();
+    const io = new IntersectionObserver(async (entries) => {
+        for (const en of entries) {
+            const n = Number(en.target.dataset.page);
+            if (!en.isIntersecting || seen.has(n)) continue;
+            seen.add(n);
+            try {
+                const page = n === 1 ? first : await pdfDoc.getPage(n);
+                const vp = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                canvas.width = vp.width; canvas.height = vp.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+                en.target.replaceChildren(canvas);
+                en.target.style.height = 'auto';
+            } catch (e) { seen.delete(n); }
+        }
+    }, { root: $('stage'), rootMargin: '600px 0px' });
+    placeholders.forEach(p => io.observe(p));
+
+    // 缩放：重建占位块
+    $('zoomIn').onclick = () => setScale(scale * 1.25);
+    $('zoomOut').onclick = () => setScale(scale / 1.25);
+    async function setScale(next) {
+        scale = Math.max(0.25, Math.min(4, next));
+        seen.clear();
+        for (const ph of placeholders) {
+            const n = Number(ph.dataset.page);
+            const { width, height } = (await pdfDoc.getPage(n)).getViewport({ scale });
+            ph.style.width = width + 'px';
+            ph.style.height = height + 'px';
+            ph.replaceChildren();
+            io.observe(ph);
+        }
+    }
+
+    // 当前页码
+    $('stage').onscroll = () => {
+        const mid = $('stage').scrollTop + $('stage').clientHeight / 2;
+        let cur = 1;
+        for (const ph of placeholders) { if (ph.offsetTop <= mid) cur = Number(ph.dataset.page); }
+        $('page').textContent = `${cur} / ${pdfDoc.numPages}`;
+    };
+    $('page').textContent = `1 / ${pdfDoc.numPages}`;
+}
+
+// ---------------- TXT ----------------
+async function initTxt() {
+    try {
+        const r = await fetch(streamUrl);
+        if (!r.ok) throw new Error(await explainFailure());
+        const text = await r.text();
+        $('msg').style.display = 'none';
+        $('read').classList.add('on');
+        $('toc').style.display = 'none';
+        $('body').textContent = text;
+    } catch (e) {
+        const why = await explainFailure();
+        fail(hintBlock('文本打开失败', e.message, why));
+    }
+}
+
+// ---------------- EPUB ----------------
+async function initEpub() {
+    let data;
+    try {
+        const r = await fetch(`/api/cloud/quark/read/epub?fid=${encodeURIComponent(fid)}`);
+        const j = await r.json();
+        if (j.code !== 0) throw new Error(j.msg || '解析失败');
+        data = j.data;
+    } catch (e) {
+        const why = await explainFailure();
+        const msg = (e && e.message) ? e.message : why;
+        return fail(hintBlock('EPUB 打开失败', msg, why));
+    }
+
+    const chapters = data.chapters || [];
+    $('msg').style.display = 'none';
+    $('read').classList.add('on');
+    document.title = data.title || name;
+    $('name').textContent = data.title ? `${data.title}${data.author ? ' · ' + data.author : ''}` : name;
+
+    const toc = $('toc');
+    toc.innerHTML = chapters.map((c, i) =>
+        `<div data-i="${i}" class="${i === 0 ? 'on' : ''}">${c.title || c.href || ('第 ' + (i + 1) + ' 章')}</div>`
+    ).join('');
+    toc.onclick = (e) => {
+        const li = e.target.closest('div[data-i]');
+        if (li) show(Number(li.dataset.i));
+    };
+
+    function show(i) {
+        const ch = chapters[i] || {};
+        $('body').innerHTML = ch.html || `<pre style="white-space:pre-wrap;font:inherit">${ch.text || '（空章节）'}</pre>`;
+        $('body').scrollTop = 0;
+        [...toc.children].forEach((d, k) => d.classList.toggle('on', k === i));
+        $('page').textContent = `${i + 1} / ${chapters.length}`;
+    }
+    // 开头往往是只有封面图的空章节，直接跳到第一个有正文的
+    const hasText = (c) => {
+        if ((c.text || '').trim().length > 0) return true;
+        return String(c.html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 20;
+    };
+    const start = Math.max(0, chapters.findIndex(hasText));
+    show(start);
+
+    document.addEventListener('keydown', (e) => {
+        const cur = [...toc.children].findIndex(d => d.classList.contains('on'));
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') show(Math.min(chapters.length - 1, cur + 1));
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') show(Math.max(0, cur - 1));
+    });
+}
+</script>
+</body>
+</html>
