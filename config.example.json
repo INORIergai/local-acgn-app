@@ -1,0 +1,184 @@
+{
+  "_comment": "配置模板。复制为 config.docker.json（容器用）或 config.json（本地用）后填入真实值。真实配置文件已被 .gitignore 排除，不会入库。",
+  "scanFolders": [
+    "/media/movies",
+    "/media/movies2",
+    "/media/downloads"
+  ],
+  "animeFolders": [
+    "/media/anime"
+  ],
+  "comicFolders": [
+    "/media/comic"
+  ],
+  "novelFolders": [
+    "/media/novel"
+  ],
+  "serverPort": 3000,
+  "lan": {
+    "host": "192.168.1.100",
+    "port": 3002
+  },
+  "_comment_auth": "访问密码（可选）。enabled=false 表示进入影库不需要密码；要启用就 enabled=true 并填 password（至少 4 位）。未写 enabled 的老配置按“有 password 即启用”处理。不要提交真实值。",
+  "auth": {
+    "enabled": false,
+    "password": ""
+  },
+  "_comment_tmdb": "TMDB API Key，用于影视元数据刮削。",
+  "tmdbApiKey": "CHANGE_ME",
+  "_comment_network": "proxyServer 留空表示直连。爬取 Cloudflare 站点时可能需要代理。",
+  "network": {
+    "proxyServer": "",
+    "timeout": 15000,
+    "requestInterval": 1000
+  },
+  "ollama": {
+    "baseUrl": "http://host.docker.internal:11434",
+    "model": "qwen2.5:3b",
+    "enableTranslate": true
+  },
+  "_comment_ai": "AI 助手配置。apiKey 不要提交真实值。",
+  "ai": {
+    "provider": "ollama",
+    "ollama": {
+      "baseUrl": "http://host.docker.internal:11434",
+      "model": "qwen2.5:3b"
+    },
+    "deepseek": {
+      "apiKey": "",
+      "baseUrl": "https://api.deepseek.com",
+      "model": "deepseek-chat"
+    },
+    "openai": {
+      "apiKey": "",
+      "baseUrl": "",
+      "model": ""
+    },
+    "enableAgent": true,
+    "agentSystemPrompt": "你是一个本地媒体库管理助手，可以帮助用户搜索、播放、管理影片、动漫、漫画和小说。"
+  },
+  "posterCacheDir": "./posters",
+  "ffmpeg": "ffmpeg",
+  "allowedVideoExt": [
+    ".mp4",
+    ".mkv",
+    ".avi",
+    ".wmv",
+    ".mov",
+    ".ts",
+    ".m2ts",
+    ".rmvb",
+    ".flv"
+  ],
+  "scraper": {
+    "enabledSources": [
+      "jav321",
+      "javbus",
+      "javdb",
+      "netflav",
+      "onejav",
+      "javcl",
+      "jable",
+      "javmenu",
+      "tmdb"
+    ],
+    "sourcePriority": [
+      "jav321",
+      "javbus",
+      "javdb",
+      "netflav",
+      "onejav",
+      "javcl",
+      "jable",
+      "javmenu",
+      "tmdb"
+    ],
+    "requiredFields": [
+      "title",
+      "poster"
+    ],
+    "useJavdbCover": true
+  },
+  "sources": {
+    "javdb": {
+      "baseUrl": "https://javdb.com"
+    },
+    "javbus": {
+      "baseUrl": "https://www.javbus.com"
+    },
+    "jav321": {
+      "baseUrl": "https://www.jav321.com"
+    },
+    "javlibrary": {
+      "baseUrl": "https://www.javlibrary.com"
+    },
+    "dmm": {
+      "baseUrl": "https://www.dmm.co.jp"
+    },
+    "d2pass": {
+      "baseUrl": "https://www.d2pass.com"
+    },
+    "heyzo": {
+      "baseUrl": "https://www.heyzo.com"
+    },
+    "fc2": {
+      "baseUrl": "https://adult.contents.fc2.com"
+    },
+    "avsox": {
+      "baseUrl": "https://avsox.click"
+    },
+    "hanime": {
+      "baseUrl": "https://hanime1.me"
+    },
+    "zlibrary": {
+      "baseUrl": "https://z-lib.io"
+    },
+    "kmoe": {
+      "baseUrl": "https://kox.moe"
+    },
+    "quark": {
+      "baseUrl": "https://drive.quark.cn"
+    },
+    "netflav": {
+      "baseUrl": "https://netflav.com"
+    },
+    "onejav": {
+      "baseUrl": "https://onejav.com"
+    },
+    "javcl": {
+      "baseUrl": "https://javcl.com"
+    },
+    "jable": {
+      "baseUrl": "https://jable.tv"
+    },
+    "javmenu": {
+      "baseUrl": "https://javmenu.com"
+    },
+    "dongman": {
+      "baseUrl": "https://91dongman.net"
+    },
+    "fanza": {
+      "baseUrl": "https://api.dmm.com/affiliate/v3/ItemList",
+      "enabled": false,
+      "unavailable": true,
+      "apiId": "",
+      "affiliateId": "",
+      "configFields": [],
+      "note": "已搁置：affiliate.dmm.com 需日本地区才能注册，国内无法申请凭证"
+    }
+  },
+  "naming": {
+    "pattern": "{avid} {title}",
+    "replaceInvalidChars": true
+  },
+  "export": {
+    "csvEncoding": "utf8"
+  },
+  "player": {
+    "defaultVolume": 0.8,
+    "autoNext": false
+  },
+  "push": {
+    "enabled": false
+  }
+}

@@ -1,0 +1,1211 @@
+/* ==========================================================================
+   polish.css v1 —— 全视窗 / 分体推荐 / 富详情抽屉 / 播放器美化
+   --------------------------------------------------------------------------
+   自包含覆盖层：只增不删，回滚 = 删本文件 + library.html 的 <link>。
+   设计基调沿用 Aardvark：暖琥珀 #F9A220 + 桃红 #ff008c + 白底黑字。
+   ========================================================================== */
+
+:root {
+    --pl-amber: #F9A220;
+    --pl-amber-soft: rgba(249, 162, 32, 0.14);
+    --pl-pink: #ff008c;
+    --pl-ease-pop: cubic-bezier(.32, .72, 0, 1);
+    --pl-ease-over: cubic-bezier(.34, 1.56, .64, 1);
+    --pl-ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* ============ 0. 浮层层叠防御 ============
+   页面里的动效/卡片层（.av-hero、.av-card、.movie-card::after …）会各自建层叠上下文，
+   它们的 z-index 都在 1–6 之间。这里给浮层显式抬到 520/530，保证任何后续新增的层都盖不住。 */
+.modal { z-index: var(--z-modal, 500); }
+#detailModal { z-index: calc(var(--z-modal, 500) + 10); }
+#playerModal { z-index: calc(var(--z-modal, 500) + 20); }
+
+/* ============ 1. 可展示区域扩大到全视窗 ============ */
+.main-container { max-width: none; }
+.content { padding: 22px 26px 70px; }
+
+/* ============ 2. 首页推荐 ============
+   2026-09-21：撤掉"分体海报+信息面板"版本，回到 style.css 原生的全幅 16:9 轮播。
+   2026-09-22：用户反馈「海报太大，占了整个视窗，缩小 40%」——
+   实测 1600×900 下 .gallery-track 是 1314×739，占视口高 82%，确实一屏只剩它。
+   处理：整块缩到 60%（= 缩小 40%），居中；再给一个 52vh 的高度上限兜底。
+   ⚠️ 只作用于 ≥861px。手机上 @media 里 .gallery-track 另有 16/10 规则（mobile.css），
+   若这里不限定宽度，手机上会缩成 60% 宽的小方块。 */
+/* 轮播箭头/圆点稍微放大到手感舒适（不改布局，只改尺寸） */
+.gallery-arrow { width: 44px; height: 44px; }
+.gallery-arrow.prev { left: 16px; }
+.gallery-arrow.next { right: 16px; }
+
+@media (min-width: 861px) {
+    .gallery-container {
+        /* 缩小 40%：宽度 60% + 16:9 等比 → 高度也正好是原来的 60% */
+        max-width: 60%;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .gallery-track {
+        /* 高窗口兜底：再高也不让它吃掉半个屏幕以上 */
+        max-height: 52vh;
+    }
+}
+
+/* ============ 2b. 首页推荐 · 翻页特效 ============
+   2026-09-22：用户反馈「海报前后连在一起了，做成翻页特效，丝滑一点」。
+   原因：原来是 display:flex 的横向长条 + translateX(-n*100%)，
+   切换过程中前一张和后一张必然同框并列，看起来就是两张海报贴在一起。
+   做法：把 track 变成「同一位置叠放的牌组」，每张牌绝对定位，
+   靠 rotateY 沿左右边缘翻走 / 翻入 —— 视觉上像翻书页，永远只有一张牌在正面。
+
+   关键点：
+   · perspective 放在 .gallery-container（不带 overflow 的祖先会失效，这里正好有 overflow:hidden）
+   · transform-origin 沿翻页边：向后翻 = 旧页绕左边翻走、新页从右边翻进来
+   · 只有 .is-active 那张有 pointer-events，避免透明牌挡住点击
+   · 所有牌都留在 DOM 里（不删除），下一轮翻回来时状态还在 */
+.gallery-container {
+    perspective: 1700px;
+    perspective-origin: 50% 42%;
+}
+.gallery-track {
+    display: block;                 /* 盖掉 style.css 的 flex 长条 */
+    position: relative;
+    transform: none !important;      /* 老代码写的 translateX 一律作废 */
+    transform-style: preserve-3d;
+}
+.gallery-slide {
+    position: absolute;
+    inset: 0;
+    flex: none;
+    opacity: 0;
+    z-index: 1;
+    pointer-events: none;
+    transform-origin: left center;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+    transition:
+        transform .82s cubic-bezier(.22, .68, 0, 1),
+        opacity   .62s ease;
+}
+.gallery-slide.is-active {
+    opacity: 1;
+    z-index: 3;
+    pointer-events: auto;
+    transform: rotateY(0deg) scale(1);
+}
+
+/* 退场：向后翻 → 旧页绕左边向内翻走；向前翻 → 绕右边
+   退场淡出要比翻入快（.34s vs .82s）——旧页必须先"消失"，
+   否则中段会出现两张海报各半透明叠在一起，又变回用户不接受的那种「连在一起」 */
+.gallery-slide.is-out-left {
+    opacity: 0;
+    z-index: 2;
+    transform-origin: left center;
+    transform: rotateY(-74deg) translateX(-7%) scale(.94);
+    transition: transform .78s cubic-bezier(.22, .68, 0, 1), opacity .34s ease-out;
+}
+.gallery-slide.is-out-right {
+    opacity: 0;
+    z-index: 2;
+    transform-origin: right center;
+    transform: rotateY(74deg) translateX(7%) scale(.94);
+    transition: transform .78s cubic-bezier(.22, .68, 0, 1), opacity .34s ease-out;
+}
+
+/* 入场 / 停靠：新页从翻页方向的另一侧翻进来。
+   非当前页一律「停靠」在入场位（状态已落盘），轮到它时摘掉停靠类即可平滑翻入，
+   不需要强制回流、也不会出现关键帧被摘掉时的跳帧。 */
+.gallery-slide.is-parked-fwd {
+    transform-origin: right center;
+    transform: rotateY(44deg) translateX(10%) scale(.94);
+}
+.gallery-slide.is-parked-back {
+    transform-origin: left center;
+    transform: rotateY(-44deg) translateX(-10%) scale(.94);
+}
+
+/* 翻页时从内侧打一道光，强化"纸页翻过去"的观感 */
+.gallery-slide.is-active::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(100deg,
+        rgba(255, 255, 255, .34) 0%,
+        rgba(255, 255, 255, .06) 34%,
+        transparent 62%);
+    animation: galPageSheen .9s ease-out both;
+}
+@keyframes galPageSheen {
+    from { opacity: .9; }
+    to   { opacity: 0; }
+}
+
+/* 非当前页的 kenBurns 先停住，省 CPU（十几张同时缓动没有意义） */
+.gallery-slide:not(.is-active) img { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+    .gallery-slide {
+        animation: none !important;
+        transition: opacity .12s linear !important;
+        transform: none !important;
+    }
+    .gallery-slide.is-active::before { display: none; }
+}
+
+/* ============ 3. 富详情抽屉：有效利用高度 ============
+   ⚠️ 抽屉 vs 居中弹窗的定位/尺寸由 detail-mode.css 负责（可在设置里切换），
+   这里只负责抽屉**内部**的排版：海报独占一行、信息在下面。 */
+.detail-body { padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+/* 抽屉头部：海报独占一行，影片信息全部排在下面
+   （2026-09-21 改版：之前是「海报左列 240px + 信息右列」并排，用户要求回到
+    改动之前的弹窗排版 —— 海报整幅居中、信息在下。海报用 contain 不裁切，
+    并用 max-height 限制超高图，避免竖版海报把整屏撑满。 */
+.detail-head {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+}
+.detail-head .detail-poster-wrap { text-align: center; }
+.detail-poster {
+    width: auto;
+    max-width: 100%;
+    max-height: 32vh;            /* 超高图限高，比例不变（contain 不变形） */
+    object-fit: contain;         /* 整幅可见，绝不裁切 */
+    border-radius: 12px;
+    background: var(--sprocket-bg, var(--bg-elevated));
+    border: 1px solid var(--border);
+    box-shadow: 0 16px 36px -16px rgba(0,0,0,.5);
+}
+.detail-head-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.detail-title {
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.3;
+    letter-spacing: -.01em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-align: center;
+}
+.detail-avid {
+    align-self: center;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: .08em;
+    color: var(--primary);
+    background: var(--primary-soft);
+    padding: 3px 10px;
+    border-radius: 6px;
+}
+/* 元信息：从「均匀 grid」改成「方块散落堆积」
+   ------------------------------------------------------------
+   用户要求：不要挤在一起，要像方块散落下来堆积在一起。
+   做法：
+   1. flex-wrap 而不是 grid —— 方块按内容宽度自然伸缩，宽窄不一才有堆积感；
+   2. 每个方块带一点点随机旋转与上下错位（nth-child 交替给，不用 JS 随机，
+      避免每次打开都在抖）；
+   3. 入场用「从上方落下 + 回弹」的错峰动画（--di 控制延迟），落位后静止；
+   4. 方块之间刻意留 10px 间隙 + 6px 行距，绝不贴在一起。 */
+.detail-head-meta.dm-blocks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 10px;
+    margin-top: 16px;
+    justify-content: center;
+    padding: 4px 2px 2px;
+    perspective: 600px;
+}
+.dm-block {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 76px;
+    max-width: 240px;
+    padding: 9px 14px 10px;
+    border-radius: 10px;
+    background: var(--bg-elevated, #FAF8F1);
+    border: 1px solid var(--border);
+    box-shadow: 0 6px 16px -10px rgba(0, 0, 0, .45);
+    /* 每个方块轻微随机歪斜：落下来堆着而不是摆齐 */
+    transform: rotate(var(--dm-rot, 0deg)) translateY(var(--dm-dy, 0px));
+    animation: dmDrop .52s cubic-bezier(.22, 1.4, .36, 1) both;
+    animation-delay: calc(var(--di, 0) * 45ms);
+    transition: transform .22s var(--pl-ease-pop), box-shadow .22s ease;
+}
+/* 顶部糖果色条：同色系呼应 Aardvark 调色板 */
+.dm-block::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 0;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--dc, var(--pl-amber));
+    opacity: .9;
+}
+.dm-block-k {
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.dm-block-v {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* 宽字段（厂商/发行商/系列）占更宽，制造大小块堆积的错落感 */
+.dm-block.wide { flex: 1 1 170px; }
+.dm-block.wide .dm-block-v { white-space: normal; }
+
+/* 交替歪斜 + 上下错位：nth-child 而不是随机数，保证每次打开一致（否则每次都在抖）。
+   五种姿态循环，错位幅度比初版更大 —— 要看出「堆」而不是「排」。 */
+.dm-block:nth-child(5n + 1) { --dm-rot: -1.6deg; --dm-dy: 3px; }
+.dm-block:nth-child(5n + 2) { --dm-rot: 1.2deg;  --dm-dy: -5px; }
+.dm-block:nth-child(5n + 3) { --dm-rot: -.7deg;  --dm-dy: 1px; }
+.dm-block:nth-child(5n + 4) { --dm-rot: 1.8deg;  --dm-dy: -3px; }
+.dm-block:nth-child(5n + 5) { --dm-rot: -1deg;   --dm-dy: 5px; }
+/* 悬停时被"拾起"：摆正 + 抬高 */
+.dm-block:hover {
+    transform: rotate(0deg) translateY(-3px) scale(1.04);
+    box-shadow: 0 12px 24px -10px rgba(0, 0, 0, .5);
+    z-index: 2;
+}
+@keyframes dmDrop {
+    0%   { opacity: 0; transform: rotate(var(--dm-rot, 0deg)) translateY(-26px) scale(.9); }
+    60%  { opacity: 1; }
+    100% { opacity: 1; transform: rotate(var(--dm-rot, 0deg)) translateY(var(--dm-dy, 0px)) scale(1); }
+}
+
+/* 主操作：常驻头部，一眼看到 */
+.detail-primary-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    justify-content: center;
+}
+.detail-primary-actions .btn-primary {
+    background: var(--pl-pink);
+    border: 0;
+    color: #fff;
+    font-weight: 700;
+}
+
+/* 滚动内容区 */
+.detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 26px 24px;
+}
+.detail-section { margin-bottom: 20px; }
+.detail-section h4 {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.detail-overview {
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: var(--text);
+    white-space: pre-wrap;
+}
+.detail-actress {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    transition: transform .2s var(--pl-ease-over), border-color .2s;
+}
+.detail-actress:hover { transform: translateY(-2px); border-color: var(--pl-amber); }
+.detail-tag {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    transition: background .15s, border-color .15s;
+}
+.detail-tag:hover { border-color: var(--danger); }
+
+/* 相似推荐：横向滑动条，节省竖向空间 */
+.similar-grid {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x proximity;
+}
+.similar-card { flex: 0 0 132px; scroll-snap-align: start; }
+.similar-card img {
+    width: 132px;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    border-radius: 10px;
+    transition: transform .3s var(--pl-ease-over);
+}
+.similar-card:hover img { transform: scale(1.05); }
+.similar-title { font-size: 11.5px; margin-top: 6px; }
+
+/* 工具按钮行：网格化，去掉一排挤不下的 dbtn
+   2026-09-22：按钮整体放大（40→56px）、字号 16→24px，并补齐悬停/按下动效。
+   注意 .detail-actions 在 DOM 里排在文件末尾区块之前，后面的覆盖层（第 17 段）
+   会再叠一层更强的动效，这里只负责尺寸与基础过渡。 */
+.detail-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+    border-top: 1px dashed var(--border);
+    padding-top: 16px;
+}
+.detail-actions .dbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* style.css 的 .dbtn 写死了 width/height:40px，这里必须**两轴都覆盖**，
+       否则只给 height 会留下 40px 的窄条（实测踩过）。 */
+    width: 100%;
+    height: 56px;
+    min-height: 56px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform .18s var(--pl-ease-over), background .18s, border-color .18s, box-shadow .2s;
+}
+.detail-actions .dbtn:hover {
+    transform: translateY(-3px) scale(1.06);
+    border-color: var(--pl-amber);
+    background: var(--pl-amber-soft);
+    box-shadow: 0 10px 22px -10px rgba(249, 162, 32, .55);
+}
+.detail-actions .dbtn:active { transform: translateY(0) scale(.94); }
+
+/* 文件路径行：等宽 + 复制按钮 */
+.detail-path {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+.detail-path code {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 窄屏：海报进一步压低，给信息留出空间 */
+@media (max-width: 700px) {
+    .detail-head { padding: 16px 16px 12px; }
+    .detail-poster { max-height: 26vh; }
+    .detail-head-meta { grid-template-columns: 1fr; }
+    .detail-primary-actions { flex-wrap: wrap; }
+    .detail-scroll { padding: 14px 16px 20px; }
+}
+
+/* ============ 4. 播放器美化 ============ */
+.player-modal .modal-content {
+    max-width: min(1100px, 96vw);
+    padding: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #0B0A08;
+    border: 1px solid rgba(249, 162, 32, .18);
+    box-shadow: 0 40px 120px -30px rgba(0,0,0,.8);
+}
+.player-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(180deg, #15120d, #0B0A08);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.player-head .ph-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--pl-pink);
+    box-shadow: 0 0 10px var(--pl-pink);
+}
+.player-head .ph-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #F4EFE4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.player-head .ph-avid {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .06em;
+    color: rgba(244, 239, 228, .5);
+}
+.player-head .close-btn { color: rgba(244,239,228,.7); }
+.player-stage {
+    position: relative;
+    background: #000;
+}
+.player-stage video {
+    width: 100%;
+    max-height: 72vh;
+    display: block;
+    background: #000;
+}
+/* 加载呼吸遮罩（原生 video 加载时） */
+.player-stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center, rgba(249,162,32,.06), transparent 60%);
+    pointer-events: none;
+    animation: plBreathe 2.6s ease-in-out infinite;
+}
+@keyframes plBreathe {
+    0%, 100% { opacity: .3; }
+    50% { opacity: 1; }
+}
+.player-foot {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: #0B0A08;
+}
+.player-progress { flex: 1; }
+.player-progress-fill { background: linear-gradient(90deg, var(--pl-amber), var(--pl-pink)); }
+
+/* ============ 5. 播放器 OSD（键盘快进 / 长按倍速的屏幕反馈）============ */
+.player-stage { position: relative; }
+.player-osd {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(.86);
+    padding: 10px 20px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, .62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .18s ease, transform .22s var(--pl-ease-pop);
+    white-space: nowrap;
+}
+.player-osd.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+/* 倍速提示用琥珀色，和普通快进提示区分开 */
+.player-osd.rate { color: var(--pl-amber); }
+
+/* ============ 4. 女优头像（刮削落地后展示）============
+   style.css 里 .actress-avatar / .detail-actress-avatar 都是「首字母占位」样式
+   （圆形 + primary-soft 底 + 大字），没写 img 规则。
+   这里补上真实头像的显示：撑满圆形、cover 裁切、懒加载留白。 */
+.actress-avatar img,
+.detail-actress-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+/* 首字母兜底：只在没有图片时可见。
+   有 <img> 时它必须完全隐藏，否则会从头像后面透出来（首字母叠在照片上很难看）。 */
+.actress-avatar-fallback { display: none; }
+.actress-avatar:not(:has(img)) .actress-avatar-fallback,
+.actress-avatar.is-fallback .actress-avatar-fallback { display: block; }
+/* 女优卡片：头像放大一点，刮到头像后这张脸才是主角 */
+.actress-card .actress-avatar {
+    width: 84px;
+    height: 84px;
+    font-size: 32px;
+    overflow: hidden;
+    background: var(--sprocket-bg, var(--primary-soft));
+}
+/* 刮削一张头像的小按钮：叠在头像右下角 */
+.actress-avatar-scrape {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--primary);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(.8);
+    transition: opacity .18s ease, transform .18s var(--pl-ease-pop);
+}
+.actress-card:hover .actress-avatar-scrape { opacity: 1; transform: scale(1); }
+.actress-avatar-scrape:hover { background: var(--pl-amber); color: #fff; border-color: transparent; }
+.actress-avatar-scrape.busy { opacity: 1; transform: scale(1); animation: avSpin 1s linear infinite; }
+@keyframes avSpin { to { transform: rotate(360deg); } }
+
+/* 女优卡片头像包裹层需要相对定位，才能挂住右上角按钮 */
+.actress-card { position: relative; }
+.actress-avatar-wrap { position: relative; width: 84px; margin: 0 auto 10px; }
+
+/* 演员档案页眉：头像换成真图 + 刮削到的生日/身高/三围 */
+.profile-avatar { overflow: hidden; }
+.profile-avatar.has-img { background: var(--sprocket-bg, var(--primary-soft)); padding: 0; }
+.profile-avatar.has-img img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+}
+/* 多给点头像尺寸，认脸更清楚 */
+.profile-avatar.has-img { width: 96px; height: 96px; }
+.profile-bio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-top: 8px;
+    font-size: 12.5px;
+}
+.profile-bio-item { color: var(--text); }
+.profile-bio-item i {
+    font-style: normal;
+    color: var(--text-muted);
+    margin-right: 5px;
+    font-size: 11px;
+    letter-spacing: .04em;
+}
+
+/* 详情抽屉里的女优头像也放大到 40px，认脸更容易 */
+.detail-actress-avatar { overflow: hidden; width: 40px; height: 40px; font-size: 15px; }
+.detail-actress { padding: 6px 10px 6px 6px; }
+
+/* ============ 详情弹窗海报：单击放大（灯箱） ============
+   点 .detail-poster 打开全屏遮罩看大图。遮罩层要盖过 #detailModal（520），
+   所以给到 600；关闭按钮放在右上角且自身 z-index 最高，避免历史踩过的
+   「关闭按钮被覆盖层挡住」问题。 */
+.detail-poster-wrap { position: relative; }
+.detail-poster.is-zoomable { cursor: zoom-in; transition: transform .28s var(--pl-ease-pop), box-shadow .28s; }
+.detail-poster.is-zoomable:hover { transform: scale(1.02); box-shadow: 0 22px 46px -18px rgba(0,0,0,.62); }
+/* 悬停时右上角浮出放大提示 */
+.detail-poster-wrap .poster-zoom-hint {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(20, 16, 12, .72);
+    color: #fff;
+    font-size: 11.5px;
+    letter-spacing: .04em;
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity .22s var(--pl-ease-out), transform .22s var(--pl-ease-out);
+    pointer-events: none;
+    z-index: 2;
+}
+.detail-poster-wrap:hover .poster-zoom-hint { opacity: 1; transform: translateY(0); }
+
+#posterLightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 44px 28px;
+    background: rgba(12, 10, 8, .9);
+    backdrop-filter: blur(14px);
+    opacity: 0;
+    transition: opacity .26s var(--pl-ease-out);
+}
+#posterLightbox.show { display: flex; }
+#posterLightbox.in { opacity: 1; }
+#posterLightbox .plb-img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 14px;
+    box-shadow: 0 34px 90px -30px rgba(0,0,0,.95);
+    transform: scale(.9);
+    opacity: .6;
+    transition: transform .34s var(--pl-ease-pop), opacity .3s;
+    object-fit: contain;
+}
+#posterLightbox.in .plb-img { transform: scale(1); opacity: 1; }
+#posterLightbox .plb-close {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    z-index: 3;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.28);
+    background: rgba(30, 26, 22, .78);
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .2s var(--pl-ease-over), background .2s, border-color .2s;
+}
+#posterLightbox .plb-close:hover { transform: rotate(90deg) scale(1.08); background: var(--pl-pink); border-color: var(--pl-pink); }
+#posterLightbox .plb-caption {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 3;
+    max-width: min(78vw, 720px);
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(30, 26, 22, .72);
+    color: #f4f0ea;
+    font-size: 12.5px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ============ 工具按钮：悬停 / 按下动效 + 删除粉碎 ============ */
+/* 悬停时图标上浮一点，按钮浮起并描边染色（danger 走桃红） */
+.detail-actions .dbtn {
+    position: relative;
+    overflow: hidden;
+    will-change: transform;
+}
+.detail-actions .dbtn > * { transition: transform .2s var(--pl-ease-over); }
+.detail-actions .dbtn:hover::after,
+.detail-actions .dbtn:focus-visible::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 120%, rgba(249,162,32,.30), transparent 68%);
+    pointer-events: none;
+}
+.detail-actions .dbtn.danger { border-color: rgba(255, 0, 140, .34); }
+.detail-actions .dbtn.danger:hover {
+    border-color: var(--pl-pink);
+    background: rgba(255, 0, 140, .12);
+    box-shadow: 0 10px 22px -10px rgba(255, 0, 140, .6);
+}
+.detail-actions .dbtn.danger:hover::after {
+    background: radial-gradient(circle at 50% 120%, rgba(255,0,140,.34), transparent 68%);
+}
+/* 按下：先压扁再回弹（squash & stretch），纯 CSS 也能有手感 */
+.detail-actions .dbtn.pressed { animation: dbtnSquash .32s var(--pl-ease-pop); }
+@keyframes dbtnSquash {
+    0%   { transform: scale(1); }
+    32%  { transform: scale(.9, .84); }
+    62%  { transform: scale(1.06, 1.08); }
+    100% { transform: scale(1); }
+}
+
+/* 粉碎特效：由 js 生成碎片后挂在这里，盖住原按钮位置 */
+.dbtn-crush-host {
+    position: fixed;
+    inset: 0;
+    z-index: 640;
+    pointer-events: none;
+    overflow: hidden;
+}
+.crush-chip {
+    position: absolute;
+    border-radius: 3px;
+    will-change: transform, opacity;
+    animation: crushFly var(--crush-dur, .78s) cubic-bezier(.22,.68,.32,1) forwards;
+}
+@keyframes crushFly {
+    0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+        opacity: 1;
+    }
+    22% {
+        /* 先轻微「绷紧」一下，像被敲裂 */
+        transform: translate(calc(var(--dx) * .12), calc(var(--dy) * .12 - 3px)) rotate(calc(var(--rot) * .18)) scale(.98);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(.42);
+        opacity: 0;
+    }
+}
+/* 迸散瞬间从中心扩散的冲击环 */
+.crush-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 0, 140, .55);
+    animation: crushRing .52s cubic-bezier(.16,1,.3,1) forwards;
+}
+@keyframes crushRing {
+    0%   { transform: scale(.2); opacity: .9; }
+    100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* ============ 减少动态效果 ============ */
+@media (prefers-reduced-motion: reduce) {
+    .similar-card:hover img,
+    .detail-actress:hover { transform: none; }
+    .player-stage::after { animation: none; }
+    .dm-block { animation: none; }
+    .dm-block:hover { transform: rotate(var(--dm-rot, 0deg)); }
+    .detail-actions .dbtn { transition: none; }
+    .detail-actions .dbtn:hover { transform: none; }
+    .detail-actions .dbtn.pressed { animation: none; }
+    .detail-poster.is-zoomable:hover { transform: none; }
+    #posterLightbox, #posterLightbox .plb-img { transition: none; }
+    .crush-chip, .crush-ring { animation: none; opacity: 0; }
+}
+
+/* ============================================================
+   新作监视页（nr- 前缀）
+   顶部可点击女优名 + 按日倒序时间线 + 漫画新卷
+   沿用主站令牌：--pl-amber #F9A220 / --pl-pink #ff008c / 糖果色
+   ============================================================ */
+.nr-wrap {
+    padding: 4px 2px 60px;
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+/* ---------- 页头 ---------- */
+.nr-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+.nr-head-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text, #26211A);
+}
+.nr-head-sub {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--text-muted, #8b8377);
+}
+.nr-head-sub b { color: var(--pl-amber, #F9A220); font-weight: 800; }
+.nr-head-actions { display: flex; gap: 8px; }
+
+.nr-btn {
+    appearance: none;
+    border: 1.5px solid var(--pl-amber, #F9A220);
+    background: var(--pl-amber, #F9A220);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 700;
+    padding: 9px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s ease, background .18s ease;
+    box-shadow: 0 2px 10px rgba(249,162,32,.28);
+}
+.nr-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(249,162,32,.38); }
+.nr-btn:active { transform: translateY(0) scale(.97); }
+.nr-btn.ghost {
+    background: transparent;
+    color: var(--pl-amber, #F9A220);
+    box-shadow: none;
+}
+.nr-btn.ghost:hover { background: rgba(249,162,32,.1); }
+
+.nr-mini-btn {
+    appearance: none;
+    border: 1px solid rgba(0,0,0,.12);
+    background: transparent;
+    color: var(--text-muted, #8b8377);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.nr-mini-btn:hover { border-color: var(--pl-pink, #ff008c); color: var(--pl-pink, #ff008c); }
+
+/* ---------- 顶部女优名 chips ---------- */
+.nr-chip-section {
+    background: var(--bg-elevated, #FAF8F1);
+    border: 1px solid rgba(0,0,0,.06);
+    border-radius: 16px;
+    padding: 14px 16px 16px;
+    margin-bottom: 20px;
+}
+.nr-chip-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.nr-chip-title { font-size: 13.5px; font-weight: 800; color: var(--text, #26211A); }
+.nr-chip-hint { font-size: 12px; color: var(--text-muted, #8b8377); }
+.nr-chip-head .nr-mini-btn { margin-left: auto; }
+
+.nr-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 168px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.nr-chips::-webkit-scrollbar { width: 6px; }
+.nr-chips::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 99px; }
+
+.nr-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px 5px 5px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(0,0,0,.09);
+    background: #fff;
+    color: var(--text, #26211A);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .16s cubic-bezier(.32,.72,0,1), border-color .16s ease, background .16s ease, box-shadow .16s ease;
+    white-space: nowrap;
+}
+.nr-chip:hover {
+    transform: translateY(-2px);
+    border-color: var(--pl-amber, #F9A220);
+    box-shadow: 0 5px 14px rgba(249,162,32,.22);
+}
+.nr-chip.active {
+    background: var(--pl-amber, #F9A220);
+    border-color: var(--pl-amber, #F9A220);
+    color: #fff;
+}
+.nr-chip.active .nr-chip-count { background: rgba(255,255,255,.28); color: #fff; }
+
+.nr-chip-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #FAED8F, #fbb663);
+    color: #6b4a10;
+    flex: none;
+}
+.nr-chip-name { max-width: 132px; overflow: hidden; text-overflow: ellipsis; }
+.nr-chip-count {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(249,162,32,.16);
+    color: #a8690b;
+}
+.nr-chips-empty {
+    font-size: 13px;
+    color: var(--text-muted, #8b8377);
+    padding: 10px 2px;
+}
+
+/* ---------- 类型切换 ---------- */
+.nr-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.nr-tab {
+    appearance: none;
+    border: 1.5px solid rgba(0,0,0,.1);
+    background: #fff;
+    color: var(--text-muted, #8b8377);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 7px 15px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all .16s ease;
+}
+.nr-tab:hover { border-color: var(--pl-amber, #F9A220); color: var(--pl-amber, #F9A220); }
+.nr-tab.active {
+    background: #26211A;
+    border-color: #26211A;
+    color: #fff;
+}
+.nr-tab.ghost { margin-left: auto; border-style: dashed; }
+.nr-tabs-spacer { flex: 1; }
+
+/* ---------- 时间线 ---------- */
+.nr-day { margin-bottom: 26px; position: relative; }
+.nr-day-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 6px 0;
+    background: linear-gradient(to bottom, var(--bg, #F1EEE6) 70%, transparent);
+}
+.nr-day-label {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text, #26211A);
+    letter-spacing: -0.01em;
+}
+.nr-day-date { font-size: 12px; color: var(--text-muted, #8b8377); font-variant-numeric: tabular-nums; }
+.nr-day-line { flex: 1; height: 1px; background: rgba(0,0,0,.1); }
+.nr-day-count {
+    font-size: 12px;
+    font-weight: 800;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: rgba(249,162,32,.16);
+    color: #a8690b;
+}
+
+/* ---------- 时间线：海报优先的紧凑网格（一行多部） ---------- */
+.nr-day-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+.nr-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    border-radius: 14px;
+    background: var(--bg-elevated, #FAF8F1);
+    border: 1px solid rgba(0,0,0,.07);
+    overflow: hidden;
+    transition: transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s ease, border-color .18s ease;
+}
+.nr-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(249,162,32,.5);
+    box-shadow: 0 10px 26px rgba(38,33,26,.14);
+}
+/* 未读标记改到海报右上角的小圆点，不再占一条左侧边线（左侧边线会把图挤窄） */
+.nr-card.unread { border-color: rgba(255,0,140,.35); }
+.nr-card.is-comic { border-color: rgba(78,205,196,.4); }
+.nr-card.is-comic.unread { border-color: rgba(78,205,196,.62); }
+
+/* 海报占卡片主视觉：2026-09-22 用户要求换 16:9（跟影片海报一个格式）。
+   竖版 javbus 缩略图用 object-fit:cover 居中裁切，保留画面中部（人脸/主体在中间带）。 */
+.nr-card-cover {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    flex: none;
+    overflow: hidden;
+    background: #ece7db;
+    cursor: pointer;
+}
+.nr-card-cover img { width: 100%; height: 100%; object-fit: cover; object-position: center 22%; display: block; transition: transform .45s cubic-bezier(.22,.61,.36,1); }
+.nr-card:hover .nr-card-cover img { transform: scale(1.07); }
+.nr-card-cover-fallback {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    font-size: 34px;
+}
+/* 海报底部的渐变压暗，让番号角标在任何图上都读得清 */
+.nr-card-cover::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 54%;
+    background: linear-gradient(to top, rgba(20,16,12,.72), rgba(20,16,12,0));
+    pointer-events: none;
+}
+/* 番号直接压在海报左下角 —— 比放在文字行里更显眼 */
+.nr-card-cover-num {
+    position: absolute;
+    left: 9px;
+    bottom: 8px;
+    z-index: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    color: #fff;
+    text-shadow: 0 1px 6px rgba(0,0,0,.6);
+    pointer-events: none;
+}
+.nr-card-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--pl-pink, #ff008c);
+    box-shadow: 0 0 0 2px rgba(255,255,255,.9);
+}
+    box-shadow: 0 0 0 2px rgba(255,255,255,.9);
+}
+
+.nr-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px 12px 12px; }
+.nr-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 5px; }
+.nr-card-who {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: var(--pl-amber, #F9A220);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.nr-card-num {
+    font-size: 11.5px;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: rgba(0,0,0,.06);
+    color: var(--text, #26211A);
+}
+.nr-card-num-inline {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: .01em;
+}
+.nr-card-date { font-size: 11.5px; color: var(--text-muted, #8b8377); font-variant-numeric: tabular-nums; margin-left: auto; }
+.nr-card-date.unknown { font-style: italic; opacity: .72; }
+
+.nr-card-title {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--text, #26211A);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.nr-card-desc {
+    margin: 0 0 2px;
+    font-size: 12px;
+    color: var(--text-muted, #8b8377);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.nr-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; }
+.nr-act {
+    appearance: none;
+    border: 1px solid rgba(0,0,0,.12);
+    background: #fff;
+    color: var(--text, #26211A);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all .15s ease;
+}
+.nr-act:hover { border-color: var(--pl-amber, #F9A220); color: var(--pl-amber, #F9A220); }
+.nr-act.ghost { background: transparent; color: var(--text-muted, #8b8377); }
+.nr-act.ghost.danger:hover { border-color: var(--pl-pink, #ff008c); color: var(--pl-pink, #ff008c); }
+
+/* ---------- 空态 / 骨架 ---------- */
+.nr-empty {
+    text-align: center;
+    padding: 56px 20px;
+    color: var(--text-muted, #8b8377);
+}
+.nr-empty-icon { font-size: 46px; margin-bottom: 14px; }
+.nr-empty-title { font-size: 16px; font-weight: 800; color: var(--text, #26211A); margin-bottom: 8px; }
+.nr-empty-desc { font-size: 13px; margin-bottom: 20px; }
+.nr-empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+@keyframes nrShimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+.nr-skeleton-title, .nr-skeleton-chip, .nr-skeleton-card {
+    background: linear-gradient(90deg, rgba(0,0,0,.05) 0%, rgba(0,0,0,.09) 50%, rgba(0,0,0,.05) 100%);
+    background-size: 800px 100%;
+    animation: nrShimmer 1.4s linear infinite;
+    border-radius: 8px;
+}
+.nr-skeleton-title { width: 220px; height: 26px; margin-bottom: 18px; }
+.nr-skeleton-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.nr-skeleton-chip { width: 96px; height: 32px; border-radius: 999px; }
+.nr-skeleton-card { height: 96px; margin-bottom: 10px; }
+
+@media (max-width: 640px) {
+    /* 手机上一行 1~2 部，海报依然铺满宽度 */
+    .nr-day-items { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .nr-head-title { font-size: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nr-btn, .nr-chip, .nr-tab, .nr-act, .nr-card { transition: none; }
+    .nr-btn:hover, .nr-chip:hover, .nr-card:hover { transform: none; }
+    .nr-card:hover .nr-card-cover img { transform: none; }
+    .nr-skeleton-title, .nr-skeleton-chip, .nr-skeleton-card { animation: none; }
+}
