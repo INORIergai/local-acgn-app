@@ -1,0 +1,55 @@
+/* ==========================================================================
+   round21.css —— 手机端详情弹窗「下滑关闭」的视觉层（2026-09-23）
+   --------------------------------------------------------------------------
+   配套 public/js/mobile-gestures.js（手势逻辑），两者都只在 ≤860px 生效。
+
+   本文件只加两样东西：
+     1) 顶部一根「把手」—— 告诉用户这个抽屉是可以往下拽的（纯视觉，不拦点击）
+     2) 拖拽进行中的状态类 .swipe-dragging —— 关掉面板自身过渡，避免和手势抢，
+        并禁掉图片拖拽/文本选择，否则拖到一半会选中文字。
+
+   注意：把手用 ::before + position:absolute，锚点是 .modal-content
+   （style.css 里它是 position:relative）。detail-body 顶部 padding 32px，
+   16px 内不会有内容，所以不会有遮挡。
+
+   回滚：删掉本文件 + 移除 library.html 里的 <link> 即可。
+   ========================================================================== */
+
+@media (max-width: 860px) {
+
+    /* 顶部把手 */
+    html[data-detail-mode] #detailModal .modal-content.detail-modal::before {
+        content: '';
+        position: absolute;
+        top: 7px;
+        left: 50%;
+        width: 46px;
+        height: 4px;
+        margin-left: -23px;
+        border-radius: 3px;
+        background: rgba(127, 127, 127, .45);
+        pointer-events: none;
+        z-index: 6;
+    }
+
+    /* 拖拽中：面板自己的过渡必须先停，否则 transform 会被 CSS 动画拽回去 */
+    #detailModal.swipe-dragging .modal-content.detail-modal {
+        transition: none !important;
+        will-change: transform;
+    }
+
+    #detailModal.swipe-dragging {
+        -webkit-user-select: none;
+        user-select: none;
+    }
+
+    /* 拖拽时不要触发图片原生拖拽，也不要选中正文 */
+    #detailModal.swipe-dragging .detail-body img {
+        -webkit-user-drag: none;
+    }
+    #detailModal.swipe-dragging .detail-title,
+    #detailModal.swipe-dragging .detail-desc {
+        -webkit-user-select: none;
+        user-select: none;
+    }
+}

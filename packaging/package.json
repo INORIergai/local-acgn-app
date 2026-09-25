@@ -1,0 +1,74 @@
+{
+    "name": "cinema-vault-desktop",
+    "version": "1.0.2",
+    "description": "Cinema Vault · 本地媒体库 桌面版",
+    "main": "main.js",
+    "author": {
+        "name": "Cinema Vault"
+    },
+    "license": "MIT",
+    "private": true,
+    "scripts": {
+        "prepare:app": "node prepare-export.js",
+        "start": "electron .",
+        "dist": "electron-builder --win nsis portable"
+    },
+    "devDependencies": {
+        "electron": "^33.0.0",
+        "electron-builder": "^25.1.8"
+    },
+    "build": {
+        "appId": "cn.cinemavault.desktop",
+        "productName": "CinemaVault",
+        "copyright": "MIT Licensed",
+        "asar": false,
+        "npmRebuild": false,
+        "electronDownload": {
+            "mirror": "https://registry.npmmirror.com/-/binary/electron/"
+        },
+        "directories": {
+            "output": "dist",
+            "buildResources": "build"
+        },
+        "files": [
+            "main.js",
+            "build/icon.png",
+            "build/icon.ico"
+        ],
+        "extraResources": [
+            {
+                "from": "payload",
+                "to": "payload"
+            }
+        ],
+        "win": {
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": ["x64"]
+                },
+                {
+                    "target": "portable",
+                    "arch": ["x64"]
+                }
+            ],
+            "icon": "build/icon.ico",
+            "requestedExecutionLevel": "asInvoker"
+        },
+        "nsis": {
+            "artifactName": "CinemaVault-Setup-${version}.${ext}",
+            "oneClick": false,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "Cinema Vault",
+            "runAfterFinish": true,
+            "deleteAppDataOnUninstall": false
+        },
+        "portable": {
+            "artifactName": "CinemaVault-Portable-${version}.${ext}",
+            "unicode": true
+        }
+    }
+}

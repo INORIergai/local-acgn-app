@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地影库</title>
+    <link rel="stylesheet" href="css/style.css?v=27">
+    <link rel="stylesheet" href="css/magic-likes.css?v=28">
+    <link rel="stylesheet" href="css/av-board.css?v=5">
+    <link rel="stylesheet" href="css/motion.css?v=1">
+    <link rel="stylesheet" href="css/polish.css?v=12">
+    <link rel="stylesheet" href="css/detail-mode.css?v=1">
+    <link rel="stylesheet" href="css/theme-v4.css?v=3">
+    <!-- 在线观看：macOS 窗口皮（放在 theme-v4 之后，皮肤令牌才能继承下来） -->
+    <link rel="stylesheet" href="css/watch-mac.css?v=1">
+    <!-- 第 13 轮覆盖层：热门TOP/时间线/博物馆/标签方块/年度图表/设置抽拉/漫画分栏 -->
+    <link rel="stylesheet" href="css/round13.css?v=1">
+    <!-- 第 14 轮覆盖层：弹窗层级修复/标签切片器/工作区填满/新作放大/高度自定义 -->
+    <link rel="stylesheet" href="css/round14.css?v=1">
+    <!-- 第 15 轮覆盖层：精选居中/热门铺满/博物馆做满/最近观看时间线/切片浮层放大/列表海报统一 -->
+    <link rel="stylesheet" href="css/round15.css?v=1">
+    <!-- 第 18 轮覆盖层：设置页数据源凭证输入框（FANZA api_id / affiliate_id） -->
+    <link rel="stylesheet" href="css/round18.css?v=2">
+    <!-- 第 19 轮覆盖层：设置页导航折叠对齐 + 手机端横排常显 + 在线观看站点栏 -->
+    <link rel="stylesheet" href="css/round19.css?v=1">
+    <!-- 移动端适配层：必须放最后，优先级最高 -->
+    <link rel="stylesheet" href="css/mobile.css?v=1">
+    <!-- 第 20 轮覆盖层：手机端弹窗自适应 + 可下拉（必须晚于 mobile.css / detail-mode.css） -->
+    <link rel="stylesheet" href="css/round20.css?v=1">
+    <!-- 第 21 轮覆盖层：手机端详情弹窗「下滑关闭」的把手与拖拽态 -->
+    <link rel="stylesheet" href="css/round21.css?v=1">
+    <!-- 第 22 轮覆盖层：设置页「访问密码」可选开关 -->
+    <link rel="stylesheet" href="css/round22.css?v=1">
+    <!-- 第 25 轮覆盖层：标签库布局 / 年度报告闪烁 / 我的收藏个性化（必须最后） -->
+    <link rel="stylesheet" href="css/round25.css?v=2">
+    <link rel="stylesheet" href="css/round26.css?v=3">
+</head>
+
+<body>
+    <header class="navbar">
+        <div class="nav-left">
+            <button class="m-drawer-btn" id="mDrawerBtn" aria-label="打开导航菜单" aria-expanded="false" aria-controls="mainSidebar">☰</button>
+            <h1 class="logo" onclick="window.location.href='/';" style="cursor:pointer;" title="返回首页">午夜场 · Cinema Vault</h1>
+        </div>
+        <div class="nav-center">
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="搜索番号、片名、演员、标签…（Ctrl+K 全局搜索）">
+            </div>
+        </div>
+        <div class="nav-right">
+            <div class="notification-container">
+                <button class="theme-toggle" id="notificationBtn" title="通知">
+                    🔔
+                    <span class="notification-badge" id="notificationBadge" style="display:none;">0</span>
+                </button>
+                <div class="notification-panel" id="notificationPanel">
+                    <div class="notification-header">
+                        <span>通知中心</span>
+                        <button class="btn btn-sm btn-secondary" onclick="markAllRead()">全部已读</button>
+                    </div>
+                    <div class="notification-list" id="notificationList">
+                        <div style="text-align:center;padding:30px;color:var(--text-muted);">暂无通知</div>
+                    </div>
+                </div>
+            </div>
+            <button class="theme-toggle" id="themeToggle" title="切换主题">🌙</button>
+            <!-- 风格切换：Classic（当前 Aardvark）/ V4.1 AURORA / V4.4 AMBIENT -->
+            <div class="v4-skin-switch" id="v4SkinSwitch" role="group" aria-label="界面风格">
+                <button class="v4-skin-btn" data-skin="classic" data-label="经典 · Aardvark" onclick="setV4Skin('classic')" aria-label="经典风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="aurora" data-label="V4.1 · 极光 AURORA" onclick="setV4Skin('aurora')" aria-label="极光风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="ambient" data-label="V4.4 · 暮色 AMBIENT" onclick="setV4Skin('ambient')" aria-label="暮色风格"><span class="v4-dot"></span></button>
+            </div>
+            <button class="theme-toggle" id="aiTopBtn" title="AI助手" onclick="showAIAssistant()">🤖</button>
+            <button class="btn btn-sm btn-secondary" id="watchNowBtn" title="立即检查四个媒体目录有没有新文件（只看新增，比全量扫描快得多）">🔄 检查新增</button>
+            <button class="btn btn-sm btn-secondary" id="watchToggleBtn" title="目录监控开关：应用启动即自动开启；无新增时轮询间隔逐次翻倍，上限 1 小时">监控 开</button>
+            <button class="btn" id="scanBtn">开始扫描</button>
+            <span id="scanStatus" class="scan-status"></span>
+            <span id="watchStatus" class="scan-status" title="目录监控：点击开关按钮可暂停/恢复"></span>
+        </div>
+        <div class="scan-progress">
+            <div class="scan-progress-bar" id="scanProgressBar"></div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <aside class="sidebar" id="mainSidebar">
+            <div class="mobile-only-actions" id="mSidebarActions"></div>
+            <div class="sidebar-section">
+                <h3>推荐</h3>
+                <div class="nav-item" data-view="guess">
+                    <span>✨ 猜你喜欢</span>
+                </div>
+                <div class="nav-item" data-view="hot">
+                    <span>🔥 热门排行</span>
+                </div>
+                <div class="nav-item" data-view="random">
+                    <span>🎲 随机推荐</span>
+                </div>
+                <div class="nav-item" data-view="unwatched">
+                    <span>📺 未观看</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>分类导航</h3>
+                <div class="nav-item active" data-view="movies">
+                    <span>🎬 全部影片</span>
+                    <span class="count" id="countAll">0</span>
+                </div>
+                <div class="nav-item" data-view="jav">
+                    <span>🎥 影片库</span>
+                    <span class="count" id="countJav">0</span>
+                </div>
+                <div class="nav-item" data-view="anime">
+                    <span>🎌 动漫库</span>
+                    <span class="count" id="countAnime">0</span>
+                </div>
+                <div class="nav-item" data-view="comic">
+                    <span>📚 漫画库</span>
+                    <span class="count" id="countComic">0</span>
+                </div>
+                <div class="nav-item" data-view="novel">
+                    <span>📖 小说库</span>
+                    <span class="count" id="countNovel">0</span>
+                </div>
+                <div class="nav-item" data-view="favorites">
+                    <span>⭐ 我的收藏</span>
+                    <span class="count" id="countFav">0</span>
+                </div>
+                <div class="nav-item" data-view="recent">
+                    <span>🕐 最近观看</span>
+                </div>
+                <div class="nav-item" data-view="actresses">
+                    <span>👩 演员库</span>
+                    <span class="count" id="countActress">0</span>
+                </div>
+                <div class="nav-item" data-view="tags">
+                    <span>🏷️ 标签库</span>
+                    <span class="count" id="countTag">0</span>
+                </div>
+                <div class="nav-item" data-view="playlists">
+                    <span>📋 播放列表</span>
+                </div>
+                <div class="nav-item" data-view="settings">
+                    <span>⚙️ 设置</span>
+                </div>
+                <div class="nav-item" data-view="new-releases">
+                    <span>🔔 新作监视</span>
+                    <span class="count" id="countNewReleases">0</span>
+                </div>
+                <div class="nav-item" data-view="annual">
+                    <span>📈 年度报告</span>
+                </div>
+                <div class="nav-item" data-view="scrape-failures">
+                    <span>⚠️ 刮削失败</span>
+                    <span class="count" id="countFailures">0</span>
+                </div>
+                <div class="nav-item" data-view="poster-health">
+                    <span>🖼️ 海报健康</span>
+                    <span class="count" id="countPosterHealth">0</span>
+                </div>
+                <!-- 四个在线观看板块：同一套窗口与交互，站点集合不同 -->
+                <div class="nav-item" data-view="watch">
+                    <span>📺 AV在线观看</span>
+                </div>
+                <div class="nav-item" data-view="watch-anime">
+                    <span>🌸 动漫在线观看</span>
+                </div>
+                <div class="nav-item" data-view="watch-comic">
+                    <span>📚 漫画在线观看</span>
+                </div>
+                <div class="nav-item" data-view="watch-hanime">
+                    <span>🔞 里番在线观看</span>
+                </div>
+                <div class="nav-item" onclick="showAIAssistant()">
+                    <span>🤖 AI助手</span>
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>排序方式</h3>
+                <select id="sortSelect" class="select-input">
+                    <option value="hot">🔥 热度排序</option>
+                    <option value="recent">🆕 最新添加</option>
+                    <option value="play">▶️ 播放次数</option>
+                    <option value="release">📅 发行日期</option>
+                </select>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>数据统计</h3>
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <div class="num" id="statTotal">0</div>
+                        <div class="label">总影片</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="num" id="statSize">0</div>
+                        <div class="label">总大小</div>
+                    </div>
+                </div>
+                <div class="stats-row" style="margin-top:8px;">
+                    <div class="stat-card">
+                        <div class="num" id="statWatched">0</div>
+                        <div class="label">已观看</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="num" id="statPlays">0</div>
+                        <div class="label">总播放</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="content">
+            <!-- 画廊模式（首页轮播） -->
+            <div id="gallerySection" class="gallery-section">
+                <div class="gallery-title">🎞️ 精选推荐</div>
+                <div class="gallery-container" id="galleryContainer">
+                    <div class="gallery-track" id="galleryTrack"></div>
+                    <div class="gallery-arrow prev" id="galleryPrev">‹</div>
+                    <div class="gallery-arrow next" id="galleryNext">›</div>
+                    <div class="gallery-dots" id="galleryDots"></div>
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <div class="toolbar-title" id="toolbarTitle">
+                    全部影片
+                    <span class="toolbar-count" id="movieCount">共 0 部</span>
+                </div>
+                <div class="toolbar-right"></div>
+            </div>
+            
+            <!-- 漫画/小说文件夹面包屑 -->
+            <div id="treeBreadcrumb" class="tree-breadcrumb" style="display:none;"></div>
+
+            <!-- 女优/标签档案页眉（features.js 渲染） -->
+            <div id="profileStrip" style="display:none;"></div>
+            
+            <!-- 阅读时长统计横幅（漫画/小说库顶部） -->
+            <div id="readingStatsBanner" style="display:none;"></div>
+            
+            <!-- 影片网格 -->
+            <div id="movieGrid" class="movie-grid"></div>
+
+            <!-- 猜你喜欢 · 魔术卡片（magic-likes.js 渲染） -->
+            <div id="magicView" class="magic-view"></div>
+            
+            <!-- 分页控件 -->
+            <div id="pagination" class="pagination" style="display:none;"></div>
+            
+            <!-- 女优列表 -->
+            <div id="actressGrid" class="actress-grid" style="display:none;"></div>
+            
+            <!-- 标签云 -->
+            <div id="tagCloud" class="tag-cloud" style="display:none;"></div>
+            
+            <!-- 统计面板 -->
+            <div id="statsPanel" class="stats-panel" style="display:none;"></div>
+            
+            <div id="emptyTip" class="empty-tip" style="display:none;">
+                <div class="icon">🎬</div>
+                <div>暂无影片，点击右上角「开始扫描」</div>
+            </div>
+
+            <!-- 设置页视图 -->
+            <div id="settingsView" style="display:none;"></div>
+
+            <!-- 扩展功能视图（年度报告 / 刮削失败），由 features.js 渲染 -->
+            <div id="featureView" style="display:none;"></div>
+        </main>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content detail-modal">
+            <button class="close-btn" id="closeModal">&times;</button>
+            <div class="detail-body" id="detailBody"></div>
+        </div>
+    </div>
+
+    <!-- 海报灯箱：点详情弹窗里的海报放大看大图 -->
+    <div id="posterLightbox" role="dialog" aria-modal="true" aria-label="海报大图">
+        <button class="plb-close" id="plbClose" title="关闭（Esc）" aria-label="关闭">&times;</button>
+        <img class="plb-img" id="plbImg" alt="">
+        <div class="plb-caption" id="plbCaption"></div>
+    </div>
+
+    <!-- 播放器弹窗 -->
+    <div id="playerModal" class="modal player-modal">
+        <div class="modal-content">
+            <div class="player-head">
+                <span class="ph-dot"></span>
+                <span class="ph-title" id="playerTitle">加载中…</span>
+                <span class="ph-avid" id="playerAvid"></span>
+                <button class="close-btn" id="closePlayer">&times;</button>
+            </div>
+            <div class="player-stage">
+                <video id="videoPlayer" controls playsinline></video>
+                <!-- 长按左右键倍速 / 单次快进的屏幕反馈 -->
+                <div class="player-osd" id="playerOsd" aria-live="polite"></div>
+            </div>
+            <div class="player-foot">
+                <button class="btn btn-sm" id="openPotPlayer">🎬 PotPlayer</button>
+                <div class="player-progress" id="playerProgress">
+                    <div class="player-progress-fill" id="playerProgressFill"></div>
+                </div>
+                <span style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);white-space:nowrap;" id="playerTime">00:00 / 00:00</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 更换海报弹窗 -->
+    <div id="posterModal" class="modal">
+        <div class="modal-content" style="max-width:800px;">
+            <button class="close-btn" onclick="closePosterModal()">&times;</button>
+            <h3 style="margin-top:0;">🖼️ 选择海报</h3>
+            <div id="posterFixBar" style="display:none;margin:6px 0 12px;padding:10px 14px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:var(--radius);font-size:13px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                    <span id="posterFixInfo"></span>
+                    <span style="display:flex;gap:6px;">
+                        <button class="btn btn-secondary btn-sm" onclick="posterFixSkip()">跳过</button>
+                        <button class="btn btn-sm" onclick="posterFixDone()">完成</button>
+                    </span>
+                </div>
+            </div>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">从多个数据源搜索到的海报，点击选择要使用的海报</p>
+            <div id="posterGrid" class="poster-grid">
+                <div style="text-align:center;padding:40px;color:var(--text-muted);">正在搜索海报...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 上传封面弹窗 -->
+    <div id="uploadPosterModal" class="modal">
+        <div class="modal-content" style="max-width:500px;">
+            <button class="close-btn" onclick="closeUploadPosterModal()">&times;</button>
+            <h3 style="margin-top:0;">📤 更换封面</h3>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">选择本地图片或粘贴图片URL，会自动保存到数据库和影片目录</p>
+            
+            <div style="text-align:center;margin-bottom:16px;">
+                <img id="uploadPosterPreview" style="max-width:200px;max-height:280px;border-radius:8px;display:none;margin:0 auto 12px;" alt="预览">
+                <div>
+                    <input type="file" id="uploadPosterInput" accept="image/*" style="display:none;" onchange="handlePosterFileSelect(event)">
+                    <button class="btn btn-secondary" onclick="document.getElementById('uploadPosterInput').click()">
+                        📁 选择图片
+                    </button>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">支持 JPG/PNG/WebP，最大 5MB</p>
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:8px;">🔗 或通过图片URL更换</div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="uploadPosterUrl" class="search-input" placeholder="粘贴图片URL（https://...）" style="flex:1;">
+                    <button class="btn btn-secondary" onclick="previewPosterFromUrl()">预览</button>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">系统会自动下载图片并保存到本地</p>
+                <div style="margin-top:12px;padding:10px;background:var(--bg-elevated);border-radius:8px;text-align:center;">
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">📋 也可以直接复制图片后按 <kbd style="padding:2px 6px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;font-size:11px;">Ctrl+V</kbd> 粘贴</div>
+                    <button class="btn btn-secondary btn-sm" onclick="pasteImageFromClipboard()">📋 从剪贴板粘贴</button>
+                </div>
+            </div>
+            
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="closeUploadPosterModal()">取消</button>
+                <button class="btn" onclick="confirmUploadPoster()">确认上传</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 播放列表选择弹窗（替代原生 prompt 序列号） -->
+    <div id="playlistPickModal" class="modal">
+        <div class="modal-content" style="max-width:420px;">
+            <button class="close-btn" onclick="closePlaylistPickModal()">&times;</button>
+            <h3 style="margin-top:0;">📋 添加到播放列表</h3>
+            <div id="playlistPickList" class="plp-list"></div>
+        </div>
+    </div>
+
+    <!-- AI助手弹窗 -->
+    <div id="aiModal" class="modal">
+        <div class="modal-content" style="max-width:600px;display:flex;flex-direction:column;height:70vh;">
+            <button class="close-btn" onclick="closeAIModal()">&times;</button>
+            <h3 style="margin-top:0;">🤖 AI助手</h3>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
+                基于本地大模型，帮你找片、推荐、翻译
+            </p>
+            
+            <div id="aiMessages" style="flex:1;overflow-y:auto;padding:16px;background:var(--bg);border-radius:8px;margin-bottom:16px;">
+                <div style="text-align:center;color:var(--text-muted);padding:20px;">
+                    👋 你好！我是你的影库AI助手<br>
+                    <span style="font-size:12px;">可以问我：推荐几部好看的、找有XX标签的影片、翻译片名...</span>
+                </div>
+            </div>
+            
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="aiInput" class="settings-input" placeholder="输入你的问题..." style="flex:1;" onkeypress="if(event.key==='Enter')sendAIMessage()">
+                <button class="btn" onclick="sendAIMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量操作工具栏 -->
+    <div id="batchToolbar" class="batch-toolbar">
+        <span class="batch-count" id="batchCount">已选 0 部</span>
+        <button class="btn btn-sm btn-secondary" onclick="batchAction('favorite')">⭐ 收藏</button>
+        <button class="btn btn-sm btn-secondary" onclick="batchAction('watched')">✓ 标记已看</button>
+        <button class="btn btn-sm" onclick="clearSelection()">取消选择</button>
+    </div>
+
+    <!-- 通知 -->
+    <div id="notification" class="notification">
+        <div class="notification-title" id="notifTitle"></div>
+        <div class="notification-message" id="notifMessage"></div>
+    </div>
+
+    <!-- 内置阅读器视图 -->
+    <div id="readerView" class="reader-view">
+        <div class="reader-header">
+            <div class="reader-nav-buttons">
+                <button class="reader-nav-btn" id="readerPrevBtn" onclick="switchReaderBook('prev')" title="上一本">◀ 上一本</button>
+                <button class="reader-nav-btn" id="readerNextBtn" onclick="switchReaderBook('next')" title="下一本">下一本 ▶</button>
+            </div>
+            <span class="reader-title" id="readerTitle"></span>
+            <button class="reader-close-btn" onclick="closeReader()">✕ 关闭</button>
+        </div>
+        <iframe id="readerFrame" class="reader-frame" src=""></iframe>
+    </div>
+
+    <!-- Ctrl+K 全局命令面板 -->
+    <div id="cpOverlay" class="cp-overlay">
+        <div class="cp-panel">
+            <div class="cp-input-row">
+                <span class="cp-glyph">⌘</span>
+                <input type="text" id="cpInput" placeholder="搜索影片 / 跳转视图 / 随机一部…">
+                <span class="cp-hint">ESC 关闭</span>
+            </div>
+            <div class="cp-results" id="cpResults"></div>
+        </div>
+    </div>
+
+    <!-- ===== 移动端导航：抽屉遮罩 + 底部标签栏（≥861px 自动隐藏） ===== -->
+    <div class="m-nav-mask" id="mNavMask"></div>
+    <nav class="m-tabbar" id="mTabbar" aria-label="主导航">
+        <button class="m-tab" data-view="movies" aria-label="影片库">
+            <span class="m-tab-glyph">🎬</span><span class="m-tab-label">影片</span>
+        </button>
+        <button class="m-tab" data-view="guess" aria-label="猜你喜欢">
+            <span class="m-tab-glyph">✨</span><span class="m-tab-label">推荐</span>
+        </button>
+        <button class="m-tab" data-view="new-releases" aria-label="新作监视">
+            <span class="m-tab-glyph">🔔</span><span class="m-tab-label">新作</span>
+        </button>
+        <button class="m-tab" data-view="favorites" aria-label="我的收藏">
+            <span class="m-tab-glyph">⭐</span><span class="m-tab-label">收藏</span>
+        </button>
+        <button class="m-tab" id="mTabMore" aria-label="更多">
+            <span class="m-tab-glyph">☰</span><span class="m-tab-label">更多</span>
+        </button>
+    </nav>
+
+    <script src="lib/hls.min.js"></script>
+    <script src="js/app.js?v=52"></script>
+    <script src="js/magic-likes.js?v=29"></script>
+    <script src="js/command-palette.js?v=2"></script>
+    <script src="js/features.js?v=35"></script>
+    <script src="js/av-board.js?v=5"></script>
+    <script src="js/motion.js?v=1"></script>
+    <script src="js/mobile-nav.js?v=2"></script>
+    <!-- 第 21 轮：手机端详情弹窗「下滑关闭」手势（独立文件，删掉本行即可回滚） -->
+    <script src="js/mobile-gestures.js?v=1"></script>
+</body>
+
+</html>
