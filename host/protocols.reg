@@ -1,0 +1,27 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Classes\lmlplayer]
+@="URL:Local Movie Library Player"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\lmlplayer\DefaultIcon]
+@="\"D:\\PotPlayer\\PotPlayerMini64.exe\",0"
+
+[HKEY_CURRENT_USER\Software\Classes\lmlplayer\shell]
+@="open"
+
+[HKEY_CURRENT_USER\Software\Classes\lmlplayer\shell\open\command]
+@="\"C:\\Program Files\\nodejs\\node.exe\" \"%INSTALLDIR%\\host\\protocol-handler.js\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\lmlfolder]
+@="URL:Local Movie Library Folder"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\lmlfolder\DefaultIcon]
+@="\"C:\\Windows\\explorer.exe\",0"
+
+[HKEY_CURRENT_USER\Software\Classes\lmlfolder\shell]
+@="open"
+
+[HKEY_CURRENT_USER\Software\Classes\lmlfolder\shell\open\command]
+@="\"C:\\Program Files\\nodejs\\node.exe\" \"%INSTALLDIR%\\host\\protocol-handler.js\" \"%1\""

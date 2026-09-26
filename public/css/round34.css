@@ -1,0 +1,328 @@
+/* ============================================================
+ * round34 覆盖层
+ *  1) 密码门禁弹窗（.r34-gate）—— 检票口造型，与 login.html 同一套视觉
+ *  2) 演员/标签库分类切片条（.r34-slice-bar / .r34-slice-tab）
+ *  3) 新作监视六切片复用 .nr-tab（无需新样式）
+ * ============================================================ */
+
+/* ---------- 1. 密码门禁弹窗 ---------- */
+.r34-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;              /* 盖过详情弹窗(510/500)与顶栏，但低于播放器快捷键层 */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 8, 6, 0.72);
+    backdrop-filter: blur(6px);
+}
+.r34-gate.show { display: flex; }
+
+.r34-gate-card {
+    width: min(380px, calc(100vw - 40px));
+    border: 1px solid var(--border, #2E2820);
+    border-radius: 12px;
+    background: var(--bg-elevated, #1C1915);
+    overflow: hidden;
+    box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.8);
+    animation: r34GateIn 0.22s ease-out;
+}
+@keyframes r34GateIn {
+    from { transform: translateY(14px) scale(0.98); opacity: 0; }
+    to   { transform: none; opacity: 1; }
+}
+
+.r34-gate-teeth {
+    height: 12px;
+    background-color: #0C0B09;
+    background-image: radial-gradient(circle at 50% 50%, var(--bg-elevated, #1C1915) 3px, transparent 3.6px);
+    background-size: 20px 12px;
+    background-position: center;
+}
+
+.r34-gate-body { padding: 30px 30px 24px; }
+
+.r34-gate-bulbs { display: flex; gap: 8px; margin-bottom: 10px; }
+.r34-gate-bulbs i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--primary, #E5A63C);
+    box-shadow: 0 0 8px 1px rgba(229, 166, 60, 0.7);
+    animation: r34Bulb 2.4s ease-in-out infinite;
+}
+.r34-gate-bulbs i:nth-child(2) { animation-delay: .3s; }
+.r34-gate-bulbs i:nth-child(3) { animation-delay: .6s; }
+@keyframes r34Bulb { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.r34-gate-title {
+    font-family: Georgia, "Times New Roman", "STZhongsong", "SimSun", serif;
+    font-size: 24px; margin: 0 0 4px;
+    color: var(--text, #EFE9DC);
+    letter-spacing: 0.03em;
+}
+.r34-gate-sub {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 10px; letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--text-muted, #9C9282);
+    margin-bottom: 22px;
+}
+.r34-gate-label {
+    display: block;
+    font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted, #9C9282);
+    margin-bottom: 8px;
+}
+#gatePwd {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    background: var(--bg, #131110);
+    border: 1px solid var(--border, #2E2820);
+    border-radius: 8px;
+    color: var(--text, #EFE9DC);
+    font-size: 15px;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    letter-spacing: 0.2em;
+    outline: none;
+    transition: border-color 0.15s;
+}
+#gatePwd:focus { border-color: var(--primary, #E5A63C); }
+
+.r34-gate-err {
+    min-height: 18px;
+    font-size: 12px;
+    color: var(--danger, #D2543C);
+    margin-top: 8px;
+}
+.r34-gate-btn {
+    width: 100%;
+    height: 44px;
+    margin-top: 4px;
+    background: var(--primary, #E5A63C);
+    border: none;
+    border-radius: 8px;
+    color: #131110;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+.r34-gate-btn:hover { background: #F2BC5E; }
+.r34-gate-btn:active { transform: translateY(1px); }
+.r34-gate-btn:disabled { opacity: 0.6; cursor: wait; }
+
+.r34-gate-hint {
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--text-muted, #9C9282);
+    text-align: center;
+}
+
+/* ---------- 2. 演员/标签库切片条 ---------- */
+.r34-slice-bar {
+    display: flex;              /* round34 批次B：默认可见（features.js 三视图直接用）；
+                                   演员/标签那两个容器自带 inline display:none，仍由 switchView 显隐 */
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 4px 0 14px;
+}
+.r34-slice-tab {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border, #2E2820);
+    background: transparent;
+    color: var(--text-muted, #9C9282);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.r34-slice-tab:hover {
+    color: var(--text, #EFE9DC);
+    border-color: var(--primary, #E5A63C);
+}
+.r34-slice-tab.active {
+    background: var(--primary, #E5A63C);
+    border-color: var(--primary, #E5A63C);
+    color: #131110;
+    font-weight: 600;
+}
+
+/* ---------- 3. 新作监视六切片：tab 行允许换行（7 个 tab 原样式装不下） ---------- */
+.nr-tabs { flex-wrap: wrap; row-gap: 8px; }
+
+/* ---------- 移动端（统一断点 860px） ---------- */
+@media (max-width: 860px) {
+    .r34-gate-body { padding: 24px 20px 20px; }
+    .r34-slice-tab { padding: 5px 11px; font-size: 12px; }
+    /* 手机无 hover，直接把激活态做明显 */
+    .r34-slice-tab.active { box-shadow: 0 0 0 2px rgba(229, 166, 60, 0.25); }
+}
+
+/* ============================================================
+ * round34 批次B 覆盖层：
+ *  4) 首页改版 —— 小人浮出动画、对话框加大、热度榜两排
+ *  5) 榜单详情弹窗（应用内展示）
+ * ============================================================ */
+
+/* ---------- 4a. 小人浮出：idle 轻微浮动 + hover 上浮放大 ----------
+   挂在对话框卡片内（.home-mascot 本就在 .home-chat 里），不碰 .av-hero 铁律 */
+.home-mascot {
+    width: 124px;
+    left: -6px;
+    transform-origin: 20% 100%;
+    animation: r34MascotFloat 3.6s ease-in-out infinite;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), filter 0.28s;
+    cursor: pointer;
+    pointer-events: auto;           /* 需要接 hover */
+}
+@keyframes r34MascotFloat {
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 -7px; }
+}
+.home-chat:hover .home-mascot {
+    transform: scale(1.12) translate(4px, -6px);
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4));
+    animation-play-state: paused;
+}
+
+/* ---------- 4b. 对话框加大 ---------- */
+.home-chat { max-width: 900px; }
+.home-chat-card { min-height: 300px; }
+.home-chat-messages { min-height: 170px; max-height: 420px; padding: 20px 22px 10px; }
+.home-chat-input { padding: 16px 20px 18px; }
+.home-chat-input textarea { min-height: 52px; font-size: 14.5px; }
+.home-chat-input .btn-send { width: 52px; height: 52px; font-size: 20px; }
+
+/* ---------- 4c. 热度榜两排 ---------- */
+.home-rank { max-width: 900px; }
+.home-rank-row {
+    margin-bottom: 18px;
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    grid-template-areas: "label tabs" "label list";
+    column-gap: 12px;
+    align-items: start;
+}
+.home-rank-row-label {
+    grid-area: label;
+    writing-mode: vertical-rl;
+    letter-spacing: 0.28em;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-top: 8px;
+    border-left: 2px solid var(--primary);
+    padding-left: 6px;
+    height: fit-content;
+}
+.home-rank-row .home-rank-tabs { grid-area: tabs; flex-wrap: wrap; margin-bottom: 10px; }
+.home-rank-row .home-rank-list { grid-area: list; max-height: 340px; }
+
+/* ---------- 5. 榜单详情弹窗 ---------- */
+.acg-detail-card {
+    width: min(720px, calc(100vw - 32px));
+    max-height: min(82vh, 760px);
+    overflow-y: auto;
+    position: relative;
+    padding: 24px 26px 22px;
+}
+.acg-detail-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+}
+.acg-detail-close:hover { color: var(--text); background: var(--border); }
+.acg-d-head { display: flex; gap: 18px; }
+.acg-d-cover {
+    flex: none;
+    width: 150px;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    box-shadow: 0 10px 26px -12px rgba(0, 0, 0, 0.55);
+}
+.acg-d-info { flex: 1; min-width: 0; }
+.acg-d-src { font-size: 11.5px; color: var(--text-muted); letter-spacing: 0.08em; margin-bottom: 4px; }
+.acg-d-title { font-size: 19px; margin: 0 0 4px; line-height: 1.35; }
+.acg-d-alt { font-size: 12.5px; color: var(--text-muted); margin-bottom: 2px; }
+.acg-d-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; align-items: center; }
+.acg-d-score {
+    font-family: var(--font-mono, monospace);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--accent, var(--primary));
+}
+.acg-d-chip {
+    font-size: 12px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+.acg-d-genres { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.acg-d-actions { display: flex; gap: 10px; margin-top: 6px; }
+.acg-d-watch { background: var(--primary); color: #fff; border: none; }
+.acg-d-watch:hover { opacity: 0.9; }
+.acg-d-synopsis {
+    margin-top: 18px;
+    font-size: 13.5px;
+    line-height: 1.85;
+    color: var(--text);
+    white-space: pre-wrap;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+.acg-d-synopsis.acg-d-empty { color: var(--text-muted); font-style: italic; }
+.acg-d-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.7;
+}
+.acg-d-k { flex: none; color: var(--text); opacity: 0.75; }
+
+/* ---------- 6. toast 分级配色（⑩ 通知强化） ---------- */
+.notification.level-success { border-left-color: #4CAF7D; }
+.notification.level-warn    { border-left-color: #E5A63C; }
+.notification.level-error   { border-left-color: #D9534F; }
+.notification.level-info    { border-left-color: var(--primary); }
+.notification.level-success .notification-title::before { content: '✅ '; }
+.notification.level-warn    .notification-title::before { content: '⚠️ '; }
+.notification.level-error   .notification-title::before { content: '❌ '; }
+
+/* ---------- 移动端（≤860px） ---------- */
+@media (max-width: 860px) {
+    .home-mascot { width: 72px; }
+    .home-chat { margin-top: 28px; }
+    .home-chat-card { min-height: 240px; }
+    .home-chat-messages { min-height: 130px; max-height: 300px; }
+    .home-rank-row {
+        grid-template-columns: 1fr;
+        grid-template-areas: "label" "tabs" "list";
+    }
+    .home-rank-row-label {
+        writing-mode: horizontal-tb;
+        letter-spacing: 0.2em;
+        border-left: none;
+        border-top: 2px solid var(--primary);
+        padding: 6px 0 0;
+        margin-bottom: 2px;
+    }
+    .acg-d-head { flex-direction: column; }
+    .acg-d-cover { width: 132px; }
+    .acg-detail-card { padding: 20px 16px 18px; }
+}
