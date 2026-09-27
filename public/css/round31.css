@@ -1,0 +1,75 @@
+/* ==========================================================================
+   round31：设置 → 版本与更新
+   按项目约定只追加覆盖层，不改 style.css 本体。
+   颜色尽量用中性半透明底 + 已有变量（--text-muted / --primary），
+   这样明暗两套主题都不用写第二遍。
+   ========================================================================== */
+
+.upd-ver-box {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(128, 128, 128, .10);
+}
+
+.upd-ver-num {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .5px;
+}
+
+.upd-ver-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* 新版本说明：Release 的 body 可能很长，限高 + 内部滚动，别把设置页撑爆 */
+.upd-notes {
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--text-muted);
+    background: rgba(128, 128, 128, .08);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 8px 0 4px;
+}
+
+.upd-bar {
+    height: 8px;
+    border-radius: 6px;
+    background: rgba(128, 128, 128, .18);
+    overflow: hidden;
+}
+
+.upd-bar-inner {
+    height: 100%;
+    width: 0;
+    border-radius: 6px;
+    background: var(--primary, #4f8cff);
+    transition: width .25s ease;
+}
+
+.upd-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    background: var(--primary, #4f8cff);
+    color: #fff;
+    margin-left: 6px;
+}
+
+.upd-ok {
+    color: #2e9e5b;
+}
+
+.upd-warn {
+    color: #d08a00;
+}

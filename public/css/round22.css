@@ -1,0 +1,57 @@
+/* ==========================================================================
+   第 22 轮覆盖层 —— 「访问密码」可选开关 + 设置页加载失败提示
+   加载顺序在 round21.css 之后（越后越优先）。
+   本文件只加不改，回滚只需删掉 library.html 里那一行 <link>。
+   ========================================================================== */
+
+/* ---- 访问密码开关（设置 → 🔒 安全与通知） ---- */
+.auth-switch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0 6px;
+    font-size: 14px;
+    line-height: 1.5;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.auth-switch input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--primary, #c8a24a);
+}
+
+.auth-switch span {
+    color: var(--text, inherit);
+}
+
+/* 密码输入区跟着开关显隐，最后一项不要多留一行空白 */
+#authFields .settings-item:last-child {
+    margin-bottom: 0;
+}
+
+#authFields .settings-item {
+    animation: authFieldsIn .18s ease-out;
+}
+
+@keyframes authFieldsIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* 关掉密码时的风险提示要显眼一点（但别做成报错红） */
+#authStateTip b {
+    color: var(--primary, #c8a24a);
+}
+
+/* 手机端：开关和文字别贴边 */
+@media (max-width: 860px) {
+    .auth-switch {
+        padding: 8px 2px 10px;
+    }
+}
