@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!-- round39 · EXE 主进程启动动画窗口
+     由 packaging/main.js 的 createSplashWindow() loadFile 加载，
+     视频地址经 query.src 传入（file:/// 绝对路径）。
+     播完 / 点击 / 任意键 / 出错 → window.close()，主进程在 closed 里显示主窗口。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Cinema Vault</title>
+<style>
+    html, body { margin: 0; height: 100%; background: #0e0c0a; overflow: hidden; cursor: pointer; }
+    video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .skip {
+        position: fixed;
+        right: 26px;
+        bottom: 20px;
+        font: 12px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+        letter-spacing: 0.12em;
+        color: rgba(244, 239, 228, 0.75);
+        background: rgba(20, 22, 28, 0.42);
+        padding: 7px 16px;
+        border-radius: 999px;
+        user-select: none;
+    }
+</style>
+</head>
+<body>
+<video id="v" muted playsinline autoplay></video>
+<div class="skip">点击任意处跳过</div>
+<script>
+(function () {
+    var v = document.getElementById('v');
+    var q = new URLSearchParams(location.search);
+    if (q.get('src')) v.src = q.get('src');
+    var closed = false;
+    function done() {
+        if (closed) return;
+        closed = true;
+        try { window.close(); } catch (e) { /* 忽略 */ }
+    }
+    v.addEventListener('ended', done);
+    v.addEventListener('error', done);
+    v.addEventListener('stalled', function () { setTimeout(done, 4000); });
+    document.addEventListener('click', done);
+    document.addEventListener('keydown', done);
+    // 渲染层保底：视频元数据 8 秒内没到（坏素材）就收
+    var metaTimer = setTimeout(done, 8000);
+    v.addEventListener('loadedmetadata', function () { clearTimeout(metaTimer); });
+    // 主进程还有 25s 硬保底（main.js），这里 20s 先行
+    setTimeout(done, 20000);
+    if (v.play && v.play.catch) v.play().catch(function () { /* 播不了就等 ended/error 兜底 */ });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+/* ============================================================================
+   watch-mac.css —— 「📺 在线观看」的 macOS 窗口皮
+   2026-09-22：用户要求「按 MAC 风在上面做浏览器标签页块，下面是标签页主内容」。
+
+   结构（features.js → showWatch()）：
+     .watch-window
+       ├─ .watch-titlebar   红黄绿交通灯 + 窗口标题 + 右侧工具
+       ├─ .watch-tabstrip   Mac 顶部标签页（.watch-tab / .watch-newtab）
+       ├─ .watch-toolbar    站点快捷入口（Mac 书签栏味，可收起）
+       └─ .watch-body(#watchStage)  标签页主内容（.watch-pane 常驻，切成 visibility）
+
+   ⚠️ 标签内容用 visibility 切换、绝不用 display:none ——
+      display:none 会清掉 iframe 内部状态和滚动位置（翻页/播放状态全丢）。
+   ⚠️ 全部颜色走 CSS 变量，这样 aurora/ambient 皮肤下也能跟着翻黑，不要写死白底。
+   ============================================================================ */
+
+.watch-full { gap: 0; }
+
+.watch-window {
+    --wm-stage: var(--bg-elevated);
+    --wm-chrome: color-mix(in srgb, var(--text) 5%, var(--bg-elevated));
+    --wm-line: var(--border);
+    display: flex;
+    flex-direction: column;
+    margin: 6px 16px 0;
+    border: 1px solid var(--wm-line);
+    border-radius: 12px 12px 10px 10px;
+    background: var(--wm-stage);
+    box-shadow:
+        0 2px 0 -1px rgba(255, 255, 255, .5) inset,
+        0 26px 60px -30px rgba(0, 0, 0, .5),
+        0 3px 12px -6px rgba(0, 0, 0, .22);
+    overflow: hidden;
+    animation: wmOpen .34s cubic-bezier(.22, .68, 0, 1) both;
+}
+@keyframes wmOpen {
+    from { opacity: 0; transform: translateY(10px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ---------- 标题栏 ---------- */
+.watch-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 40px;
+    padding: 0 12px;
+    flex: 0 0 auto;
+    background: linear-gradient(var(--wm-chrome), color-mix(in srgb, var(--text) 2%, var(--wm-chrome)));
+    border-bottom: 1px solid var(--wm-line);
+    user-select: none;
+}
+
+.watch-lights { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.watch-lights i {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    display: block;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .22);
+    transition: transform .16s ease, filter .16s ease;
+    position: relative;
+}
+.watch-lights i::after {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity .16s ease;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.watch-lights .l-r { background: #ff5f57; }
+.watch-lights .l-y { background: #febc2e; }
+.watch-lights .l-g { background: #28c840; }
+.watch-lights:hover i { filter: saturate(1.15); }
+.watch-lights i:hover { transform: scale(1.14); }
+
+.watch-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .01em;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.watch-title b { color: var(--text); font-weight: 800; }
+.watch-titlebar .sp { flex: 1 1 auto; }
+
+.wm-tool {
+    appearance: none;
+    border: 1px solid var(--wm-line);
+    background: var(--wm-stage);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 6px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .18s ease, transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s ease;
+}
+.wm-tool:hover { background: var(--primary-soft, rgba(0,0,0,.05)); transform: translateY(-1px); box-shadow: 0 6px 14px -8px rgba(0,0,0,.4); }
+.wm-tool:active { transform: translateY(0) scale(.97); }
+
+/* ---------- 标签条 ---------- */
+.watch-tabstrip {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 6px 8px 0;
+    flex: 0 0 auto;
+    background: linear-gradient(var(--wm-chrome), color-mix(in srgb, var(--text) 7%, var(--wm-chrome)));
+    border-bottom: 1px solid var(--wm-line);
+}
+.watch-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;              /* 标签条不要横向滚动条 */
+    padding: 0;
+}
+.watch-tabs::-webkit-scrollbar { height: 0; display: none; }
+
+/* Mac 风标签：圆角顶、贴着内容区，选中那张与下方主内容连成一体 */
+.watch-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 1 190px;
+    min-width: 108px;
+    max-width: 210px;
+    height: 30px;
+    padding: 0 9px 0 11px;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 9px 9px 0 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: background .2s ease, color .2s ease, transform .22s cubic-bezier(.32,.72,0,1);
+}
+.watch-tab .n { overflow: hidden; text-overflow: ellipsis; }
+.watch-tab .fav {
+    flex: 0 0 auto;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .45;
+}
+.watch-tab:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+.watch-tab.on {
+    color: var(--text);
+    background: var(--wm-stage);
+    border-color: var(--wm-line);
+    height: 32px;
+    z-index: 2;
+}
+/* 选中标签"咬"住下面的内容区：用一条与内容区同色的线盖掉标签条的分隔线 */
+.watch-tab.on::after {
+    content: '';
+    position: absolute;
+    left: 1px; right: 1px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--wm-stage);
+}
+.watch-tab .x {
+    flex: 0 0 auto;
+    width: 16px; height: 16px;
+    margin-left: auto;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    line-height: 1;
+    opacity: 0;
+    color: var(--text-muted);
+    transition: opacity .16s ease, background .16s ease, transform .16s ease;
+}
+.watch-tab:hover .x, .watch-tab.on .x { opacity: .62; }
+.watch-tab .x:hover { opacity: 1; background: color-mix(in srgb, var(--text) 16%, transparent); transform: scale(1.12); }
+
+/* 新标签动画：从下方轻轻弹起，左侧还要有点"挤出来"的感觉 */
+@keyframes watchTabIn {
+    from { opacity: 0; transform: translateY(7px) scale(.9); }
+    to   { opacity: 1; transform: none; }
+}
+.watch-tab.is-new { animation: watchTabIn .3s cubic-bezier(.32,.72,0,1) both; }
+
+/* ---------- 站点快捷入口（书签栏味） ---------- */
+.watch-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    flex: 0 0 auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--wm-stage);
+    border-bottom: 1px solid var(--wm-line);
+    transition: max-height .28s cubic-bezier(.32,.72,0,1), opacity .2s ease, padding .28s ease, border-color .2s ease;
+    max-height: 60px;
+}
+.watch-toolbar::-webkit-scrollbar { height: 0; display: none; }
+.watch-site {
+    appearance: none;
+    flex: 0 0 auto;
+    border: 1px solid var(--wm-line);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .18s ease, color .18s ease, transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s ease;
+}
+.watch-site:hover {
+    background: var(--text);
+    color: var(--bg-elevated);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .55);
+}
+.watch-site:active { transform: translateY(0) scale(.96); }
+.watch-site.is-open { border-color: var(--primary, #9A6A15); color: var(--primary, #9A6A15); }
+
+/* 交通灯：黄灯收起站点栏、绿灯进专注模式 */
+.watch-window.is-compact .watch-toolbar {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0; padding-bottom: 0;
+    border-bottom-width: 0;      /* 只把颜色设透明会剩 1px 的边框，收起就不彻底 */
+    overflow: hidden;
+}
+@keyframes wmPulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary, #9A6A15) 45%, transparent); }
+    50%      { box-shadow: 0 0 0 7px transparent; }
+}
+.watch-toolbar.is-pulse { animation: wmPulse .9s ease-out 2; }
+
+/* ---------- 主内容 ---------- */
+.watch-body {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 360px;
+    background: var(--wm-stage);
+    overflow: hidden;
+}
+/* #watchStage 是 ID 选择器（style.css 里写了 background: var(--bg)），
+   要盖成 --wm-stage 必须带上父级，否则选中标签和主内容底色不一致、"连成一体"的错觉就没了 */
+.watch-window #watchStage { background: var(--wm-stage); }
+/* 切标签的丝滑过渡：淡入 + 一丁点上浮（visibility 参与过渡，隐藏的那张不会抢点击） */
+.watch-pane {
+    transition:
+        opacity .27s ease,
+        transform .32s cubic-bezier(.22, .68, 0, 1),
+        visibility .27s;
+    opacity: 0;
+    transform: translateY(7px) scale(.997);
+}
+.watch-pane.on {
+    opacity: 1;
+    transform: none;
+}
+
+/* 专注模式：只剩标题栏和主内容 */
+.watch-window.is-zen .watch-tabstrip { display: none; }
+
+/* ---------- 小屏 ---------- */
+@media (max-width: 860px) {
+    .watch-window { margin: 4px 0 0; border-radius: 10px 10px 0 0; }
+    .watch-titlebar { height: 36px; gap: 8px; padding: 0 10px; }
+    .watch-lights { gap: 6px; }
+    .watch-lights i { width: 10px; height: 10px; }
+    .watch-tabstrip { padding: 5px 6px 0; }
+    .watch-tab { flex: 0 1 150px; min-width: 92px; height: 28px; font-size: 12px; }
+    .watch-tab.on { height: 30px; }
+    .watch-toolbar { padding: 6px 8px; }
+    .watch-site { font-size: 12px; padding: 4px 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .watch-window, .watch-tab, .watch-pane, .watch-site, .wm-tool {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+    .watch-toolbar.is-pulse { animation: none !important; }
+}

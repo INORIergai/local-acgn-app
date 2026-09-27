@@ -1,0 +1,292 @@
+# -*- coding: utf-8 -*-
+"""_r23-release.py —— 建 GitHub Release 并上传两个 exe 到 Releases 页"""
+import os
+import sys
+import json
+import time
+import urllib.request
+import urllib.parse
+import urllib.error
+import subprocess
+
+OWNER = 'INORIergai'
+REPO = 'local-acgn-app'
+VER = '1.2.0'
+TAG = 'v' + VER
+# 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, '..'))
+EXE = os.path.join(_ROOT, 'exe')
+# 成品落点（按顺序找第一个存在的）：
+#   exe\<子目录>\    ← 整理后的自用区（round24 起本地只留免安装版，安装版/便携版通常不在这儿）
+#   packaging\dist\ ← electron-builder 的默认产出目录（刚打完包就在这）
+ASSETS = [
+    ('CinemaVault-Setup-%s.exe' % VER, ['安装版', 'dist']),
+    ('CinemaVault-Portable-%s.exe' % VER, ['便携版', 'dist']),
+]
+
+
+def asset_path(name, subs):
+    for sub in subs:
+        p = (os.path.join(_HERE, 'dist', name) if sub == 'dist'
+             else os.path.join(EXE, sub, name))
+        if os.path.exists(p):
+            return p
+    return None
+GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
+
+BODY = """本地优先的私人媒体库：**AV / 里番 / 影视 / 动漫 / 漫画 / 小说** 六库合一。
+自动扫描、多源刮削元数据与海报，自带网页播放器、漫画 / 小说阅读器、播放列表、新作监视、年度报告、首页情报榜。
+界面原生 HTML/CSS/JS，后端 Node + SQLite，**数据全部留在本机**。
+
+## v1.2.0 更新（隐私内容彻底分隔 + 首页/侧栏体验重做）
+
+### 🔒 隐私内容（本版核心）
+
+- **侧栏「隐私内容」独立成组**：全部内容 / 观看历史 / 猜你喜欢 / 热门排行 / 随机推荐 / 未观看 六项不再挂在媒体库下，单独成组、位置可拖拽
+- **隐私分割器全链路**：全部影片 / 最近观看 / 精选推荐轮播 / 猜你喜欢 / 热门排行 / 随机推荐 / 未观看 / 详情相似推荐——公开视图一律排除 AV/里番，隐私组视图只看 AV/里番（privacy=exclude/adult 双口径）
+- **隐私组猜你喜欢复用公开版展台样式**（散落封面墙），牌堆/列表模式入口在隐私口径下自动隐藏
+- **安全设置改勾选制**：哪些入口显示、哪些上分入口密码，逐项勾选 + 「保存隐私设置」一键生效；密码提示无弹窗的死路修复
+- 总开关隐藏或六项全勾掉时，隐私内容组整组从侧栏消失
+
+### 🏠 首页 / 界面
+
+- **首页两栏重排**：AI 对话与热度情报严格对半，本周放送通栏放大（封面 76px）
+- **热度榜与 AI 立绘顶线对齐**；榜单双栏排布，1728→390 共 8 档窗宽自适应审计通过
+- **ACG 榜单**：封面全面高清化（le900 源），新增 日榜/周榜/月榜/年榜 切换格
+- **排序下拉移到顶栏搜索框内**，全局下拉统一玻璃态
+- **侧栏自由拖拽**：条目排序 / 跨组移动 / 双击重命名分组 / 右键恢复默认
+- **启动动画默认小窗播放**，设置→个性化可关闭
+
+### 🛠 修复
+
+- 中窄屏（861~1080px）顶栏顶破、长标题撑破榜单轨道等一系列自适应溢出修复
+- 推荐展台切换视图时在途响应渲染错视图的竞态（口径互串）修复
+
+"""## v1.1.2 更新（修复 v1.1.1 首页空白页 + 首页回归打磨）
+
+### 🐛 修复
+
+- **v1.1.1 首页空白页**：上一版删除首页板块时误吞闭合标签导致页面 DOM 塌陷、全部视图空白 → 已修复，全部视图回归通过
+- **看板娘被裁切**：聊天卡顶距不足导致 mascot 被「只露头发」→ 顶距修复，三态（浅色/深色/窄窗）截图目检通过
+- **首页 AI 对话框回归纯对话**：去掉误加的「搜索」入口，搜索统一走顶栏搜索框
+- **「我的片库」热度榜移除**：与情报榜重复、无实际意义，按反馈取消
+- **启动直达首页**：不再出现选馆入口页
+
+### 🛠 v1.1.1 已包含的修复（本版一并保留）
+
+- **封面缓存回收（GC）**：换封面/重刮后旧图自动进回收站，杜绝缓存无限膨胀；设置页新增「封面缓存」管理（盘点 / 清理 / 还原）
+- **刮削代理真正生效**：Node fetch 改 undici ProxyAgent + dispatcher，本地代理（如 7892）从此对刮削/图片代理生效
+- **候选海报不再破图**：换封面候选预览统一走本站代理，不再浏览器直连图床被墙/防盗链
+- **串封面修复**：扁平目录的 poster.jpg 不再被全库认领（守卫 + 数据修复）
+- **顶栏扫描状态**：改为图标 + 悬浮详情，不再挤占搜索框
+- **首页搜索修复**：搜索结果不再被首页覆盖层遮挡
+
+## v1.0.5 更新（首页情报中心 + 影视 / 动漫双新库）
+
+### 🏠 首页改版
+
+- **启动直达首页**：不再一打开就逼你选功能入口；分类导航点击时才校验密码（如已设置）
+- 小人看板娘**重新抠图**（长发完整保留）、加浮出突出效果、对话框加大
+- **ACG 情报榜**覆盖来源站全部板块（动漫 / 漫画 / 游戏等），热榜两排排布，内容密度更高；本地片库热度榜同屏对照
+- 榜单点击**全部在应用内展示**（作品详情弹窗），不再跳浏览器
+
+### 📚 影视库 / 动漫库（新）
+
+- 原「影片库」更名 **AV 库**、「动漫库」更名 **里番库**；新增真正的**影视库**与**动漫库**
+- 影视库：**TMDB** 刮削（中文片名 / 简介 / 海报；「设置 → 数据源」填入免费 API Key 即生效），豆瓣备用
+- 动漫库：**AniList + Bangumi** 刮削；扫描路径与各库独立配置
+- 与现有库完全同构：扫描 / 刮削 / 海报健康 / 年度报告 / 新作监视全覆盖，不漏功能
+
+### 🔒 安全
+
+- 密码守卫改**白名单制**：未解锁时除首页 / 情报榜等公开页外一律拦截，弹应用内检票框
+- 密码边界覆盖聚合视图（年度报告 / 刮削失败 / 海报健康切片同样受保护）
+
+### 🔔 通知中心
+
+- **站内信收件箱** + 右下角**分级 toast**（信息 / 成功 / 警告 / 错误）
+- **个性化通知偏好**：7 类事件 × 4 种提醒方式（站内信+弹窗 / 仅站内信 / 仅弹窗 / 关闭），按需开关
+- 目录监控入库、扫描完成、数据库自愈、发现新版本等事件全部接入
+
+### 🔎 榜单联动与切片器
+
+- 榜单作品一键「**去观看**」：直达在线观看 / 漫画站点并**自动带词搜索**，全程应用内不跳浏览器
+- 演员库 / 标签库新增**切片器**；新作监视七分类切片（影视 / 动漫 / 里番 / AV / 漫画 / 小说 / 全部）
+- 年度报告 / 刮削失败 / 海报健康支持按库切片
+
+> v1.0.3 及以前的更新（自动更新、目录监控、刮削修复、数据库自愈、阅读器修复等）全部包含在当前版本中。
+
+## 下载
+
+| 文件 | 说明 |
+|---|---|
+| `CinemaVault-Setup-1.1.2.exe` | **推荐** —— 安装版：装一次，桌面快捷方式双击秒开 |
+| `CinemaVault-Portable-1.1.2.exe` | 免安装单文件，数据存在 exe 同级的 `CinemaVault-Data\\` |
+
+> 便携版每次启动都要把约 90MB 运行时解压到临时目录，**首次打开要等 20 秒上下**。
+> 安装版没有这一步，装好后是秒开。图省事就选安装版。
+
+**不需要装 Node。**
+
+## 首次启动
+
+1. 双击运行 → 自动建库（约 1 秒）
+2. **默认不设密码，打开就能用**
+3. 进「设置 → 📂 扫描路径」添加你的媒体文件夹（影视 / 动漫库各有独立路径配置）→ 点「扫描」
+4. 影视库想用 TMDB 刮削：「设置 → 🌐 数据源」填入 TMDB API Key（themoviedb.org 免费申请）
+5. 想加访问密码：「设置 → 🔒 安全与通知」设置密码；未解锁时受保护页面会弹检票框
+
+## 系统要求
+
+- Windows 10 / 11（x64）
+- 无需额外运行时（Electron 已内置）
+
+## 说明
+
+- 本程序只管理**你自己合法拥有**的本地媒体文件，不上传任何数据到服务器。
+- **未做代码签名**，Windows SmartScreen 可能提示「未知发布者」→ 点「更多信息 → 仍要运行」。
+- 首次启动「闪一下就没了」= 本机 Chromium 沙箱不可用（第三方杀软 / 企业安全策略 / 远程桌面环境常见）。
+  程序会自己记下来，**再双击一次即可**恢复正常。
+- 可选依赖：`ffmpeg`（视频截帧取封面 / 读时长，放进数据目录的 `bin\\` 即可）、Chromium（过 Cloudflare 的站点刮削）。
+
+**如有 bug 或需求反馈，欢迎提 issue：https://github.com/INORIergai/local-acgn-app/issues**
+"""
+
+
+def get_token():
+    r = subprocess.run([GIT, 'credential', 'fill'],
+                       input='protocol=https\nhost=github.com\n\n',
+                       capture_output=True, text=True,
+                       encoding='utf-8', errors='replace')
+    for line in r.stdout.splitlines():
+        if line.startswith('password='):
+            return line.split('=', 1)[1].strip()
+    return None
+
+
+TOKEN = get_token()
+if not TOKEN:
+    print('✗ 取不到凭据')
+    sys.exit(1)
+
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler())
+
+
+def api(method, url, body=None, timeout=120, retries=5):
+    """带重试的 GitHub API 调用（round25 加）。
+
+    本机走宿主代理时偶发 `SSL: UNEXPECTED_EOF_WHILE_READING` / 502 Bad Gateway，
+    属瞬时故障；对网络异常与 5xx 做指数退避重试，4xx 直接返回。
+    """
+    if not url.startswith('http'):
+        url = 'https://api.github.com' + url
+    data = json.dumps(body).encode('utf-8') if body is not None else None
+    last = (0, '')
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header('Authorization', 'Bearer ' + TOKEN)
+        req.add_header('Accept', 'application/vnd.github+json')
+        req.add_header('User-Agent', 'cinema-vault-release')
+        if data:
+            req.add_header('Content-Type', 'application/json')
+        try:
+            r = OPENER.open(req, timeout=timeout)
+            raw = r.read().decode('utf-8')
+            return r.status, (json.loads(raw) if raw.strip() else {})
+        except urllib.error.HTTPError as e:
+            txt = e.read().decode('utf-8', 'replace')[:500]
+            if e.code >= 500 and attempt < retries:
+                last = (e.code, txt)
+            else:
+                return e.code, txt
+        except Exception as e:
+            last = (0, '%s: %s' % (type(e).__name__, str(e)[:250]))
+            if attempt >= retries:
+                return last
+        wait = min(2 ** (attempt + 1), 20)
+        print('  ! %s .../%s 失败（%s）→ %ds 后重试 %d/%d'
+              % (method, url.rstrip('/').split('/')[-1], str(last[1])[:70], wait, attempt + 1, retries))
+        sys.stdout.flush()
+        time.sleep(wait)
+    return last
+
+
+# ------------------------------------------------------- 1) 建 / 取 release
+s, rel = api('GET', '/repos/%s/%s/releases/tags/%s' % (OWNER, REPO, TAG))
+if s == 200:
+    print('release %s 已存在（id=%s）' % (TAG, rel['id']))
+    release = rel
+else:
+    print('创建 release %s ...' % TAG)
+    s, rel = api('POST', '/repos/%s/%s/releases' % (OWNER, REPO), {
+        'tag_name': TAG,
+        'target_commitish': 'main',
+        'name': 'Cinema Vault v%s · 午夜场' % VER,
+        'body': BODY,
+        'draft': False,
+        'prerelease': False,
+    })
+    if s not in (200, 201):
+        print('✗ 建 release 失败：%s %s' % (s, rel))
+        sys.exit(1)
+    release = rel
+    print('  ✅ release id=%s  tag=%s' % (rel['id'], rel['tag_name']))
+
+print('  URL: %s' % release.get('html_url'))
+
+# ------------------------------------------------------- 2) 上传附件
+existing = {a['name']: a['size'] for a in release.get('assets', [])}
+print('\n现有附件:', existing or '(无)')
+
+upload_url = release['upload_url'].split('{')[0]
+
+for name, subs in ASSETS:
+    p = asset_path(name, subs) or os.path.join(_HERE, 'dist', name)
+    if not os.path.exists(p):
+        print('✗ 找不到 %s（已找过 exe\\%s 与 packaging\\dist）' % (name, '/exe\\'.join(subs)))
+        continue
+    size = os.path.getsize(p)
+    if name in existing:
+        print('\n[跳过] %s 已存在（%.1f MB）' % (name, existing[name] / 1048576))
+        continue
+
+    print('\n上传 %s（%.1f MB）...' % (name, size / 1048576))
+    with open(p, 'rb') as fh:
+        data = fh.read()
+
+    url = '%s?name=%s' % (upload_url, urllib.parse.quote(name))
+    req = urllib.request.Request(url, data=data, method='POST')
+    req.add_header('Authorization', 'Bearer ' + TOKEN)
+    req.add_header('Content-Type', 'application/octet-stream')
+    req.add_header('User-Agent', 'cinema-vault-release')
+
+    ok = False
+    for attempt in range(3):
+        t0 = time.time()
+        try:
+            r = OPENER.open(req, timeout=3600)
+            res = json.loads(r.read().decode('utf-8'))
+            print('  ✅ 完成 %.1fs  下载地址: %s' % (time.time() - t0, res.get('browser_download_url')))
+            ok = True
+            break
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', 'replace')[:300]
+            print('  ✗ HTTP %s %s' % (e.code, body))
+            if e.code in (422, 400):
+                break
+            time.sleep(5 * (attempt + 1))
+        except Exception as e:
+            print('  ✗ %s: %s' % (type(e).__name__, str(e)[:200]))
+            time.sleep(5 * (attempt + 1))
+    if not ok:
+        print('  ⚠ %s 上传未成功，可在网页端手动补传' % name)
+
+# ------------------------------------------------------- 3) 汇总
+s, rel2 = api('GET', '/repos/%s/%s/releases/tags/%s' % (OWNER, REPO, TAG))
+print('\n' + '=' * 66)
+print('Release: %s' % rel2.get('html_url'))
+print('标签   : %s' % rel2.get('tag_name'))
+for a in rel2.get('assets', []):
+    print('  %-34s %8.1f MB  %s' % (a['name'], a['size'] / 1048576, a['browser_download_url']))
+print('=' * 66)

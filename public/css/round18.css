@@ -1,0 +1,90 @@
+/* ============================================================
+   第 18 轮覆盖层：设置页「数据源」凭证输入框
+   ------------------------------------------------------------
+   背景：设置页的数据源列表原来只渲染一个勾选框 + baseUrl，
+        而 FANZA 官方 API 需要 api_id / affiliate_id 才能用。
+        后端 POST /api/config 对 sources 是**深合并**
+        （...currentConfig.sources[key], ...value），
+        所以这里新增的字段不会把已有凭证冲掉。
+   新增元素：.source-fields / .source-field / .source-field-input
+   ============================================================ */
+
+.source-item {
+    flex-wrap: wrap;
+}
+
+.source-fields {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    margin: 8px 0 2px 26px;
+    padding: 10px 12px;
+    border-radius: var(--radius, 6px);
+    background: color-mix(in srgb, var(--bg, #F1EEE6) 78%, #fff);
+    border: 1px dashed color-mix(in srgb, var(--text, #26211A) 18%, transparent);
+}
+
+.source-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 170px;
+    min-width: 0;
+}
+
+.source-field > span {
+    font-size: 11px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    opacity: .62;
+}
+
+.source-field-input {
+    width: 100%;
+    font-size: 12px;
+    padding: 6px 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* 移动端：凭证框去掉左侧缩进，占满整行 */
+@media (max-width: 860px) {
+    .source-fields {
+        margin-left: 0;
+        padding: 10px;
+    }
+    .source-field {
+        flex: 1 1 100%;
+    }
+}
+
+/* ============================================================
+   第 19 轮追加：数据源「已搁置」提示
+   ------------------------------------------------------------
+   FANZA 的 affiliate.dmm.com 国内无法注册 → config 里该源带
+   `unavailable:true` + `note`，设置页渲染成一行灰字提示，
+   不再弹出永远填不了的凭证输入框。
+   ============================================================ */
+
+.source-item.is-unavailable .source-name,
+.source-item.is-unavailable .source-url {
+    opacity: .5;
+}
+
+.source-note {
+    flex: 1 1 100%;
+    margin: 6px 0 0 26px;
+    padding: 6px 10px;
+    border-radius: var(--radius, 6px);
+    font-size: 12px;
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--text, #26211A) 66%, transparent);
+    background: color-mix(in srgb, var(--bg, #F1EEE6) 82%, #fff);
+    border-left: 3px solid color-mix(in srgb, #f49978 70%, transparent);
+}
+
+@media (max-width: 860px) {
+    .source-note {
+        margin-left: 0;
+    }
+}
