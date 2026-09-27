@@ -1,0 +1,236 @@
+/* ============================================================
+ * 第 25 轮覆盖层 —— 免安装版实测反馈修复
+ * 必须放在所有覆盖层之后（library.html 最末）
+ *
+ * #5  标签库打开时先是横向一条、点一下才铺满
+ * #6  年度报告点年度标签圆形疯狂闪烁
+ * #3  我的收藏个性化（筛选 / 件数 / 摆放位置）
+ * ============================================================ */
+
+/* ------------------------------------------------------------
+ * #5 标签库布局：容器是 flex，会把筛选行 + 网格当 flex item 排成一行
+ *    ⇒ 必须把 #tagCloud 自己改成 block/grid 容器
+ *    注意特异性：style.css 的 `.tag-cloud`(0,1,0) 打不过 `#tagCloud`(1,0,0)
+ * ------------------------------------------------------------ */
+#tagCloud.tag-cloud {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-content: start;
+    flex-wrap: nowrap;
+    gap: 0;
+    width: 100%;
+    grid-column: 1 / -1;
+}
+/* 打开时即便 JS 写了 style.display='flex'，也把它掰回 grid */
+#tagCloud.tag-cloud[style*="display: flex"],
+#tagCloud.tag-cloud[style*="display:flex"] {
+    display: grid !important;
+}
+
+/* 筛选行：占满整行，不再挤在左边 */
+#tagCloud .tag-filter-row {
+    width: 100%;
+    margin-bottom: 14px;
+    grid-column: 1 / -1;
+}
+
+/* 标签网格本体：直接从 #tagCloud 的子容器继承网格列 */
+#tagCloud .tag-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+    gap: 14px;
+    width: 100%;
+    grid-column: 1 / -1;
+}
+@media (min-width: 1280px) {
+    #tagCloud .tag-list { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+}
+
+/* 首屏直接就是最终布局：不做错峰入场动画（那是「先横后满」的观感来源之一） */
+#tagCloud .tag-block {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none;
+    will-change: auto;
+}
+
+/* ------------------------------------------------------------
+ * #6 年度报告闪烁
+ *    真因：.tag-block 的 tbIn 动画 + 年度气泡自身过渡互相打架；
+ *    年度视图里没有 .tag-block，但 annual 视图被渲染进 #tagCloud 之外的
+ *    容器时仍会继承通用动效。这里对本轮涉及的元素一律关掉入场动画，
+ *    并把 hover 态的 transform 过渡收敛，避免圆形标签反复重绘。
+ * ------------------------------------------------------------ */
+/* 真因（round25 实测）：
+ *   .an-bub { transform-box: fill-box; transform-origin: center; transition: transform .25s }
+ *   + .an-bub:hover { transform: scale(1.12) }
+ *   SVG 内 <g> 的 fill-box 在 Safari/Chromium 上配合 transform 过渡时，
+ *   每次 hover 命中测试都会重算 fill-box 边界 → 触发新的一轮 transition →
+ *   视觉上就是「圆形疯狂闪烁」。鼠标不动也会抖（命中区域与渲染区域不一致）。
+ * 修法：SVG 元素上彻底不用 transform 做悬停缩放，改容器级 filter/opacity，
+ *       并把 transform-box/origin 复位，避免 fill-box 反复重算。 */
+.an-bub,
+.annual-bubble,
+[class*="an-bub"] {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    transform-box: view-box !important;
+    transform-origin: 0 0 !important;
+    will-change: auto !important;
+}
+.an-bub:hover,
+.annual-bubble:hover,
+[class*="an-bub"]:hover {
+    transform: none !important;
+    /* 悬停反馈改走 circle 描边 + 亮度，不碰布局盒 */
+    filter: brightness(1.08) saturate(1.1);
+}
+/* 圆本体的过渡保留（只改 paint，不改 transform） */
+.an-bub circle {
+    transition: opacity .18s ease, stroke .18s ease;
+}
+.an-bub:hover circle:first-of-type {
+    opacity: 1;
+    stroke: rgba(255, 255, 255, .85);
+    stroke-width: 2;
+}
+/* 面积图的描线动画只跑一次，不因视图重排重放 */
+.an-area-line,
+.an-area-fill { animation-iteration-count: 1 !important; animation-fill-mode: forwards !important; }
+
+/* 年度视图容器：整体不要反复触发重排 */
+#annualView,
+.annual-view,
+.annual-wrap {
+    contain: layout paint;
+}
+
+/* 全局：任何还在用 tbIn 的残留元素一并停掉（避免其它视图复现闪烁） */
+.tag-block { animation-fill-mode: none; }
+
+/* ------------------------------------------------------------
+ * #3 我的收藏个性化面板
+ * ------------------------------------------------------------ */
+.fav-custom-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-elevated);
+}
+.fav-custom-bar .fc-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+.fav-custom-bar select,
+.fav-custom-bar input[type="number"] {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12.5px;
+    outline: none;
+}
+.fav-custom-bar select:focus,
+.fav-custom-bar input[type="number"]:focus {
+    border-color: var(--primary);
+}
+.fav-custom-bar .fc-num { width: 76px; }
+.fav-custom-bar .fc-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 2px;
+}
+.fav-custom-bar .fc-reset {
+    margin-left: auto;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: border-color .18s ease, color .18s ease;
+}
+.fav-custom-bar .fc-reset:hover {
+    border-color: var(--primary);
+    color: var(--text);
+}
+
+/* 摆放位置：网格 / 大图 / 列表 三档 */
+#movieGrid.fav-layout-compact { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+#movieGrid.fav-layout-large   { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px; }
+#movieGrid.fav-layout-list {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+}
+#movieGrid.fav-layout-list > .movie-card,
+#movieGrid.fav-layout-list > .av-card,
+#movieGrid.fav-layout-list > .exhibit {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    width: 100%;
+}
+#movieGrid.fav-layout-list > * .poster,
+#movieGrid.fav-layout-list > * .card-poster,
+#movieGrid.fav-layout-list > * .exhibit-poster {
+    width: 130px;
+    min-width: 130px;
+    height: auto;
+    aspect-ratio: 2 / 3;
+}
+
+/* 收藏页排序条：不是电影库时隐藏（沿用原有按钮布局，不额外显示） */
+
+/* ------------------------------------------------------------
+ * #7 更换海报弹窗：分组标题 / 空态诊断 / 候选标题
+ *    弹窗网格是 .poster-grid（grid, minmax(140px,1fr)），
+ *    所以整宽块必须跨列，否则会被压进一列里变形。
+ * ------------------------------------------------------------ */
+#posterGrid .poster-section-label {
+    grid-column: 1 / -1;
+    margin: 6px 0 2px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+}
+#posterGrid .poster-section-label:first-child { margin-top: 0; }
+
+/* 空态诊断块：跨整行，给「为什么没有」和「怎么补救」留出空间 */
+#posterGrid .poster-empty-diagnosis {
+    grid-column: 1 / -1;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+}
+#posterGrid .poster-empty-diagnosis ul { list-style: disc; }
+
+/* 候选卡片底部标题：单行截断，避免长片名把卡片撑高错位 */
+#posterGrid .poster-option-title {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

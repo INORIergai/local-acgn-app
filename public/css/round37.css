@@ -1,0 +1,90 @@
+/* =====================================================================
+ * round37 · 阶段1 覆盖层
+ *  #6 扫描/监控状态：小圆点 + 悬浮气泡（不再占顶栏一行）
+ *  #3 首页模式切换按钮样式在 round33.css，这里只管顶栏
+ * ===================================================================== */
+
+/* 胶囊容器：默认隐藏，JS 在有内容时加 .show */
+.scan-status-wrap {
+    position: relative;
+    display: none;
+    flex: none;
+    align-items: center;
+    margin-left: 2px;
+}
+.scan-status-wrap.show { display: inline-flex; }
+
+/* 状态圆点 */
+.scan-dot {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.scan-dot-core {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    opacity: 0.55;
+    transition: background .2s, opacity .2s, box-shadow .2s;
+}
+.scan-dot.ok .scan-dot-core { background: #22c55e; opacity: 1; }
+.scan-dot.warn .scan-dot-core { background: #f59e0b; opacity: 1; }
+.scan-dot.running .scan-dot-core {
+    background: var(--primary);
+    opacity: 1;
+    animation: r37-dot-pulse 1.1s ease-in-out infinite;
+}
+@keyframes r37-dot-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45); }
+    50%      { box-shadow: 0 0 0 5px rgba(59, 130, 246, 0); }
+}
+
+/* 悬浮气泡 */
+.scan-pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 1200;
+    min-width: 260px;
+    max-width: 380px;
+    padding: 10px 12px;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: normal;
+    word-break: break-all;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity .15s ease, transform .15s ease, visibility .15s;
+    pointer-events: none;
+}
+/* 桌面 hover 展开；手机（无 hover）走 .open 点击展开 */
+@media (hover: hover) {
+    .scan-status-wrap:hover .scan-pop { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+}
+.scan-status-wrap.open .scan-pop { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+
+.scan-pop-sec { padding: 3px 0; }
+.scan-pop-sec + .scan-pop-sec {
+    border-top: 1px dashed var(--border);
+    margin-top: 5px;
+    padding-top: 7px;
+}
+.scan-pop-sec:empty { display: none; }
+.scan-pop a { cursor: pointer; }
+
+/* round37 二轮：首页去入口化——hero 删除后对话卡上移 */
+.home-chat { margin-top: 28px; }
