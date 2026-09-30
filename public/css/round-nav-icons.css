@@ -1,0 +1,79 @@
+/* ============================================================
+   午夜场 · round-nav-icons.css —— 导航图标接线层（实心光体）
+   ------------------------------------------------------------
+   只追加、不改 style.css 本体（层叠铁律）。
+   作用域仅限 .nv-ic（Remotion 图标容器）与选中态呼吸辉光，
+   不触碰 .nav-item 的布局 / 间距 / 交互。
+   兜底链：webm → png → emoji（由 nav-icons.js 负责）。
+   ============================================================ */
+
+.nav-item .nv-ic {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-right: 1px;
+  vertical-align: -3px;
+}
+.nav-item .nv-ic video,
+.nav-item .nv-ic img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+/* hidden 属性必须赢过上面的 display:block（兜底图显隐切换） */
+.nav-item .nv-ic [hidden] { display: none; }
+
+/* 选中态：白色呼吸（「正在放映」，3.2s 常亮循环） */
+.nav-item.active .nv-ic {
+  animation: nvBreath 3.2s ease-in-out infinite;
+}
+@keyframes nvBreath {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.12)); }
+  50% { filter: drop-shadow(0 0 9px rgba(255, 255, 255, 0.28)); }
+}
+
+/* 悬停：轻微辉光（动效本体由 webm 重播承担） */
+.nav-item:hover .nv-ic:not(.nv-broken) {
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.18));
+}
+
+/* 无动画偏好：不播视频，只显示静帧 */
+@media (prefers-reduced-motion: reduce) {
+  .nav-item .nv-ic video { display: none; }
+}
+
+/* ============================================================
+   v2 接线调整（用户反馈：整体感 / 放大 / 入场可见）
+   ============================================================ */
+
+/* 放大：图标 20px、导航字 14px、行距微调 —— 只动侧栏行内排版 */
+.sidebar .nav-item { font-size: 14px; gap: 10px; }
+.nav-item .nv-ic {
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  vertical-align: -4px;
+}
+
+/* 整体感：图标在 label 内，动 label 即「图标+功能字」一起动 */
+.sidebar .nav-item > span:first-child {
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.sidebar .nav-item:hover > span:first-child { transform: translateX(3px); }
+.sidebar .nav-item:active > span:first-child { transform: translateX(1px) scale(0.98); }
+
+/* 行级入场（与图标登场同拍）：整行轻轻浮起，编队错峰 */
+.sidebar .nav-item.nv-in > span:first-child {
+  animation: nvRowIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--nvd, 0s);
+}
+@keyframes nvRowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar .nav-item > span:first-child { transition: none; }
+  .sidebar .nav-item.nv-in > span:first-child { animation: none; }
+}

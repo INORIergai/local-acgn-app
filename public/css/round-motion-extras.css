@@ -1,0 +1,1281 @@
+/* ============================================================
+   午夜场 · round-motion-extras.css —— 交互瞬间素材包接线层
+   ------------------------------------------------------------
+   ① 抽牌光扫覆盖层  ② 空态动画容器  ③ 待机银幕  ④ 年度档案播放层
+   只追加、不改 style.css 本体；reduced-motion 由 JS 侧禁用。
+   ============================================================ */
+
+/* ① 抽牌光扫：盖在中央卡上的透明视频 */
+.nv-sweep {
+  position: fixed;
+  z-index: 320;
+  pointer-events: none;
+  object-fit: fill;
+}
+
+/* ② 空态动画容器 */
+.nv-empty {
+  display: inline-flex;
+  width: 56px;
+  height: 56px;
+  vertical-align: middle;
+}
+.nv-empty video { width: 100%; height: 100%; display: block; }
+
+/* ③ 待机银幕 */
+.nv-idle {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: #050508;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+.nv-idle.on { opacity: 1; pointer-events: auto; cursor: none; }
+.nv-idle video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.nv-idle-hint {
+  position: absolute;
+  bottom: 28px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11.5px;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* ④ 年度档案：入口按钮 + 全屏播放层 */
+.nv-annual-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+  padding: 6px 16px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #FBBF24;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  vertical-align: middle;
+}
+.nv-annual-btn:hover { background: rgba(251, 191, 36, 0.24); transform: translateY(-1px); }
+.nv-annual-btn:active { transform: scale(0.97); }
+
+.nv-annual-player {
+  position: fixed;
+  inset: 0;
+  z-index: 650;
+  background: rgba(5, 5, 8, 0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nv-annual-player video {
+  width: min(92vw, calc(92vh * 16 / 9));
+  max-height: 92vh;
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+.nv-annual-close {
+  position: absolute;
+  top: 22px;
+  right: 26px;
+  padding: 7px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #F2F2F5;
+  font-size: 12.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.nv-annual-close:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* ============================================================
+   v2：年度页面动画 + 艺术标题字
+   ============================================================ */
+
+/* ---- 年度报告页：数字由 JS 滚动；排名赛跑 ---- */
+.nvx-annual .annual-rank,
+.nvx-annual .an-rank {
+  position: relative;
+  opacity: 0;
+  transform: translateY(var(--tyf, 40px));
+  animation: nvxRace 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--nvd, 0ms);
+}
+@keyframes nvxRace {
+  to { opacity: 1; transform: translateY(0); }
+}
+/* 第 1 名：弹簧过冲 + 落位金光爆闪 */
+.nvx-annual .annual-rank.nvx-r1,
+.nvx-annual .an-rank.nvx-r1 {
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.nvx-annual .nvx-r1::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 10px;
+  pointer-events: none;
+  opacity: 0;
+  animation: nvxFlash 0.8s ease forwards;
+  animation-delay: var(--nvd, 0ms);
+}
+@keyframes nvxFlash {
+  0% { opacity: 1; border: 1px solid rgba(251, 191, 36, 0.7);
+       box-shadow: 0 0 26px rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.06); }
+  100% { opacity: 0; border-color: rgba(251, 191, 36, 0); box-shadow: none; background: transparent; }
+}
+/* 女优榜条形：落位后从左往右长出 */
+.nvx-annual .an-rank .an-rank-bar {
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: nvxBarX 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--nvd, 0ms) + 260ms);
+}
+@keyframes nvxBarX { to { transform: scaleX(1); } }
+/* 海报弹入 */
+.nvx-annual .annual-rank-poster {
+  transform: scale(0);
+  animation: nvxPoster 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: calc(var(--nvd, 0ms) + 120ms);
+}
+@keyframes nvxPoster { to { transform: scale(1); } }
+
+/* ---- 面积图：从一点延伸 ---- */
+.nvx-annual .an-area-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: nvxDraw 1.3s cubic-bezier(0.22, 1, 0.36, 1) 0.35s forwards;
+}
+@keyframes nvxDraw { to { stroke-dashoffset: 0; } }
+.nvx-annual .an-area-fill {
+  opacity: 0;
+  animation: nvxFade 0.6s ease 1.4s forwards;
+}
+.nvx-annual .an-dot-c {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+  animation: nvxPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: calc(0.4s + var(--i, 0) * 0.1s);
+}
+.nvx-annual .an-m {
+  opacity: 0;
+  animation: nvxFade 0.4s ease forwards;
+  animation-delay: calc(0.5s + var(--i, 0) * 0.1s);
+}
+@keyframes nvxFade { to { opacity: 1; } }
+@keyframes nvxPop { to { transform: scale(1); } }
+
+/* ---- 艺术标题字：衬线 + 字符级登场 + 每页辨识色 ---- */
+#toolbarTitle {
+  font-family: Georgia, "STZhongsong", "SimSun", serif;
+  letter-spacing: 0.05em;
+}
+#toolbarTitle .tb-emoji { margin-right: 4px; }
+#toolbarTitle i {
+  display: inline-block;
+  font-style: normal;
+  opacity: 0;
+  transform: translateY(14px);
+  filter: blur(6px);
+  animation: tbIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+@keyframes tbIn {
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+/* 每页辨识色（语义色随导航） */
+body[data-view="annual"] #toolbarTitle i { color: #FBBF24; }
+body[data-view="guess"] #toolbarTitle i { color: #818CF8; }
+body[data-view="hot"] #toolbarTitle i { color: #FB923C; }
+body[data-view="random"] #toolbarTitle i { color: #22D3EE; }
+body[data-view="movies"] #toolbarTitle i { color: #FCD34D; }
+body[data-view="jav"] #toolbarTitle i { color: #F9A8D4; }
+body[data-view="anime"] #toolbarTitle i { color: #7DD3FC; }
+body[data-view="film"] #toolbarTitle i { color: #C9C9D6; }
+body[data-view="cartoon"] #toolbarTitle i { color: #5EEAD4; }
+body[data-view="comic"] #toolbarTitle i { color: #FACC15; }
+body[data-view="novel"] #toolbarTitle i { color: #C08552; }
+body[data-view="favorites"] #toolbarTitle i { color: #F87171; }
+body[data-view="recent"] #toolbarTitle i { color: #C7D2FE; }
+body[data-view="new-releases"] #toolbarTitle i { color: #FFE08A; }
+body[data-view="settings"] #toolbarTitle i { color: #D7DEE9; }
+body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nvx-annual .annual-rank, .nvx-annual .an-rank,
+  .nvx-annual .annual-rank-poster, .nvx-annual .an-dot-c,
+  .nvx-annual .an-area-line, .nvx-annual .an-area-fill,
+  .nvx-annual .an-m, .nvx-annual .an-rank .an-rank-bar,
+  #toolbarTitle i { animation: none !important; opacity: 1 !important;
+    transform: none !important; filter: none !important;
+    stroke-dashoffset: 0 !important; }
+}
+/* ============================================================
+   v4：功能页海报标题字 —— 电影海报级排版（四风格轮换）
+   粗雅黑 900 / 单行不折行 / 每页专属主色 / 字符弧线入场
+   ============================================================ */
+.pg-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 2px 0 14px;
+  min-height: 68px;
+  animation: pgHeroIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes pgHeroIn {
+  0% { opacity: 0; transform: translateX(-18px) skewX(-5deg); }
+  100% { opacity: 1; transform: none; }
+}
+.pg-motif {
+  width: 46px; height: 46px; flex: none;
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.45)) drop-shadow(0 0 14px var(--pgc-g, rgba(129,140,248,0.4)));
+  animation: pgMotifIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both 0.18s;
+}
+@keyframes pgMotifIn {
+  0% { opacity: 0; transform: rotate(-100deg) scale(0.25); }
+  100% { opacity: 1; transform: none; }
+}
+.pg-title {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-weight: 900;
+  font-size: 40px;
+  line-height: 1.08;
+  letter-spacing: 0.05em;
+  padding: 0 2px;
+  paint-order: stroke fill;
+}
+.pg-ch {
+  display: inline-block;
+  opacity: 0;
+  animation: pgIn 0.62s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 0.08s);
+  will-change: transform, filter;
+}
+@keyframes pgIn {
+  0% { opacity: 0; transform: translateY(-30px) rotate(var(--rot, -6deg)) scale(1.4); filter: blur(6px); }
+  60% { opacity: 1; transform: translateY(3px) rotate(calc(var(--rot, 0deg) * -0.25)) scale(0.95); filter: blur(0); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+.pg-underline { display: block; height: 4px; margin-top: 3px; width: 0; border-radius: 2px; }
+
+/* S1 影院金字（媒体库系）：金属纵切渐变 + 深色压凸描边 + 双层投影 */
+.pg-style-gold .pg-title {
+  background: linear-gradient(180deg, #FFF6D0 6%, #F7CE5B 34%, #C8891E 56%, #FFDE7A 80%, #8F5A12 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(90, 50, 5, 0.55);
+  filter: drop-shadow(0 1px 0 #7A4A0A) drop-shadow(0 4px 2px rgba(50, 25, 0, 0.55))
+          drop-shadow(0 12px 20px rgba(0, 0, 0, 0.35));
+}
+.pg-style-gold .pg-underline {
+  background: linear-gradient(90deg, #FCD34D, #F97B4A 60%, transparent);
+  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.6s forwards;
+}
+
+/* S2 霓虹描边（在线/科技系）：厚描边 + 双层辉光 + 通电闪烁 */
+.pg-style-neon .pg-title {
+  color: rgba(255, 255, 255, 0.12);
+  -webkit-text-stroke: 2px var(--pgc, #67E8F9);
+  text-shadow: 0 0 10px var(--pgc-g, rgba(103, 232, 249, 0.55)), 0 0 28px var(--pgc-g, rgba(103, 232, 249, 0.3));
+}
+.pg-style-neon .pg-ch { animation-name: pgNeon; animation-duration: 0.72s; }
+@keyframes pgNeon {
+  0% { opacity: 0; transform: translateY(-18px) scale(1.35); filter: blur(4px); }
+  50% { opacity: 1; }
+  62% { opacity: 0.35; }
+  76% { opacity: 1; }
+  86% { opacity: 0.55; }
+  100% { opacity: 1; transform: none; filter: blur(0); }
+}
+.pg-style-neon .pg-underline {
+  background: linear-gradient(90deg, var(--pgc, #67E8F9), transparent);
+  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.65s forwards;
+}
+
+/* S3 套印错位（工具系）：青紫双影 + 斜切，印刷套版感 */
+.pg-style-duo .pg-title {
+  color: #F5F5FA;
+  transform: skewX(-8deg) rotate(-1.2deg);
+  text-shadow: 4px 4px 0 rgba(192, 132, 252, 0.8), -4px -3px 0 rgba(34, 211, 238, 0.65),
+               0 14px 24px rgba(0, 0, 0, 0.4);
+}
+.pg-style-duo .pg-underline {
+  background: linear-gradient(90deg, #C084FC, #22D3EE, transparent);
+  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.55s forwards;
+}
+
+/* S4 印章色块（收藏/档案系）：色块盖章 + 900 白字 + 硬阴影 */
+.pg-style-stamp .pg-title { color: #fff; }
+.pg-style-stamp .pg-ch { text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35); }
+.pg-style-stamp .pg-stamp {
+  position: absolute;
+  inset: -3px -18px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--pgc, #818CF8), color-mix(in srgb, var(--pgc, #818CF8) 62%, #000));
+  transform: rotate(-2deg) scaleX(0);
+  transform-origin: left center;
+  animation: pgStamp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.06s forwards;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+@keyframes pgStamp { to { transform: rotate(-2deg) scaleX(1); } }
+.pg-style-stamp .pg-title, .pg-style-stamp .pg-ch { z-index: 1; }
+.pg-style-stamp .pg-underline {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), transparent);
+  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.55s forwards;
+}
+@keyframes pgUnder { to { width: 100%; } }
+
+/* ---- 年报页折线图伪 3D ---- */
+.nvx-annual .annual-chart { perspective: 900px; }
+.nvx-annual .an-area {
+  transform: rotateX(14deg);
+  transform-origin: 50% 100%;
+  animation: anTiltIn 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes anTiltIn {
+  0% { transform: rotateX(40deg) scale(0.92); opacity: 0.35; }
+  100% { transform: rotateX(14deg) scale(1); opacity: 1; }
+}
+.nvx-annual .an-depth {
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 5.5;
+  transform: translateY(5px);
+}
+.nvx-annual .an-area-line { stroke-width: 3.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-hero, .pg-motif, .pg-ch, .pg-underline, .pg-stamp,
+  .nvx-annual .annual-rank, .nvx-annual .an-rank,
+  .nvx-annual .annual-rank-poster, .nvx-annual .an-dot-c,
+  .nvx-annual .an-area-line, .nvx-annual .an-area-fill,
+  .nvx-annual .an-m, .nvx-annual .an-rank .an-rank-bar,
+  .nvx-annual .an-area, #toolbarTitle i {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+  .pg-style-stamp .pg-stamp { transform: rotate(-1.6deg) scaleX(1) !important; }
+}
+
+/* ==========================================================================
+   Skiper UI 特效 v1（skiper-ui.com 用户指定批次引入，每类 ≥1 款）
+   ========================================================================== */
+/* ① skiper2 Dynamic Island → 通知条岛屿化：顶部居中胶囊，弹出带回弹 */
+.notification {
+  right: auto;
+  left: 50%;
+  bottom: auto;
+  top: 16px;
+  min-width: 0;
+  max-width: 480px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  border-left: none;
+  background: color-mix(in srgb, var(--card-bg, #1b1b22) 78%, transparent);
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  transform: translateX(-50%) translateY(-26px) scale(0.9);
+  transform-origin: center top;
+  transition: opacity 0.3s ease,
+              transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.notification.show { transform: translateX(-50%) translateY(0) scale(1); }
+.notification::before {
+  content: '';
+  display: inline-block;
+  width: 8px; height: 8px;
+  margin-right: 9px;
+  border-radius: 50%;
+  background: var(--primary, #818CF8);
+  vertical-align: 1px;
+  box-shadow: 0 0 8px currentColor;
+}
+.notification.level-success::before { background: #4ADE80; }
+.notification.level-warn::before    { background: #FBBF24; }
+.notification.level-error::before   { background: #F87171; }
+.notification-title   { display: inline; font-size: 13px; }
+.notification-message { display: inline; margin: 0 0 0 8px; font-size: 12.5px; }
+
+/* ② skiper43 Vercel Tooltip → rail 折叠态导航悬浮提示（弹簧缩放登场） */
+.nav-item { position: relative; }
+.nvx-tip {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px) scale(0.6);
+  transform-origin: left center;
+  padding: 5px 13px;
+  border-radius: 9px;
+  background: rgba(10, 10, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #F5F5FA;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 70;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+.sidebar.rail .nav-item:hover .nvx-tip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0) scale(1);
+}
+
+/* ③ skiper37 Number flow → 计数徽章变化：旧值上滑出，新值下滑入 */
+.count { overflow: hidden; }
+.nvx-roll { display: inline-block; position: relative; }
+.nvx-o, .nvx-n { display: inline-block; }
+.nvx-o { animation: nvxRollOut 0.5s cubic-bezier(0.5, 0, 0.75, 0) forwards; }
+.nvx-n { position: absolute; left: 0; top: 0;
+         animation: nvxRollIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both; }
+@keyframes nvxRollOut {
+  to { transform: translateY(-110%); opacity: 0; }
+}
+@keyframes nvxRollIn {
+  from { transform: translateY(110%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* ④ skiper3 Apple play button → 播放按钮：悬停膨胀回弹 + 按下压扁 */
+.play-btn {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.35s ease, background 0.3s ease;
+}
+.play-btn:hover {
+  transform: scale(1.12);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--primary, #818CF8) 45%, transparent);
+}
+.play-btn:active { transform: scale(0.94); transition-duration: 0.1s; }
+
+/* ⑤ skiper4 Theme toggle → 主题球点击弹性翻转 */
+.theme-toggle { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.theme-toggle:hover { transform: scale(1.1); }
+.nvx-tspin { animation: nvxTspin 0.55s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes nvxTspin {
+  0%   { transform: rotateY(0) scale(1); }
+  40%  { transform: rotateY(180deg) scale(0.82); }
+  70%  { transform: rotateY(300deg) scale(1.08); }
+  100% { transform: rotateY(360deg) scale(1); }
+}
+
+/* ⑥ skiper1 Anime scrollbar → 侧栏/内容区滚动条：渐变胶囊悬停增亮 */
+.sidebar::-webkit-scrollbar,
+main.content::-webkit-scrollbar { width: 8px; }
+.sidebar::-webkit-scrollbar-track,
+main.content::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb,
+main.content::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--primary, #818CF8) 55%, transparent),
+    color-mix(in srgb, var(--primary, #818CF8) 18%, transparent));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.25s ease;
+}
+.sidebar::-webkit-scrollbar-thumb:hover,
+main.content::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--primary, #818CF8) 95%, transparent),
+    color-mix(in srgb, var(--primary, #818CF8) 45%, transparent));
+  background-clip: padding-box;
+}
+
+/* ⑦ skiper29 Siena 视差 → 详情海报 3D 倾斜（JS 写 transform，这里给底子） */
+.detail-poster-wrap { perspective: 900px; }
+.detail-poster { will-change: transform; }
+
+/* ⑧ skiper35 Hover expand → 猜你喜欢中央牌：悬停浮起。
+   transform/filter 被 deck 布局引擎内联占用（magic-likes.js:235），走 box-shadow 通道 */
+.magic-deck:not(.dragging) .magic-card.is-center:hover {
+  box-shadow: 0 0 0 3px var(--primary-soft),
+              0 30px 60px -18px rgba(0, 0, 0, 0.72),
+              0 0 34px color-mix(in srgb, var(--primary, #F59E0B) 30%, transparent);
+  border-color: var(--primary);
+}
+
+/* ⑨ skiper41 Progressive Blur → settings 吸顶筛选条下缘：内容穿过时渐进模糊消隐 */
+.settings-lan-box::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 100%;
+  height: 26px;
+  pointer-events: none;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  mask-image: linear-gradient(180deg, #000, transparent);
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent);
+}
+
+/* ⑩ skiper103 Bouncy accordion → 详情区块弹跳入场（每次弹窗重渲染自动触发） */
+.detail-section {
+  animation: nvxSecIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.detail-section:nth-child(2) { animation-delay: 0.05s; }
+.detail-section:nth-child(3) { animation-delay: 0.1s; }
+.detail-section:nth-child(n + 4) { animation-delay: 0.15s; }
+@keyframes nvxSecIn {
+  0% { opacity: 0; transform: translateY(18px) scale(0.97); }
+  100% { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-section { animation: none; }
+}
+
+/* ==========================================================================
+   round45：长任务加载覆盖层（刮削/跳转/在线源解析）
+   >350ms 才显形；轻纱不遮屏，中央 reel 胶囊
+   ========================================================================== */
+#nvxLong {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  transform: translateX(-50%);
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 28px 16px 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-bg, #1b1b22) 88%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  animation: nvxLongIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+#nvxLong.bye { animation: nvxLongOut 0.32s ease both; }
+/* 轻纱独立元素：transform 容器内的 fixed 会失效成灰斑（round50） */
+#nvxLongVeil {
+  position: fixed;
+  inset: 0;
+  z-index: 1399;
+  pointer-events: none;
+  background: rgba(8, 8, 14, 0.28);
+  animation: nvxVeilIn 0.4s ease both;
+}
+#nvxLongVeil.bye { animation: nvxVeilOut 0.32s ease both; }
+@keyframes nvxVeilIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nvxVeilOut { to { opacity: 0; } }
+@keyframes nvxLongIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(14px) scale(0.9); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes nvxLongOut {
+  to { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.94); }
+}
+/* round50/round57：小人走路加载动画 + 逐字浮现文案（skiper8 语言） */
+#nvxLong .nvxl-walk {
+  width: 58px; height: 68px; flex: none; display: block;
+  object-fit: contain;
+  margin: -8px 0 -8px -4px;   /* 视觉重心对齐：小人居中，阴影自然投射 */
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+}
+#nvxLong b {
+  font-size: 15px; font-weight: 600; color: var(--text, #eee);
+  letter-spacing: 0.03em; white-space: nowrap;
+}
+#nvxLong b i {
+  display: inline-block; font-style: normal;
+  animation: nvxWordIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--wd, 0ms);
+}
+@keyframes nvxWordIn {
+  0% { opacity: 0; transform: translateY(12px); filter: blur(5px); }
+  100% { opacity: 1; transform: none; filter: blur(0); }
+}
+#nvxLong b::after {
+  content: '…';
+  animation: nvxDots 1.4s steps(4) infinite;
+}
+@keyframes nvxDots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '…'; } }
+
+/* ==========================================================================
+   ⑪ skiper92 Vercel Command Search → Ctrl+K 命令面板：岛屿胶囊 + 弹簧登场
+   ========================================================================== */
+.cp-overlay.show .cp-panel {
+  border-radius: 22px;
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  animation: nvxCpIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes nvxCpIn {
+  from { opacity: 0; transform: translateY(-18px) scale(0.92); filter: blur(6px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+.cp-overlay.show .cp-item.hl { animation: nvxCpHl 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes nvxCpHl {
+  0% { transform: scale(0.97); }
+  60% { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+
+/* ==========================================================================
+   ⑫ skiper83 AI Input 003 → 顶部全局搜索框：聚焦时 AI 流光描边
+   ========================================================================== */
+#searchInput {
+  position: relative;
+  transition: box-shadow 0.4s ease, border-color 0.3s ease;
+}
+#searchInput:focus {
+  border-color: transparent;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #F59E0B) 55%, transparent),
+              0 0 22px color-mix(in srgb, var(--primary, #F59E0B) 30%, transparent);
+  animation: nvxAiBreath 2.4s ease-in-out infinite;
+}
+@keyframes nvxAiBreath {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #F59E0B) 55%, transparent),
+                         0 0 16px color-mix(in srgb, var(--primary, #F59E0B) 22%, transparent); }
+  50%      { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #F59E0B) 85%, transparent),
+                         0 0 30px color-mix(in srgb, var(--primary, #F59E0B) 45%, transparent); }
+}
+
+/* ==========================================================================
+   round47：用户点名特效铺向大载体（播放器样式 / 对话框等等）
+   ========================================================================== */
+/* ⑬ skiper92/2 语言 → 全弹窗：毛玻璃幕布 + 弹簧入场 + 岛屿圆角
+   （.modal.show 切 display 会自动重放动画；详情/上传/海报/设置/播放器全命中） */
+.modal {
+  background: rgba(8, 6, 4, 0.55);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+}
+.modal.show .modal-content {
+  border-radius: 22px;
+  animation: nvxModalIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes nvxModalIn {
+  from { opacity: 0; transform: translateY(26px) scale(0.92); filter: blur(8px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+/* 全按钮触感（skiper3 微交互语言泛化） */
+.btn, .dbtn, .magic-btn, .theme-toggle {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+.btn:active, .dbtn:active, .magic-btn:active, .theme-toggle:active {
+  transform: scale(0.94);
+  transition-duration: 0.08s;
+}
+
+/* ⑭ 播放器 iOS 视觉重构：Apple TV / QuickTime 毛玻璃拟物与极简悬浮岛 */
+.player-modal {
+  background: rgba(0, 0, 0, 0.72) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+}
+.player-modal .modal-content {
+  max-width: min(1120px, 94vw) !important;
+  background: rgba(16, 16, 20, 0.78) !important;
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.85),
+              0 0 0 1px rgba(255, 255, 255, 0.06),
+              inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(40px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(190%) !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.player-modal .player-head {
+  margin: 14px 16px 0 !important;
+  padding: 8px 18px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  z-index: 10;
+}
+.player-modal .player-head .ph-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #34C759 !important;
+  box-shadow: 0 0 10px rgba(52, 199, 89, 0.8) !important;
+  animation: phPulse 2s ease-in-out infinite !important;
+}
+@keyframes phPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.7; }
+}
+.player-modal .player-head .ph-title {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", sans-serif !important;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.015em !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+}
+.player-modal .player-head .ph-avid {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 3px 9px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  letter-spacing: 0.04em !important;
+}
+.player-modal .player-head .close-btn {
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 26px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-size: 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+  padding: 0 !important;
+}
+.player-modal .player-head .close-btn:hover {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #fff !important;
+  transform: scale(1.08) !important;
+}
+.player-modal .player-head .close-btn:active {
+  transform: scale(0.92) !important;
+}
+.player-stage {
+  position: relative !important;
+  margin: 10px 16px 0 !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  background: #000 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 36px rgba(0,0,0,0.5) !important;
+}
+.player-stage video {
+  width: 100% !important;
+  display: block !important;
+  background: #000 !important;
+  border-radius: 16px !important;
+}
+.player-modal .player-foot {
+  margin: 12px 16px 16px !important;
+  padding: 8px 18px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+.player-modal .player-foot .btn {
+  height: 30px !important;
+  padding: 0 13px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+.player-modal .player-foot .btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+  transform: translateY(-1px) !important;
+}
+.player-modal .player-foot .btn:active {
+  transform: scale(0.95) !important;
+}
+.player-modal .player-progress {
+  flex: 1 !important;
+  height: 6px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+  overflow: visible !important;
+  cursor: pointer !important;
+  position: relative !important;
+  transition: height 0.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+.player-modal .player-foot:hover .player-progress {
+  height: 9px !important;
+}
+.player-modal .player-progress-fill {
+  height: 100% !important;
+  border-radius: 999px !important;
+  background: linear-gradient(90deg, #FF9500, #FF5E3A) !important;
+  box-shadow: 0 0 12px rgba(255, 149, 0, 0.6) !important;
+  position: relative !important;
+  transition: width 0.1s linear !important;
+}
+.player-modal .player-progress-fill::after {
+  content: '' !important;
+  position: absolute !important;
+  right: -5px !important;
+  top: 50% !important;
+  transform: translateY(-50%) scale(0) !important;
+  width: 13px !important;
+  height: 13px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45) !important;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.player-modal .player-foot:hover .player-progress-fill::after {
+  transform: translateY(-50%) scale(1) !important;
+}
+.player-modal #playerTime {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-mono) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  font-variant-numeric: tabular-nums !important;
+  letter-spacing: 0.02em !important;
+}
+.player-osd {
+  border-radius: 999px !important;
+  background: rgba(20, 20, 24, 0.8) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "SF Pro Display", sans-serif !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  padding: 8px 22px !important;
+  letter-spacing: 0.04em !important;
+  color: #fff !important;
+}
+.player-osd.rate {
+  color: #FFB340 !important;
+  text-shadow: 0 0 16px rgba(255, 179, 64, 0.5) !important;
+}
+
+/* ⑮ skiper2 → 启动扫描横幅岛屿化（右上白条 → 玻璃胶囊回落） */
+.startup-scan-bar {
+  border-radius: 999px !important;
+  border: 1px solid var(--border) !important;
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
+  animation: nvxScanIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes nvxScanIn {
+  from { opacity: 0; transform: translateY(-22px) scale(0.92); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ==========================================================================
+   round49：动效库回退类（设置 → 个性化 → 动效库 UI_anime 的开关）
+   每个已适配特效一个 body.fx-*-off/plain 类，恢复 style.css 原生形态
+   ========================================================================== */
+body.fx-notify-classic .notification {
+  left: auto; right: 24px; top: auto; bottom: 24px;
+  min-width: 260px; max-width: 380px; padding: 14px 18px;
+  border-radius: var(--radius); border-left: 3px solid var(--primary);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  text-align: left; transform: translateY(14px);
+}
+body.fx-notify-classic .notification.show { transform: translateY(0); }
+body.fx-notify-classic .notification::before { display: none; }
+body.fx-notify-classic .notification-title { display: block; }
+body.fx-notify-classic .notification-message { display: block; margin: 3px 0 0; }
+
+body.fx-modal-plain .modal { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+body.fx-modal-plain .modal.show .modal-content { animation: none; border-radius: var(--radius-lg); }
+
+body.fx-scrollbar-plain .sidebar::-webkit-scrollbar-thumb,
+body.fx-scrollbar-plain main.content::-webkit-scrollbar-thumb {
+  background: var(--border, #444);
+}
+body.fx-scrollbar-plain .sidebar::-webkit-scrollbar-thumb:hover,
+body.fx-scrollbar-plain main.content::-webkit-scrollbar-thumb:hover { background: var(--text-muted, #888); }
+
+body.fx-parallax-off .detail-poster { transform: none !important; transition: none !important; }
+
+body.fx-searchglow-plain #searchInput:focus { animation: none; box-shadow: none; }
+
+body.fx-tip-off .nvx-tip { display: none !important; }
+
+body.fx-btnfeel-plain .btn:active, body.fx-btnfeel-plain .dbtn:active,
+body.fx-btnfeel-plain .magic-btn:active, body.fx-btnfeel-plain .theme-toggle:active { transform: none; }
+
+body.fx-deckhover-off .magic-deck:not(.dragging) .magic-card.is-center:hover {
+  box-shadow: var(--shadow-2), 0 0 0 3px var(--primary-soft), 0 22px 50px -20px rgba(0, 0, 0, 0.6);
+  border-color: var(--primary);
+}
+
+body.fx-detailsec-off .detail-section { animation: none; }
+
+body.fx-pblur-off .settings-lan-box::after { display: none; }
+
+/* ==========================================================================
+   round52 动效广泛适配 P1（全部接入动效库开关 fx-avtree/fx-favtab/fx-reveal）
+   ========================================================================== */
+/* A skiper103 → 漫画/小说库目录树（.av-tree）：展开级联弹跳 + 箭头弹簧旋转 */
+.avt-arrow { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.avt-node.open > .avt-kids > .avt-node > .avt-row,
+.avt-node.open > .avt-kids.avt-files > .avt-row {
+  animation: nvxTreeIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.avt-node.open > .avt-kids > .avt-node:nth-child(1) > .avt-row { animation-delay: 0.03s; }
+.avt-node.open > .avt-kids > .avt-node:nth-child(2) > .avt-row { animation-delay: 0.07s; }
+.avt-node.open > .avt-kids > .avt-node:nth-child(3) > .avt-row { animation-delay: 0.11s; }
+.avt-node.open > .avt-kids > .avt-node:nth-child(4) > .avt-row { animation-delay: 0.15s; }
+.avt-node.open > .avt-kids > .avt-node:nth-child(n + 5) > .avt-row { animation-delay: 0.19s; }
+.avt-node.open > .avt-kids.avt-files > .avt-row:nth-child(1) { animation-delay: 0.05s; }
+.avt-node.open > .avt-kids.avt-files > .avt-row:nth-child(2) { animation-delay: 0.09s; }
+.avt-node.open > .avt-kids.avt-files > .avt-row:nth-child(3) { animation-delay: 0.13s; }
+.avt-node.open > .avt-kids.avt-files > .avt-row:nth-child(n + 4) { animation-delay: 0.17s; }
+@keyframes nvxTreeIn {
+  0% { opacity: 0; transform: translateX(-10px) scale(0.96); filter: blur(3px); }
+  60% { opacity: 1; transform: translateX(2px) scale(1.01); filter: blur(0); }
+  100% { opacity: 1; transform: none; }
+}
+body.fx-avtree-off .avt-node.open > .avt-kids > .avt-node > .avt-row,
+body.fx-avtree-off .avt-node.open > .avt-kids.avt-files > .avt-row { animation: none; }
+body.fx-avtree-off .avt-arrow { transition: none; }
+
+/* B skiper96 → 收藏夹板块切换：滑动胶囊指示条（JS 定位，这里给形态） */
+#favTabs { position: relative; }   /* 滑动指示条的定位父级 */
+[data-favboard] { position: relative; z-index: 1; }
+.nvx-tab-slider {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  border-radius: var(--radius, 10px);
+  background: var(--primary);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary, #F59E0B) 40%, transparent);
+}
+.nvx-tab-slider ~ .btn:not(.btn-secondary) { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
+body.fx-favtab-off .nvx-tab-slider { display: none; }
+
+/* C skiper71/104 → 海报墙揭示级联（IO 触发加类，会话内每张一次） */
+img.movie-poster.nvx-reveal-in {
+  animation: nvxPosterReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--rd, 0ms);
+}
+@keyframes nvxPosterReveal {
+  0% { opacity: 0; transform: translateY(14px) scale(0.97); filter: blur(8px) brightness(0.72); }
+  100% { opacity: 1; transform: none; filter: blur(0) brightness(1); }
+}
+body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
+
+/* ==========================================================================
+   详情弹窗工具按钮重构：侧栏同款专属彩色发光微交互（单行排列，拒绝换行折叠）
+   ========================================================================== */
+.detail-actions {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 8px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 6px 4px 12px !important;
+  scrollbar-width: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.detail-actions::-webkit-scrollbar {
+  display: none !important;
+}
+
+.detail-actions .dbtn {
+  position: relative !important;
+  flex: 0 0 46px !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  border-radius: 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.24s ease,
+              border-color 0.2s ease,
+              background 0.2s ease !important;
+}
+.detail-actions .dbtn:hover {
+  transform: translateY(-2px) scale(1.12) !important;
+  z-index: 2;
+}
+.detail-actions .dbtn:active {
+  transform: translateY(0) scale(0.92) !important;
+}
+
+.detail-actions .dbtn[data-act="upload"]    { --d-clr: #3B82F6; }
+.detail-actions .dbtn[data-act="graph"]     { --d-clr: #A855F7; }
+.detail-actions .dbtn[data-act="fav"]       { --d-clr: #F59E0B; }
+.detail-actions .dbtn[data-act="watch"]     { --d-clr: #10B981; }
+.detail-actions .dbtn[data-act="playlist"]  { --d-clr: #06B6D4; }
+.detail-actions .dbtn[data-act="translate"] { --d-clr: #38BDF8; }
+.detail-actions .dbtn[data-act="tags"]      { --d-clr: #F43F5E; }
+.detail-actions .dbtn[data-act="edit"]      { --d-clr: #8B5CF6; }
+.detail-actions .dbtn[data-act="rename"]    { --d-clr: #EAB308; }
+.detail-actions .dbtn[data-act="poster"]    { --d-clr: #14B8A6; }
+.detail-actions .dbtn[data-act="folder"]    { --d-clr: #6366F1; }
+.detail-actions .dbtn[data-act="rescrape"]  { --d-clr: #84CC16; }
+.detail-actions .dbtn[data-act="del-poster"]{ --d-clr: #FB7185; }
+/* 顶栏与工具栏刷新按钮微动效 */
+#globalRefreshBtn .ic-refresh, #watchNowBtn .ic-refresh {
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#globalRefreshBtn:hover .ic-refresh, #watchNowBtn:hover .ic-refresh {
+  transform: rotate(180deg);
+}
+#globalRefreshBtn.is-busy .ic-refresh, #watchNowBtn.is-busy .ic-refresh {
+  animation: nvxSpin 0.8s linear infinite !important;
+}
+@keyframes nvxSpin {
+  100% { transform: rotate(360deg); }
+}
+
+/* 详情弹窗工具按钮与设置左侧导航：100% 侧栏同款 Remotion 3D 动效图标 */
+.dbtn .nv-ic, .settings-nav-item .nv-ic {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  pointer-events: none !important;
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.25s ease !important;
+}
+.dbtn .nv-ic video, .dbtn .nv-ic img,
+.settings-nav-item .nv-ic video, .settings-nav-item .nv-ic img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  pointer-events: none !important;
+}
+.dbtn .nv-ic [hidden], .settings-nav-item .nv-ic [hidden] {
+  display: none !important;
+}
+
+.dbtn {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 13px !important;
+  background: color-mix(in srgb, var(--card-bg, #1a1a20) 80%, transparent) !important;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12)) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.24s ease,
+              border-color 0.2s ease,
+              background 0.2s ease !important;
+}
+.dbtn:hover {
+  transform: translateY(-3px) scale(1.14) !important;
+  border-color: var(--primary, #F59E0B) !important;
+  box-shadow: 0 10px 26px -4px rgba(245, 158, 11, 0.45) !important;
+}
+.dbtn:hover .nv-ic {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.35));
+}
+.dbtn:active {
+  transform: translateY(0) scale(0.92) !important;
+}
+.dbtn.danger:hover {
+  border-color: #EF4444 !important;
+  box-shadow: 0 10px 26px -4px rgba(239, 68, 68, 0.45) !important;
+}
+
+.settings-nav-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  cursor: pointer !important;
+  transition: background 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.settings-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  transform: translateX(3px) !important;
+}
+.settings-nav-item:hover .nv-ic {
+  transform: scale(1.18) !important;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.4)) !important;
+}
+.settings-nav-item.active {
+  background: var(--primary-soft, rgba(245, 158, 11, 0.18)) !important;
+  color: var(--primary, #F59E0B) !important;
+}
+.settings-nav-item.active .nv-ic {
+  transform: scale(1.12) !important;
+  filter: drop-shadow(0 0 12px var(--primary, #F59E0B)) !important;
+}
+
+/* ==========================================================================
+   3D 轮播卡牌堆舞台（Coverflow Deck · skiper83 / skiper17 语言）
+   ========================================================================== */
+.deck-carousel-stage {
+  position: relative !important;
+  padding: 24px 20px 28px !important;
+  background: radial-gradient(circle at 50% 30%, rgba(245, 158, 11, 0.08), transparent 70%),
+              color-mix(in srgb, var(--card-bg, #16161c) 75%, transparent) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 20px !important;
+  perspective: 1100px !important;
+  overflow: hidden !important;
+  backdrop-filter: blur(16px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+}
+.deck-stage-title {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 22px !important;
+  padding: 0 8px !important;
+}
+.dst-tag {
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  color: var(--primary, #F59E0B) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+.dst-hint {
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+}
+.deck-carousel-wrap {
+  position: relative !important;
+  height: 310px !important;
+  transform-style: preserve-3d !important;
+}
+.deck-card {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: 190px !important;
+  height: 280px !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  background: var(--card-bg, #1a1a20) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65) !important;
+  cursor: pointer !important;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity 0.45s ease,
+              box-shadow 0.3s ease !important;
+  user-select: none !important;
+}
+.deck-card.is-active {
+  border-color: var(--primary, #F59E0B) !important;
+  box-shadow: 0 24px 60px rgba(245, 158, 11, 0.38), 0 0 0 2px var(--primary) !important;
+}
+.deck-card-poster {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+.deck-card-info {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  padding: 30px 10px 10px !important;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.92)) !important;
+  color: #fff !important;
+  opacity: 0 !important;
+  transition: opacity 0.25s ease !important;
+}
+.deck-card.is-active .deck-card-info, .deck-card:hover .deck-card-info {
+  opacity: 1 !important;
+}
+.deck-card-title {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.deck-card-avid {
+  font-size: 10px !important;
+  font-family: var(--font-mono) !important;
+  color: var(--primary, #F59E0B) !important;
+}
+.deck-nav-btns {
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 16px !important;
+  z-index: 20 !important;
+}
+.deck-arrow {
+  pointer-events: auto !important;
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 50% !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(12px) !important;
+  color: #fff !important;
+  font-size: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.deck-arrow:hover {
+  background: var(--primary, #F59E0B) !important;
+  color: #000 !important;
+  transform: scale(1.12) !important;
+}
+  background: color-mix(in srgb, var(--sn-clr, var(--primary)) 30%, transparent) !important;
+  border-color: var(--sn-clr, var(--primary)) !important;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--sn-clr, var(--primary)) 50%, transparent) !important;
+}
