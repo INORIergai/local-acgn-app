@@ -1,0 +1,182 @@
+/* ==========================================================================
+   round31 / round61：设置 → 版本与更新 (全新动效磨砂界面)
+   ========================================================================== */
+
+.upd-ver-box {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 6px 0 16px;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+.upd-ver-num {
+    font-size: 26px;
+    font-weight: 800;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", var(--font-mono);
+    color: var(--primary, #F59E0B);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--primary, #F59E0B) 35%, transparent);
+    letter-spacing: .5px;
+}
+
+.upd-ver-sub {
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+/* 新版本发现卡片 - 自适应明暗主题，绝不在白底主题下黑屏 */
+#updNewBox {
+    background: var(--card-bg, #ffffff) !important;
+    border: 1px solid color-mix(in srgb, var(--primary, #F59E0B) 35%, var(--border)) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12) !important;
+    color: var(--text) !important;
+    animation: updPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes updPopIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: none; }
+}
+
+/* 新版本说明 */
+.upd-notes {
+    max-height: 240px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text) !important;
+    background: color-mix(in srgb, var(--bg, #f5f5f7) 90%, transparent) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin: 10px 0 8px;
+}
+
+/* 流动光彩进度条 */
+.upd-bar {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.upd-bar-inner {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #F59E0B, #10B981, #06B6D4, #F59E0B);
+    background-size: 250% 100%;
+    animation: updShimmer 2s linear infinite;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.6);
+    transition: width .25s ease;
+}
+@keyframes updShimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: 0 0; }
+}
+
+/* 动效版本标签 */
+.upd-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    background: linear-gradient(135deg, var(--primary, #F59E0B), #F97316);
+    color: #fff;
+    margin-left: 8px;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--primary, #F59E0B) 50%, transparent);
+    animation: updBadgePulse 2.4s ease-in-out infinite;
+}
+@keyframes updBadgePulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 2px 10px color-mix(in srgb, var(--primary, #F59E0B) 40%, transparent); }
+    50% { transform: scale(1.06); box-shadow: 0 4px 18px color-mix(in srgb, var(--primary, #F59E0B) 70%, transparent); }
+}
+
+/* 单排 4 按钮无死框微晶透明玻璃胶囊 */
+.upd-action-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    margin-top: 16px !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+}
+.upd-action-row .btn {
+    height: 38px !important;
+    padding: 0 18px !important;
+    border-radius: 999px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    border: none !important;
+    outline: none !important;
+    background: color-mix(in srgb, var(--primary, #F59E0B) 14%, transparent) !important;
+    color: var(--primary, #F59E0B) !important;
+    box-shadow: none !important;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.upd-action-row .btn:hover {
+    transform: translateY(-2px) scale(1.05) !important;
+    background: color-mix(in srgb, var(--primary, #F59E0B) 24%, transparent) !important;
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--primary, #F59E0B) 35%, transparent) !important;
+}
+.upd-action-row .btn:active {
+    transform: translateY(0) scale(0.95) !important;
+}
+
+.upd-action-row .upd-btn-dl {
+    background: linear-gradient(135deg, var(--primary, #F59E0B), #EA580C) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--primary, #F59E0B) 40%, transparent) !important;
+}
+.upd-action-row .upd-btn-dl:hover {
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--primary, #F59E0B) 60%, transparent) !important;
+}
+
+.upd-action-row .upd-btn-inst {
+    background: linear-gradient(135deg, #10B981, #059669) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35) !important;
+}
+.upd-action-row .upd-btn-inst:hover {
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.55) !important;
+}
+
+.upd-action-row .btn-secondary {
+    background: color-mix(in srgb, var(--text) 8%, transparent) !important;
+    border: none !important;
+    color: var(--text) !important;
+}
+.upd-action-row .btn-secondary:hover {
+    background: color-mix(in srgb, var(--text) 16%, transparent) !important;
+    color: var(--text) !important;
+}
+}
+
+.upd-ok {
+    color: #10B981;
+    font-weight: 600;
+}
+
+.upd-warn {
+    color: #F59E0B;
+    font-weight: 600;
+}
