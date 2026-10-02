@@ -1922,15 +1922,192 @@ html[data-v4skin="aurora"] .facet-group {
     margin-top: auto;
 }
 
-/* ============ r66: 时间线物理海浪波浪顶起动效 (Wave Lift Effect) ============ */
-.tl-strip .tl-card {
-    transform: translate3d(0, var(--wave-y, 0px), 0) scale(var(--wave-s, 1)) rotate(var(--wave-rot, 0deg));
-    z-index: var(--wave-z, 1);
-    will-change: transform;
+/* ============ r67-MotionLab: 时间线卡片自然选中与平滑聚焦动效 (Motion.Lab) ============ */
+.tl-strip {
+    padding-top: 24px !important;
+    margin-top: -6px !important;
+    overflow-x: auto;
+    scroll-behavior: auto;
+    position: relative;
+    transform: translateZ(0);
+    will-change: scroll-position;
 }
+.tl-strip .tl-card {
+    will-change: transform, box-shadow;
+    backface-visibility: hidden;
+    transform-origin: center bottom;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease, filter 0.25s ease !important;
+}
+
+/* 移动与滑动中的自然选中与波浪聚焦（Dock-style Smooth Focus） */
 .tl-strip.is-waving .tl-card {
-    transition: none !important;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out !important;
 }
 .tl-strip.is-settling .tl-card {
-    transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.38s ease, filter 0.38s ease !important;
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.32s ease !important;
 }
+
+.tl-strip .tl-card.is-wave-lifted {
+    animation: none !important;
+    transform: translate3d(0, var(--wave-y, 0px), 0) scale(var(--wave-s, 1)) !important;
+    z-index: var(--wave-z, 1) !important;
+    box-shadow: var(--wave-shadow, 0 4px 12px rgba(0,0,0,0.18)) !important;
+}
+
+/* 时间线极简专属滑动条 (Minimal Scrubber，去波浪图标，极简磨砂胶囊) */
+.tl-slider-container {
+    position: relative;
+    margin: 6px 18px 4px;
+    padding: 6px 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.tl-slider-track {
+    position: relative;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    cursor: pointer;
+    overflow: visible;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    touch-action: none;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.tl-slider-track:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+.tl-slider-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--progress, 0%);
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.55));
+    border-radius: 999px;
+    pointer-events: none;
+}
+.tl-slider-thumb {
+    position: absolute;
+    top: 50%;
+    left: var(--progress, 0%);
+    transform: translate(-50%, -50%);
+    width: 36px;
+    height: 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 1px rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    touch-action: none;
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease, box-shadow 0.15s ease;
+}
+.tl-slider-thumb::after {
+    content: '';
+    width: 14px;
+    height: 2px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 999px;
+}
+.tl-slider-thumb:hover,
+.tl-slider-thumb.is-dragging {
+    transform: translate(-50%, -50%) scale(1.08);
+    background: #ffffff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    cursor: grabbing;
+}
+
+/* CPU/GPU 加速与内存瘦身：视口外海报卡片使用 content-visibility 避免浪费解码与合成显存 */
+.movie-grid .movie-card,
+.movie-card-compact,
+.av-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 160px 240px;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+
+/* AI 对话框 Skill 指令胶囊组件 */
+.ai-skill-deck {
+    margin: 10px 0 14px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+}
+.ai-skill-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+.ai-skill-refresh-btn {
+    background: transparent;
+    border: none;
+    color: var(--primary, #38bdf8);
+    font-size: 11.5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+.ai-skill-refresh-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.ai-skill-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.ai-skill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+.ai-skill-chip:hover {
+    background: var(--primary-soft, rgba(56, 189, 248, 0.18));
+    border-color: var(--primary, #38bdf8);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.25);
+}
+.ai-skill-chip .ai-skill-icon {
+    font-size: 13px;
+}
+/* r68：技能随机展示后的可点击提醒（单曲线淡入，克制不抢焦点） */
+.ai-skill-hint {
+    margin-top: 9px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    animation: aiSkillHintIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes aiSkillHintIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+

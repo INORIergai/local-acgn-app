@@ -226,10 +226,10 @@ function routeToConfig(r) {
   };
 }
 
-function callRoute(r, prompt, systemPrompt, tools) {
+function callRoute(r, prompt, systemPrompt, tools, history) {
   const cfg = routeToConfig(r);
-  if (cfg.provider === 'ollama') return callOllama(prompt, systemPrompt);
-  return callOpenAICompatible(cfg.provider, cfg.baseUrl, cfg.apiKey, cfg.model, prompt, systemPrompt, tools, cfg.session);
+  if (cfg.provider === 'ollama') return callOllama(prompt, systemPrompt, history);
+  return callOpenAICompatible(cfg.provider, cfg.baseUrl, cfg.apiKey, cfg.model, prompt, systemPrompt, tools, cfg.session, history);
 }
 
 // 网络层抖动（fetch failed / DNS / 超时）值得原地重试一次；HTTP 4xx/5xx 是确定性结果，重试无意义
@@ -238,22 +238,31 @@ function isTransientAIError(e) {
   return /fetch failed|timeout|超时|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket/i.test(m);
 }
 
-async function callRouteWithRetry(r, prompt, systemPrompt, tools) {
+async function callRouteWithRetry(r, prompt, systemPrompt, tools, history) {
   try {
-    return await callRoute(r, prompt, systemPrompt, tools);
+    return await callRoute(r, prompt, systemPrompt, tools, history);
   } catch (e) {
     if (!isTransientAIError(e)) throw e;
     console.log(`[AI路由] 「${r.name || r.id}」网络抖动，原地重试一次`);
-    return await callRoute(r, prompt, systemPrompt, tools);
+    return await callRoute(r, prompt, systemPrompt, tools, history);
   }
 }
 
-async function callAI(prompt, systemPrompt = '', tools = null) {
+// v3.0-c：多轮历史（[{role:'user'|'assistant', content}]，旧→新）。
+// 空内容直接剔除，位置固定在 system 之后、本轮 user 消息之前。
+function historyMessages(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter(h => h && (h.role === 'user' || h.role === 'assistant') && String(h.content || '').trim())
+    .map(h => ({ role: h.role, content: String(h.content).slice(0, 2000) }));
+}
+
+async function callAI(prompt, systemPrompt = '', tools = null, history = null) {
   const rs = getAIRoutes();
   if (!rs || !rs.routes.length) {
     const { provider, baseUrl, apiKey, model } = getAIConfig();
-    if (provider === 'ollama') return await callOllama(prompt, systemPrompt);
-    return await callOpenAICompatible(provider, baseUrl, apiKey, model, prompt, systemPrompt, tools);
+    if (provider === 'ollama') return await callOllama(prompt, systemPrompt, history);
+    return await callOpenAICompatible(provider, baseUrl, apiKey, model, prompt, systemPrompt, tools, '', history);
   }
 
   // 容灾链：当前路由优先，失败后按列表顺序切下一条启用路由，全链失败才抛最后的错误
@@ -265,7 +274,7 @@ async function callAI(prompt, systemPrompt = '', tools = null) {
   for (const r of chain) {
     try {
       aiLastUsedRoute = r.name || r.id;
-      const result = await callRouteWithRetry(r, prompt, systemPrompt, tools);
+      const result = await callRouteWithRetry(r, prompt, systemPrompt, tools, history);
       return result;
     } catch (e) {
       lastErr = e;
@@ -309,7 +318,7 @@ function buildAIHeaders(baseUrl, apiKey, sessionOverride) {
  * 调用 OpenAI 兼容 API（DeepSeek、OpenAI、自定义）
  * r60：callAI 容灾主入口在上方（模型路由段）——这里只保留单次调用的实现。
  */
-async function callOpenAICompatible(provider, baseUrl, apiKey, model, prompt, systemPrompt = '', tools = null, sessionOverride = '') {
+async function callOpenAICompatible(provider, baseUrl, apiKey, model, prompt, systemPrompt = '', tools = null, sessionOverride = '', history = null) {
   if (!apiKey) {
     throw new Error(`${provider} API Key 未配置，请在设置中填写`);
   }
@@ -327,6 +336,8 @@ async function callOpenAICompatible(provider, baseUrl, apiKey, model, prompt, sy
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
+    // v3.0-c：会话历史（多轮上下文注入）
+    for (const h of historyMessages(history)) messages.push(h);
     messages.push({ role: 'user', content: prompt });
     
     const body = {
@@ -385,7 +396,7 @@ async function callOpenAICompatible(provider, baseUrl, apiKey, model, prompt, sy
 /**
  * 调用 Ollama API（使用内置fetch，Node 18+支持）
  */
-async function callOllama(prompt, systemPrompt = '') {
+async function callOllama(prompt, systemPrompt = '', history = null) {
   if (!ollamaConfig.enableTranslate && !aiConfig.provider) {
     throw new Error('AI功能未启用，请在设置中开启');
   }
@@ -398,6 +409,8 @@ async function callOllama(prompt, systemPrompt = '') {
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
+    // v3.0-c：会话历史（多轮上下文注入）
+    for (const h of historyMessages(history)) messages.push(h);
     messages.push({ role: 'user', content: prompt });
     
     const controller = new AbortController();
@@ -1211,23 +1224,49 @@ function getAgentTools() {
 async function chatWithAI(message, movies, context = {}) {
   // v3.0-a：人格设定前置（身份先立住），能力规则跟在后面
   const personaPrompt = getPersonaPromptForChat();
-  const systemPrompt = (personaPrompt ? personaPrompt + '\n\n' : '') + `你是一个本地媒体库管理助手，可以帮助用户搜索、播放、管理影片、动漫、漫画和小说。
-用户的影库中有 ${movies.length} 部影片。
-你可以调用工具来完成各种操作，如搜索、播放、切换模块等。
-回答要简洁明了，重点突出。
+  // v3.0-d：记忆引擎注入块（长期记忆 + 分层摘要），由 routes/ai.js 的记忆引擎装配
+  let memorySection = '';
+  if (context.memoryText) {
+    memorySection += `\n【关于用户的长期记忆（记忆引擎自动维护，请自然地运用，不要机械罗列）】\n${context.memoryText}\n`;
+  }
+  if (context.summaryText) {
+    memorySection += `\n${context.summaryText}\n（以上是更早对话的压缩记忆，仅供你了解前情，不必主动复述）\n`;
+  }
+  const systemPrompt = (personaPrompt ? personaPrompt + '\n\n' : '') + `你是一个精通 CinemaVault 本地媒体库的全栈架构师兼智能管理助手。
+你不仅能帮助用户搜索、推荐、播放和管理影片、动漫、漫画与小说，还对本软件的完整开发架构图、各模块源码位置、数据库结构与报错自诊决策树了如指掌。
+用户的影库当前已载入 ${movies.length} 部影片。
 
-【重要格式要求】
-当你提到或推荐某部影片时，必须使用以下格式标记：
-[[影片ID|影片标题]]
-例如：[[123|ABC-123 某部影片]]
+【应用开发全景代码架构图 (CinemaVault Architecture Map)】
+1. 宿主与主进程 (Host / Electron Main Process)
+   - packaging/main.js: Electron 主进程。管理主窗口 (BrowserWindow)、启动预热窗口 (splashWin)、硬件加速开关 (GPU Rasterization, Zero-Copy)、Chromium 沙箱与崩溃自动降级、版本注入与子进程守护。
+   - 数据目录架构: 数据位于 %APPDATA%/CinemaVault/ 或便携目录 CinemaVault-Data/，包含 config.json、data/movies.db、posters/、cache/ 等。
+2. 后端服务端 (Backend Express & Native Storage)
+   - server.js: Express 服务端入口 (端口 3517)，托管静态资源，挂载路由中间件与跨域治理。
+   - database.js & utils/db.js: SQLite 数据库驱动 (better-sqlite3)。核心表包含：movies (基础元数据/评分/文件路径/添加时间), tags (标签字典), actresses (女优/演员), watch_history (观影记录与进度), playlists (播单), movie_tags & movie_actresses (多对多关联)。
+   - 核心路由 (routes/):
+     * routes/movie.js: 影片 CRUD、详情查询、海报更换、批量改名。
+     * routes/scan.js: 本地影视/动漫/漫画/小说目录递归扫描、智能番号提取与增量同步。
+     * routes/ai.js & utils/ai-service.js: 大模型路由 (Ollama / OpenAI / Claude / Gemini / Kimi)、对话推理、智能刮削 (smart_rescrape)、标签生成与工具调用。
+     * routes/quark.js: 夸克网盘登录态维护、云端目录树拉取、直链流式代理。
+     * 刮削核心: utils/scraper.js (JAV/DMM/JavBus 等源的元数据与封面刮取)。
+3. 前端单页系统 (Frontend Single-Page App)
+   - public/library.html: 应用主界面容器、顶栏控制区、侧边导航栏 (Sidebar)、AI 助手对话抽屉/弹窗 (#aiModal)、全景播放器模态框 (#playerModal)。
+   - public/js/app.js: 前端核心大脑。驱动视图切换 (movies/unwatched/favorites/timeline/tree)、时间线物理海浪顶出动效 (Wave Lift)、下方专属滑动条联动、卡片点击、多选与批量批处理。
+   - public/js/player.js: 视频播放控制器 (流媒体切片、待播抽屉、快捷键、双播放模式)。
+   - public/js/av-board.js: Aardvark 糖果色书架与猜你喜欢横向滑轨。
+   - public/css/: polish.css (海浪物理波浪与滑动条样式、GPU硬件加速优化)、theme-v4.css (Classic/Aurora/Ambient/Neon 四大主题)、round-motion-extras.css (微交互动画)。
+   - 阅读器体系: novel-reader.html (小说阅读器)、comic-reader.html (漫画阅读器)、cloud-reader.html (云端直读)。
 
-这样用户可以直接点击跳转到影片详情页。
-每部影片只标记一次，不要重复标记。
+【软件报错自诊与改善决策树 (Self-Healing Diagnosis)】
+当用户反馈报错或软件问题时，请结合上述架构图直接指出具体代码文件、原因并给出解决方案：
+- 刮削失败 / 封面获取不到: 位于 utils/scraper.js。常见原因为番号提取不匹配、防爬反制或网络未通。建议使用 AI 对话内提供的「一键更新海报 / smart_rescrape」工具或检查代理设置。
+- 视频播放黑屏 / 仅有声音无图像: 位于 public/js/player.js。通常是浏览器不支持 HEVC/H.265 硬解，可引导用户在详情页点击「外部播放」调用 PotPlayer 等本地播放器。
+- 界面卡顿 / 内存过高: 检查 polish.css 中的 content-visibility: auto、图片 decoding=async 与 packaging/main.js 的 GPU 硬件光栅化配置。
+- 数据库死锁 (SQLITE_BUSY): 位于 utils/db.js，通常因后台全量扫描未释放写锁导致，重启服务或启用 WAL 模式即可恢复。
 
-【工具使用】
-当用户需要执行操作时（如搜索、播放、切换模块等），请调用相应的工具，不要只在文字中描述。
-如果工具调用需要用户确认（如播放、删除等敏感操作），请先询问用户。`;
-  
+【回答与引用格式】
+- 当提到影库中具体某部影片时，必须使用格式：[[影片ID|影片标题]] （如 [[12|示例影片]]），前端会自动生成可点击跳入卡片。
+- 当用户要求操作时，优先使用对应工具调用，或提供明确的操作指引。${memorySection}`;
   const movieSamples = movies.slice(0, 50).map(m => 
     `- ID:${m.id}, 标题:${m.title}, 番号:${m.avid || '未知'}, 标签:${m.tags ? m.tags.map(t => t.name).slice(0, 5).join(', ') : '无'}, 女优:${m.actresses ? m.actresses.map(a => a.name).slice(0, 3).join(', ') : '无'}`
   ).join('\n');
@@ -1246,7 +1285,9 @@ ${movieSamples}
   const useTools = provider !== 'ollama' && aiConfig.enableAgent !== false;
   
   try {
-    const result = await callAI(prompt, systemPrompt, useTools ? getAgentTools() : null);
+    // v3.0-c：注入会话历史（永久唯一会话，跨重启）
+    const history = Array.isArray(context.history) ? context.history : null;
+    const result = await callAI(prompt, systemPrompt, useTools ? getAgentTools() : null, history);
     
     // 如果是工具调用结果
     if (typeof result === 'object' && result.type === 'tool_calls') {

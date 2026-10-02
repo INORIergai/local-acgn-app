@@ -84,7 +84,7 @@
             const res = await fetch('/api/ai/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: msg }),
+                body: JSON.stringify({ message: msg, sessionId: 'main' }),
             });
             const data = await res.json();
             if (typing) typing.remove();
@@ -659,6 +659,27 @@
     }
 
     // 绑定输入框事件（在 DOMContentLoaded 后由 app.js 调用 bindHome）
+    /* v3.0-c：首页聊天框与 AI 抽屉共用同一永久会话 —— 进入首页时恢复最近几条，
+       与 AI 抽屉里看到的上下文一致。只补空状态，不打断已在进行的对话。 */
+    let homeChatRestored = false;
+    async function restoreHomeChat() {
+        if (homeChatRestored) return;
+        homeChatRestored = true;
+        try {
+            const r = await (await fetch('/api/ai/history?sessionId=main&limit=6')).json();
+            if (r.code !== 0) return;
+            const msgs = r.data.messages || [];
+            if (!msgs.length) return;
+            const box = document.getElementById('homeChatMessages');
+            if (!box || box.querySelector('.home-msg')) return;   // 已经聊上了就不动
+            for (const m of msgs) {
+                const text = esc(m.content || '').replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (mm, id, title) =>
+                    `<span class="ai-movie-ref" data-movie-id="${id}" onclick="window.jumpToMovieFromAI && window.jumpToMovieFromAI(${id})">📎 ${esc(title)}</span>`);
+                addMsg(m.role === 'assistant' ? 'ai' : 'user', text);
+            }
+        } catch (e) { /* 记忆引擎未就绪时保持空态 */ }
+    }
+
     function bindHome() {
         const ta = document.getElementById('homeChatInput');
         const btn = document.getElementById('homeChatSend');
@@ -672,6 +693,7 @@
             });
         }
         if (btn) btn.addEventListener('click', sendHomeMessage);
+        restoreHomeChat();
         document.querySelectorAll('.home-rank-tab[data-src]').forEach(t =>
             t.addEventListener('click', () => switchRankSource(t.dataset.src)));
         document.querySelectorAll('.home-rank-tab[data-lib]').forEach(t =>

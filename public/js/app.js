@@ -406,7 +406,7 @@ function renderGallery() {
         // 2026-09-22：用户要求去掉底部信息遮罩层（gallery-overlay）——整幅海报干干净净
         return `
         <div class="gallery-slide${i === 0 ? ' is-active' : ' is-parked-fwd'}" data-id="${m.id}" title="${escapeHtml(title)}">
-            <img src="${getPosterUrl(m)}" alt="${title}" loading="lazy">
+            <img src="${getPosterUrl(m)}" alt="${title}" loading="lazy" decoding="async">
         </div>
         `;
     }).join('');
@@ -569,7 +569,7 @@ function renderMovieCard(movie) {
             <div class="movie-poster-wrap">
                 ${isNew ? '<span class="movie-badge-new">NEW</span>' : ''}
                 ${addedBadge ? `<span class="movie-badge-added" title="入库日期 ${addedDate}">📥 ${addedBadge}</span>` : ''}
-                <img class="movie-poster" src="${posterUrl || POSTER_PLACEHOLDER}" onerror="this.onerror=null;this.src=POSTER_PLACEHOLDER" alt="${displayTitle}" loading="lazy">
+                <img class="movie-poster" src="${posterUrl || POSTER_PLACEHOLDER}" onerror="this.onerror=null;this.src=POSTER_PLACEHOLDER" alt="${displayTitle}" loading="lazy" decoding="async">
                 <div class="movie-avid-overlay">${avid}</div>
                 <div class="movie-hover-info">
                     <div class="movie-hover-title">${displayTitle}</div>
@@ -689,7 +689,7 @@ function renderHotRanking(movies) {
         return `
         <div class="hp-step hp-${i + 1}" data-mid="${m.id}">
             <div class="hp-medal">${medals[i]}</div>
-            <div class="hp-poster"><img src="${getPosterUrl(m)}" alt="" loading="lazy"></div>
+            <div class="hp-poster"><img src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async"></div>
             <div class="hp-base"><b>${i + 1}</b><span>${plays(m)}</span></div>
             <div class="hp-title" title="${escapeHtml(m.title || '')}">${escapeHtml(m.title || m.fileName || '')}</div>
             ${avid(m)}
@@ -700,7 +700,7 @@ function renderHotRanking(movies) {
     const rows = movies.slice(3).map((m, i) => `
         <div class="hr-row" data-mid="${m.id}">
             <span class="hr-rank">${String(i + 4).padStart(2, '0')}</span>
-            <img class="hr-thumb" src="${getPosterUrl(m)}" alt="" loading="lazy">
+            <img class="hr-thumb" src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async">
             <div class="hr-main">
                 <div class="hr-name" title="${escapeHtml(m.title || '')}">${escapeHtml(m.title || m.fileName || '')}</div>
                 ${avid(m)}
@@ -751,7 +751,7 @@ function buildTimelineCards(list, opts) {
         const animIdx = Math.min(idx, 15);
         return `
         <div class="tl-card" data-mid="${m.id}" style="--tl-i:${animIdx};" title="${escapeHtml(m.title || m.fileName || '')}｜入库 ${formatAddedDate(ts) || '未知'}">
-            <div class="tl-poster"><img src="${getPosterUrl(m)}" alt="" loading="lazy"></div>
+            <div class="tl-poster"><img src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async"></div>
             <span class="tl-when">${label}</span>
             <span class="tl-date">${formatAddedDate(ts) || ''}</span>
             <span class="tl-name">${escapeHtml((m.title || m.fileName || '').slice(0, 18))}</span>
@@ -766,195 +766,282 @@ function bindTimelineTools(grid, source) {
     const strip = grid.querySelector('.tl-strip');
     const note = grid.querySelector('#tlNote');
     if (!strip) return;
-    const state = { q: '', days: 0 };
-    const apply = () => {
-        strip.innerHTML = buildTimelineCards(source, { q: state.q, days: state.days, limit: 60 });
-        const shown = strip.querySelectorAll('.tl-card').length;
+
+    let state = { q: '', days: 0 };
+
+    function apply() {
+        strip.innerHTML = buildTimelineCards(source, state);
         if (note) {
-            note.textContent = shown === 0
-                ? ''
-                : `条带显示 ${shown} 部 / 共 ${source.length} 部${state.q || state.days ? '（已筛选）' : ''} · 按住拖动 / 滚轮左右滑`;
+            const shown = strip.querySelectorAll('.tl-card').length;
+            note.textContent = shown === 0 ? '' : `条带显示 ${shown} 部 / 共 ${source.length} 部 · 拖动下方滑动条体验海报海浪依次顶出动效`;
         }
-    };
-    if (input) {
-        let t = null;
-        input.addEventListener('input', () => {
-            clearTimeout(t);
-            t = setTimeout(() => { state.q = input.value; apply(); }, 160);
-        });
-        input.addEventListener('click', e => e.stopPropagation());
+        bindTimelineWave(strip, grid);
+        bindDetailClicks(strip);
     }
+
+    if (input) {
+        let timer = null;
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                state.q = input.value;
+                apply();
+            }, 180);
+        });
+    }
+
     chips.forEach(btn => {
         btn.addEventListener('click', e => {
             e.stopPropagation();
             chips.forEach(b => b.classList.toggle('active', b === btn));
             state.days = parseInt(btn.dataset.days) || 0;
             apply();
-            bindTimelineWave(strip);
-            bindDetailClicks(strip);
         });
     });
-    // r65: 首次加载不重复 apply() 销毁卡片，保留已有 DOM 让错峰抽出动画平稳播放
+
     if (note) {
         const shown = strip.querySelectorAll('.tl-card').length;
-        note.textContent = shown === 0 ? '' : `条带显示 ${shown} 部 / 共 ${source.length} 部 · 按住拖动 / 滚轮左右滑`;
+        note.textContent = shown === 0 ? '' : `条带显示 ${shown} 部 / 共 ${source.length} 部 · 拖动下方滑动条体验海报海浪依次顶出动效`;
     }
-    // r66: 绑定物理海浪波浪顶起动效 (Wave Lift Effect)
-    bindTimelineWave(strip);
+
+    bindTimelineWave(strip, grid);
 }
 
-// r66: 物理连续波浪顶起动效（像有一根手指在海报地下，鼠标拖动/滑过时依次顶起，形成波浪翻涌）
-function bindTimelineWave(strip) {
-    if (!strip || strip.__waveBound) return;
-    strip.__waveBound = true;
+// r66-r67: 物理连续波浪顶起动效 (Wave Lift Effect) 与专属滑动条双向联动
+function bindTimelineWave(strip, container) {
+    if (!strip) return;
+    const sliderContainer = container ? container.querySelector('#tlSliderContainer') : document.getElementById('tlSliderContainer');
+    const track = sliderContainer ? sliderContainer.querySelector('#tlSliderTrack') : null;
+    const thumb = sliderContainer ? sliderContainer.querySelector('#tlSliderThumb') : null;
+    const fill = sliderContainer ? sliderContainer.querySelector('#tlSliderFill') : null;
 
     const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const RADIUS = 320;        // 影响半宽 (px)
-    const MAX_Y = 34;          // 最大顶起高度 (px)
-    const MAX_SCALE = 1.12;    // 最大放大
-    const MAX_ROT = 6;         // 最大波峰侧倾角 (deg)
+    // Motion.Lab 动效规范：自然选中与Dock聚焦参数（克制、平滑、不突兀）
+    const RADIUS = 280;        // 焦点作用半宽 280px (聚焦于中心 1-3 张卡片)
+    const MAX_Y = 12;          // 自然选中抬升高度 12px
+    const MAX_SCALE = 1.045;   // 自然选中微缩放 1.045
 
-    let isDown = false, moved = 0, startX = 0, startScroll = 0;
-    let rafId = null, currentFocalX = 0, activeCards = new Set();
+    let isStripDown = false, isSliderDown = false;
+    let moved = 0, startX = 0, startScroll = 0;
+    let activeCards = new Set();
+    let scrollWaveTimer = null;
 
-    function updateWave(focalX) {
+    function updateSliderProgress() {
+        if (!thumb || !track) return;
+        const maxScroll = strip.scrollWidth - strip.clientWidth;
+        const pct = maxScroll > 0 ? Math.min(1, Math.max(0, strip.scrollLeft / maxScroll)) : 0;
+        thumb.style.setProperty('--progress', `${(pct * 100).toFixed(2)}%`);
+        if (fill) fill.style.setProperty('--progress', `${(pct * 100).toFixed(2)}%`);
+    }
+
+    // Motion.Lab 动效规范：平滑聚焦算法（类似 macOS Dock / 轮播自然选中）
+    function doWavePhysics(focalX) {
         if (REDUCED) return;
-        currentFocalX = focalX;
-        if (rafId) return;
+        strip.classList.add('is-waving');
+        strip.classList.remove('is-settling');
 
-        rafId = requestAnimationFrame(() => {
-            rafId = null;
-            const cards = strip.querySelectorAll('.tl-card');
-            const newActive = new Set();
+        const cards = strip.querySelectorAll('.tl-card');
+        const newActive = new Set();
 
-            cards.forEach(card => {
-                const r = card.getBoundingClientRect();
-                const cx = r.left + r.width / 2;
-                const dist = Math.abs(cx - currentFocalX);
+        cards.forEach(card => {
+            const r = card.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const dist = Math.abs(cx - focalX);
 
-                if (dist < RADIUS) {
-                    const u = dist / RADIUS;
-                    // 升余弦钟形波 (Hann Window)
-                    const w = 0.5 * (1 + Math.cos(Math.PI * u));
-                    const y = -MAX_Y * w;
-                    const s = 1 + (MAX_SCALE - 1) * w;
-                    const rot = ((cx - currentFocalX) / RADIUS) * MAX_ROT * (1 - u) * w;
-                    const z = Math.round(w * 10) + 1;
+            if (dist < RADIUS) {
+                const u = dist / RADIUS;
+                // 余弦自然平滑衰减
+                const w = 0.5 * (1 + Math.cos(Math.PI * u));
+                const y = -MAX_Y * w;
+                const s = 1 + (MAX_SCALE - 1) * w;
+                const z = Math.round(w * 15) + 2;
+                const shadowAlpha = (0.16 + 0.22 * w).toFixed(2);
+                const glowAlpha = (0.28 * w).toFixed(2);
 
-                    card.style.setProperty('--wave-y', `${y.toFixed(1)}px`);
-                    card.style.setProperty('--wave-s', s.toFixed(3));
-                    card.style.setProperty('--wave-rot', `${rot.toFixed(2)}deg`);
-                    card.style.setProperty('--wave-z', z);
+                card.classList.add('is-wave-lifted');
+                card.style.setProperty('transform', `translate3d(0, ${y.toFixed(1)}px, 0) scale(${s.toFixed(3)})`, 'important');
+                card.style.setProperty('--wave-y', `${y.toFixed(1)}px`);
+                card.style.setProperty('--wave-s', s.toFixed(3));
+                card.style.setProperty('--wave-z', z);
+                card.style.setProperty('--wave-shadow', `0 ${Math.round(6 + 14 * w)}px ${Math.round(14 + 16 * w)}px rgba(0,0,0,${shadowAlpha}), 0 0 ${Math.round(12 * w)}px rgba(56,189,248,${glowAlpha})`);
 
-                    newActive.add(card);
-                    activeCards.delete(card);
-                }
-            });
-
-            // 移出波浪范围的卡片复位
-            activeCards.forEach(card => {
-                card.style.removeProperty('--wave-y');
-                card.style.removeProperty('--wave-s');
-                card.style.removeProperty('--wave-rot');
-                card.style.removeProperty('--wave-z');
-            });
-            activeCards = newActive;
+                newActive.add(card);
+                activeCards.delete(card);
+            }
         });
+
+        activeCards.forEach(card => {
+            card.classList.remove('is-wave-lifted');
+            card.style.removeProperty('--wave-y');
+            card.style.removeProperty('--wave-s');
+            card.style.removeProperty('--wave-z');
+            card.style.removeProperty('--wave-shadow');
+            card.style.removeProperty('transform');
+        });
+        activeCards = newActive;
     }
 
     function settleWave() {
-        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
         strip.classList.remove('is-waving');
         strip.classList.add('is-settling');
 
         activeCards.forEach(card => {
             card.style.setProperty('--wave-y', '0px');
             card.style.setProperty('--wave-s', '1');
-            card.style.setProperty('--wave-rot', '0deg');
             card.style.setProperty('--wave-z', '1');
+            card.style.setProperty('transform', 'translate3d(0, 0px, 0) scale(1)', 'important');
+            card.style.removeProperty('--wave-shadow');
         });
 
         setTimeout(() => {
             activeCards.forEach(card => {
+                card.classList.remove('is-wave-lifted');
                 card.style.removeProperty('--wave-y');
                 card.style.removeProperty('--wave-s');
-                card.style.removeProperty('--wave-rot');
                 card.style.removeProperty('--wave-z');
+                card.style.removeProperty('--wave-shadow');
+                card.style.removeProperty('transform');
             });
             activeCards.clear();
             strip.classList.remove('is-settling');
-        }, 380);
+        }, 320);
     }
 
-    strip.addEventListener('dragstart', e => e.preventDefault());
+    // 拖动滑动条时，卡片跟随当前焦点平滑呈现自然选中效果
+    function handleSliderDrag(clientX) {
+        if (!track) return;
+        const rect = track.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+        const maxScroll = strip.scrollWidth - strip.clientWidth;
+        strip.scrollLeft = pct * maxScroll;
+        updateSliderProgress();
+        doWavePhysics(clientX);
+    }
 
-    strip.addEventListener('pointerdown', e => {
-        if (e.pointerType === 'touch' || e.button !== 0) return;
-        isDown = true;
-        moved = 0;
-        startX = e.clientX;
-        startScroll = strip.scrollLeft;
-        strip.classList.add('is-waving');
-        updateWave(e.clientX);
-    });
+    if (sliderContainer && !sliderContainer.__bound) {
+        sliderContainer.__bound = true;
 
-    window.addEventListener('pointermove', e => {
-        if (!isDown) {
-            const r = strip.getBoundingClientRect();
-            if (e.clientY >= r.top && e.clientY <= r.bottom && e.clientX >= r.left && e.clientX <= r.right) {
-                strip.classList.add('is-waving');
-                updateWave(e.clientX);
+        const onSliderDown = (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            isSliderDown = true;
+            if (thumb) thumb.classList.add('is-dragging');
+            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            handleSliderDrag(clientX);
+            if (e.cancelable) e.preventDefault();
+        };
+
+        if (track) {
+            track.addEventListener('pointerdown', onSliderDown);
+            track.addEventListener('mousedown', onSliderDown);
+            track.addEventListener('touchstart', onSliderDown, { passive: false });
+        }
+        if (thumb) {
+            thumb.addEventListener('pointerdown', onSliderDown);
+            thumb.addEventListener('mousedown', onSliderDown);
+            thumb.addEventListener('touchstart', onSliderDown, { passive: false });
+        }
+    }
+
+    if (!strip.__waveBound) {
+        strip.__waveBound = true;
+
+        strip.addEventListener('dragstart', e => e.preventDefault());
+
+        // ★ 核心修复：按下卡片时仅记录起始点，绝对不立即激发波浪翻滚，避免点击图片时产生颠簸！
+        const onStripDown = (e) => {
+            if (e.pointerType === 'touch' || (e.button !== undefined && e.button !== 0)) return;
+            isStripDown = true;
+            moved = 0;
+            startX = e.clientX;
+            startScroll = strip.scrollLeft;
+        };
+
+        strip.addEventListener('pointerdown', onStripDown);
+        strip.addEventListener('mousedown', onStripDown);
+
+        strip.addEventListener('scroll', () => {
+            updateSliderProgress();
+            // 在滚动条滑动时，以条带视口中心卡片呈现平滑自然选中聚焦
+            if (!isSliderDown && !isStripDown) {
+                const sR = strip.getBoundingClientRect();
+                const centerFocal = sR.left + sR.width / 2;
+                doWavePhysics(centerFocal);
+                clearTimeout(scrollWaveTimer);
+                scrollWaveTimer = setTimeout(settleWave, 160);
             }
+        }, { passive: true });
+
+        strip.addEventListener('wheel', e => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+            const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+            if (!d) return;
+            e.preventDefault();
+            strip.scrollLeft += d;
+            updateSliderProgress();
+            const sR = strip.getBoundingClientRect();
+            doWavePhysics(e.clientX || (sR.left + sR.width / 2));
+            clearTimeout(strip.__wheelTimer);
+            strip.__wheelTimer = setTimeout(settleWave, 180);
+        }, { passive: false });
+
+        strip.addEventListener('click', e => {
+            if (strip.__sup) { e.stopPropagation(); e.preventDefault(); }
+        }, true);
+    }
+
+    const onGlobalMove = (e) => {
+        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : null);
+        if (clientX === null) return;
+
+        if (isSliderDown) {
+            handleSliderDrag(clientX);
             return;
         }
 
-        const dx = e.clientX - startX;
-        if (Math.abs(dx) > moved) moved = Math.abs(dx);
-        if (moved > 4) {
-            if (!strip.classList.contains('dragging')) {
-                strip.classList.add('dragging');
-                try { strip.setPointerCapture(e.pointerId); } catch (err) {}
+        // 仅当用户真正发生横向拖拽（moved > 6px）移动卡片时，才触发自然聚焦
+        if (isStripDown) {
+            const dx = clientX - startX;
+            if (Math.abs(dx) > moved) moved = Math.abs(dx);
+            if (moved > 6) {
+                if (!strip.classList.contains('dragging')) {
+                    strip.classList.add('dragging');
+                    try { strip.setPointerCapture(e.pointerId); } catch (err) {}
+                }
+                strip.scrollLeft = startScroll - dx;
+                updateSliderProgress();
+                doWavePhysics(clientX);
             }
-            strip.scrollLeft = startScroll - dx;
+            return;
         }
-        updateWave(e.clientX);
-    });
-
-    const endDrag = () => {
-        if (!isDown) return;
-        isDown = false;
-        if (moved > 4) {
-            strip.__sup = true;
-            setTimeout(() => { strip.__sup = false; }, 90);
-        }
-        strip.classList.remove('dragging');
-        settleWave();
     };
 
-    window.addEventListener('pointerup', endDrag);
-    window.addEventListener('pointercancel', endDrag);
+    window.addEventListener('pointermove', onGlobalMove);
+    window.addEventListener('mousemove', onGlobalMove);
+    window.addEventListener('touchmove', onGlobalMove, { passive: true });
 
-    strip.addEventListener('pointerleave', () => {
-        if (!isDown) settleWave();
-    });
+    const endAllDrag = () => {
+        if (isSliderDown) {
+            isSliderDown = false;
+            if (thumb) thumb.classList.remove('is-dragging');
+            settleWave();
+        }
+        if (isStripDown) {
+            isStripDown = false;
+            if (moved > 6) {
+                strip.__sup = true;
+                setTimeout(() => { strip.__sup = false; }, 90);
+                settleWave();
+            }
+        }
+    };
 
-    strip.addEventListener('wheel', e => {
-        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-        const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-        if (!d) return;
-        e.preventDefault();
-        strip.scrollLeft += d;
-        strip.classList.add('is-waving');
-        updateWave(e.clientX || (strip.getBoundingClientRect().left + strip.clientWidth / 2));
-        clearTimeout(strip.__wheelTimer);
-        strip.__wheelTimer = setTimeout(settleWave, 180);
-    }, { passive: false });
+    window.addEventListener('pointerup', endAllDrag);
+    window.addEventListener('mouseup', endAllDrag);
+    window.addEventListener('touchend', endAllDrag);
+    window.addEventListener('pointercancel', endAllDrag);
 
-    strip.addEventListener('click', e => {
-        if (strip.__sup) { e.stopPropagation(); e.preventDefault(); }
-    }, true);
+    setTimeout(updateSliderProgress, 60);
 }
-
 // 独立入口：只看「最近 N 天新增」，供启动扫描完成的提示条一键跳转
 async function showAddedTimeline(days) {
     const d = days || 7;
@@ -991,6 +1078,14 @@ async function showAddedTimeline(days) {
                 </div>
             </div>
             <div class="tl-strip">${cards}</div>
+            <div class="tl-slider-container" id="tlSliderContainer">
+                <div class="tl-slider-track" id="tlSliderTrack">
+                    <div class="tl-slider-fill" id="tlSliderFill"></div>
+                    <div class="tl-slider-thumb" id="tlSliderThumb" tabindex="0" role="slider" aria-label="海浪滑动条">
+                        
+                    </div>
+                </div>
+            </div>
             <div class="tl-note" id="tlNote"></div>
         </div>
         <div class="uw-grid-title">共 ${list.length} 部</div>
@@ -1034,6 +1129,14 @@ function renderUnwatchedView(movies) {
                 </div>
             </div>
             <div class="tl-strip">${tlCards}</div>
+            <div class="tl-slider-container" id="tlSliderContainer">
+                <div class="tl-slider-track" id="tlSliderTrack">
+                    <div class="tl-slider-fill" id="tlSliderFill"></div>
+                    <div class="tl-slider-thumb" id="tlSliderThumb" tabindex="0" role="slider" aria-label="海浪滑动条">
+                        
+                    </div>
+                </div>
+            </div>
             <div class="tl-note" id="tlNote"></div>
         </div>
         <div class="uw-grid-title">全部未观看 · ${movies.length} 部</div>
@@ -1180,7 +1283,7 @@ function renderMuseum(movies) {
         <figure class="exhibit" data-mid="${m.id}"
                 style="--mdur:${dur}s;--mdelay:${delay}s;--mtilt:${tilt}deg">
             <div class="exhibit-frame">
-                <img src="${getPosterUrl(m)}" alt="${escapeHtml(m.title || '')}" loading="lazy">
+                <img src="${getPosterUrl(m)}" alt="${escapeHtml(m.title || '')}" loading="lazy" decoding="async">
             </div>
             <figcaption title="${escapeHtml(m.title || '')}">${escapeHtml(m.title || m.fileName || '')}</figcaption>
             <span class="exhibit-plaque">${m.avid ? escapeHtml(m.avid) : `No.${i + 1}`}</span>
@@ -1987,7 +2090,7 @@ function renderActresses(actresses) {
             const pics = (movies || []).filter(m => m.localPosterPath || m.posterPath).slice(0, 5);
             const box = card.querySelector('.actress-preview');
             if (box && pics.length) {
-                box.innerHTML = pics.map(m => `<img src="${getPosterUrl(m)}" alt="" loading="lazy">`).join('') +
+                box.innerHTML = pics.map(m => `<img src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async">`).join('') +
                     `<span class="ap-more">+${Math.max(0, (movies || []).length - pics.length)}</span>`;
             }
         } catch (e) { /* 预览失败静默 */ }
@@ -2039,7 +2142,7 @@ function renderActresses(actresses) {
                         const wrap = btn.closest('.actress-avatar-wrap');
                         const avatarEl = wrap.querySelector('.actress-avatar');
                         if (a.avatar) {
-                            avatarEl.innerHTML = `<img src="${a.avatar}?t=${Date.now()}" alt="${escapeHtml(a.name)}" loading="lazy">`;
+                            avatarEl.innerHTML = `<img src="${a.avatar}?t=${Date.now()}" alt="${escapeHtml(a.name)}" loading="lazy" decoding="async">`;
                             showNotification('刮削成功', `${a.name} 的头像已更新`);
                         } else {
                             showNotification('已完成', `${a.name}：javbus 上没有找到头像`);
@@ -2162,7 +2265,7 @@ async function showTagSlicerPreview(tagEl) {
         if (pop.dataset.tagId !== tagId) return; // 鼠标已移到别的标签
         const pics = (movies || []).filter(m => m.localPosterPath || m.posterPath).slice(0, 6);
         pop.innerHTML = pics.length
-            ? pics.map(m => `<img src="${getPosterUrl(m)}" alt="" loading="lazy">`).join('')
+            ? pics.map(m => `<img src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async">`).join('')
             : '<span class="tsp-empty">该标签暂无带封面的影片</span>';
     } catch (e) {
         pop.innerHTML = '<span class="tsp-empty">预览加载失败</span>';
@@ -2247,7 +2350,7 @@ function renderTagCloud(tags) {    const cloud = document.getElementById('tagClo
             const pics = (movies || []).filter(m => m.localPosterPath || m.posterPath).slice(0, 6);
             const box = item.querySelector('.tb-preview');
             if (box && pics.length) {
-                box.innerHTML = pics.map(m => `<img src="${getPosterUrl(m)}" alt="" loading="lazy">`).join('');
+                box.innerHTML = pics.map(m => `<img src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async">`).join('');
             }
         } catch (e) { /* 预览失败静默（悬停不打扰主流程） */ }
     }
@@ -2954,7 +3057,7 @@ function renderComicTreeCard(movie) {
             ${isWatched ? '<span class="badge-watched">✓</span>' : ''}
             <div class="movie-poster-wrap">
                 ${isNew ? '<span class="movie-badge-new">NEW</span>' : ''}
-                <img class="movie-poster" src="${posterUrl || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 200%22%3E%3Crect fill=%22%23e2e8f0%22 width=%22400%22 height=%22200%22/%3E%3Ctext x=%22200%22 y=%22115%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 font-size=%2240%22%3E📚%3C/text%3E%3C/svg%3E'}" alt="${displayTitle}" loading="lazy">
+                <img class="movie-poster" src="${posterUrl || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 200%22%3E%3Crect fill=%22%23e2e8f0%22 width=%22400%22 height=%22200%22/%3E%3Ctext x=%22200%22 y=%22115%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 font-size=%2240%22%3E📚%3C/text%3E%3C/svg%3E'}" alt="${displayTitle}" loading="lazy" decoding="async">
                 <div class="movie-avid-overlay">${avid}</div>
                 <div class="movie-hover-info">
                     <div class="movie-hover-title">${escapeHtml(displayTitle)}</div>
@@ -3922,7 +4025,7 @@ function renderCloudComics(comics) {
     grid.innerHTML = comics.map(comic => `
         <div class="movie-card" onclick="showCloudComicDetail('${comic.url}')">
             <div class="movie-poster">
-                <img src="${comic.cover}" alt="${comic.title}" loading="lazy">
+                <img src="${comic.cover}" alt="${comic.title}" loading="lazy" decoding="async">
                 <div class="poster-overlay">
                     <div class="play-btn">▶</div>
                 </div>
@@ -4536,7 +4639,7 @@ function renderNrMovieCard(m) {
         <article class="nr-card">
             <div class="nr-card-cover" onclick="showMovieDetail(${m.id})" style="cursor:pointer;">
                 ${cover
-                    ? `<img src="${escapeAttr(cover)}" alt="" loading="lazy">`
+                    ? `<img src="${escapeAttr(cover)}" alt="" loading="lazy" decoding="async">`
                     : `<div class="nr-card-cover-fallback">🎬</div>`}
             </div>
             <div class="nr-card-main">
@@ -5529,7 +5632,7 @@ function renderFxPreviewContent(opt) {
     if (opt.type === 'video') {
         return `<video style="max-height:100%;max-width:100%;object-fit:contain;" src="${opt.preview}" muted loop autoplay playsinline disablepictureinpicture></video>`;
     }
-    return `<img style="max-height:100%;max-width:100%;object-fit:contain;" src="${opt.preview}" alt="" loading="lazy">`;
+    return `<img style="max-height:100%;max-width:100%;object-fit:contain;" src="${opt.preview}" alt="" loading="lazy" decoding="async">`;
 }
 
 async function handleFxCategoryChange(slot, optId) {
@@ -6558,6 +6661,52 @@ function renderSettings(config) {
                         </div>
 
                         <div class="settings-item">
+                            <label>🧠 记忆引擎（Alife 式分层记忆 · 永久唯一会话）</label>
+                            <div style="font-size:12px;color:var(--text-muted);margin:4px 0 10px;">
+                                AI 保留完整对话历史并自动注入上下文：聊得久了自动压缩成<b>分层摘要</b>（近期摘要 → 远期浓缩），你的偏好与习惯会自动沉淀为<b>长期记忆</b>、每次对话注入。数据全部在本机数据库，可随时查看、编辑、删除。
+                            </div>
+                            <div id="aiMemoryWhitebox" style="font-size:12px;color:var(--text-muted);background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:10px;">
+                                正在读取记忆引擎状态…
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="memEnabled" checked>
+                                    <span>启用记忆引擎（会话持久化 + 上下文自动注入）</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="memAutoCompress" checked>
+                                    <span>聊长了自动压缩上下文为分层摘要（L1 → L2）</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="memAutoMemory" checked>
+                                    <span>自动从对话提取长期记忆（偏好 / 雷点 / 习惯）</span>
+                                </label>
+                            </div>
+                            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;">活动窗口保留
+                                    <input type="number" id="memLiveTurns" class="settings-input" min="2" max="50" style="width:76px;padding:4px 8px;"> 轮
+                                </label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;">记忆条目上限
+                                    <input type="number" id="memMemoryCap" class="settings-input" min="10" max="500" style="width:76px;padding:4px 8px;"> 条
+                                </label>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                                <button class="btn btn-sm" onclick="saveAIMemorySettings()">💾 保存记忆设置</button>
+                                <button class="btn btn-sm" onclick="compressAIMemories()">🧹 立即整理记忆</button>
+                                <span id="aiMemoryOpStatus" style="font-size:12px;"></span>
+                            </div>
+                            <div id="aiMemoriesBox" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;"></div>
+                            <div style="display:flex;gap:8px;margin-top:10px;">
+                                <input id="aiMemoryInput" class="settings-input" style="flex:1;" placeholder="手动添加记忆，例如：我最喜欢剧情向的作品，讨厌血腥猎奇…"
+                                       onkeypress="if(event.key==='Enter')addAIMemory()">
+                                <button class="btn btn-sm" onclick="addAIMemory()">＋ 添加</button>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+                                重要度越高的记忆越优先注入 AI 上下文；删除错误记忆，AI 就会「忘掉」它。
+                            </div>
+                        </div>
+
+                        <div class="settings-item">
                             <label>🔀 模型路由（多路由保存 · 随时切换 · 失败自动容灾）</label>
                             <div id="aiRoutesBox" style="margin:8px 0;display:flex;flex-direction:column;gap:6px;"></div>
                             <div id="aiRouteFormBox" style="display:none;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;"></div>
@@ -7391,6 +7540,8 @@ async function loadAIConfig() {
             loadAIPersona();
             // r60：模型路由列表
             loadAIRoutes();
+            // v3.0-d：记忆引擎面板（白盒状态 + 记忆条目）
+            loadAIMemoryPanel();
 
             /* ★ round25 修复 #106：配置填好之后立刻拉一次模型列表。
              * 这是「进设置页 → 模型下拉就是当前可用的模型」的关键一步，
@@ -8246,7 +8397,7 @@ function renderPosterOptions(grid, movieId, scraped, frames, cfg, state) {
 
     const card = (p) => `
         <div class="poster-option" onclick="changePoster(${movieId}, '${p.url}')">
-            <img src="${p.display || p.url}" alt="${p.title || ''}" loading="lazy">
+            <img src="${p.display || p.url}" alt="${p.title || ''}" loading="lazy" decoding="async">
             <div class="poster-option-info">
                 <span class="poster-option-source">${String(p.source || '').toUpperCase()}</span>
                 ${p.title ? `<span class="poster-option-title">${p.title}</span>` : ''}
@@ -8498,9 +8649,308 @@ async function startBatchRename() {
 }
 
 // 显示AI助手
+
+// ==================== AI Skill 指令推荐与快捷触发 ====================
+const AI_SKILL_SUGGESTIONS = [
+    { icon: '🌊', label: '一键更新海报', prompt: '帮我检查并一键更新所有缺失或低清的海报封面' },
+    { icon: '🎬', label: '推荐每日新片', prompt: '根据我最近的观看偏好，推荐 3 部值得看的每日新片' },
+    { icon: '🧹', label: '整理重复影片', prompt: '扫描并列出影库里疑似重复入库或命名相似的影片' },
+    { icon: '⭐', label: '查找高分未看', prompt: '在我的影库里找出评分最高但还没标记看过的 5 部好片' },
+    { icon: '🏷️', label: '智能补充标签', prompt: '分析最新入库的影片并为它们智能生成分类标签和中文简介' },
+    { icon: '👩', label: '按演员整理归类', prompt: '整理影库里出现频率最高的主演/女优，按人气聚合展示' },
+    { icon: '🛠️', label: '诊断软件报错', prompt: '结合应用全景架构图，诊断当前是否有刮削、播放或数据库错误' },
+    { icon: '📊', label: '生成影库周报', prompt: '统计我目前的影片总数、本周新增与观影时长摘要' }
+];
+
+function getRandomSkills(count = 4) {
+    const shuffled = [...AI_SKILL_SUGGESTIONS].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+}
+
+function renderAISkillDeck() {
+    const modalContent = document.querySelector('#aiModal .ai-modal-card');
+    if (!modalContent) return;
+    let deck = modalContent.querySelector('#aiSkillDeck');
+    if (!deck) {
+        deck = document.createElement('div');
+        deck.id = 'aiSkillDeck';
+        deck.className = 'ai-skill-deck';
+        const msgDiv = modalContent.querySelector('#aiMessages');
+        if (msgDiv) {
+            modalContent.insertBefore(deck, msgDiv);
+        }
+    }
+
+    const skills = getRandomSkills(4);
+    deck.innerHTML = `
+        <div class="ai-skill-header">
+            <span>💡 推荐技能指令 (Skills)</span>
+            <button type="button" class="ai-skill-refresh-btn" onclick="renderAISkillDeck()" title="换一批技能">
+                <span>🎲 换一批</span>
+            </button>
+        </div>
+        <div class="ai-skill-chips">
+            ${skills.map(s => `
+                <div class="ai-skill-chip" onclick="applyAISkillPrompt('${s.prompt.replace(/'/g, "\\'")}')" title="${s.prompt}">
+                    <span class="ai-skill-icon">${s.icon}</span>
+                    <span class="ai-skill-label">${s.label}</span>
+                </div>
+            `).join('')}
+        </div>
+        <div class="ai-skill-hint">👆 点击任意技能指令，可直接跟 AI 对话</div>
+    `;
+}
+
+function applyAISkillPrompt(promptText) {
+    const input = document.getElementById('aiInput');
+    if (!input) return;
+    input.value = promptText;
+    input.focus();
+}
+
 function showAIAssistant() {
+    renderAISkillDeck();
     updateAIModeButtons();
     document.getElementById('aiModal').classList.add('show');
+    // v3.0-c：打开即恢复历史（永久唯一会话，跨重启）+ 白盒状态条
+    loadAIHistory();
+}
+
+// ==================== v3.0-c/d：Alife 式记忆引擎（前端） ====================
+
+const AI_GREETING_HTML = `
+    <div style="text-align:center;color:var(--text-muted);padding:24px;">
+        👋 你好！我是你的影库AI助手<br>
+        <span style="font-size:12px;opacity:.8;">可以问我：推荐几部好看的、找有XX标签的影片、翻译片名…</span>
+    </div>
+`;
+
+/* 恢复会话历史 + 刷新白盒状态条（后端是唯一事实源） */
+async function loadAIHistory() {
+    const messagesDiv = document.getElementById('aiMessages');
+    if (!messagesDiv) return;
+    try {
+        const r = await (await fetch('/api/ai/history?sessionId=main&limit=60')).json();
+        if (r.code !== 0) return;
+        const msgs = r.data.messages || [];
+        if (msgs.length) {
+            messagesDiv.innerHTML = msgs.map(m => renderAIHistoryMessage(m)).join('');
+        } else {
+            messagesDiv.innerHTML = AI_GREETING_HTML;
+        }
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        updateAICtxBar(r.data.stats);
+    } catch (e) { /* 离线/后端未就绪时保持现有内容 */ }
+}
+
+/* 历史消息渲染：先转义，再把 [[ID|标题]] 换成可点击引用 */
+function renderAIHistoryMessage(m) {
+    const text = escapeHtml(m.content || '').replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (match, id, title) =>
+        `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${title}</span>`);
+    if (m.role === 'user') {
+        return `
+            <div style="margin-bottom:12px;text-align:right;">
+                <div style="display:inline-block;padding:10px 14px;background:var(--primary);color:white;border-radius:12px 12px 0 12px;max-width:80%;">
+                    ${text}
+                </div>
+            </div>`;
+    }
+    return `
+        <div style="margin-bottom:12px;">
+            <div style="display:inline-block;padding:10px 14px;background:var(--card-bg);border-radius:12px 12px 12px 0;max-width:90%;">
+                <div style="white-space:pre-wrap;line-height:1.6;">${text}</div>
+            </div>
+        </div>`;
+}
+
+/* 白盒状态条：记忆 / 活动窗口 / 分层摘要 一眼可见 */
+function updateAICtxBar(stats) {
+    const bar = document.getElementById('aiCtxBar');
+    if (!bar || !stats) return;
+    bar.style.display = 'block';
+    bar.textContent = `🧠 记忆 ${stats.memories} 条 · 待折叠对话 ${stats.liveMessages} 条 · 摘要 L1×${stats.l1Summaries} / L2×${stats.l2Summaries}`;
+}
+
+/* 「新对话」：当前窗口折叠进分层摘要（可溯源不丢失），从零开始 */
+async function startAISession() {
+    try {
+        const r = await (await fetch('/api/ai/history/new-session', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: 'main' })
+        })).json();
+        if (r.code !== 0) { showNotification('新对话开启失败', r.msg || '', 'error'); return; }
+        const messagesDiv = document.getElementById('aiMessages');
+        if (messagesDiv) {
+            messagesDiv.innerHTML = AI_GREETING_HTML;
+            messagesDiv.scrollTop = 0;
+        }
+        updateAICtxBar(r.data && r.data.stats);
+        showNotification('已开启新对话', '之前的内容已折叠进记忆，AI 依然记得前情');
+    } catch (e) {
+        showNotification('新对话开启失败', e.message, 'error');
+    }
+}
+
+/* 状态条点击 → 设置页 AI 分组 */
+function openAIMemorySettings() {
+    switchView('settings');
+    switchSettingsGroup('ai');
+    loadAIMemoryPanel();
+}
+
+/* 设置页：记忆引擎面板（白盒状态 + 开关 + 记忆条目 CRUD） */
+async function loadAIMemoryPanel() {
+    try {
+        const [setR, memR] = await Promise.all([
+            fetch('/api/ai/memory-settings').then(r => r.json()),
+            fetch('/api/ai/memories?sessionId=main').then(r => r.json())
+        ]);
+        if (setR.code === 0) {
+            const s = setR.data;
+            const el = id => document.getElementById(id);
+            if (el('memEnabled')) el('memEnabled').checked = s.enabled !== false;
+            if (el('memAutoCompress')) el('memAutoCompress').checked = s.autoCompress !== false;
+            if (el('memAutoMemory')) el('memAutoMemory').checked = s.autoMemory !== false;
+            if (el('memLiveTurns')) el('memLiveTurns').value = s.liveTurns || 10;
+            if (el('memMemoryCap')) el('memMemoryCap').value = s.memoryCap || 100;
+        }
+        if (memR.code === 0) {
+            renderAIMemories(memR.data.memories || []);
+            renderAIMemoryWhitebox(memR.data.stats);
+        }
+    } catch (e) { /* 面板保持空态 */ }
+}
+
+function renderAIMemoryWhitebox(stats) {
+    const box = document.getElementById('aiMemoryWhitebox');
+    if (!box || !stats) return;
+    box.innerHTML = `<b>白盒状态</b>：待折叠对话 <b>${stats.liveMessages}</b> 条 · 已折叠 ${stats.foldedMessages} 条 · 近期摘要 L1×<b>${stats.l1Summaries}</b> · 远期浓缩 L2×<b>${stats.l2Summaries}</b> · 长期记忆 <b>${stats.memories}</b> 条`;
+}
+
+const MEM_KIND_LABEL = { preference: '偏好', dislike: '雷点', habit: '习惯', fact: '事实' };
+let aiMemoriesCache = [];
+
+function renderAIMemories(list) {
+    aiMemoriesCache = list;
+    const box = document.getElementById('aiMemoriesBox');
+    if (!box) return;
+    if (!list.length) {
+        box.innerHTML = '<div style="font-size:12.5px;color:var(--text-muted);padding:6px 0;">还没有长期记忆 —— 多和 AI 聊聊，或在上面的输入框手动添加。</div>';
+        return;
+    }
+    box.innerHTML = list.map(m => {
+        const stars = '★'.repeat(Math.max(1, Math.round((m.importance || 0.5) * 5)));
+        return `
+        <div class="ai-memory-item" data-mem-id="${m.id}" style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--bg-elevated);">
+            <span class="ai-memory-kind" style="flex:0 0 auto;font-size:11px;padding:2px 8px;border-radius:8px;background:var(--primary-soft);color:var(--primary);">${MEM_KIND_LABEL[m.kind] || m.kind}</span>
+            <span class="ai-memory-content" style="flex:1;min-width:0;font-size:12.5px;line-height:1.5;word-break:break-all;">${escapeHtml(m.content)}</span>
+            <span style="flex:0 0 auto;font-size:11px;color:var(--accent);" title="重要度 ${Math.round((m.importance || 0.5) * 100)}% · 注入 ${m.hitCount || 0} 次">${stars}</span>
+            <button class="btn btn-sm btn-secondary" style="flex:0 0 auto;padding:2px 8px;font-size:11px;" onclick="editAIMemory(${m.id})">改</button>
+            <button class="btn btn-sm btn-secondary" style="flex:0 0 auto;padding:2px 8px;font-size:11px;" onclick="deleteAIMemory(${m.id})">删</button>
+        </div>`;
+    }).join('');
+}
+
+/* 行内编辑：把内容列换成输入框 + 保存/取消 */
+function editAIMemory(id) {
+    const item = aiMemoriesCache.find(m => m.id === id);
+    const box = document.getElementById('aiMemoriesBox');
+    const card = box && box.querySelector(`[data-mem-id="${id}"]`);
+    if (!item || !card) return;
+    card.innerHTML = `
+        <select id="memEditKind" class="settings-input" style="width:auto;padding:2px 6px;font-size:12px;">
+            ${Object.entries(MEM_KIND_LABEL).map(([k, v]) => `<option value="${k}" ${k === item.kind ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+        <input id="memEditContent" class="settings-input" style="flex:1;padding:4px 8px;font-size:12.5px;" value="${escapeHtml(item.content)}">
+        <button class="btn btn-sm" style="padding:2px 10px;font-size:11px;" onclick="saveAIMemoryEdit(${id})">保存</button>
+        <button class="btn btn-sm btn-secondary" style="padding:2px 10px;font-size:11px;" onclick="loadAIMemoryPanel()">取消</button>`;
+    const input = card.querySelector('#memEditContent');
+    if (input) { input.focus(); input.select(); }
+}
+
+async function saveAIMemoryEdit(id) {
+    const card = document.querySelector(`[data-mem-id="${id}"]`);
+    if (!card) return;
+    const content = (card.querySelector('#memEditContent') || {}).value || '';
+    const kind = (card.querySelector('#memEditKind') || {}).value || 'preference';
+    try {
+        const r = await (await fetch(`/api/ai/memories/${id}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, kind })
+        })).json();
+        if (r.code !== 0) throw new Error(r.msg || '保存失败');
+        showNotification('记忆已更新');
+        loadAIMemoryPanel();
+    } catch (e) {
+        showNotification('记忆更新失败', e.message, 'error');
+    }
+}
+
+async function deleteAIMemory(id) {
+    try {
+        const r = await (await fetch(`/api/ai/memories/${id}`, { method: 'DELETE' })).json();
+        if (r.code !== 0) throw new Error(r.msg || '删除失败');
+        showNotification('记忆已删除', 'AI 之后将不再注入这条记忆');
+        loadAIMemoryPanel();
+    } catch (e) {
+        showNotification('删除失败', e.message, 'error');
+    }
+}
+
+async function addAIMemory() {
+    const input = document.getElementById('aiMemoryInput');
+    const content = input ? input.value.trim() : '';
+    if (!content) return;
+    try {
+        const r = await (await fetch('/api/ai/memories', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, kind: 'preference', importance: 0.8 })
+        })).json();
+        if (r.code !== 0) throw new Error(r.msg || '添加失败');
+        if (input) input.value = '';
+        showNotification(r.msg || '记忆已添加');
+        loadAIMemoryPanel();
+    } catch (e) {
+        showNotification('记忆添加失败', e.message, 'error');
+    }
+}
+
+async function compressAIMemories() {
+    const st = document.getElementById('aiMemoryOpStatus');
+    try {
+        if (st) st.textContent = '整理中…';
+        const r = await (await fetch('/api/ai/memories/compress', { method: 'POST' })).json();
+        if (r.code !== 0) throw new Error(r.msg || '整理失败');
+        if (st) st.textContent = r.msg || '整理完成';
+        showNotification('记忆整理完成', r.msg);
+        loadAIMemoryPanel();
+    } catch (e) {
+        if (st) st.textContent = e.message;
+        showNotification('记忆整理失败', e.message, 'error');
+    }
+}
+
+async function saveAIMemorySettings() {
+    const st = document.getElementById('aiMemoryOpStatus');
+    try {
+        if (st) st.textContent = '保存中…';
+        const r = await (await fetch('/api/ai/memory-settings', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: document.getElementById('memEnabled').checked,
+                autoCompress: document.getElementById('memAutoCompress').checked,
+                autoMemory: document.getElementById('memAutoMemory').checked,
+                liveTurns: parseInt(document.getElementById('memLiveTurns').value) || 10,
+                memoryCap: parseInt(document.getElementById('memMemoryCap').value) || 100
+            })
+        })).json();
+        if (r.code !== 0) throw new Error(r.msg || '保存失败');
+        if (st) st.textContent = '✅ 已保存，下一条对话生效';
+        showNotification('记忆引擎设置已保存');
+    } catch (e) {
+        if (st) st.textContent = e.message;
+        showNotification('记忆设置保存失败', e.message, 'error');
+    }
 }
 
 // 关闭AI助手
@@ -8543,17 +8993,20 @@ async function sendAIMessage() {
         const res = await fetch('/api/ai/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({ message, sessionId: 'main' })
         });
         const data = await res.json();
-        
+
         // 移除正在输入提示
         document.getElementById(typingId)?.remove();
-        
+
         if (data.code === 0) {
             const reply = data.data.reply || '抱歉，我没有理解你的问题';
             const movieRefs = data.data.movieRefs || [];
             const toolCalls = data.data.toolCalls || [];
+
+            // v3.0-d：白盒状态条随回复刷新
+            if (data.data.context) updateAICtxBar(data.data.context);
             
             // 把回答中的 [[ID|标题]] 替换成可点击的标记
             let formattedReply = reply.replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (match, id, title) => {
@@ -8955,7 +9408,7 @@ async function showRelationGraph(movieId) {
                     <div class="similar-grid">
                         ${sameActressMovies.map(s => `
                             <div class="similar-card" onclick="showMovieDetail(${s.id})">
-                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy">
+                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
                                 <div class="similar-title">${s.title || s.avid || ''}</div>
                             </div>
                         `).join('')}
@@ -8969,7 +9422,7 @@ async function showRelationGraph(movieId) {
                     <div class="similar-grid">
                         ${sameTagMovies.map(s => `
                             <div class="similar-card" onclick="showMovieDetail(${s.id})">
-                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy">
+                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
                                 <div class="similar-title">${s.title || s.avid || ''}</div>
                             </div>
                         `).join('')}
@@ -9668,7 +10121,7 @@ function updateDeckCards() {
                 <div class="deck-card ${isCenter ? 'is-active' : ''}" data-idx="${idx}" onclick="handleDeckCardClick(${idx})"
                      style="transform: translate3d(calc(-50% + ${tx}px), -50%, ${tz}px) rotateY(${ry}deg) scale(${sc});
                             z-index: ${zIndex}; opacity: ${op};">
-                    <img class="deck-card-poster" src="${getPosterUrl(m)}" alt="" loading="lazy">
+                    <img class="deck-card-poster" src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async">
                     <div class="deck-card-info">
                         <div class="deck-card-title">${escapeHtml(m.title || m.fileName || '')}</div>
                         ${m.avid ? `<span class="deck-card-avid">${escapeHtml(m.avid)}</span>` : ''}
@@ -9936,7 +10389,7 @@ async function showMovieDetail(id) {
                 <div class="similar-grid">
                     ${similar.map(s => `
                         <div class="similar-card" data-similar-id="${s.id}" onclick="showMovieDetail(${s.id})">
-                            <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy">
+                            <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
                             <div class="similar-title">${s.title || s.avid || ''}</div>
                         </div>
                     `).join('')}

@@ -128,29 +128,39 @@ router.get('/recommend', async (req, res) => {
     }
 });
 
-// AI对话
+// AI对话（v3.0-c/d：永久唯一会话 + Alife 式记忆引擎注入）
 router.post('/chat', async (req, res) => {
     try {
         const { message } = req.body;
         if (!message) return res.json({ code: -1, msg: '消息不能为空' });
-        
+
+        // 记忆引擎：装配注入上下文（长期记忆 + 分层摘要 + 活动窗口），再落库当前消息
+        const aiMemory = require('../utils/ai-memory');
+        const sessionId = aiMemory.normalizeSessionId(req.body.sessionId);
+        const chatCtx = aiMemory.buildChatContext(sessionId);
+        aiMemory.appendMessage(sessionId, 'user', message);
+
         // 获取所有影片（限制数量，避免上下文过大）
         const allMovies = getAllMovies.all().slice(0, 100);
-        
+
         // 获取影片标签信息
         const { getMovieTags, getMovieActresses, getMovieById } = require('../utils/db');
         for (const movie of allMovies) {
             movie.tags = getMovieTags.all(movie.id);
             movie.actresses = getMovieActresses.all(movie.id);
         }
-        
-        const aiResult = await chatWithAI(message, allMovies);
-        
+
+        const aiResult = await chatWithAI(message, allMovies, {
+            history: chatCtx.history,
+            summaryText: chatCtx.summaryText,
+            memoryText: chatCtx.memoryText
+        });
+
         // 兼容新旧返回格式
         let reply = '';
         let toolCalls = [];
         let movieRefs = [];
-        
+
         if (typeof aiResult === 'string') {
             reply = aiResult;
         } else {
@@ -158,7 +168,15 @@ router.post('/chat', async (req, res) => {
             toolCalls = aiResult.toolCalls || [];
             movieRefs = aiResult.movieRefs || [];
         }
-        
+
+        // 助手回复落库 + 记忆命中计数；压缩/提取后台单飞，绝不阻塞回复
+        aiMemory.appendMessage(sessionId, 'assistant', reply);
+        aiMemory.recordMemoryHits(chatCtx.injectedMemoryIds);
+        setImmediate(() => {
+            aiMemory.maybeCompress(sessionId).catch(() => {});
+            aiMemory.maybeExtractMemories(sessionId).catch(() => {});
+        });
+
         // 如果没有从ai-service获取到movieRefs，解析AI回答中的影片引用 [[ID|标题]]
         if (movieRefs.length === 0) {
             const refRegex = /\[\[(\d+)\|([^\]]+)\]\]/g;
@@ -187,14 +205,140 @@ router.post('/chat', async (req, res) => {
             }
         }
         
-        res.json({ 
-            code: 0, 
-            data: { 
+        res.json({
+            code: 0,
+            data: {
                 reply,
                 movieRefs,
-                toolCalls
-            } 
+                toolCalls,
+                context: aiMemory.getStatus(sessionId)
+            }
         });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// ========== v3.0-c/d：Alife 式会话持久化与记忆引擎（白盒 API） ==========
+
+// 历史恢复（前端打开 AI 抽屉/首页聊天框时拉取）
+router.get('/history', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        const sessionId = aiMemory.normalizeSessionId(req.query.sessionId);
+        res.json({
+            code: 0,
+            data: {
+                messages: aiMemory.getHistory(sessionId, req.query.limit),
+                stats: aiMemory.getStatus(sessionId),
+                settings: aiMemory.getMemorySettings()
+            }
+        });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 新对话：当前窗口全部折叠成分层摘要（可溯源不丢失），从零开始
+router.post('/history/new-session', async (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        const sessionId = aiMemory.normalizeSessionId(req.body && req.body.sessionId);
+        const r = await aiMemory.startNewSession(sessionId);
+        if (!r.ok && r.reason === 'busy') return res.json({ code: -1, msg: '上一轮折叠还在进行，稍后再试' });
+        res.json({ code: 0, msg: '已开启新对话，之前的内容已折叠进记忆', data: { stats: aiMemory.getStatus(sessionId), ...r } });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 白盒状态：活动窗口 / 折叠消息 / L1、L2 摘要 / 记忆条数
+router.get('/context-status', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        const sessionId = aiMemory.normalizeSessionId(req.query.sessionId);
+        res.json({ code: 0, data: { stats: aiMemory.getStatus(sessionId), settings: aiMemory.getMemorySettings() } });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 长期记忆 CRUD（用户自管记忆面板）
+router.get('/memories', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        res.json({ code: 0, data: { memories: aiMemory.listMemories(), stats: aiMemory.getStatus(aiMemory.normalizeSessionId(req.query.sessionId)) } });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+router.post('/memories', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        const r = aiMemory.addMemory(req.body || {});
+        res.json({ code: 0, msg: r.merged ? '已与相似记忆合并强化' : '记忆已添加', data: r });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+router.post('/memories/:id', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        aiMemory.updateMemory(req.params.id, req.body || {});
+        res.json({ code: 0, msg: '记忆已更新' });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+router.delete('/memories/:id', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        aiMemory.deleteMemory(req.params.id);
+        res.json({ code: 0, msg: '记忆已删除' });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 手动全库合并压缩（压缩长存）
+router.post('/memories/compress', async (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        const r = await aiMemory.deepCompressMemories();
+        res.json({ code: 0, msg: `整理完成：合并 ${r.merged} 组相似记忆`, data: r });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 记忆引擎设置（enabled / liveTurns / autoCompress / autoMemory / memoryCap）
+router.get('/memory-settings', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        res.json({ code: 0, data: aiMemory.getMemorySettings() });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+router.post('/memory-settings', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        const b = req.body || {};
+        const cfg = readConfig();
+        cfg.ai = cfg.ai || {};
+        cfg.ai.memory = {
+            enabled: b.enabled !== false,
+            liveTurns: parseInt(b.liveTurns) || 10,
+            autoCompress: b.autoCompress !== false,
+            autoMemory: b.autoMemory !== false,
+            memoryCap: parseInt(b.memoryCap) || 100
+        };
+        writeConfig(cfg);
+        res.json({ code: 0, msg: '记忆引擎设置已保存，下一条对话生效', data: cfg.ai.memory });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

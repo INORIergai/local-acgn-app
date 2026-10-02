@@ -9,13 +9,13 @@
     <link rel="stylesheet" href="css/magic-likes.css?v=28">
     <link rel="stylesheet" href="css/av-board.css?v=5">
     <link rel="stylesheet" href="css/motion.css?v=1">
-    <link rel="stylesheet" href="css/polish.css?v=12">
+    <link rel="stylesheet" href="css/polish.css?v=13">
     <link rel="stylesheet" href="css/detail-mode.css?v=1">
     <link rel="stylesheet" href="css/theme-v4.css?v=3">
     <!-- 在线观看：macOS 窗口皮（放在 theme-v4 之后，皮肤令牌才能继承下来） -->
     <link rel="stylesheet" href="css/watch-mac.css?v=1">
     <!-- 第 13 轮覆盖层：热门TOP/时间线/博物馆/标签方块/年度图表/设置抽拉/漫画分栏 -->
-    <link rel="stylesheet" href="css/round13.css?v=1">
+    <link rel="stylesheet" href="css/round13.css?v=2">
     <!-- 第 14 轮覆盖层：弹窗层级修复/标签切片器/工作区填满/新作放大/高度自定义 -->
     <link rel="stylesheet" href="css/round14.css?v=1">
     <!-- 第 15 轮覆盖层：精选居中/热门铺满/博物馆做满/最近观看时间线/切片浮层放大/列表海报统一 -->
@@ -631,15 +631,19 @@
                     <h3 style="margin:0;font-size:16px;font-weight:700;">AI助手</h3>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
+                    <button type="button" class="btn btn-sm btn-secondary" id="aiNewSessionBtn" onclick="startAISession()" title="把当前对话折叠进记忆，开启新对话" style="font-size:11.5px;padding:3px 12px;height:26px;border-radius:999px;">✨ 新对话</button>
                     <button type="button" class="btn btn-sm btn-secondary" id="aiModeToggleBtn" onclick="toggleAIMode()" title="切换抽屉 / 弹窗展现方式" style="font-size:11.5px;padding:3px 12px;height:26px;border-radius:999px;">
                         ⇄ 切换模式
                     </button>
                     <button class="close-btn" onclick="closeAIModal()" style="font-size:22px;line-height:1;cursor:pointer;background:transparent;border:none;color:var(--text-muted);">&times;</button>
                 </div>
             </div>
-            <p style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px;">
+            <p style="color:var(--text-muted);font-size:12.5px;margin-bottom:6px;">
                 基于本地大模型，帮你找片、推荐、翻译与操作
             </p>
+            <div id="aiCtxBar" onclick="openAIMemorySettings()" title="查看记忆引擎状态，点击进入设置管理长期记忆" style="display:none;font-size:11px;color:var(--text-muted);margin-bottom:10px;cursor:pointer;">
+                🧠 记忆引擎
+            </div>
             
             <div id="aiMessages" class="ai-modal-messages">
                 <div style="text-align:center;color:var(--text-muted);padding:24px;">

@@ -123,6 +123,15 @@ const GPU_FLAG = path.join(DATA_ROOT, '.software-render');
 if (process.env.CV_SOFTWARE_RENDER === '1' || fs.existsSync(GPU_FLAG)) {
     app.disableHardwareAcceleration();
     blog('已禁用硬件加速（software-render 标记或 CV_SOFTWARE_RENDER=1）');
+} else {
+    // CPU/GPU 加速与内存瘦身优化：启用硬件光栅化与显存零拷贝，大幅降低主线程内存拷贝开销
+    app.commandLine.appendSwitch('enable-gpu-rasterization');
+    app.commandLine.appendSwitch('enable-zero-copy');
+    app.commandLine.appendSwitch('ignore-gpu-blocklist');
+    app.commandLine.appendSwitch('enable-hardware-overlays', 'single-fullscreen,single-on-top,underlay');
+    // 限制渲染进程 V8 堆内存上限并开启 GC 暴露，防止内存无节制膨胀
+    app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384 --expose-gc');
+    blog('已配置 GPU 硬件光栅化与零拷贝内存瘦身开关');
 }
 
 /* ---------------------------------------------------- 沙箱不可用自动降级
@@ -314,9 +323,11 @@ function copyTree(src, dst, preserve) {
 
 /** 载荷指纹：版本号 + server.js 大小（版本没变但代码变了也能触发同步） */
 function buildStamp() {
-    let size = 0;
-    try { size = fs.statSync(path.join(PAYLOAD, 'server.js')).size; } catch (e) { /* 忽略 */ }
-    return `${app.getVersion()}:${size}`;
+    let appM = 0, cssM = 0, srvM = 0;
+    try { appM = Math.round(fs.statSync(path.join(PAYLOAD, 'public', 'js', 'app.js')).mtimeMs); } catch (e) {}
+    try { cssM = Math.round(fs.statSync(path.join(PAYLOAD, 'public', 'css', 'polish.css')).mtimeMs); } catch (e) {}
+    try { srvM = Math.round(fs.statSync(path.join(PAYLOAD, 'server.js')).mtimeMs); } catch (e) {}
+    return `${app.getVersion()}:${appM}:${cssM}:${srvM}`;
 }
 
 function ensureRuntime() {
@@ -434,7 +445,7 @@ function startServer() {
         CONFIG_FILE,
         CINEMAVAULT_VERSION: APP_VERSION.version,                      // round31：真实版本号
         PORTABLE_EXECUTABLE_DIR: IS_PORTABLE ? (process.env.PORTABLE_EXECUTABLE_DIR || '') : '',
-        NODE_OPTIONS: '--experimental-require-module',
+        NODE_OPTIONS: '--experimental-require-module --max-old-space-size=160',
     });
     blog(`spawn 后端: execPath=${process.execPath}`);
     blog(`  cwd=${RUNTIME}  server.js 存在=${fs.existsSync(path.join(RUNTIME, 'server.js'))}`);
@@ -559,6 +570,13 @@ function createWindow() {
         shell.openExternal(url).catch(() => {});
     });
 
+    win.on('minimize', () => {
+        try {
+            if (win && !win.isDestroyed()) {
+                win.webContents.session.clearCache().catch(() => {});
+            }
+        } catch (e) {}
+    });
     win.on('closed', () => { win = null; });
     // 首页是应用自己的入口枢纽（影片 / 动漫 / 漫画 / 小说四合一）
     win.loadURL(BASE + '/');

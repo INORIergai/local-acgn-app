@@ -186,8 +186,9 @@
 }
 .tl-strip.dragging { cursor: grabbing; scroll-snap-type: none; }
 .tl-strip img { -webkit-user-drag: none; user-select: none; }
-.tl-strip::-webkit-scrollbar { height: 10px; }
-.tl-strip::-webkit-scrollbar-thumb { background: #b4ab9a; border: 3px solid transparent; background-clip: content-box; border-radius: 99px; }
+/* r68：隐藏条带顶部原生横向滚动条（与下方海浪滑动条视觉重复），只保留专属滑动条 */
+.tl-strip { scrollbar-width: none; -ms-overflow-style: none; }
+.tl-strip::-webkit-scrollbar { display: none; height: 0; }
 .tl-card {
     position: relative;
     flex: 0 0 auto;

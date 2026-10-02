@@ -189,3 +189,34 @@ CREATE INDEX IF NOT EXISTS idx_playlist_items_pl ON playlist_items(playlistId);
 CREATE INDEX IF NOT EXISTS idx_playlist_items_movie ON playlist_items(movieId);
 CREATE INDEX IF NOT EXISTS idx_reading_history_movie ON reading_history(movieId);
 CREATE INDEX IF NOT EXISTS idx_reading_history_date ON reading_history(readDate);
+
+-- ============ AI 记忆引擎（v3.0-c/d：Alife 式分层记忆） ============
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sessionId TEXT NOT NULL DEFAULT 'main',
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  summarized INTEGER DEFAULT 0,
+  createdAt INTEGER DEFAULT (strftime('%s','now'))
+);
+CREATE TABLE IF NOT EXISTS ai_summaries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sessionId TEXT NOT NULL DEFAULT 'main',
+  level INTEGER NOT NULL DEFAULT 1,
+  content TEXT NOT NULL,
+  fromMsgId INTEGER,
+  toMsgId INTEGER,
+  createdAt INTEGER DEFAULT (strftime('%s','now'))
+);
+CREATE TABLE IF NOT EXISTS ai_memories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT DEFAULT 'preference',
+  content TEXT NOT NULL,
+  importance REAL DEFAULT 0.5,
+  hitCount INTEGER DEFAULT 0,
+  source TEXT,
+  createdAt INTEGER DEFAULT (strftime('%s','now')),
+  updatedAt INTEGER DEFAULT (strftime('%s','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(sessionId, id);
+CREATE INDEX IF NOT EXISTS idx_ai_summaries_session ON ai_summaries(sessionId, level);
