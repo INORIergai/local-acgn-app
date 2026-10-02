@@ -480,20 +480,22 @@
     var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) return;
 
-    /* skiper37 Number flow：侧栏计数徽章与数据统计数字变化 → 旧值上滑出 / 新值下滑入 */
+    /* skiper37 Number flow：侧栏分类计数徽章变化 → 旧值上滑出 / 新值下滑入
+       注意（r62 排坑）：.stat-card .num 数据统计卡片专属于 motion.js countUp 缓动计数，
+       绝不可在此处接入 rollCount，否则 560ms 定时器回填中间过渡值会导致数字不断变小死循环。 */
     var sidebar = document.querySelector('.sidebar');
     if (sidebar && window.MutationObserver) {
       new MutationObserver(function (muts) {
         if (document.body.classList.contains('fx-countroll-off')) return;
         muts.forEach(function (mu) {
           var node = mu.type === 'characterData' ? mu.target.parentElement : mu.target;
-          var el = node && node.closest ? (node.closest('.count') || node.closest('.stat-card .num') || node.closest('.stat-card .value')) : null;
+          var el = node && node.closest ? node.closest('.count') : null;
           if (!el || el.dataset.nvxRolling) return;
           rollCount(el);
         });
       }).observe(sidebar, { childList: true, subtree: true, characterData: true });
     }
-    Array.prototype.forEach.call(document.querySelectorAll('.sidebar .count, .sidebar-stats .num'), function (el) {
+    Array.prototype.forEach.call(document.querySelectorAll('.sidebar .count'), function (el) {
       el.dataset.nvxPrev = el.textContent.trim();
     });
 

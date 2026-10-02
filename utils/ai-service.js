@@ -1070,6 +1070,47 @@ function getAgentTools() {
     {
       type: 'function',
       function: {
+        name: 'smart_rescrape',
+        description: '全自动智能与批量重新刮削影片元数据与海报封面。支持按需求一键处理：' +
+          '1) target="frame_capture"：一键将所有使用视频插帧截图/临时本地封面的影片重新走网络刮削源转正；' +
+          '2) target="duplicate"：检测封面哈希相同（重复/碰撞）的影片，挑选全网高置信度源重新刮削补全；' +
+          '3) target="missing"：为所有完全没有海报的影片重新刮削；' +
+          '4) target="single"：针对指定 movie_id 单部影片重新刮削；' +
+          '支持指定数据源（highest_confidence 最高置信度优选、javbus、javdb、jav321、dmm 等）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            target: {
+              type: 'string',
+              description: '重刮目标范围：frame_capture(视频截图海报转正)、duplicate(封面相同/碰撞重选)、missing(缺海报补齐)、single(单部)',
+              enum: ['frame_capture', 'duplicate', 'missing', 'single']
+            },
+            movie_id: {
+              type: 'number',
+              description: '单部重刮时的影片ID（target为single时使用）'
+            },
+            source: {
+              type: 'string',
+              description: '指定抓取数据源：highest_confidence(全源嗅探最高置信度)、auto(默认优先级)、javbus、javdb、jav321、dmm',
+              enum: ['highest_confidence', 'auto', 'javbus', 'javdb', 'jav321', 'dmm']
+            },
+            limit: {
+              type: 'number',
+              description: '单次批量处理的最大影片数，默认10，上限30'
+            },
+            mode: {
+              type: 'string',
+              description: '合并模式：merge(增量补充空缺，保留已有字段)、overwrite(全覆盖)',
+              enum: ['merge', 'overwrite']
+            }
+          },
+          required: ['target']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
         name: 'open_folder',
         description: '打开指定影片所在的文件夹',
         parameters: {

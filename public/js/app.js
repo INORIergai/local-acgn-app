@@ -586,8 +586,12 @@ function renderMovieCard(movie) {
 }
 
 // 渲染影片网格
-function renderMovies(movies) {
+function renderMovies(movies, fromFilter = false) {
     currentMovies = movies;
+    window.currentMovies = movies;
+    if (!fromFilter) {
+        window._rawViewMovies = movies;
+    }
     const grid = document.getElementById('movieGrid');
     const emptyTip = document.getElementById('emptyTip');
     grid.classList.remove('tree-mode');
@@ -653,6 +657,14 @@ function bindDetailClicks(root) {
             const id = parseInt(card.dataset.mid);
             if (!id) return;
             if (e.ctrlKey || e.metaKey) { toggleSelect(id); return; }
+            // r64: 时间线卡片选中抽出高亮
+            const strip = card.closest('.tl-strip');
+            if (strip) {
+                strip.classList.add('has-active');
+                strip.querySelectorAll('.tl-card').forEach(c => c.classList.remove('is-active'));
+                card.classList.add('is-active');
+            }
+            if (window.MotionFLIP) window.MotionFLIP.record(card);
             showMovieDetail(id);
         });
     });
@@ -732,12 +744,13 @@ function buildTimelineCards(list, opts) {
         })
         .sort((a, b) => (Number(b.addedTime) || 0) - (Number(a.addedTime) || 0));
     const cap = o.limit || items.length;
-    const html = items.slice(0, cap).map(m => {
+    const html = items.slice(0, cap).map((m, idx) => {
         const ts = Number(m.addedTime) || 0;
         const days = ts ? Math.floor((now - ts) / DAY) : null;
         const label = days === null ? '' : (days <= 0 ? '今天' : days === 1 ? '昨天' : `${days} 天前`);
+        const animIdx = Math.min(idx, 15);
         return `
-        <div class="tl-card" data-mid="${m.id}" title="${escapeHtml(m.title || m.fileName || '')}｜入库 ${formatAddedDate(ts) || '未知'}">
+        <div class="tl-card" data-mid="${m.id}" style="--tl-i:${animIdx};" title="${escapeHtml(m.title || m.fileName || '')}｜入库 ${formatAddedDate(ts) || '未知'}">
             <div class="tl-poster"><img src="${getPosterUrl(m)}" alt="" loading="lazy"></div>
             <span class="tl-when">${label}</span>
             <span class="tl-date">${formatAddedDate(ts) || ''}</span>
@@ -777,9 +790,169 @@ function bindTimelineTools(grid, source) {
             chips.forEach(b => b.classList.toggle('active', b === btn));
             state.days = parseInt(btn.dataset.days) || 0;
             apply();
+            bindTimelineWave(strip);
+            bindDetailClicks(strip);
         });
     });
-    apply();
+    // r65: 首次加载不重复 apply() 销毁卡片，保留已有 DOM 让错峰抽出动画平稳播放
+    if (note) {
+        const shown = strip.querySelectorAll('.tl-card').length;
+        note.textContent = shown === 0 ? '' : `条带显示 ${shown} 部 / 共 ${source.length} 部 · 按住拖动 / 滚轮左右滑`;
+    }
+    // r66: 绑定物理海浪波浪顶起动效 (Wave Lift Effect)
+    bindTimelineWave(strip);
+}
+
+// r66: 物理连续波浪顶起动效（像有一根手指在海报地下，鼠标拖动/滑过时依次顶起，形成波浪翻涌）
+function bindTimelineWave(strip) {
+    if (!strip || strip.__waveBound) return;
+    strip.__waveBound = true;
+
+    const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const RADIUS = 320;        // 影响半宽 (px)
+    const MAX_Y = 34;          // 最大顶起高度 (px)
+    const MAX_SCALE = 1.12;    // 最大放大
+    const MAX_ROT = 6;         // 最大波峰侧倾角 (deg)
+
+    let isDown = false, moved = 0, startX = 0, startScroll = 0;
+    let rafId = null, currentFocalX = 0, activeCards = new Set();
+
+    function updateWave(focalX) {
+        if (REDUCED) return;
+        currentFocalX = focalX;
+        if (rafId) return;
+
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            const cards = strip.querySelectorAll('.tl-card');
+            const newActive = new Set();
+
+            cards.forEach(card => {
+                const r = card.getBoundingClientRect();
+                const cx = r.left + r.width / 2;
+                const dist = Math.abs(cx - currentFocalX);
+
+                if (dist < RADIUS) {
+                    const u = dist / RADIUS;
+                    // 升余弦钟形波 (Hann Window)
+                    const w = 0.5 * (1 + Math.cos(Math.PI * u));
+                    const y = -MAX_Y * w;
+                    const s = 1 + (MAX_SCALE - 1) * w;
+                    const rot = ((cx - currentFocalX) / RADIUS) * MAX_ROT * (1 - u) * w;
+                    const z = Math.round(w * 10) + 1;
+
+                    card.style.setProperty('--wave-y', `${y.toFixed(1)}px`);
+                    card.style.setProperty('--wave-s', s.toFixed(3));
+                    card.style.setProperty('--wave-rot', `${rot.toFixed(2)}deg`);
+                    card.style.setProperty('--wave-z', z);
+
+                    newActive.add(card);
+                    activeCards.delete(card);
+                }
+            });
+
+            // 移出波浪范围的卡片复位
+            activeCards.forEach(card => {
+                card.style.removeProperty('--wave-y');
+                card.style.removeProperty('--wave-s');
+                card.style.removeProperty('--wave-rot');
+                card.style.removeProperty('--wave-z');
+            });
+            activeCards = newActive;
+        });
+    }
+
+    function settleWave() {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        strip.classList.remove('is-waving');
+        strip.classList.add('is-settling');
+
+        activeCards.forEach(card => {
+            card.style.setProperty('--wave-y', '0px');
+            card.style.setProperty('--wave-s', '1');
+            card.style.setProperty('--wave-rot', '0deg');
+            card.style.setProperty('--wave-z', '1');
+        });
+
+        setTimeout(() => {
+            activeCards.forEach(card => {
+                card.style.removeProperty('--wave-y');
+                card.style.removeProperty('--wave-s');
+                card.style.removeProperty('--wave-rot');
+                card.style.removeProperty('--wave-z');
+            });
+            activeCards.clear();
+            strip.classList.remove('is-settling');
+        }, 380);
+    }
+
+    strip.addEventListener('dragstart', e => e.preventDefault());
+
+    strip.addEventListener('pointerdown', e => {
+        if (e.pointerType === 'touch' || e.button !== 0) return;
+        isDown = true;
+        moved = 0;
+        startX = e.clientX;
+        startScroll = strip.scrollLeft;
+        strip.classList.add('is-waving');
+        updateWave(e.clientX);
+    });
+
+    window.addEventListener('pointermove', e => {
+        if (!isDown) {
+            const r = strip.getBoundingClientRect();
+            if (e.clientY >= r.top && e.clientY <= r.bottom && e.clientX >= r.left && e.clientX <= r.right) {
+                strip.classList.add('is-waving');
+                updateWave(e.clientX);
+            }
+            return;
+        }
+
+        const dx = e.clientX - startX;
+        if (Math.abs(dx) > moved) moved = Math.abs(dx);
+        if (moved > 4) {
+            if (!strip.classList.contains('dragging')) {
+                strip.classList.add('dragging');
+                try { strip.setPointerCapture(e.pointerId); } catch (err) {}
+            }
+            strip.scrollLeft = startScroll - dx;
+        }
+        updateWave(e.clientX);
+    });
+
+    const endDrag = () => {
+        if (!isDown) return;
+        isDown = false;
+        if (moved > 4) {
+            strip.__sup = true;
+            setTimeout(() => { strip.__sup = false; }, 90);
+        }
+        strip.classList.remove('dragging');
+        settleWave();
+    };
+
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+
+    strip.addEventListener('pointerleave', () => {
+        if (!isDown) settleWave();
+    });
+
+    strip.addEventListener('wheel', e => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+        const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+        if (!d) return;
+        e.preventDefault();
+        strip.scrollLeft += d;
+        strip.classList.add('is-waving');
+        updateWave(e.clientX || (strip.getBoundingClientRect().left + strip.clientWidth / 2));
+        clearTimeout(strip.__wheelTimer);
+        strip.__wheelTimer = setTimeout(settleWave, 180);
+    }, { passive: false });
+
+    strip.addEventListener('click', e => {
+        if (strip.__sup) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
 }
 
 // 独立入口：只看「最近 N 天新增」，供启动扫描完成的提示条一键跳转
@@ -878,48 +1051,7 @@ function renderUnwatchedView(movies) {
             showMovieDetail(id);
         });
     });
-    // 时间线拖动（与 av-slider 同款：位移超过 4px 才算拖，避免吞点击）
-    const strip = grid.querySelector('.tl-strip');
-    if (strip) {
-        // 原生图片拖拽会打断 pointer 拖动（拖出浏览器假拖拽），直接掐掉
-        strip.addEventListener('dragstart', e => e.preventDefault());
-        let drag = null, moved = 0;
-        strip.addEventListener('pointerdown', e => {
-            if (e.pointerType === 'touch' || e.button !== 0) return;
-            drag = { x: e.clientX, left: strip.scrollLeft }; moved = 0;
-        });
-        strip.addEventListener('pointermove', e => {
-            if (!drag) return;
-            const dx = e.clientX - drag.x;
-            if (Math.abs(dx) > moved) moved = Math.abs(dx);
-            if (moved <= 4) return;
-            if (!strip.classList.contains('dragging')) {
-                strip.classList.add('dragging');
-                try { strip.setPointerCapture(drag.pid = e.pointerId); } catch (err) { }
-            }
-            strip.scrollLeft = drag.left - dx;
-        });
-        const end = () => {
-            if (!drag) return;
-            if (moved > 4) strip.__sup = true, setTimeout(() => strip.__sup = false, 90);
-            drag = null; strip.classList.remove('dragging');
-        };
-        strip.addEventListener('pointerup', end);
-        strip.addEventListener('pointercancel', end);
-        strip.addEventListener('click', e => {
-            if (strip.__sup) { e.stopPropagation(); e.preventDefault(); }
-        }, true);
-        strip.addEventListener('wheel', e => {
-            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-            const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-            if (!d) return;
-            const max = strip.scrollWidth - strip.clientWidth;
-            if (max <= 1) return;
-            if ((d < 0 && strip.scrollLeft <= 0) || (d > 0 && strip.scrollLeft >= max - 1)) return;
-            e.preventDefault();
-            strip.scrollLeft += d;
-        }, { passive: false });
-    }
+    // r66: 时间线物理波浪拖动已由 bindTimelineTools(grid) 内置的 bindTimelineWave(strip) 接管
 }
 
 /* ============================================================
@@ -6056,7 +6188,7 @@ function renderSettings(config) {
                     </div>
 
                     <div class="settings-group">
-                        <div class="settings-group-title">🎬 影片扫描路径</div>
+                        <div class="settings-group-title">🔞 影片（AV）扫描路径</div>
                         <div class="folder-list" id="movieFolders">
                             ${(config.scanFolders || []).map(f => `
                                 <div class="folder-item">
@@ -6066,14 +6198,14 @@ function renderSettings(config) {
                             `).join('')}
                         </div>
                         <div class="folder-add">
-                            <input type="text" class="folder-input" id="movieFolderInput" placeholder="输入文件夹路径，如 D:\\Movies">
+                            <input type="text" class="folder-input" id="movieFolderInput" placeholder="输入文件夹路径，如 E:\Aokazu">
                             <button class="btn btn-sm" onclick="addFolder('movie')">添加</button>
                         </div>
                         <button class="btn btn-sm scan-module-btn" onclick="startModuleScan('movie')">▶️ 扫描影片</button>
                     </div>
 
                     <div class="settings-group">
-                        <div class="settings-group-title">🎌 动漫扫描路径</div>
+                        <div class="settings-group-title">🎌 里番扫描路径（隐私内容）</div>
                         <div class="folder-list" id="animeFolders">
                             ${(config.animeFolders || []).map(f => `
                                 <div class="folder-item">
@@ -6124,7 +6256,7 @@ function renderSettings(config) {
                     </div>
 
                     <div class="settings-group">
-                        <div class="settings-group-title">🎬 影视扫描路径（round34 新增库）</div>
+                        <div class="settings-group-title">🎬 影视库扫描路径</div>
                         <div class="folder-list" id="filmFolders">
                             ${(config.filmFolders || []).map(f => `
                                 <div class="folder-item">
@@ -6141,7 +6273,7 @@ function renderSettings(config) {
                     </div>
 
                     <div class="settings-group">
-                        <div class="settings-group-title">🐾 动漫扫描路径（round34 新增库）</div>
+                        <div class="settings-group-title">🐾 动漫库扫描路径（普通向）</div>
                         <div class="folder-list" id="cartoonFolders">
                             ${(config.cartoonFolders || []).map(f => `
                                 <div class="folder-item">
@@ -7288,12 +7420,32 @@ async function loadAIPersona() {
     } catch (e) { /* 设置页人格区保持为空即可，不影响其他设置 */ }
 }
 
+const PERSONA_ICONS = {
+    butler: '🎩',
+    aimeis: '🌸',
+    mao: '☕',
+    dania: '🦊',
+    albedo: '👑',
+    custom: '✍️'
+};
+
 function renderPersonaChips() {
     const box = document.getElementById('personaChips');
     if (!box) return;
-    box.innerHTML = aiPersonaState.presets.map(p => `
-        <button class="btn btn-sm ${p.id === aiPersonaState.presetId ? 'btn-primary' : ''}"
-            onclick="pickAIPersona('${p.id}')" title="${escapeHtml(p.desc || '')}">${escapeHtml(p.name)}</button>`).join('');
+    const activePreset = aiPersonaState.presets.find(p => p.id === aiPersonaState.presetId) || {};
+    box.innerHTML = aiPersonaState.presets.map(p => {
+        const isSelected = p.id === aiPersonaState.presetId;
+        const icon = PERSONA_ICONS[p.id] || '✨';
+        const cls = isSelected ? 'btn-primary active' : 'btn-secondary';
+        return `<button type="button" class="btn btn-sm ${cls} persona-chip"
+            data-preset="${p.id}"
+            onclick="pickAIPersona('${p.id}')"
+            title="${escapeHtml(p.desc || '')}">
+            <span class="persona-icon">${icon}</span>
+            <span class="persona-name">${escapeHtml(p.name)}</span>
+            ${isSelected ? '<span class="persona-badge">✓ 当前</span>' : ''}
+        </button>`;
+    }).join('') + (activePreset.desc ? `<div class="persona-desc-hint"><strong>${escapeHtml(activePreset.name)}：</strong>${escapeHtml(activePreset.desc)}</div>` : '');
     const ta = document.getElementById('personaCustomPrompt');
     if (ta) {
         ta.style.display = aiPersonaState.presetId === 'custom' ? 'block' : 'none';
@@ -8675,6 +8827,8 @@ function formatToolResult(toolName, result) {
             return `找到 ${result.length || 0} 个标签`;
         case 'read_project_file':
             return result.error ? `读取文件失败: ${result.error}` : `读取文件成功: ${result.file_path} (${result.totalLength}字符${result.truncated ? '，已截断' : ''})`;
+        case 'smart_rescrape':
+            return result.message || '智能重新刮削与封面优选任务已执行完成';
         default:
             return `${toolName} 执行成功`;
     }
@@ -8944,6 +9098,16 @@ function switchView(view) {
     });
 
     // 隐藏所有视图
+    // r64: 控制多维切片筛选器的显隐，避免悬挂在非网格视图
+    const facetBar = document.getElementById('facetFilterBar');
+    const isGridView = ['movies', 'movies-adult', 'jav', 'anime', 'film', 'cartoon', 'favorites', 'hot', 'unwatched'].includes(view);
+    if (facetBar) {
+        facetBar.style.display = isGridView ? 'block' : 'none';
+        if (isGridView && window.FacetFilter) {
+            window.FacetFilter.onViewChanged(view);
+        }
+    }
+
     document.getElementById('movieGrid').style.display = 'none';
     document.getElementById('movieGrid').classList.remove('tree-mode');
     // 第 33 轮：切视图时收起首页 / ACG 榜单自定义视图
@@ -9485,29 +9649,53 @@ function updateDeckCards() {
     const deckCount = Math.min(7, _deckMovies.length);
     const center = _deckCenterIdx;
 
-    wrap.innerHTML = _deckMovies.slice(0, deckCount).map((m, idx) => {
-        const offset = idx - center;
-        const absOff = Math.abs(offset);
-        const isCenter = offset === 0;
-        const tx = offset * 180;
-        const tz = isCenter ? 60 : -absOff * 90;
-        const ry = offset * -28;
-        const sc = isCenter ? 1.08 : Math.max(0.72, 1 - absOff * 0.12);
-        const op = isCenter ? 1 : Math.max(0.48, 1 - absOff * 0.2);
-        const zIndex = 20 - absOff * 2;
+    const existingCards = wrap.querySelectorAll('.deck-card');
+    const needRebuild = existingCards.length !== deckCount;
 
-        return `
-            <div class="deck-card ${isCenter ? 'is-active' : ''}" data-idx="${idx}" onclick="handleDeckCardClick(${idx})"
-                 style="transform: translate3d(calc(-50% + ${tx}px), -50%, ${tz}px) rotateY(${ry}deg) scale(${sc});
-                        z-index: ${zIndex}; opacity: ${op};">
-                <img class="deck-card-poster" src="${getPosterUrl(m)}" alt="" loading="lazy">
-                <div class="deck-card-info">
-                    <div class="deck-card-title">${escapeHtml(m.title || m.fileName || '')}</div>
-                    ${m.avid ? `<span class="deck-card-avid">${escapeHtml(m.avid)}</span>` : ''}
+    if (needRebuild) {
+        wrap.innerHTML = _deckMovies.slice(0, deckCount).map((m, idx) => {
+            const offset = idx - center;
+            const absOff = Math.abs(offset);
+            const isCenter = offset === 0;
+            const tx = offset * 180;
+            const tz = isCenter ? 60 : -absOff * 90;
+            const ry = offset * -28;
+            const sc = isCenter ? 1.08 : Math.max(0.72, 1 - absOff * 0.12);
+            const op = isCenter ? 1 : Math.max(0.48, 1 - absOff * 0.2);
+            const zIndex = 20 - absOff * 2;
+
+            return `
+                <div class="deck-card ${isCenter ? 'is-active' : ''}" data-idx="${idx}" onclick="handleDeckCardClick(${idx})"
+                     style="transform: translate3d(calc(-50% + ${tx}px), -50%, ${tz}px) rotateY(${ry}deg) scale(${sc});
+                            z-index: ${zIndex}; opacity: ${op};">
+                    <img class="deck-card-poster" src="${getPosterUrl(m)}" alt="" loading="lazy">
+                    <div class="deck-card-info">
+                        <div class="deck-card-title">${escapeHtml(m.title || m.fileName || '')}</div>
+                        ${m.avid ? `<span class="deck-card-avid">${escapeHtml(m.avid)}</span>` : ''}
+                    </div>
                 </div>
-            </div>
-        `;
-    }).join('');
+            `;
+        }).join('');
+    } else {
+        // r64: DOM 节点复用，完美触发 CSS 0.45s 弹性物理流动切换
+        existingCards.forEach((card, idx) => {
+            const m = _deckMovies[idx];
+            const offset = idx - center;
+            const absOff = Math.abs(offset);
+            const isCenter = offset === 0;
+            const tx = offset * 180;
+            const tz = isCenter ? 60 : -absOff * 90;
+            const ry = offset * -28;
+            const sc = isCenter ? 1.08 : Math.max(0.72, 1 - absOff * 0.12);
+            const op = isCenter ? 1 : Math.max(0.48, 1 - absOff * 0.2);
+            const zIndex = 20 - absOff * 2;
+
+            card.style.transform = `translate3d(calc(-50% + ${tx}px), -50%, ${tz}px) rotateY(${ry}deg) scale(${sc})`;
+            card.style.zIndex = zIndex;
+            card.style.opacity = op;
+            card.classList.toggle('is-active', isCenter);
+        });
+    }
 }
 
 function shiftDeck(dir) {
@@ -9520,6 +9708,10 @@ function shiftDeck(dir) {
 function handleDeckCardClick(idx) {
     if (idx === _deckCenterIdx) {
         const m = _deckMovies[idx];
+        const card = document.querySelector(`.deck-card[data-idx="${idx}"]`);
+        if (card && window.MotionFLIP) {
+            window.MotionFLIP.record(card);
+        }
         if (m) showMovieDetail(m.id);
     } else {
         _deckCenterIdx = idx;
@@ -9721,20 +9913,20 @@ async function showMovieDetail(id) {
             <div class="detail-section">
                 <h4 style="display:flex;align-items:center;gap:6px;">${uiIcon('tool', 15)} 工具</h4>
                 <div class="detail-actions">
-                    <button class="dbtn" data-act="upload" title="上传封面" aria-label="上传封面" onclick="showUploadPosterModal(${movie.id})">${makeRemotionIcon('image', 24)}</button>
-                    <button class="dbtn" data-act="graph" title="关系图谱" aria-label="关系图谱" onclick="showRelationGraph(${movie.id})">${makeRemotionIcon('spark', 24)}</button>
-                    <button class="dbtn" data-act="fav" title="${movie.favorite === 1 ? '取消收藏' : '收藏'}" aria-label="收藏" onclick="toggleFav(${movie.id})">${makeRemotionIcon(movie.favorite === 1 ? 'flame' : 'bookmark', 24)}</button>
-                    <button class="dbtn" data-act="watch" title="${movie.watched === 1 ? '标记未看' : '标记已看'}" aria-label="已看标记" onclick="toggleWatch(${movie.id})">${makeRemotionIcon('eye', 24)}</button>
-                    <button class="dbtn" data-act="playlist" title="添加到播放列表" aria-label="播放列表" onclick="addToPlaylist(${movie.id})">${makeRemotionIcon('reel', 24)}</button>
-                    <button class="dbtn" data-act="translate" title="AI 翻译片名" aria-label="AI 翻译" onclick="aiTranslate(${movie.id})">${makeRemotionIcon('spark', 24)}</button>
-                    <button class="dbtn" data-act="tags" title="AI 生成标签" aria-label="AI 标签" onclick="aiGenerateTags(${movie.id})">${makeRemotionIcon('tag', 24)}</button>
-                    <button class="dbtn" data-act="edit" title="编辑标题与元数据" aria-label="编辑元数据" onclick="showEditModal(${movie.id})">${makeRemotionIcon('settings', 24)}</button>
-                    <button class="dbtn" data-act="rename" title="重命名文件" aria-label="重命名" onclick="showRenameModal(${movie.id})">${makeRemotionIcon('comic', 24)}</button>
-                    <button class="dbtn" data-act="poster" title="更换海报" aria-label="更换海报" onclick="showChangePosterModal(${movie.id})">${makeRemotionIcon('image', 24)}</button>
-                    <button class="dbtn" data-act="folder" title="打开所在文件夹" aria-label="打开文件夹" onclick="openMovieFolder(${movie.id})">${makeRemotionIcon('book', 24)}</button>
-                    <button class="dbtn" data-act="rescrape" title="重新刮削" aria-label="重新刮削" onclick="rescrapeMovie(${movie.id})">${makeRemotionIcon('clock', 24)}</button>
-                    <button class="dbtn danger" data-act="del-poster" title="删除海报" aria-label="删除海报" onclick="deletePoster(${movie.id})">${makeRemotionIcon('alert', 24)}</button>
-                    <button class="dbtn danger" data-act="del-movie" title="删除文件" aria-label="删除文件" onclick="deleteMovie(${movie.id})">${makeRemotionIcon('alert', 24)}</button>
+                    <button class="dbtn" data-act="upload" title="上传封面" aria-label="上传封面" onclick="showUploadPosterModal(${movie.id})">${makeRemotionIcon('image', 24)}<span class="dbtn-label">上传封面</span></button>
+                    <button class="dbtn" data-act="graph" title="关系图谱" aria-label="关系图谱" onclick="showRelationGraph(${movie.id})">${makeRemotionIcon('spark', 24)}<span class="dbtn-label">关系图谱</span></button>
+                    <button class="dbtn" data-act="fav" title="${movie.favorite === 1 ? '取消收藏' : '收藏'}" aria-label="收藏" onclick="toggleFav(${movie.id})">${makeRemotionIcon(movie.favorite === 1 ? 'flame' : 'bookmark', 24)}<span class="dbtn-label">${movie.favorite === 1 ? '取消收藏' : '收藏'}</span></button>
+                    <button class="dbtn" data-act="watch" title="${movie.watched === 1 ? '标记未看' : '标记已看'}" aria-label="已看标记" onclick="toggleWatch(${movie.id})">${makeRemotionIcon('eye', 24)}<span class="dbtn-label">${movie.watched === 1 ? '标记未看' : '标记已看'}</span></button>
+                    <button class="dbtn" data-act="playlist" title="添加到播放列表" aria-label="播放列表" onclick="addToPlaylist(${movie.id})">${makeRemotionIcon('reel', 24)}<span class="dbtn-label">播放列表</span></button>
+                    <button class="dbtn" data-act="translate" title="AI 翻译片名" aria-label="AI 翻译" onclick="aiTranslate(${movie.id})">${makeRemotionIcon('spark', 24)}<span class="dbtn-label">AI 翻译</span></button>
+                    <button class="dbtn" data-act="tags" title="AI 生成标签" aria-label="AI 标签" onclick="aiGenerateTags(${movie.id})">${makeRemotionIcon('tag', 24)}<span class="dbtn-label">AI 标签</span></button>
+                    <button class="dbtn" data-act="edit" title="编辑标题与元数据" aria-label="编辑元数据" onclick="showEditModal(${movie.id})">${makeRemotionIcon('settings', 24)}<span class="dbtn-label">编辑</span></button>
+                    <button class="dbtn" data-act="rename" title="重命名文件" aria-label="重命名" onclick="showRenameModal(${movie.id})">${makeRemotionIcon('comic', 24)}<span class="dbtn-label">重命名</span></button>
+                    <button class="dbtn" data-act="poster" title="更换海报" aria-label="更换海报" onclick="showChangePosterModal(${movie.id})">${makeRemotionIcon('image', 24)}<span class="dbtn-label">更换海报</span></button>
+                    <button class="dbtn" data-act="folder" title="打开所在文件夹" aria-label="打开文件夹" onclick="openMovieFolder(${movie.id})">${makeRemotionIcon('book', 24)}<span class="dbtn-label">文件夹</span></button>
+                    <button class="dbtn" data-act="rescrape" title="重新刮削" aria-label="重新刮削" onclick="rescrapeMovie(${movie.id})">${makeRemotionIcon('clock', 24)}<span class="dbtn-label">重新刮削</span></button>
+                    <button class="dbtn danger" data-act="del-poster" title="删除海报" aria-label="删除海报" onclick="deletePoster(${movie.id})">${makeRemotionIcon('alert', 24)}<span class="dbtn-label">删除海报</span></button>
+                    <button class="dbtn danger" data-act="del-movie" title="删除文件" aria-label="删除文件" onclick="deleteMovie(${movie.id})">${makeRemotionIcon('alert', 24)}<span class="dbtn-label">删除文件</span></button>
                 </div>
             </div>
 
@@ -9753,11 +9945,22 @@ async function showMovieDetail(id) {
             ` : ''}
         </div>
     `;
-document.getElementById('detailBody').innerHTML = html;
+    document.getElementById('detailBody').innerHTML = html;
     // 右侧抽屉：先 .show（display:flex 就位），下一帧再加 .in 触发滑入过渡
     const dm = document.getElementById('detailModal');
     dm.classList.add('show');
-    requestAnimationFrame(() => requestAnimationFrame(() => dm.classList.add('in')));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        dm.classList.add('in');
+        // r63: 触发 FLIP 共享元素海报流体飞入放大
+        const detailPoster = document.querySelector('#detailBody .detail-poster');
+        if (detailPoster && window.MotionFLIP) {
+            window.MotionFLIP.enter(detailPoster);
+        }
+        // r63: 触发自适应海报动态流光氛围光
+        if (window.Ambilight && posterUrl) {
+            window.Ambilight.apply(posterUrl, dm);
+        }
+    }));
     
     // 漫画/小说：加载该作品的阅读时长
     if (movie.type === 'comic' || movie.type === 'novel') {
@@ -9827,9 +10030,20 @@ document.getElementById('detailBody').innerHTML = html;
 
 function closeModal() {
     const dm = document.getElementById('detailModal');
-    // 先滑出，再在过渡结束后隐藏（240ms 与 av-board.css 的抽屉过渡时长对应）
+    if (!dm) return;
+    const detailPoster = document.querySelector('#detailBody .detail-poster');
     dm.classList.remove('in');
-    setTimeout(() => dm.classList.remove('show'), 240);
+    if (window.MotionFLIP && detailPoster) {
+        window.MotionFLIP.exit(detailPoster, () => {
+            dm.classList.remove('show');
+            if (window.Ambilight) window.Ambilight.reset(dm);
+        });
+    } else {
+        setTimeout(() => {
+            dm.classList.remove('show');
+            if (window.Ambilight) window.Ambilight.reset(dm);
+        }, 240);
+    }
 }
 
 /* ==========================================================================
@@ -10063,6 +10277,36 @@ async function playMovieInline(id) {
     currentPlayerMovie = movie;
     await api.playMovie(id);
 
+    // r64/r65: 自动构建当前视图的连续待播队列上下文，丰富海报与评分供悬浮预览
+    if (!window.currentPlaylist || !window.currentPlaylist.length) {
+        if (typeof currentMovies !== 'undefined' && Array.isArray(currentMovies) && currentMovies.length > 0) {
+            window.currentPlaylist = currentMovies.map(m => ({
+                id: m.id,
+                title: m.title || m.fileName,
+                avid: m.avid,
+                poster: m.posterPath || m.localPosterPath || '',
+                duration: m.duration || 0,
+                score: m.score || m.rating || 0
+            }));
+            window.currentPlaylistIndex = currentMovies.findIndex(m => m.id === id);
+            if (window.currentPlaylistIndex === -1) window.currentPlaylistIndex = 0;
+        } else {
+            window.currentPlaylist = [{
+                id: movie.id,
+                title: movie.title || movie.fileName,
+                avid: movie.avid,
+                poster: movie.posterPath || movie.localPosterPath || '',
+                duration: movie.duration || 0,
+                score: movie.score || movie.rating || 0
+            }];
+            window.currentPlaylistIndex = 0;
+        }
+    } else {
+        const found = window.currentPlaylist.findIndex(m => (typeof m === 'object' ? m.id : m) === id);
+        if (found !== -1) window.currentPlaylistIndex = found;
+    }
+    updatePlayerQueueUI();
+
     const video = document.getElementById('videoPlayer');
     const videoUrl = `/api/movie/stream?path=${encodeURIComponent(movie.filePath)}`;
     video.src = videoUrl;
@@ -10139,6 +10383,135 @@ async function playMovieInline(id) {
     };
 
     updateStats();
+}
+
+// r64/r66: 播放器待播队列界面联动与上下集切换
+function updatePlayerQueueUI() {
+    const badge = document.getElementById('playerQueueBadge');
+    if (badge && window.currentPlaylist) {
+        const total = window.currentPlaylist.length;
+        const cur = (window.currentPlaylistIndex !== undefined && window.currentPlaylistIndex !== null) ? window.currentPlaylistIndex + 1 : 1;
+        badge.textContent = `${cur}/${total}`;
+    }
+    const listEl = document.getElementById('playerPlaylistItems');
+    if (listEl && window.currentPlaylist) {
+        listEl.innerHTML = window.currentPlaylist.map((item, idx) => {
+            const mId = typeof item === 'object' ? item.id : item;
+            const mTitle = typeof item === 'object' ? (item.title || item.avid) : `影片 ${mId}`;
+            const isPlaying = idx === window.currentPlaylistIndex;
+            return `<div class="ppd-item ${isPlaying ? 'active' : ''}" data-idx="${idx}" onclick="playMovieInline(${mId})">
+                <span class="ppd-idx">${idx + 1}</span>
+                <span class="ppd-title">${escapeHtml(mTitle)}</span>
+                ${isPlaying ? '<span class="ppd-tag">正在播放</span>' : ''}
+            </div>`;
+        }).join('');
+
+        // r66: 绑定悬停事件到独立浮层，彻底解决剪切问题
+        bindPlayerQueueHover(listEl);
+    }
+}
+
+function bindPlayerQueueHover(listEl) {
+    const portal = document.getElementById('playerHoverPreview');
+    if (!portal) return;
+
+    listEl.querySelectorAll('.ppd-item').forEach(item => {
+        item.addEventListener('mouseenter', () => {
+            const idx = parseInt(item.dataset.idx, 10);
+            const m = window.currentPlaylist && window.currentPlaylist[idx];
+            if (!m) return;
+            const r = item.getBoundingClientRect();
+            const poster = (typeof m === 'object' ? (getPosterUrl(m) || m.poster) : '') || 'img/app-icon.png';
+            const imgEl = document.getElementById('ppdPreviewPoster');
+            const titleEl = document.getElementById('ppdPreviewTitle');
+            const avidEl = document.getElementById('ppdPreviewAvid');
+            const scoreEl = document.getElementById('ppdPreviewScore');
+            const durEl = document.getElementById('ppdPreviewDur');
+
+            if (imgEl) imgEl.src = poster;
+            if (titleEl) titleEl.textContent = m.title || m.fileName || `影片 ${m.id}`;
+            if (avidEl) avidEl.textContent = m.avid || '—';
+            if (scoreEl) scoreEl.textContent = m.score ? `★ ${Number(m.score).toFixed(1)}` : '—';
+            if (durEl) durEl.textContent = m.duration ? formatDuration(m.duration) : '';
+
+            portal.style.display = 'flex';
+            const pW = 250;
+            const pH = 104;
+            const left = Math.max(10, r.left - pW - 14);
+            const top = Math.min(window.innerHeight - pH - 10, Math.max(10, r.top + (r.height / 2) - (pH / 2)));
+            portal.style.left = `${left}px`;
+            portal.style.top = `${top}px`;
+            requestAnimationFrame(() => portal.classList.add('show'));
+        });
+
+        item.addEventListener('mouseleave', () => {
+            portal.classList.remove('show');
+            portal.style.display = 'none';
+        });
+    });
+
+    listEl.addEventListener('scroll', () => {
+        portal.classList.remove('show');
+        portal.style.display = 'none';
+    }, { passive: true });
+}
+
+function togglePlayerPlaylistDrawer() {
+    const drawer = document.getElementById('playerPlaylistDrawer');
+    if (!drawer) return;
+    const isShown = drawer.style.display !== 'none';
+    drawer.style.display = isShown ? 'none' : 'flex';
+    const portal = document.getElementById('playerHoverPreview');
+    if (isShown && portal) {
+        portal.classList.remove('show');
+        portal.style.display = 'none';
+    }
+    if (!isShown) updatePlayerQueueUI();
+}
+
+function playNextEpisode() {
+    if (!window.currentPlaylist || !window.currentPlaylist.length) {
+        showNotification('播放提示', '当前没有播放队列');
+        return;
+    }
+    let nextIndex;
+    if (playerLoopMode === 'random') {
+        nextIndex = Math.floor(Math.random() * window.currentPlaylist.length);
+    } else if (playerLoopMode === 'loop') {
+        nextIndex = (window.currentPlaylistIndex + 1) % window.currentPlaylist.length;
+    } else {
+        nextIndex = window.currentPlaylistIndex + 1;
+    }
+    if (nextIndex < window.currentPlaylist.length) {
+        window.currentPlaylistIndex = nextIndex;
+        const target = window.currentPlaylist[nextIndex];
+        const nextId = typeof target === 'object' ? target.id : target;
+        playMovieInline(nextId);
+        showNotification('播放下一集', typeof target === 'object' ? target.title : `影片 ${nextId}`);
+    } else {
+        showNotification('播放提示', '已经是最后一集（顺序连播结束）');
+    }
+}
+
+function playPrevEpisode() {
+    if (!window.currentPlaylist || !window.currentPlaylist.length) {
+        showNotification('播放提示', '当前没有播放队列');
+        return;
+    }
+    let prevIndex = window.currentPlaylistIndex - 1;
+    if (prevIndex < 0) {
+        if (playerLoopMode === 'loop') {
+            prevIndex = window.currentPlaylist.length - 1;
+        } else {
+            showNotification('播放提示', '已经是第一集');
+            return;
+        }
+    }
+    window.currentPlaylistIndex = prevIndex;
+    const target = window.currentPlaylist[prevIndex];
+    const prevId = typeof target === 'object' ? target.id : target;
+    playMovieInline(prevId);
+    showNotification('播放上一集', typeof target === 'object' ? target.title : `影片 ${prevId}`);
 }
 
 // hls.js 实例（m3u8 播放用，关播放器时要销毁）
@@ -10263,6 +10636,20 @@ function bindPlayerShortcuts() {
                 vid.playbackRate = 1.0;
                 playerOsd('倍速已复位 1.00×');
                 return;
+            case 'PageUp':
+            case 'p':
+            case 'P': { // 上一集
+                e.preventDefault();
+                playPrevEpisode();
+                return;
+            }
+            case 'PageDown':
+            case 'n':
+            case 'N': { // 下一集
+                e.preventDefault();
+                playNextEpisode();
+                return;
+            }
             default:
                 break;
         }
@@ -13390,3 +13777,18 @@ document.addEventListener('DOMContentLoaded', init);
 document.addEventListener('DOMContentLoaded', applyUiCustom);
 // round38：启动即初始化三处动画（启动层/待机/输入），幂等且失败不阻塞
 document.addEventListener('DOMContentLoaded', initAppAnimations);
+
+// r63/r67: 全局捕获卡片点击，为 FLIP 共享元素飞入转场提供坐标锚点（含时间线 tl-card）
+document.addEventListener('click', function(e) {
+    const card = e.target.closest('.movie-card, .similar-card, .nr-card, .tl-card, .timeline-card, .deck-card, .hp-step, .hr-row');
+    if (card && window.MotionFLIP) {
+        window.MotionFLIP.record(card);
+    }
+}, true);
+
+// r63: 初始化多维即时切片筛选器
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.FacetFilter && typeof window.FacetFilter.init === 'function') {
+        window.FacetFilter.init();
+    }
+});

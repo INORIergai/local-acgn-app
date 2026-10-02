@@ -1039,34 +1039,29 @@ img.movie-poster.nvx-reveal-in {
 body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
 
 /* ==========================================================================
-   详情弹窗工具按钮重构：侧栏同款专属彩色发光微交互（单行排列，拒绝换行折叠）
+   详情弹窗工具按钮重构：r61 改为 7列×2行 纵向图文排版，保留彩色发光微交互
    ========================================================================== */
 .detail-actions {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  justify-content: flex-start !important;
-  align-items: center !important;
-  gap: 8px !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  padding: 6px 4px 12px !important;
-  scrollbar-width: none !important;
-  -webkit-overflow-scrolling: touch !important;
-}
-.detail-actions::-webkit-scrollbar {
-  display: none !important;
+  display: grid !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+  gap: 8px 6px !important;
+  overflow: visible !important;
+  padding: 6px 0 12px !important;
 }
 
 .detail-actions .dbtn {
   position: relative !important;
-  flex: 0 0 46px !important;
-  width: 46px !important;
-  height: 46px !important;
-  min-width: 46px !important;
+  flex: none !important;
+  width: 100% !important;
+  height: auto !important;
+  min-width: 0 !important;
+  padding: 9px 2px 8px !important;
   border-radius: 12px !important;
-  display: inline-flex !important;
+  display: flex !important;
+  flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
+  gap: 5px !important;
   cursor: pointer !important;
   transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
               box-shadow 0.24s ease,
@@ -1094,6 +1089,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
 .detail-actions .dbtn[data-act="folder"]    { --d-clr: #6366F1; }
 .detail-actions .dbtn[data-act="rescrape"]  { --d-clr: #84CC16; }
 .detail-actions .dbtn[data-act="del-poster"]{ --d-clr: #FB7185; }
+.detail-actions .dbtn[data-act="del-movie"] { --d-clr: #EF4444; }
 /* 顶栏与工具栏刷新按钮微动效 */
 #globalRefreshBtn .ic-refresh, #watchNowBtn .ic-refresh {
   transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);

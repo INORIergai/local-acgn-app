@@ -451,6 +451,9 @@
             <!-- 阅读时长统计横幅（漫画/小说库顶部） -->
             <div id="readingStatsBanner" style="display:none;"></div>
             
+            <!-- 多维即时聚合切片器 (Facet Slicer 2.0) -->
+            <div id="facetFilterBar" class="facet-filter-bar"></div>
+
             <!-- 影片网格 -->
             <div id="movieGrid" class="movie-grid"></div>
 
@@ -516,13 +519,37 @@
                 <div class="danmaku-layer" id="danmakuLayer"></div>
             </div>
             <div class="player-foot">
-                <button class="btn btn-sm" id="openPotPlayer"><svg class="ic ic-play" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-play"/></svg> PotPlayer</button>
-                <button class="btn btn-sm" id="danmakuToggle" title="弹幕设置"><svg class="ic ic-chat" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-chat"/></svg> 弹幕</button>
+                <button class="btn btn-sm btn-secondary" id="openPotPlayer"><svg class="ic ic-play" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-play"/></svg> PotPlayer</button>
+                <button class="btn btn-sm btn-secondary" id="danmakuToggle" title="弹幕设置"><svg class="ic ic-chat" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-chat"/></svg> 弹幕</button>
+                <!-- r64: 上一集与下一集按钮，附带快捷键提示 -->
+                <button class="btn btn-sm btn-secondary" id="playerPrevBtn" onclick="playPrevEpisode()" title="上一集（快捷键：PageUp 或 P）">⏮ 上集 <kbd style="font-size:10px;opacity:.7;">P</kbd></button>
+                <button class="btn btn-sm btn-secondary" id="playerNextBtn" onclick="playNextEpisode()" title="下一集（快捷键：PageDown 或 N）">下集 ⏭ <kbd style="font-size:10px;opacity:.7;">N</kbd></button>
                 <button class="btn btn-sm" id="playerLoopBtn" onclick="togglePlayerLoopMode()" title="切换播放循环模式">⇄ 顺序连播</button>
+                <button class="btn btn-sm btn-secondary" id="playerPlaylistBtn" onclick="togglePlayerPlaylistDrawer()" title="查看播放队列与顺序">📋 队列 <span id="playerQueueBadge" style="font-size:11px;opacity:.85;">1/1</span></button>
                 <div class="player-progress" id="playerProgress">
                     <div class="player-progress-fill" id="playerProgressFill"></div>
                 </div>
                 <span style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);white-space:nowrap;" id="playerTime">00:00 / 00:00</span>
+            </div>
+            <!-- r64: 播放器待播序列抽屉 -->
+            <div class="player-playlist-drawer" id="playerPlaylistDrawer" style="display:none;">
+                <div class="ppd-head">
+                    <span>📋 连续播放队列</span>
+                    <button type="button" class="close-btn" onclick="togglePlayerPlaylistDrawer()">&times;</button>
+                </div>
+                <div class="ppd-list" id="playerPlaylistItems"></div>
+            </div>
+            <!-- r66: 播放器待播项悬停独立浮层 (Portal 模式，彻底规避 overflow-y 剪切) -->
+            <div id="playerHoverPreview" class="ppd-portal-card" style="display:none;">
+                <img class="ppd-preview-poster" id="ppdPreviewPoster" src="" alt="">
+                <div class="ppd-preview-meta">
+                    <div class="ppd-preview-title" id="ppdPreviewTitle"></div>
+                    <div class="ppd-preview-row">
+                        <span class="ppd-preview-avid" id="ppdPreviewAvid"></span>
+                        <span class="ppd-preview-score" id="ppdPreviewScore"></span>
+                    </div>
+                    <div class="ppd-preview-dur" id="ppdPreviewDur"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -805,8 +832,8 @@
     <div id="readerView" class="reader-view">
         <div class="reader-header">
             <div class="reader-nav-buttons">
-                <button class="reader-nav-btn" id="readerPrevBtn" onclick="switchReaderBook('prev')" title="上一本">◀ 上一本</button>
-                <button class="reader-nav-btn" id="readerNextBtn" onclick="switchReaderBook('next')" title="下一本">下一本 ▶</button>
+                <button class="reader-nav-btn" id="readerPrevBtn" onclick="switchReaderBook('prev')" title="上一本（快捷键：Shift+← 或 Shift+A）">◀ 上一本 <kbd style="font-size:10px;opacity:.75;background:rgba(255,255,255,.12);padding:1px 4px;border-radius:3px;">Shift+←</kbd></button>
+                <button class="reader-nav-btn" id="readerNextBtn" onclick="switchReaderBook('next')" title="下一本（快捷键：Shift+→ 或 Shift+D）">下一本 ▶ <kbd style="font-size:10px;opacity:.75;background:rgba(255,255,255,.12);padding:1px 4px;border-radius:3px;">Shift+→</kbd></button>
             </div>
             <span class="reader-title" id="readerTitle"></span>
             <button class="reader-close-btn" onclick="closeReader()">✕ 关闭</button>
@@ -858,6 +885,9 @@
 <script src="js/media-source.js?v=1"></script>
     <script src="js/av-board.js?v=7"></script>
     <script src="js/motion.js?v=1"></script>
+    <script src="js/motion-flip.js?v=1"></script>
+    <script src="js/ambilight.js?v=1"></script>
+    <script src="js/facet-filter.js?v=1"></script>
     <script src="js/mobile-nav.js?v=3"></script>
     <!-- 第 21 轮：手机端详情弹窗「下滑关闭」手势（独立文件，删掉本行即可回滚） -->
     <script src="js/mobile-gestures.js?v=1"></script>

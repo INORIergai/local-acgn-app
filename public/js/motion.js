@@ -135,7 +135,7 @@
         var m = raw.match(/^([\d,]+(?:\.\d+)?)(.*)$/);
         if (!m) return;
         var target = parseFloat(m[1].replace(/,/g, ''));
-        if (!isFinite(target) || target < 2) return; // 小数字没必要滚
+        if (!isFinite(target) || target <= 0) return; // 0 值没必要滚
         var suffix = m[2] || '';
 
         // 目标值没变（比如只是重新渲染）就不重播动画
@@ -143,18 +143,21 @@
         el.dataset.mvCounted = m[1] + suffix;
 
         busy[key] = true;
+        el.dataset.mvCounting = '1';
         var t0 = null;
-        var DUR = 650;
+        var DUR = 1250;                              // r62: 从 650ms 放慢到 1250ms，舒缓清晰
+        var hasDecimal = m[1].indexOf('.') !== -1;
         function step(ts) {
             if (!t0) t0 = ts;
             var p = Math.min(1, (ts - t0) / DUR);
-            var eased = 1 - Math.pow(1 - p, 3);      // ease-out cubic
+            var eased = 1 - Math.pow(1 - p, 2.6);    // 平缓减速曲线
             var val = target * eased;
-            el.textContent = (target % 1 ? val.toFixed(1) : Math.round(val)) + suffix;
+            el.textContent = (hasDecimal ? val.toFixed(1) : Math.round(val).toLocaleString()) + suffix;
             if (p < 1) {
                 requestAnimationFrame(step);
             } else {
-                el.textContent = m[1] + suffix;       // 定格到目标值（保留原千分位写法）
+                el.textContent = m[1] + suffix;       // 定格到目标值（保留原写法）
+                delete el.dataset.mvCounting;
                 setTimeout(function () { busy[key] = false; }, 0);
             }
         }

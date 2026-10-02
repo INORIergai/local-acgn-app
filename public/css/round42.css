@@ -357,8 +357,22 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
 .sidebar.rail .sb-fold { display: none; }
 .sidebar.rail .sb-sec-name,
 .sidebar.rail .nav-item .count { opacity: 0; }
-.sidebar.rail .nav-item { padding: 8px 2px; gap: 0; justify-content: center; }
-.sidebar.rail .nav-item span:first-child { flex: 0 0 auto; width: 30px; overflow: hidden; white-space: nowrap; }
+.sidebar.rail .nav-item { padding: 7px 2px; gap: 0; justify-content: center; align-items: center; }
+/* r61：收起态只留图标，杜绝「图标 + 半截文字」——
+   · nv-ic 容器注入在 span:first-child 内部，font-size:0 自动隐藏同级文字；
+   · 带 .nv-ic 的映射项：只显示 3D 图标，margin-right 清零以保持居中；
+   · keep-emoji / 未装饰项：span:first-child 为 inline-block，font-size:0 藏文字，::first-letter 还原 emoji。 */
+.sidebar.rail .nav-item span:first-child {
+    display: inline-block;
+    width: auto;
+    font-size: 0;
+    line-height: 1;
+    text-align: center;
+    overflow: visible;
+    white-space: normal;
+}
+.sidebar.rail .nav-item:not(:has(.nv-ic)) span:first-child::first-letter { font-size: 16px; }
+.sidebar.rail .nav-item .nv-ic { margin-right: 0; }
 .sidebar.rail .nav-item .count { display: none; }
 .sidebar.rail .mobile-only-actions,
 .sidebar.rail .stats-row,

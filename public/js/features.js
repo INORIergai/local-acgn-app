@@ -306,66 +306,75 @@
     function annualAreaChart(monthMap) {
         const values = Array.from({ length: 12 }, (_, i) => monthMap[String(i + 1).padStart(2, '0')] || 0);
         const max = Math.max(1, ...values);
-        const W = 560, H = 176, pl = 14, pr = 14, pt = 18, pb = 30;
+        // r62: 放大画布尺寸至 680×220，让折线与月份在大屏下饱满舒展
+        const W = 680, H = 220, pl = 24, pr = 24, pt = 26, pb = 34;
         const iw = W - pl - pr, ih = H - pt - pb;
         const pts = values.map((v, i) => [pl + i * iw / 11, pt + ih - (v / max) * ih]);
         const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
         const area = line + ` L ${(pl + iw).toFixed(1)} ${(pt + ih).toFixed(1)} L ${pl} ${(pt + ih).toFixed(1)} Z`;
         return `<svg class="an-area" viewBox="0 0 ${W} ${H}">
             <defs><linearGradient id="anGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#fbb663" stop-opacity=".5"/>
-                <stop offset="1" stop-color="#fbb663" stop-opacity="0"/>
+                <stop offset="0" stop-color="var(--primary, #fbb663)" stop-opacity=".45"/>
+                <stop offset="100%" stop-color="var(--primary, #fbb663)" stop-opacity="0.02"/>
             </linearGradient></defs>
             <path class="an-area-fill" d="${area}" fill="url(#anGrad)"/>
             <path class="an-area-line" d="${line}" pathLength="1"/>
             ${pts.map((p, i) => `<g class="an-dot" transform="translate(${p[0].toFixed(1)},${p[1].toFixed(1)})">
-                <circle r="9" fill="transparent"/><circle class="an-dot-c" r="3.5"/>
+                <circle r="12" fill="transparent"/>
+                <circle class="an-dot-c" r="4.5" style="--i:${i};"/>
                 <title>${i + 1} 月：${values[i]} 次</title></g>`).join('')}
-            ${pts.map((p, i) => `<text class="an-m" x="${p[0].toFixed(1)}" y="${H - 8}">${String(i + 1).padStart(2, '0')}</text>`).join('')}
+            ${pts.map((p, i) => `<text class="an-m" x="${p[0].toFixed(1)}" y="${H - 10}">${String(i + 1).padStart(2, '0')}月</text>`).join('')}
         </svg>`;
     }
 
     function annualBubbles(items) {
-        const arr = (items || []).slice(0, 12);
-        if (!arr.length) return '<div class="cp-empty" style="padding:16px;">暂无记录</div>';
+        const arr = (items || []).slice(0, 14);
+        if (!arr.length) return '<div class="cp-empty" style="padding:24px;">暂无记录</div>';
         const max = Math.max(1, ...arr.map(r => r.playCount || 0));
         const nodes = arr.map((r, i) => ({
             name: r.name || '—',
             v: r.playCount || 0,
-            r: 17 + Math.sqrt((r.playCount || 0) / max) * 33,
+            r: 20 + Math.sqrt((r.playCount || 0) / max) * 36,
             c: AN_CANDY[i % AN_CANDY.length]
         }));
-        const W = 560;
-        let x = 8, y = 0, rowH = 0;
+        // r62: 放大气泡画布至 680，自适应多行排版，显式在 circle/text 标记绝对坐标，双重根除 (0,0) 堆叠
+        const W = 680;
+        let x = 14, y = 10, rowH = 0;
         nodes.forEach(n => {
-            if (x + n.r * 2 > W) { x = 8; y += rowH + 10; rowH = 0; }
-            n.cx = x + n.r; n.cy = y + n.r + 30;
-            x += n.r * 2 + 10;
+            if (x + n.r * 2 > W - 14) { x = 14; y += rowH + 16; rowH = 0; }
+            n.cx = x + n.r; n.cy = y + n.r + 10;
+            x += n.r * 2 + 16;
             rowH = Math.max(rowH, n.r * 2);
         });
-        const H = y + rowH + 46;
-        return `<svg class="an-bubbles" viewBox="0 0 ${W} ${H}">` + nodes.map(n => {
-            const short = n.name.length > 6 ? n.name.slice(0, 6) + '…' : n.name;
-            return `<g class="an-bub" transform="translate(${n.cx.toFixed(1)},${n.cy.toFixed(1)})">
+        const H = Math.max(220, y + rowH + 28);
+        return `<svg class="an-bubbles" viewBox="0 0 ${W} ${H}">` + nodes.map((n, i) => {
+            const short = n.name.length > 7 ? n.name.slice(0, 7) + '…' : n.name;
+            const cx = n.cx.toFixed(1);
+            const cy = n.cy.toFixed(1);
+            const r = n.r.toFixed(1);
+            return `<g class="an-bub" style="--i:${i};" data-tag="${escapeHtml(n.name)}">
                 <title>${escapeHtml(n.name)}：${n.v} 次</title>
-                <circle r="${n.r.toFixed(1)}" fill="${n.c}" opacity=".92"/>
-                <text class="an-bub-v" y="-1">${n.v}</text>
-                <text class="an-bub-n" y="13">${escapeHtml(short)}</text>
+                <circle cx="${cx}" cy="${cy}" r="${r}" fill="${n.c}" opacity=".92"/>
+                <text class="an-bub-v" x="${cx}" y="${(n.cy - 3).toFixed(1)}">${n.v}</text>
+                <text class="an-bub-n" x="${cx}" y="${(n.cy + 13).toFixed(1)}">${escapeHtml(short)}</text>
             </g>`;
         }).join('') + '</svg>';
     }
 
     function annualRankBars(arr) {
         const list = (arr || []).slice(0, 10);
-        if (!list.length) return '<div class="cp-empty" style="padding:16px;">暂无记录</div>';
+        if (!list.length) return '<div class="cp-empty" style="padding:24px;">暂无记录</div>';
         const max = Math.max(1, ...list.map(r => r.playCount || 0));
-        return list.map((r, i) => `
-            <div class="an-rank">
-                <i class="an-rank-bar" style="width:${Math.max(3, Math.round((r.playCount || 0) / max * 100))}%;--dc:${AN_CANDY[i % AN_CANDY.length]}"></i>
-                <span class="idx">${String(i + 1).padStart(2, '0')}</span>
+        return list.map((r, i) => {
+            const pct = Math.max(4, Math.round((r.playCount || 0) / max * 100));
+            return `
+            <div class="an-rank" style="--i:${i};">
+                <i class="an-rank-bar" style="--w:${pct}%;width:${pct}%;--dc:${AN_CANDY[i % AN_CANDY.length]}"></i>
+                <span class="idx idx-${i + 1}">${i < 3 ? ['👑', '🥈', '🥉'][i] : String(i + 1).padStart(2, '0')}</span>
                 <span class="name">${escapeHtml(r.name || '—')}</span>
                 <span class="val">${r.playCount || 0} 次</span>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 
     async function showAnnual(year) {
@@ -402,12 +411,12 @@
         const actressRows = annualRankBars(d.topActresses);
 
         const topMovies = (d.topMovies || []).map((r, i) => `
-            <div class="annual-rank">
-                <span class="idx">${String(i + 1).padStart(2, '0')}</span>
-                ${getPosterUrl(r) ? `<img class="annual-rank-poster" src="${getPosterUrl(r)}" data-id="${r.id}" alt="">` : ''}
-                <span class="name">${escapeHtml(r.title || r.avid || '—')}</span>
+            <div class="annual-rank rank-movie-item" style="--i:${i};">
+                <span class="idx idx-${i + 1}">${i < 3 ? ['👑', '🥈', '🥉'][i] : String(i + 1).padStart(2, '0')}</span>
+                ${getPosterUrl(r) ? `<img class="annual-rank-poster" src="${getPosterUrl(r)}" data-id="${r.id}" alt="" loading="lazy">` : ''}
+                <span class="name" title="${escapeHtml(r.title || r.avid || '')}">${escapeHtml(r.title || r.avid || '—')}</span>
                 <span class="val">${r.playCount} 次</span>
-            </div>`).join('') || '<div class="cp-empty" style="padding:16px;">今年还没有播放记录</div>';
+            </div>`).join('') || '<div class="cp-empty" style="padding:24px;">今年还没有播放记录</div>';
 
         const reading = (d.readingSummary || []);
         const comicMin = Math.round((reading.find(r => r.type === 'comic') || {}).totalMinutes || 0);
@@ -417,39 +426,41 @@
         (d.addedByType || []).forEach(r => { addedByType[r.type || 'jav'] = r.count; });
 
         view.innerHTML = `
-            <div class="panel-section">
+            <div class="panel-section annual-container">
                 <div class="panel-head">
                     <div class="toolbar-title" style="border:none;margin:0;padding:0;">📈 ${annualYear} 年度观影报告</div>
-                    <select class="select-input" id="annualYearSelect" style="width:auto;">
-                        ${years.map(y => `<option value="${y}" ${y === annualYear ? 'selected' : ''}>${y} 年</option>`).join('')}
-                    </select>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <select class="select-input" id="annualYearSelect" style="width:auto;">
+                            ${years.map(y => `<option value="${y}" ${y === annualYear ? 'selected' : ''}>${y} 年</option>`).join('')}
+                        </select>
+                    </div>
                 </div>
 
                 ${r34SliceBar('annual', r34Slice.annual || 'all')}
 
                 <div class="annual-hero">
-                    <div class="annual-card"><div class="num">${plays.totalPlays || 0}</div><div class="label">播放次数</div></div>
-                    <div class="annual-card"><div class="num">${plays.uniqueMovies || 0}</div><div class="label">看过不同影片</div></div>
-                    <div class="annual-card"><div class="num">${hours}h</div><div class="label">观影总时长</div></div>
-                    <div class="annual-card"><div class="num">${comicMin >= 60 ? Math.floor(comicMin / 60) + 'h' + (comicMin % 60) : comicMin + 'm'}</div><div class="label">漫画阅读</div></div>
-                    <div class="annual-card"><div class="num">${novelMin >= 60 ? Math.floor(novelMin / 60) + 'h' + (novelMin % 60) : novelMin + 'm'}</div><div class="label">小说阅读</div></div>
-                    <div class="annual-card"><div class="num">${Object.values(addedByType).reduce((a, b) => a + b, 0)}</div><div class="label">新入库</div></div>
+                    <div class="annual-card" style="--i:0;"><div class="num">${plays.totalPlays || 0}</div><div class="label">播放次数</div></div>
+                    <div class="annual-card" style="--i:1;"><div class="num">${plays.uniqueMovies || 0}</div><div class="label">看过不同影片</div></div>
+                    <div class="annual-card" style="--i:2;"><div class="num">${hours}h</div><div class="label">观影总时长</div></div>
+                    <div class="annual-card" style="--i:3;"><div class="num">${comicMin >= 60 ? Math.floor(comicMin / 60) + 'h' + (comicMin % 60) : comicMin + 'm'}</div><div class="label">漫画阅读</div></div>
+                    <div class="annual-card" style="--i:4;"><div class="num">${novelMin >= 60 ? Math.floor(novelMin / 60) + 'h' + (novelMin % 60) : novelMin + 'm'}</div><div class="label">小说阅读</div></div>
+                    <div class="annual-card" style="--i:5;"><div class="num">${Object.values(addedByType).reduce((a, b) => a + b, 0)}</div><div class="label">新入库</div></div>
                 </div>
 
                 <div class="annual-grid">
-                    <div class="annual-block">
+                    <div class="annual-block" style="--i:0;">
                         <h4>每月播放分布</h4>
                         <div class="annual-chart">${chart}</div>
                     </div>
-                    <div class="annual-block">
+                    <div class="annual-block" style="--i:1;">
                         <h4>最常重看</h4>
                         ${topMovies}
                     </div>
-                    <div class="annual-block">
+                    <div class="annual-block" style="--i:2;">
                         <h4>年度演员</h4>
                         ${actressRows}
                     </div>
-                    <div class="annual-block">
+                    <div class="annual-block" style="--i:3;">
                         <h4>年度标签</h4>
                         ${tagBubbles}
                     </div>

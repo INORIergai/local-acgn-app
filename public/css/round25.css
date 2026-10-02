@@ -69,31 +69,21 @@
  *   视觉上就是「圆形疯狂闪烁」。鼠标不动也会抖（命中区域与渲染区域不一致）。
  * 修法：SVG 元素上彻底不用 transform 做悬停缩放，改容器级 filter/opacity，
  *       并把 transform-box/origin 复位，避免 fill-box 反复重算。 */
-.an-bub,
-.annual-bubble,
-[class*="an-bub"] {
-    animation: none !important;
-    transition: none !important;
-    transform: none !important;
-    transform-box: view-box !important;
-    transform-origin: 0 0 !important;
-    will-change: auto !important;
+/* r62 修复：彻底清除原 transform: none !important，杜绝 SVG 标签气泡坐标归零导致所有标签堆叠在左上角 (0,0)；
+   悬停反馈采用安全高亮与柔和阴影，不破坏布局盒。 */
+.an-bub {
+    cursor: pointer;
+    transition: filter .2s ease;
 }
-.an-bub:hover,
-.annual-bubble:hover,
-[class*="an-bub"]:hover {
-    transform: none !important;
-    /* 悬停反馈改走 circle 描边 + 亮度，不碰布局盒 */
-    filter: brightness(1.08) saturate(1.1);
+.an-bub:hover {
+    filter: brightness(1.12) drop-shadow(0 4px 10px rgba(245, 158, 11, 0.35));
 }
-/* 圆本体的过渡保留（只改 paint，不改 transform） */
 .an-bub circle {
-    transition: opacity .18s ease, stroke .18s ease;
+    transition: stroke .18s ease, stroke-width .18s ease;
 }
-.an-bub:hover circle:first-of-type {
-    opacity: 1;
-    stroke: rgba(255, 255, 255, .85);
-    stroke-width: 2;
+.an-bub:hover circle {
+    stroke: rgba(255, 255, 255, .95);
+    stroke-width: 2.5px;
 }
 /* 面积图的描线动画只跑一次，不因视图重排重放 */
 .an-area-line,

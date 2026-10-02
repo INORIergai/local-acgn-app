@@ -682,8 +682,8 @@ async function searchMovie(cleanName, fileName, type, filePath) {
       if (result) {
         // 验证搜索结果的番号是否匹配
         if (avid && result.num) {
-          const resultAvid = result.num.toUpperCase().replace(/[^A‑Z0‑9]/g, '');
-          const searchAvid = avid.toUpperCase().replace(/[^A‑Z0‑9]/g, '');
+          const resultAvid = result.num.toUpperCase().replace(/[^A-Z0-9]/gi, '');
+          const searchAvid = avid.toUpperCase().replace(/[^A-Z0-9]/gi, '');
           if (resultAvid !== searchAvid) {
             console.log(`[刮削] ${source} 结果番号不匹配: 搜索 ${avid} vs 结果 ${result.num}，跳过`);
             continue;

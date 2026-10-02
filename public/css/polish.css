@@ -177,7 +177,7 @@
     max-height: 32vh;            /* 超高图限高，比例不变（contain 不变形） */
     object-fit: contain;         /* 整幅可见，绝不裁切 */
     border-radius: 12px;
-    background: var(--sprocket-bg, var(--bg-elevated));
+    background: transparent !important; /* r67: 透明底色，彻底杜绝加载中的白色方形背景格子 */
     border: 1px solid var(--border);
     box-shadow: 0 16px 36px -16px rgba(0,0,0,.5);
 }
@@ -374,30 +374,43 @@
    会再叠一层更强的动效，这里只负责尺寸与基础过渡。 */
 .detail-actions {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
-    gap: 10px;
+    /* r61：固定 7 列 × 2 行（14 个按钮），图标下带名称 —— 替代 auto-fill 单排挤爆 + 删除按钮被裁 */
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px 6px;
     margin-top: 16px;
     border-top: 1px dashed var(--border);
     padding-top: 16px;
 }
 .detail-actions .dbtn {
     display: flex;
+    flex-direction: column;      /* r61：图标在上、名称在下 */
     align-items: center;
     justify-content: center;
+    gap: 5px;
     /* style.css 的 .dbtn 写死了 width/height:40px，这里必须**两轴都覆盖**，
        否则只给 height 会留下 40px 的窄条（实测踩过）。 */
     width: 100%;
-    height: 56px;
-    min-height: 56px;
-    border-radius: 14px;
+    height: auto;
+    min-height: 0;
+    padding: 9px 2px 8px;
+    border-radius: 12px;
     border: 1px solid var(--border);
     background: var(--bg-elevated);
     color: var(--text);
-    font-size: 24px;
+    font-size: 22px;
     line-height: 1;
     cursor: pointer;
     transition: transform .18s var(--pl-ease-over), background .18s, border-color .18s, box-shadow .2s;
 }
+.detail-actions .dbtn-label {
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--text-muted);
+    letter-spacing: .02em;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.detail-actions .dbtn:hover .dbtn-label { color: var(--text); }
 .detail-actions .dbtn:hover {
     transform: translateY(-3px) scale(1.06);
     border-color: var(--pl-amber);
@@ -778,6 +791,316 @@
         transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(.42);
         opacity: 0;
     }
+}
+
+/* ============ r62: AI 人格卡片选择态高亮与微交互 ============ */
+#personaChips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 6px;
+}
+.persona-chip {
+    position: relative;
+    border-radius: 20px !important;
+    padding: 0 14px !important;
+    height: 32px !important;
+    font-size: 12.5px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    cursor: pointer !important;
+    user-select: none;
+    transition: all .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+.persona-chip.btn-secondary {
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-muted) !important;
+}
+.persona-chip.btn-secondary:hover {
+    border-color: var(--primary) !important;
+    color: var(--text) !important;
+    transform: translateY(-1px);
+    background: var(--primary-soft) !important;
+}
+.persona-chip.active {
+    background: var(--primary) !important;
+    border-color: var(--primary-strong, var(--primary)) !important;
+    color: #131110 !important;
+    font-weight: 700 !important;
+    box-shadow: 0 0 0 3px var(--primary-soft), 0 4px 14px -2px rgba(245, 158, 11, 0.45) !important;
+    transform: translateY(-2px) scale(1.03) !important;
+}
+.persona-chip .persona-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+.persona-chip .persona-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(19, 17, 16, 0.22);
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 800;
+    margin-left: 2px;
+    letter-spacing: .02em;
+}
+.persona-desc-hint {
+    width: 100%;
+    margin: 8px 0 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    border-left: 3px solid var(--primary);
+    border-radius: 0 8px 8px 0;
+    transition: all .2s ease;
+}
+.persona-desc-hint strong {
+    color: var(--text);
+    margin-right: 4px;
+}
+
+/* ============ r62: 年度报告视窗满宽重设计与全板块专属动效 ============ */
+.panel-section.annual-container {
+    max-width: 1440px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding: 24px 28px 48px !important;
+    box-sizing: border-box !important;
+    animation: annualViewIn .4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes annualViewIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 顶部核心指标卡：宽屏网格展开 + 错峰弹性浮入 */
+.annual-hero {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+    gap: 14px !important;
+    margin-bottom: 24px !important;
+}
+.annual-card {
+    padding: 18px 20px !important;
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    transition: transform .22s var(--pl-ease-over), border-color .2s, box-shadow .22s !important;
+    animation: annualPopIn .5s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--i, 0) * 60ms) backwards;
+}
+.annual-card:hover {
+    transform: translateY(-3px) scale(1.02);
+    border-color: var(--primary);
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.35);
+}
+.annual-card .num {
+    font-size: 30px !important;
+    font-weight: 800 !important;
+    line-height: 1.15 !important;
+    color: var(--primary) !important;
+    letter-spacing: -0.02em;
+}
+.annual-card .label {
+    font-size: 12px !important;
+    font-weight: 600;
+    letter-spacing: .08em;
+    color: var(--text-muted) !important;
+    margin-top: 6px !important;
+}
+@keyframes annualPopIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.92); }
+    to { opacity: 1; transform: none; }
+}
+
+/* 四大看板网格：大屏 2 列宽幅 + 自适应卡片拉伸 */
+.annual-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 20px !important;
+}
+@media (max-width: 900px) {
+    .annual-grid { grid-template-columns: 1fr !important; }
+}
+.annual-block {
+    padding: 22px 24px !important;
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    min-height: 320px;
+    animation: annualBlockIn .55s cubic-bezier(0.16, 1, 0.3, 1) calc(150ms + var(--i, 0) * 80ms) backwards;
+}
+@keyframes annualBlockIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+}
+.annual-block h4 {
+    font-size: 13.5px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.06em !important;
+    color: var(--text) !important;
+    margin-bottom: 16px !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* 板块1：每月播放分布折线面积图（生长描边 + 面积淡入 + 点位弹跳） */
+.an-area {
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    overflow: visible;
+}
+.an-area-line {
+    fill: none;
+    stroke: var(--primary, #fbb663);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: anDrawLine 1.2s cubic-bezier(.16, 1, .3, 1) .15s forwards;
+}
+@keyframes anDrawLine {
+    to { stroke-dashoffset: 0; }
+}
+.an-area-fill {
+    opacity: 0;
+    animation: anFadeFill 1s ease .3s forwards;
+}
+@keyframes anFadeFill {
+    to { opacity: 1; }
+}
+.an-dot-c {
+    fill: var(--primary, #fbb663);
+    stroke: var(--bg, #1a1a20);
+    stroke-width: 2;
+    transition: r .2s ease, transform .2s ease;
+    animation: anDotPop .4s cubic-bezier(0.34, 1.56, 0.64, 1) calc(400ms + var(--i, 0) * 50ms) backwards;
+}
+.an-dot:hover .an-dot-c {
+    r: 6.5;
+    stroke-width: 2.5;
+}
+@keyframes anDotPop {
+    from { opacity: 0; transform: scale(0); }
+    to { opacity: 1; transform: scale(1); }
+}
+.an-m {
+    font-size: 11px !important;
+    fill: var(--text-muted) !important;
+    text-anchor: middle;
+    font-family: var(--font-mono);
+}
+
+/* 板块2：最常重看 Top 影片（海报放大 + 冠亚季军徽标 + 错峰滑入） */
+.rank-movie-item {
+    padding: 8px 10px !important;
+    border-radius: 10px !important;
+    transition: background .18s ease, transform .18s ease !important;
+    animation: rankItemIn .45s cubic-bezier(0.16, 1, 0.3, 1) calc(200ms + var(--i, 0) * 45ms) backwards;
+}
+.rank-movie-item:hover {
+    background: var(--primary-soft) !important;
+    transform: translateX(4px);
+}
+@keyframes rankItemIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to { opacity: 1; transform: none; }
+}
+.rank-movie-item .idx {
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    width: 28px !important;
+}
+.rank-movie-item .idx-1 { color: #f59e0b !important; }
+.rank-movie-item .idx-2 { color: #94a3b8 !important; }
+.rank-movie-item .idx-3 { color: #d97706 !important; }
+.annual-rank-poster {
+    width: 36px !important;
+    height: 50px !important;
+    border-radius: 6px !important;
+    object-fit: cover;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+.rank-movie-item:hover .annual-rank-poster {
+    transform: scale(1.08) translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+.rank-movie-item .name {
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    color: var(--text);
+}
+.rank-movie-item .val {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+/* 板块3：年度演员（Rank Bars 横向柱状条平滑伸展） */
+.annual-block .an-rank {
+    padding: 9px 12px !important;
+    margin-bottom: 6px !important;
+    border-radius: 8px !important;
+    transition: transform .18s ease, background .18s ease !important;
+    animation: rankItemIn .45s cubic-bezier(0.16, 1, 0.3, 1) calc(200ms + var(--i, 0) * 45ms) backwards;
+}
+.annual-block .an-rank:hover {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.04)) !important;
+    transform: translateX(4px);
+}
+.annual-block .an-rank-bar {
+    animation: barGrow .8s cubic-bezier(0.16, 1, 0.3, 1) calc(250ms + var(--i, 0) * 50ms) backwards;
+    transform-origin: left center;
+}
+@keyframes barGrow {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+/* 板块4：年度标签气泡云（弹性入场 + 悬停发光 + 绝对无重叠） */
+.an-bubbles {
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    overflow: visible;
+}
+.an-bub {
+    cursor: pointer;
+    transition: filter .2s ease, transform .25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: bubPop .5s cubic-bezier(0.34, 1.56, 0.64, 1) calc(200ms + var(--i, 0) * 50ms) backwards;
+}
+.an-bub:hover {
+    filter: brightness(1.15) drop-shadow(0 6px 14px rgba(245, 158, 11, 0.45));
+}
+@keyframes bubPop {
+    from { opacity: 0; transform: scale(0.6); }
+    to { opacity: 1; transform: scale(1); }
+}
+.an-bub-v {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    fill: #131110 !important;
+    text-anchor: middle;
+    font-family: var(--font-display, sans-serif);
+    pointer-events: none;
+}
+.an-bub-n {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    fill: rgba(19, 17, 16, 0.78) !important;
+    text-anchor: middle;
+    pointer-events: none;
 }
 /* 迸散瞬间从中心扩散的冲击环 */
 .crush-ring {
@@ -1208,4 +1531,406 @@
     .nr-btn:hover, .nr-chip:hover, .nr-card:hover { transform: none; }
     .nr-card:hover .nr-card-cover img { transform: none; }
     .nr-skeleton-title, .nr-skeleton-chip, .nr-skeleton-card { animation: none; }
+}
+
+/* ============ r63/r65: 详情弹窗海报自适应流光氛围光 (Ambilight) 与平滑同步退出 ============ */
+#detailModal.modal {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 520 !important;
+    overflow: hidden;
+    transition: opacity .32s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+#detailModal.has-ambilight::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 75% 25%, var(--amb-c1, rgba(245, 158, 11, 0.28)) 0%, transparent 65%),
+                radial-gradient(circle at 92% 70%, var(--amb-c2, rgba(99, 102, 241, 0.20)) 0%, transparent 55%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity .5s cubic-bezier(0.16, 1, 0.3, 1);
+    filter: blur(28px);
+}
+#detailModal.has-ambilight.in::before {
+    opacity: 1;
+}
+#detailModal .modal-content {
+    position: relative;
+    z-index: 2;
+    background: color-mix(in srgb, var(--card-bg, #1a1a20) 88%, transparent) !important;
+    backdrop-filter: blur(24px) saturate(160%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+    transition: transform .32s cubic-bezier(0.16, 1, 0.3, 1), opacity .28s ease !important;
+}
+
+/* r65: 消除收回时差 —— 移除 .in 时外框与海报完全同步平滑淡出收回 */
+html[data-detail-mode="drawer"] #detailModal:not(.in) .modal-content.detail-modal {
+    transform: translateX(100%) !important;
+    opacity: 0 !important;
+}
+html[data-detail-mode="modal"] #detailModal:not(.in) .modal-content.detail-modal {
+    transform: translateY(18px) scale(0.96) !important;
+    opacity: 0 !important;
+}
+#detailModal:not(.in) {
+    opacity: 0 !important;
+}
+
+/* r65: 小窗与全分辨率自适应滚动，杜绝操作按钮被裁切 */
+#detailModal .modal-content.detail-modal {
+    max-height: calc(100vh - 32px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+#detailModal .detail-body {
+    height: auto !important;
+    min-height: min-content !important;
+    overflow: visible !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+#detailModal .detail-scroll {
+    height: auto !important;
+    overflow: visible !important;
+}
+
+@media (max-height: 820px) {
+    #detailModal .detail-head {
+        gap: 10px !important;
+        margin-bottom: 10px !important;
+    }
+    #detailModal .detail-poster {
+        max-height: 22vh !important;
+    }
+    #detailModal .detail-head-meta.dm-blocks {
+        gap: 4px !important;
+        margin-top: 6px !important;
+    }
+    #detailModal .dm-block {
+        padding: 4px 8px !important;
+        font-size: 11px !important;
+    }
+    #detailModal .detail-primary-actions {
+        margin-top: 10px !important;
+    }
+}
+
+/* ============ r63: 多维即时聚合切片筛选器 (Facet Slicer 2.0) ============ */
+.facet-filter-bar {
+    width: 100%;
+    margin: 4px 0 16px;
+    padding: 10px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-sizing: border-box;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.facet-filter-bar:hover {
+    border-color: rgba(245, 158, 11, 0.35);
+}
+.facet-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.facet-group {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 4px;
+    gap: 2px;
+}
+[data-theme="dark"] .facet-group,
+html[data-v4skin="ambient"] .facet-group,
+html[data-v4skin="aurora"] .facet-group {
+    background: rgba(255, 255, 255, 0.05);
+}
+.facet-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    padding: 0 8px 0 6px;
+    letter-spacing: .04em;
+    user-select: none;
+}
+.f-pill {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+    line-height: 1.3;
+    transition: all .16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.f-pill:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.1);
+}
+.f-pill.active {
+    background: var(--primary) !important;
+    color: #131110 !important;
+    font-weight: 800 !important;
+    box-shadow: 0 2px 8px -2px rgba(245, 158, 11, 0.5) !important;
+}
+.facet-reset-btn {
+    appearance: none;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    margin-left: auto;
+    transition: all .16s ease;
+}
+.facet-reset-btn:hover {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+}
+
+/* ============ r64: 入库时间线依次抽出与选中突出动效 ============ */
+@keyframes tlCardPullOut {
+    0% {
+        transform: translateY(32px) scale(0.92) rotate(-2deg);
+        opacity: 0;
+    }
+    65% {
+        transform: translateY(-4px) scale(1.02) rotate(0.5deg);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(0) scale(1) rotate(0deg);
+        opacity: 1;
+    }
+}
+.tl-strip .tl-card {
+    animation: tlCardPullOut 0.42s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--tl-i, 0) * 36ms) both;
+    transition: transform .25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .25s ease, filter .2s ease, opacity .2s ease;
+}
+.tl-strip .tl-card:hover {
+    transform: translateY(-8px) scale(1.04);
+    box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.45);
+    z-index: 5;
+}
+.tl-strip .tl-card.is-active {
+    transform: translateY(-16px) scale(1.08) !important;
+    z-index: 10 !important;
+    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.6)) brightness(1.1) !important;
+}
+.tl-strip .tl-card.is-active .tl-poster {
+    border-color: var(--primary, #E5A63C) !important;
+    box-shadow: 0 0 16px rgba(229, 166, 60, 0.4) !important;
+}
+.tl-strip.has-active .tl-card:not(.is-active) {
+    opacity: 0.72;
+    transform: scale(0.96);
+    filter: brightness(0.85);
+}
+
+/* ============ r64/r66: 播放器待播序列抽屉样式（精确定位避开头部与底部，消除遮挡） ============ */
+.player-playlist-drawer {
+    position: absolute !important;
+    right: 16px !important;
+    top: 68px !important;
+    bottom: 76px !important;
+    width: 290px !important;
+    background: color-mix(in srgb, var(--card-bg, #16161F) 94%, #000) !important;
+    backdrop-filter: blur(28px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+    border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.14)) !important;
+    border-radius: 16px !important;
+    box-shadow: -8px 12px 36px rgba(0, 0, 0, 0.65) !important;
+    z-index: 45 !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: drawerSlideIn .25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes drawerSlideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+.ppd-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--primary) !important;
+}
+.ppd-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ppd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: background .15s ease, color .15s ease;
+}
+.ppd-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+}
+.ppd-item.active {
+    background: var(--primary-soft);
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    font-weight: 700;
+}
+.ppd-idx {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    width: 20px;
+    opacity: .7;
+}
+.ppd-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ppd-tag {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--primary);
+    color: #131110;
+    font-weight: 800;
+}
+
+/* ============ r65/r66: 播放器主题色全面打通与 Portal 悬停海报浮层 ============ */
+.player-modal .modal-content {
+    background: color-mix(in srgb, var(--card-bg, #121828) 94%, #000) !important;
+    border: 1px solid var(--border-strong, var(--border, rgba(255, 255, 255, 0.14))) !important;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.75) !important;
+}
+.player-head {
+    background: color-mix(in srgb, var(--card-bg, #15120d) 96%, #000) !important;
+    border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+}
+.player-head .ph-title {
+    color: var(--text, #F4EFE4) !important;
+}
+.player-head .ph-dot {
+    background: var(--primary, #F9A220) !important;
+    box-shadow: 0 0 10px var(--primary, #F9A220) !important;
+}
+.player-foot {
+    background: color-mix(in srgb, var(--card-bg, #100e0b) 96%, #000) !important;
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+}
+.player-progress-fill {
+    background: var(--primary, linear-gradient(90deg, #F9A220, #ff008c)) !important;
+    box-shadow: 0 0 12px var(--primary-soft, rgba(249, 162, 32, 0.4)) !important;
+}
+
+/* r66: 独立单例悬停海报预览浮层 (Portal 模式，彻底杜绝 overflow-y 剪切) */
+.ppd-portal-card {
+    position: fixed !important;
+    z-index: 99999 !important;
+    pointer-events: none !important;
+    width: 250px;
+    background: color-mix(in srgb, var(--card-bg, #1a1a24) 96%, #000);
+    border: 1px solid var(--border-strong, var(--border, rgba(255, 255, 255, 0.18)));
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.8);
+    display: flex;
+    gap: 10px;
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    opacity: 0;
+    transform: translateX(10px);
+    transition: opacity .18s ease, transform .18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ppd-portal-card.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+.ppd-preview-poster {
+    width: 60px;
+    height: 84px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.ppd-preview-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ppd-preview-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.35;
+}
+.ppd-preview-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.ppd-preview-avid {
+    font-family: var(--font-mono);
+    color: var(--primary);
+    font-weight: 700;
+}
+.ppd-preview-score {
+    color: #f59e0b;
+    font-weight: 700;
+}
+.ppd-preview-dur {
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin-top: auto;
+}
+
+/* ============ r66: 时间线物理海浪波浪顶起动效 (Wave Lift Effect) ============ */
+.tl-strip .tl-card {
+    transform: translate3d(0, var(--wave-y, 0px), 0) scale(var(--wave-s, 1)) rotate(var(--wave-rot, 0deg));
+    z-index: var(--wave-z, 1);
+    will-change: transform;
+}
+.tl-strip.is-waving .tl-card {
+    transition: none !important;
+}
+.tl-strip.is-settling .tl-card {
+    transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.38s ease, filter 0.38s ease !important;
 }

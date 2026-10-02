@@ -35,8 +35,8 @@ const BROWSER_CANDIDATES = [
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  '%USERPROFILE%\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
-  '%USERPROFILE%\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe',
   // Linux / 容器
   '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',

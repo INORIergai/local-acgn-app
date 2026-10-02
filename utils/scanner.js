@@ -122,9 +122,40 @@ async function processSingleFile(filePath, type = 'jav', opts = {}) {
   // overwrite：老行为，新刮结果无条件覆盖（全量扫描无已有记录时两者等价）。
   const mergeMode = opts.mergeMode === 'overwrite' ? 'overwrite' : (opts.mergeMode === 'merge' ? 'merge' : 'overwrite');
   const isRescrape = !!opts.forceWeb;   // 手动重刮（rescrape 路由必带 forceWeb）
-  const fileName = path.basename(filePath);
+
+  // r64 路径自愈机制：如果磁盘文件被用户改名导致原 filePath 不存在，按番号在同目录自愈定位
+  let targetPath = filePath;
+  if (!fs.existsSync(targetPath)) {
+    try {
+      const dir = path.dirname(filePath);
+      const ext = path.extname(filePath);
+      const base = path.basename(filePath, ext);
+      const mAvid = (base.match(/[A-Za-z]{2,8}[-_ ]?\d{2,6}/) || [])[0];
+      if (fs.existsSync(dir) && mAvid) {
+        const norm = mAvid.replace(/[-_ ]/g, '').toUpperCase();
+        const files = fs.readdirSync(dir);
+        const matched = files.find(f => {
+          const fn = f.replace(/[-_ ]/g, '').toUpperCase();
+          return fn.includes(norm) && ['.mp4', '.mkv', '.avi', '.wmv', '.ts'].includes(path.extname(f).toLowerCase());
+        });
+        if (matched) {
+          targetPath = path.join(dir, matched);
+          console.log(`[重新刮削·路径自愈] 原路径不存在，自愈定位到改名后文件: ${targetPath}`);
+          try {
+            const db = require('../db');
+            db.prepare('UPDATE movies SET filePath = ?, fileName = ? WHERE filePath = ?').run(targetPath, matched, filePath);
+          } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.log(`[重新刮削·自愈失败]:`, e.message);
+    }
+  }
+
+  const fileName = path.basename(targetPath);
   const cleanName = cleanMovieName(fileName);
-  const stat = fs.statSync(filePath);
+  const stat = fs.statSync(targetPath);
+  filePath = targetPath;
   // 预读已有记录（merge 增量补正的基准；round48 改为无条件读——残缺名救援任何模式都需要）
   let existingMovie = null;
   try { existingMovie = getMovieByPath.get(filePath) || null; } catch (e) { existingMovie = null; }

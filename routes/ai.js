@@ -641,7 +641,107 @@ router.post('/execute-tool', async (req, res) => {
                 };
                 break;
             }
-            
+
+            case 'smart_rescrape': {
+                const { target = 'frame_capture', movie_id, source = 'highest_confidence', limit = 10, mode = 'merge' } = toolArgs;
+                const db = require('../utils/db').db;
+                const { processSingleFile } = require('../utils/scanner');
+                const path = require('path');
+                const fs = require('fs');
+
+                let candidates = [];
+
+                if (target === 'single' && movie_id) {
+                    const row = db.prepare('SELECT id, title, fileName, avid, filePath, type, posterPath FROM movies WHERE id = ?').get(movie_id);
+                    if (row) candidates = [row];
+                } else if (target === 'frame_capture') {
+                    // 查询使用插帧截图或临时本地封面的影片
+                    candidates = db.prepare(
+                        "SELECT id, title, fileName, avid, filePath, type, posterPath FROM movies " +
+                        "WHERE (source IN ('thumb','local') OR posterPath LIKE '%_thumb%' OR posterPath LIKE 'capture%' OR localPosterPath LIKE '%thumb%') " +
+                        "AND type IN ('jav','anime','film','cartoon') ORDER BY id DESC LIMIT ?"
+                    ).all(Math.min(limit, 30));
+                } else if (target === 'duplicate') {
+                    // 查找封面哈希重复/碰撞的影片
+                    const config = require('../config');
+                    const crypto = require('crypto');
+                    const hashGroups = {};
+                    const rows = db.prepare("SELECT id, title, fileName, avid, filePath, type, localPosterPath FROM movies WHERE localPosterPath IS NOT NULL").all();
+                    for (const r of rows) {
+                        try {
+                            const full = path.join(config.posterCacheDir, path.basename(r.localPosterPath));
+                            if (fs.existsSync(full)) {
+                                const buf = fs.readFileSync(full);
+                                const h = crypto.createHash('md5').update(buf).digest('hex');
+                                if (!hashGroups[h]) hashGroups[h] = [];
+                                hashGroups[h].push(r);
+                            }
+                        } catch (e) {}
+                    }
+                    for (const h of Object.keys(hashGroups)) {
+                        if (hashGroups[h].length > 1) {
+                            candidates.push(...hashGroups[h]);
+                        }
+                    }
+                    candidates = candidates.slice(0, Math.min(limit, 30));
+                } else if (target === 'missing') {
+                    // 查找完全缺失海报的影片
+                    candidates = db.prepare(
+                        "SELECT id, title, fileName, avid, filePath, type, posterPath FROM movies " +
+                        "WHERE (posterPath IS NULL OR posterPath = '' OR localPosterPath IS NULL) " +
+                        "ORDER BY id DESC LIMIT ?"
+                    ).all(Math.min(limit, 30));
+                }
+
+                if (!candidates.length) {
+                    result = {
+                        action: 'smart_rescrape',
+                        target,
+                        processed: 0,
+                        message: `未找到符合【${target}】条件的待刮削影片，库中该类封面状态健康。`
+                    };
+                    break;
+                }
+
+                let successCount = 0;
+                let failCount = 0;
+                const updatedList = [];
+
+                for (const m of candidates) {
+                    try {
+                        await processSingleFile(m.filePath, m.type || 'jav', { forceWeb: true, mergeMode: mode });
+                        const updated = db.prepare('SELECT id, title, avid, posterPath, type FROM movies WHERE id = ?').get(m.id);
+                        if (updated && updated.posterPath) {
+                            successCount++;
+                            updatedList.push(updated);
+                        } else {
+                            failCount++;
+                        }
+                    } catch (err) {
+                        failCount++;
+                    }
+                }
+
+                const targetDesc = {
+                    frame_capture: '插帧截图转正',
+                    duplicate: '封面碰撞重优选',
+                    missing: '缺失封面补全',
+                    single: '单部重新刮削'
+                }[target] || target;
+
+                result = {
+                    action: 'smart_rescrape',
+                    target,
+                    processed: candidates.length,
+                    successCount,
+                    failCount,
+                    movies: updatedList,
+                    message: `✅ 已执行【${targetDesc}】：共检索到 ${candidates.length} 部影片，成功重新刮削与换源 ${successCount} 部` +
+                             (failCount > 0 ? `，失败 ${failCount} 部。` : '，全部完成！')
+                };
+                break;
+            }
+
             case 'open_folder': {
                 const { movie_id } = toolArgs;
                 result = { action: 'open_folder', movie_id, message: '正在打开文件夹...' };

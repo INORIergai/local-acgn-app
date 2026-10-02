@@ -34,17 +34,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v2.3：Electron 38/Chrome 140 底层升级 + 动效系统全面重构 + PDF/抽帧/键盘导航闭环
+COMMIT_MSG = """v2.4.0：夸克一键登录进设置页 + AI 模型路由容灾 + 动漫角色人格体系 + 侧栏改版 + 海报健康滚动续位
 
-- 内核升级：Electron 33→38.8.6（Chromium 130→140.0.7339.249），better-sqlite3 12.4.1 (ABI 139) 原生编译
-- PDF阅读器双根因闭环：sessionStorage 短键传递消除 URL 30KB 431 溢出；兼容 Chrome 140 原生 ES2025 API
-- 视频抽帧智能防黑帧：自动检测截帧图片字节与色差，纯黑/转场黑幕自动多阶段时间戳跳跃避让与脏缓存自愈
-- 功能页全场景方向键翻页：全部影片/动漫/漫画/小说等主列表支持 ArrowLeft/Right 键切换上一页/下一页，详情弹窗内同级切片
-- 3D Remotion 动效图标全站统一：详情弹窗 14 枚工具按钮与设置左侧导航全面接入与主侧栏一致的 3D 实心光体 WebM+PNG 双保险动效
-- 设置页【动效设置】专属板块：按 14 种业务操作逻辑精细化分类定制，挂载真实 Skiper 动效库方案、实时动画预览与持久化
-- 自定义加载动画上传管线：支持 MP4/WebM/MOV/GIF 上传，后端自动调用 Python/ffmpeg 智能抠除黑白底并转码为高质量透明 WebP
-- 随机推荐 3D 封面流轮播：自动巡航流转、3D 鼠标透视视差倾斜追踪与浮空呼吸微动
-- 在线观看多线路标签页系统：各站点支持父子级线路浮岛与多标签创建，鼠标悬停平滑展开、移出自动收起隐藏
+- 夸克扫码登录进设置页 Cookie 组：一键运行「夸克登录.bat」（固定脚本地址 + 完整操作与报错说明；路径白名单校验，cmd.exe 字面量调用）
+- AI 模型路由：多路由保存 / 随时切换 / 失败自动按序容灾 + 网络抖动原地重试，server.log 落轨迹
+- AI 人格升级为区块化动漫角色卡：爱弥斯 / 达妮娅（移植自 Alife 角色档案）+ 真央（影库原创）+ 雅儿贝德（新写）+ 默认管家 + 自定义
+- 侧栏改版：导航 15px / 分组标题 13px / 折叠箭头 24px 显眼化；收起展开宽度缓动 + 文字淡出 + 收起钮旋转
+- 海报健康滚动位置固定：换封面/刷新/切片重渲保位，F5 按续位记录回到原位；顺带修复 round26「F5 恢复视图」时序失效
+- fix(packaging): ensure-native ABI 跟随 Electron 版本映射表（v2.4.0 首个构建的 v130 错配已作废重发）
 """
 
 

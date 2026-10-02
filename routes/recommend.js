@@ -178,11 +178,24 @@ router.get('/guess', async (req, res) => {
 router.get('/unwatched', (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 20;
-        const pf = privacyFilter(req);
-        if (!pf) {
-            return res.json({ code: 0, data: getUnwatchedMovies.all(limit, 0) });
+        const privacy = String(req.query.privacy || '').toLowerCase();
+        const type = String(req.query.type || 'all').toLowerCase();
+        const db = require('../utils/db').db || require('../db');
+
+        let sql = `SELECT * FROM movies WHERE watched = 0`;
+        const params = [];
+
+        // r65: SQL 级严格类型过滤，避免内存 filter 导致公开库数据被耗尽变成空列表
+        if (type === 'adult' || privacy === 'adult') {
+            sql += ` AND (LOWER(type) = 'jav' OR LOWER(type) = 'anime' OR type IS NULL)`;
+        } else if (privacy === 'exclude') {
+            sql += ` AND (LOWER(type) NOT IN ('jav', 'anime') AND type IS NOT NULL)`;
         }
-        const movies = getUnwatchedMovies.all(limit * 3, 0).filter(pf).slice(0, limit);
+
+        sql += ` ORDER BY addedTime DESC, id DESC LIMIT ?`;
+        params.push(limit);
+
+        const movies = db.prepare(sql).all(...params);
         res.json({ code: 0, data: movies });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
