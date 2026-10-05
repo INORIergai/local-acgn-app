@@ -1,0 +1,94 @@
+/* ================================================================
+ * companion.css —— Live2D 陪伴角色（v4.0 Phase 2）
+ * 定位：页面右下角独立浮层（position:fixed 挂 body），与首页看板娘
+ * 并存不替换；z-index 400 —— 压过页面内容，让位所有模态弹窗（500+）。
+ * 气泡从角色左侧冒出（她在右下角，右侧是屏幕边缘）。
+ * ================================================================ */
+
+#companionStage {
+    position: fixed;
+    right: 18px;
+    bottom: 0;
+    width: 260px;
+    height: 340px;
+    z-index: 400;
+    pointer-events: none;           /* 容器穿透；只有 canvas/按钮自己接手势 */
+    filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.32));
+    user-select: none;
+}
+
+#companionCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: auto;           /* 戳一戳 / 拖拽 */
+    cursor: grab;
+    touch-action: none;
+}
+#companionCanvas:active { cursor: grabbing; }
+
+/* 悬停浮现的隐藏按钮：平时藏起来不破坏观感 */
+.companion-close {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(30, 30, 36, 0.55);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    pointer-events: auto;
+}
+#companionStage:hover .companion-close { opacity: 1; }
+.companion-close:hover { background: rgba(30, 30, 36, 0.8); }
+
+/* ---------- 台词气泡（Alife 风格：角色左侧冒出） ---------- */
+.companion-bubble {
+    position: absolute;
+    right: calc(100% - 34px);
+    bottom: 52%;
+    max-width: 250px;
+    min-width: 90px;
+    padding: 9px 13px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #2a2a32;
+    font-size: 12.5px;
+    line-height: 1.55;
+    border-radius: 14px 14px 3px 14px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.22);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(8px);
+    transition: opacity 0.24s ease, transform 0.24s ease;
+    word-break: break-all;
+    white-space: pre-wrap;
+    z-index: 30;
+}
+.companion-bubble.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+.companion-bubble .cb-think {
+    letter-spacing: 3px;
+    animation: cb-think-blink 1.1s ease-in-out infinite;
+}
+@keyframes cb-think-blink {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+}
+
+/* ---------- 窄屏：等比收窄 ---------- */
+@media (max-width: 860px) {
+    #companionStage {
+        width: 170px;
+        height: 230px;
+        right: 8px;
+    }
+    .companion-bubble { max-width: 170px; font-size: 11.5px; }
+}

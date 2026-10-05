@@ -1,0 +1,145 @@
+/* ==========================================================================
+   round36 批次B · 番剧解析（站点解析器）
+   只做**追加覆盖层**：不改动任何既有规则，样式全部落在 .ms-* 命名空间里。
+   复用项目既有 CSS 变量（--primary / --border / --card-bg / --text / --text-muted ...），
+   保证与明暗主题和其它视图观感一致。
+   导航层级：左栏（一级）→ .ms-subtabs（二级）→ .ms-eps（三级，页内分组）
+   ========================================================================== */
+
+/* ---- 二级导航：主体顶部 tab 条 ---- */
+.ms-subtabs {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    padding: 0 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+}
+.ms-tab {
+    padding: 7px 16px; font-size: 13px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--card-bg); color: var(--text);
+    transition: border-color .15s, background .15s, color .15s;
+}
+.ms-tab:hover { border-color: var(--accent); }
+.ms-tab.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.ms-body { min-height: 240px; }
+
+/* ---- 搜索条 ---- */
+.ms-searchbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.ms-searchbar input {
+    flex: 1; min-width: 200px; height: 34px; padding: 0 12px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card-bg); color: var(--text); outline: none;
+}
+.ms-searchbar input:focus { border-color: var(--accent); }
+.ms-hint { font-size: 11.5px; color: var(--text-muted); }
+
+.ms-summary { font-size: 12px; color: var(--text-muted); margin: 4px 0 10px; }
+.ms-loading { padding: 24px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
+.ms-empty {
+    padding: 28px 16px; text-align: center; color: var(--text-muted);
+    font-size: 13px; line-height: 1.7; border: 1px dashed var(--border); border-radius: 10px;
+}
+.ms-h3 { font-size: 12.5px; color: var(--text-muted); margin: 14px 0 8px; }
+
+/* ---- 搜索结果：按源分组 ---- */
+.ms-group {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg);
+    margin-bottom: 10px; overflow: hidden;
+}
+.ms-group.is-bad { opacity: .72; }
+.ms-group-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 9px 12px; background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.ms-group-head b { font-size: 13px; color: var(--text); }
+.ms-host { font-size: 11px; color: var(--text-muted); }
+.ms-group-st { margin-left: auto; font-size: 11.5px; color: var(--text-muted); }
+.ms-tier {
+    font-size: 10.5px; padding: 1px 7px; border-radius: 10px; font-weight: 600;
+    border: 1px solid var(--border); color: var(--text-muted); background: var(--card-bg);
+}
+.ms-tier.t0 { color: #fff; background: #2f9e5f; border-color: #2f9e5f; }
+.ms-tier.t1 { color: #2f9e5f; border-color: #2f9e5f; }
+.ms-tier.t3 { color: #c07a12; border-color: #c07a12; }
+.ms-tier.t4 { color: #b3453f; border-color: #b3453f; }
+
+.ms-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px; }
+.ms-item {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    cursor: pointer; border-bottom: 1px solid var(--border);
+    transition: background .15s;
+}
+.ms-item:hover { background: var(--bg); }
+.ms-item-n {
+    font-size: 13px; color: var(--text); flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ms-item-go { font-size: 11px; color: var(--primary); flex: none; }
+
+/* ---- 三级：页内剧集区 ---- */
+.ms-eps {
+    margin-top: 16px; padding: 12px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--card-bg);
+}
+.ms-eps-head {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.ms-eps-head b { font-size: 13.5px; color: var(--text); }
+.ms-eps-head .ms-loading { padding: 0; }
+.ms-eps-head button { margin-left: auto; }
+.ms-ep-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 320px; overflow-y: auto; }
+.ms-ep {
+    display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    min-width: 74px; padding: 7px 10px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text);
+    transition: border-color .15s, transform .12s;
+}
+.ms-ep:hover { border-color: var(--accent); transform: translateY(-1px); }
+.ms-ep-n { font-size: 12.5px; }
+.ms-ep-ch { font-size: 10px; color: var(--text-muted); }
+
+/* ---- BT 结果 ---- */
+.ms-bt {
+    display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg); margin-bottom: 8px;
+}
+.ms-bt-t { font-size: 13px; color: var(--text); line-height: 1.5; }
+.ms-bt-m { font-size: 11px; color: var(--text-muted); }
+.ms-bt-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ms-bt-acts a { text-decoration: none; }
+
+/* ---- 源管理 ---- */
+.ms-srcbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.ms-src {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card-bg); margin-bottom: 6px;
+}
+.ms-src.is-off { opacity: .55; }
+.ms-src b { font-size: 13px; color: var(--text); }
+.ms-src-on { display: flex; align-items: center; }
+.ms-src-st { font-size: 11px; color: var(--text-muted); }
+.ms-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 8px; color: #fff; background: var(--accent);
+}
+.ms-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.ms-dot.green { background: #2f9e5f; }
+.ms-dot.red { background: #b3453f; }
+.ms-dot.grey { background: #9a9a9a; }
+
+/* ---- 观看历史 ---- */
+.ms-hist {
+    display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg); margin-bottom: 8px;
+}
+.ms-hist-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ms-hist-main b { font-size: 13px; color: var(--text); }
+.ms-hist-m { font-size: 11px; color: var(--text-muted); }
+
+/* ---- 手机端：tab 横向滚动，不依赖 hover ---- */
+@media (max-width: 860px) {
+    .ms-subtabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .ms-tab { flex: none; }
+    .ms-items { grid-template-columns: 1fr; }
+    .ms-searchbar input { min-width: 140px; }
+    .ms-ep { min-width: 62px; }
+}

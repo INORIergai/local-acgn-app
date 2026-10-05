@@ -1,0 +1,176 @@
+/* ==========================================================================
+   round72 · 全局任务胶囊（右上角）
+   解决：后台任务的进度原先渲染在设置弹窗的 div 里，弹窗一关就看不见；
+        轮询器还是「点按钮才启动」的，关掉再打开进度就定格。
+   这里常驻页面右上角，任何视图都能看到全部后台任务的实时进度。
+   颜色全部走主题变量，经典白底 / 暗色两套主题都自适应。
+   ========================================================================== */
+
+.task-capsule {
+    position: fixed;
+    top: 72px;
+    right: 18px;
+    z-index: 430;
+    max-width: 340px;
+    font-size: 12px;
+    color: var(--text-primary);
+    display: none;
+    animation: taskCapIn .22s ease-out;
+}
+
+.task-capsule.show { display: block; }
+
+/* 与「本次启动自动扫描」提示条（#startupScanBar，round26.css 也是 top:64px/right:18px）
+   位置会撞在一起 —— 那条是临时出现的，检测到它时把胶囊下移让位。 */
+.task-capsule.shift { top: 116px; }
+
+@media (max-width: 860px) {
+    .task-capsule.shift { top: auto; }
+}
+
+@keyframes taskCapIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- 收起态：一条小胶囊 ---------- */
+.task-cap-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: var(--bg-secondary, #fff);
+    border: 1px solid var(--border, rgba(0, 0, 0, .12));
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+    cursor: pointer;
+    user-select: none;
+}
+.task-cap-head:hover { border-color: var(--primary, #6366f1); }
+
+.task-cap-spin {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+    border-radius: 50%;
+    border: 2px solid var(--primary, #6366f1);
+    border-top-color: transparent;
+    animation: taskCapSpin .8s linear infinite;
+}
+.task-cap-spin.done {
+    animation: none;
+    border: none;
+    background: #22c55e;
+}
+.task-cap-spin.fail { animation: none; border: none; background: #ef4444; }
+
+@keyframes taskCapSpin { to { transform: rotate(360deg); } }
+
+.task-cap-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+}
+.task-cap-pct { opacity: .7; font-variant-numeric: tabular-nums; }
+.task-cap-caret { opacity: .55; font-size: 10px; transition: transform .18s ease; }
+.task-capsule.open .task-cap-caret { transform: rotate(180deg); }
+
+/* 收起态的细进度条，贴在胶囊底部 */
+.task-cap-track {
+    height: 2px;
+    border-radius: 2px;
+    background: var(--border, rgba(0, 0, 0, .1));
+    margin: 4px 10px 0;
+    overflow: hidden;
+}
+.task-cap-fill {
+    height: 100%;
+    width: 0;
+    background: var(--primary, #6366f1);
+    border-radius: 2px;
+    transition: width .3s ease;
+}
+
+/* ---------- 展开态：任务列表 ---------- */
+.task-cap-panel {
+    margin-top: 6px;
+    padding: 10px;
+    border-radius: 12px;
+    background: var(--bg-secondary, #fff);
+    border: 1px solid var(--border, rgba(0, 0, 0, .12));
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .16);
+    max-height: 52vh;
+    overflow: auto;
+}
+.task-capsule:not(.open) .task-cap-panel { display: none; }
+
+.task-cap-panel-title {
+    font-size: 11px;
+    opacity: .6;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.task-cap-item {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border, rgba(0, 0, 0, .07));
+}
+.task-cap-item:last-child { border-bottom: none; }
+
+.task-cap-item-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.task-cap-item-name { font-weight: 500; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-cap-item-num { opacity: .75; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.task-cap-badge {
+    flex: 0 0 auto;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(99, 102, 241, .14);
+    color: var(--primary, #6366f1);
+}
+.task-cap-badge.ok   { background: rgba(34, 197, 94, .16);  color: #16a34a; }
+.task-cap-badge.fail { background: rgba(239, 68, 68, .16);  color: #dc2626; }
+
+.task-cap-item-bar {
+    height: 3px;
+    border-radius: 3px;
+    background: var(--border, rgba(0, 0, 0, .1));
+    margin-top: 5px;
+    overflow: hidden;
+}
+.task-cap-item-fill {
+    height: 100%;
+    width: 0;
+    background: var(--primary, #6366f1);
+    transition: width .3s ease;
+}
+.task-cap-item-detail {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: .65;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- 手机 ---------- */
+@media (max-width: 860px) {
+    .task-capsule { top: auto; bottom: 14px; right: 10px; left: 10px; max-width: none; }
+    .task-cap-panel { max-height: 40vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .task-capsule { animation: none; }
+    .task-cap-spin { animation: none; }
+    .task-cap-fill, .task-cap-item-fill, .task-cap-caret { transition: none; }
+}

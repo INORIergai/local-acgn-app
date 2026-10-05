@@ -1,0 +1,147 @@
+/* ==========================================================================
+   round74 · 设置页按钮胶囊 + 语义色板
+   ----------------------------------------------------------------------
+   为什么要新做一套（round72 用户反馈「深棕底 + 黑字，很难看清」）：
+
+   现状：`.btn { background: var(--primary); color: #131110; }`
+   而 `--primary` = **#9A6A15**（钨丝琥珀，浅色下加深过）。
+   ⇒ **深棕底 + 近黑字**，对比度极低，几乎读不清。
+
+   这里不覆盖全局 `.btn`（那是全站按钮，动了会牵连播放/详情/设置所有页面），
+   而是新增一套**胶囊 + 语义色**的按钮，只在设置页使用：
+     .btn-pill              基座（胶囊形）
+     .btn-pill--primary     主要操作（琥珀，白字）
+     .btn-pill--success     体检通过 / 启用 / 开始
+     .btn-pill--info        查看 / 说明
+     .btn-pill--warn        修复 / 清理 / 迁移
+     .btn-pill--danger      删除 / 清空 / 停止
+     .btn-pill--neutral     次要操作（浅底深字）
+     .btn-pill--ghost       纯文字操作
+
+   所有前景/背景对都在 WCAG AA 以上（正文 ≥4.5:1，大字 ≥3:1）。
+   ========================================================================== */
+
+.btn-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 999px;                 /* 胶囊 */
+    border: 1px solid transparent;
+    font-size: 12.5px;
+    font-weight: 500;
+    font-family: var(--font-body, system-ui, sans-serif);
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: filter .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.btn-pill:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-pill:active:not(:disabled) { transform: translateY(1px); }
+.btn-pill:disabled { opacity: .5; cursor: not-allowed; }
+.btn-pill:focus-visible { outline: 2px solid var(--primary, #9A6A15); outline-offset: 2px; }
+
+/* ---- 主要操作：琥珀（品牌色）加深到 600，白字 ---- */
+.btn-pill--primary { background: #B45309; color: #FFFFFF; border-color: #B45309; }
+
+/* ---- 成功 / 启用 / 开始：绿 ---- */
+.btn-pill--success { background: #15803D; color: #FFFFFF; border-color: #15803D; }
+
+/* ---- 信息 / 查看：蓝 ---- */
+.btn-pill--info    { background: #1D4ED8; color: #FFFFFF; border-color: #1D4ED8; }
+
+/* ---- 修复 / 清理 / 迁移：橙 ---- */
+.btn-pill--warn    { background: #C2410C; color: #FFFFFF; border-color: #C2410C; }
+
+/* ---- 删除 / 清空 / 停止：红 ---- */
+.btn-pill--danger  { background: #B91C1C; color: #FFFFFF; border-color: #B91C1C; }
+
+/* ---- 次要操作：浅底深字（浅色下才这么配）---- */
+.btn-pill--neutral {
+    background: #E7E5E0;
+    color: #1C1917;
+    border-color: rgba(28, 25, 23, .16);
+}
+.btn-pill--neutral:hover:not(:disabled) { background: #D9D6D0; }
+
+/* ---- 纯文字 ---- */
+.btn-pill--ghost {
+    background: transparent;
+    color: var(--text, #1C1917);
+    border-color: transparent;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgba(128, 128, 128, .5);
+}
+.btn-pill--ghost:hover:not(:disabled) { color: var(--primary, #9A6A15); }
+
+/* ---------------- 暗色皮肤下重新配对（保证同样是高对比）---------------- */
+body.dark .btn-pill--primary { background: #D97706; color: #1A1206; border-color: #D97706; }
+body.dark .btn-pill--success { background: #22C55E; color: #06240F; border-color: #22C55E; }
+body.dark .btn-pill--info    { background: #3B82F6; color: #06142E; border-color: #3B82F6; }
+body.dark .btn-pill--warn    { background: #F97316; color: #2A1000; border-color: #F97316; }
+body.dark .btn-pill--danger  { background: #EF4444; color: #2B0505; border-color: #EF4444; }
+body.dark .btn-pill--neutral {
+    background: rgba(255, 255, 255, .1);
+    color: #F5F0E8;
+    border-color: rgba(255, 255, 255, .2);
+}
+body.dark .btn-pill--neutral:hover:not(:disabled) { background: rgba(255, 255, 255, .16); }
+body.dark .btn-pill--ghost { color: #F5F0E8; }
+
+/* aurora / ambient 两套皮肤同理（它们也是暗底） */
+html[data-v4skin="aurora"] .btn-pill--neutral,
+html[data-v4skin="ambient"] .btn-pill--neutral {
+    background: rgba(255, 255, 255, .1);
+    color: #F2F4F8;
+    border-color: rgba(255, 255, 255, .2);
+}
+html[data-v4skin="aurora"] .btn-pill--primary,
+html[data-v4skin="ambient"] .btn-pill--primary { background: #D97706; color: #1A1206; border-color: #D97706; }
+html[data-v4skin="aurora"] .btn-pill--success,
+html[data-v4skin="ambient"] .btn-pill--success { background: #22C55E; color: #06240F; border-color: #22C55E; }
+html[data-v4skin="aurora"] .btn-pill--info,
+html[data-v4skin="ambient"] .btn-pill--info    { background: #60A5FA; color: #06142E; border-color: #60A5FA; }
+html[data-v4skin="aurora"] .btn-pill--warn,
+html[data-v4skin="ambient"] .btn-pill--warn    { background: #FB923C; color: #2A1000; border-color: #FB923C; }
+html[data-v4skin="aurora"] .btn-pill--danger,
+html[data-v4skin="ambient"] .btn-pill--danger  { background: #F87171; color: #2B0505; border-color: #F87171; }
+
+/* ---------------- 按钮行排版 ---------------- */
+.settings-btn-row.tts-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .btn-pill { transition: none; }
+}
+
+/* ---------------- 导航直达后的定位高亮 ---------------- */
+.settings-group.grp-flash {
+    animation: grpFlash 1.6s ease;
+    border-radius: 12px;
+}
+@keyframes grpFlash {
+    0%   { box-shadow: 0 0 0 0 rgba(180, 83, 9, .55); background: rgba(180, 83, 9, .10); }
+    70%  { box-shadow: 0 0 0 10px rgba(180, 83, 9, 0); background: rgba(180, 83, 9, .05); }
+    100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0); background: transparent; }
+}
+body.dark .settings-group.grp-flash,
+html[data-v4skin="aurora"] .settings-group.grp-flash,
+html[data-v4skin="ambient"] .settings-group.grp-flash {
+    animation-name: grpFlashDark;
+}
+@keyframes grpFlashDark {
+    0%   { box-shadow: 0 0 0 0 rgba(217, 119, 6, .6); background: rgba(217, 119, 6, .14); }
+    70%  { box-shadow: 0 0 0 10px rgba(217, 119, 6, 0); background: rgba(217, 119, 6, .07); }
+    100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .settings-group.grp-flash { animation: none; outline: 2px solid var(--primary, #9A6A15); }
+}

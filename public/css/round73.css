@@ -1,0 +1,333 @@
+/* ==========================================================================
+   round73 · 阅读状态角标 + 进度线（漫画库 / 小说库）
+   --------------------------------------------------------------------------
+   放在独立文件里、library.html 最后 link ⇒ 层叠优先级最高，
+   且随时摘掉这一行即可**秒级全量回滚**（旧 CSS 一行未改）。
+
+   四态形状规范（形状 > 颜色 > 文案，颜色只做冗余提示）：
+     未读  空心圈      —— 默认态，给一个极轻的"还没开始"信号
+     在读  实心胶囊    —— 百分比数字，扫视时最先被读到
+     读完  实心方块 ✓  —— 最强的完成信号
+     搁置  空心胶囊 ⏸ —— 弱化，不抢视线
+
+   位置：右上角 top/right 8px。
+   ⚠️ z-index 必须 > 1 —— .av-card.has-art::before 的封面压暗遮罩是 z-index:1
+      （public/css/round26.css:294），角标压在它上面才看得见。
+      左上角的 .av-flag（收藏/已看，av-board.css:373）是 left:12px，不冲突。
+   ========================================================================== */
+
+.avp-flag {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 5;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 10px;
+    font: 500 10.5px/1 var(--font-sans, system-ui, sans-serif);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .01em;
+    color: #fff;
+    background: rgba(14, 12, 10, .74);
+    border: 1px solid rgba(255, 255, 255, .2);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+/* 有封面时补投影，保证压在照片上仍可读（对齐 round26.css:317 的既有做法） */
+.av-card.has-art .avp-flag {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .55);
+}
+
+/* ---- 在读：实心胶囊 + 百分比 ---- */
+.avp-reading {
+    background: linear-gradient(135deg, #f59e0b, #b45309);
+    border-color: rgba(255, 255, 255, .26);
+}
+
+/* ---- 读完：实心方块对勾 ---- */
+.avp-done {
+    min-width: 20px;
+    padding: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #22c55e, #15803d);
+    border-color: rgba(255, 255, 255, .26);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* ---- 未读：空心圈（无填充，只描边）---- */
+.avp-unread {
+    min-width: 0;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(14, 12, 10, .3);
+    border: 1.5px solid rgba(255, 255, 255, .62);
+}
+
+/* ---- 搁置：空心胶囊 ---- */
+.avp-shelved {
+    background: rgba(14, 12, 10, .5);
+    border-color: rgba(255, 255, 255, .38);
+    color: rgba(255, 255, 255, .88);
+    font-size: 11px;
+}
+
+/* ---- 皮肤覆写：aurora / ambient 走各自的强调色 ----
+   范式照 public/css/theme-v4.css:700-716 的合并选择器写法。
+   注意：绝不能用 tokens.css 的 --bg-2 / --text-2 —— 那个文件是死代码
+   （library.html 从未 link，全项目无引用）。 */
+html[data-v4skin="aurora"] .avp-reading,
+html[data-v4skin="ambient"] .avp-reading {
+    background: linear-gradient(135deg, #fbbf24, #d97706);
+}
+html[data-v4skin="aurora"] .avp-done,
+html[data-v4skin="ambient"] .avp-done {
+    background: linear-gradient(135deg, #34d399, #059669);
+}
+html[data-v4skin="ambient"] .avp-unread {
+    border-color: rgba(255, 255, 255, .58);
+}
+
+/* ==========================================================================
+   底部细进度线
+   复用影视库已有的 .card-progress（public/css/style.css:612-632，纯 CSS 变量
+   --p 驱动 + 齿孔渐变，零 JS 依赖），这里只做树卡的尺寸/配色微调。
+   树卡内压到 3px（影视是 9px）—— 183 张卡全亮齿孔会造成视觉噪音。
+   ========================================================================== */
+.av-card .card-progress {
+    height: 3px;
+}
+.av-card .card-progress::after {
+    /* 覆盖影视的齿孔渐变，改成纯色条：树卡底色恒定，齿孔会显脏 */
+    background: var(--av-prog-fill, currentColor);
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+.av-card .avp-reading ~ .card-progress,
+.av-card:has(.avp-reading) .card-progress {
+    --av-prog-fill: #f59e0b;
+}
+.av-card:has(.avp-done) .card-progress {
+    --av-prog-fill: #22c55e;
+}
+html[data-v4skin="aurora"] .av-card:has(.avp-reading) .card-progress {
+    --av-prog-fill: #fbbf24;
+}
+html[data-v4skin="aurora"] .av-card:has(.avp-done) .card-progress {
+    --av-prog-fill: #34d399;
+}
+html[data-v4skin="ambient"] .av-card:has(.avp-reading) .card-progress {
+    --av-prog-fill: #a78bfa;
+}
+html[data-v4skin="ambient"] .av-card:has(.avp-done) .card-progress {
+    --av-prog-fill: #6e8bff;
+}
+
+/* 读完的卡片：底部线已无意义（角标已说明），弱化封面本身 */
+.av-card:has(.avp-done) .av-art {
+    opacity: .82;
+}
+.av-card:has(.avp-unread) .av-art {
+    opacity: .9;
+}
+
+/* ---------- 减少动效 ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .avp-flag { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* ==========================================================================
+   round73 · P4 排版核心重做
+   针对实测定位的三个真凶：
+     ① .av-stats 固定 262px 挤在 hero 的 flex 行里 → 1440px 下 hero 只剩 232px
+     ② 竖排 slider 分支里不存在 .av-board 类 → grid 覆盖对 169+ 张漫画一直无效
+     ③ auto-fill 轨道数 ≠ 卡片数 → 1280px 下 5 张卡占 4 轨，末行空 771px
+   ========================================================================== */
+
+/* ---------- ① 统计卡：从挤占 hero 改为浮在工作区右上角 ---------- */
+.av-view.av-workspace .av-main { position: relative; }
+.av-view.av-workspace .av-main .av-stats {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 262px;
+    margin: 0;
+    z-index: 6;
+}
+.av-view.av-workspace .av-main .av-main-top { display: block; }
+
+/* 1280 以下：统计不再浮占，改为 hero 下方的紧凑横条（功能不丢） */
+@media (max-width: 1279px) {
+    .av-view.av-workspace .av-main .av-stats {
+        position: static;
+        width: 100%;
+        margin: 10px 0 0;
+    }
+    .av-view.av-workspace .av-main .av-stats .avs-bars { display: none; }
+}
+
+/* ---------- ②③ 网格：列数由 JS 夹到卡片数，卡片撑满列宽 ---------- */
+.av-view.av-workspace .av-main .av-board {
+    display: grid;
+    /* --av-cols 由 renderShelf 计算 = min(卡片数, auto-fill 轨道数)，消除末行孤儿空档 */
+    grid-template-columns: repeat(var(--av-cols, auto-fill), minmax(180px, 1fr));
+    gap: 22px 18px;
+    justify-content: stretch;
+    align-items: start;
+    padding: 18px 0 8px;
+}
+
+/* ---------- 卡片：标题移出封面，改为纵向布局 ---------- */
+.av-view.av-workspace .av-main .av-board > .av-card,
+.av-view.av-workspace .av-main .av-slider > .av-card {
+    width: auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-elevated, #fff);
+    border: 1px solid var(--border, rgba(0, 0, 0, .1));
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+/* 密集网格里靠 1px 边框分隔，阴影只做很轻的一层 */
+.av-view.av-workspace .av-main .av-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .22);
+    z-index: 6;
+}
+
+/* 封面：改为「 participates in flow 」而不是绝对定位铺满，标题才有地方放 */
+.av-view.av-workspace .av-main .av-card > .av-art {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    aspect-ratio: 2 / 2.9;
+    object-fit: cover;
+    display: block;
+    flex: 0 0 auto;
+}
+/* 无封面时（糖果色卡）给一个占位高度，标题仍排在下面 */
+.av-view.av-workspace .av-main .av-card:not(.has-art)::before {
+    content: '';
+    display: block;
+    width: 100%;
+    aspect-ratio: 2 / 2.9;
+    background: var(--cv, #e8d5c0);
+    flex: 0 0 auto;
+}
+
+/* 新的文字区：封面下方 */
+.av-view.av-workspace .av-main .av-card > .av-cap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 10px 10px;
+    min-width: 0;
+}
+.av-view.av-workspace .av-main .av-card > .av-cap .av-title {
+    position: static;
+    inset: auto;
+    transform: none;
+    font: 500 13px/1.35 var(--font-sans, system-ui, sans-serif);
+    color: var(--text, #1a1a1a);
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-shadow: none;
+    min-height: 2.7em;
+}
+.av-view.av-workspace .av-main .av-card > .av-cap .av-sub {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font: 400 12px/1.2 var(--font-sans, system-ui, sans-serif);
+    color: var(--text-muted, #777);
+    background: none;
+    border-radius: 0;
+    padding: 0;
+}
+.av-view.av-workspace .av-main .av-card > .av-cap .av-sub b { color: var(--text-muted, #777); font-weight: 500; }
+
+/* 幽灵编号降到不抢眼的位置（右上角已被状态角标占用） */
+.av-view.av-workspace .av-main .av-card > .av-num {
+    top: auto;
+    right: auto;
+    bottom: -6px;
+    left: -2px;
+    font-size: 54px;
+    opacity: .05;
+    z-index: 1;
+}
+
+/* 状态角标要压在新封面上（封面现在是 in-flow，需要给角标定位上下文） */
+.av-view.av-workspace .av-main .av-card { position: relative; }
+
+/* CTA（继续阅读）改为封面底部滑出的条，不再压在标题区 */
+.av-view.av-workspace .av-main .av-card > .av-cta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 7px 10px;
+    font-size: 12px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .72) 55%);
+    color: #fff;
+    border-radius: 0;
+    z-index: 4;
+}
+.av-view.av-workspace .av-main .av-card:hover > .av-cta { opacity: 1; translate: 0 0; pointer-events: auto; }
+
+/* ---------- 目录树：名称允许两行 + 文件层折叠入口 ---------- */
+.avt-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.35;
+    text-align: left;
+}
+.avt-row { align-items: flex-start; }
+.avt-arrow, .avt-leaf { margin-top: 2px; }
+
+.avt-files-btn {
+    margin: 4px 0 4px 22px;
+    padding: 5px 9px;
+    font-size: 11.5px;
+    color: var(--text-muted, #777);
+    background: var(--bg-elevated, #fff);
+    border: 1px dashed var(--border, rgba(0, 0, 0, .15));
+    border-radius: 7px;
+    cursor: pointer;
+    user-select: none;
+}
+.avt-files-btn:hover { color: var(--primary, #6366f1); border-color: var(--primary, #6366f1); }
+.avt-files-wrap[open] .avt-files-btn::after { content: ' · 已展开'; opacity: .6; }
+
+/* ---------- 左栏宽度弹性化 ---------- */
+.av-view.av-workspace {
+    grid-template-columns: clamp(184px, 17vw, 248px) minmax(0, 1fr);
+    gap: 20px;
+}
+@media (max-width: 860px) {
+    .av-view.av-workspace { grid-template-columns: minmax(0, 1fr); }
+}
