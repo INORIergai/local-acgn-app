@@ -128,11 +128,74 @@ class HanimePwCrawler {
     }
 
     /**
+     * ★ r82 新增：hanime 官方 App API 搜索（竖版官方封面 cover_url，无 Cloudflare）。
+     * 为什么走浏览器上下文发请求：hanime 的 API 在本机直连/代理都可能不可达，
+     * 但用户真实浏览器（CDP 模式）里是通的 —— 借浏览器的网络栈与 cookie 发起 fetch，
+     * 等于「用你看网页的那条路去拿封面」。headless 模式则注入 config.sources.hanime.cookie。
+     * API 返回的 data[].cover_url 是竖版海报，能通过海报健康判定（横版截图过不了）。
+     */
+    async searchApi(keyword) {
+        await initBrowser();
+        const apiBase = config.sources?.hanime?.apiBase || 'https://cdn1-hapi.hanime.me';
+        const url = `${apiBase}/hanime-api/v8/search?query=${encodeURIComponent(keyword)}&offset=0&order=newest`;
+        try {
+            let payload = null;
+            if (cdpMode) {
+                payload = await userBrowser.fetchJson(url, { timeoutMs: 20000 });
+            } else {
+                const page = await context.newPage();
+                try {
+                    const cookieStr = config.sources?.hanime?.cookie || '';
+                    if (cookieStr) {
+                        const pairs = cookieStr.split(';').map(p => p.trim()).filter(Boolean).map(p => {
+                            const i = p.indexOf('=');
+                            return i > 0 ? { name: p.slice(0, i), value: p.slice(i + 1) } : null;
+                        }).filter(Boolean);
+                        if (pairs.length) await context.addCookies(pairs.map(c => ({ ...c, domain: '.hanime1.me', path: '/' })));
+                    }
+                    payload = await page.evaluate(async (u) => {
+                        const r = await fetch(u, { headers: { 'Accept': 'application/json' } });
+                        if (!r.ok) return { __http: r.status };
+                        return await r.json();
+                    }, url);
+                } finally {
+                    await page.close();
+                }
+            }
+            if (!payload || payload.__http) {
+                console.log(`[Hanime-API] 不可达: ${payload ? 'HTTP ' + payload.__http : '无响应'}`);
+                return [];
+            }
+            const items = Array.isArray(payload.data) ? payload.data : [];
+            const results = [];
+            for (const it of items) {
+                const cover = it.cover_url || '';
+                const title = it.jp_name || it.name || '';
+                if (!cover || !title) continue;
+                results.push({
+                    title: String(title).trim(),
+                    cover,
+                    url: it.id ? `https://hanime1.me/watch?v=${it.id}` : '',
+                    source: 'hanime'
+                });
+            }
+            console.log(`[Hanime-API] 搜索"${keyword}"命中 ${results.length} 条（竖版官方封面）`);
+            return results;
+        } catch (e) {
+            console.log(`[Hanime-API] 异常: ${e.message}`);
+            return [];
+        }
+    }
+
+    /**
      * 搜索
      * @param {string} keyword
      * @returns {Promise<Array>}
      */
     async search(keyword) {
+        // 优先走 App API（竖版封面、稳定字段）；空结果再退回 HTML 抓取
+        const apiList = await this.searchApi(keyword);
+        if (apiList.length > 0) return apiList;
         try {
             const searchUrl = `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}`;
             const { html, finalUrl } = await this.fetchPage(searchUrl);
@@ -438,8 +501,9 @@ let _pwInstance = null;
 function getPwInstance() {
     if (!_pwInstance) {
         const srcCfg = config.sources?.hanime || {};
+        // 默认走官方主域；旧的 shturl.cc 短链会失效，不再作为缺省值
         _pwInstance = new HanimePwCrawler({
-            baseUrl: srcCfg.baseUrl || "https://shturl.cc/5wWPJc4j"
+            baseUrl: srcCfg.baseUrl || "https://hanime1.me"
         });
     }
     return _pwInstance;

@@ -105,6 +105,10 @@
 
     host.innerHTML = html;
     bindEvents(host);
+    // r84：每个切片组的滑动指示背板就位（瞬时对位）
+    if (window.mvInitSlidePill) {
+      host.querySelectorAll('.facet-group').forEach(function (grp) { window.mvInitSlidePill(grp); });
+    }
   }
 
   function bindEvents(host) {
@@ -113,6 +117,8 @@
       grp.querySelectorAll('.f-pill').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var val = btn.dataset.val;
+          // r84：先滑背板（180ms），随后的重渲染会瞬时对位，视觉无缝
+          if (window.mvSlidePillTo) window.mvSlidePillTo(btn);
           if (dim === 'type') state.type = val;
           if (dim === 'score') state.minScore = parseFloat(val);
           if (dim === 'watch') state.watchStatus = val;

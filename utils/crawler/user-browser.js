@@ -35,8 +35,8 @@ const BROWSER_CANDIDATES = [
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  '%USERPROFILE%\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
-  '%USERPROFILE%\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe',
   // Linux / 容器
   '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',
@@ -280,6 +280,35 @@ async function fetchPage(url, opts = {}) {
     return { html, finalUrl };
   } finally {
     await page.close();
+  }
+}
+
+/**
+ * ★ r82：在用户浏览器上下文里发 fetch 拿 JSON（hanime App API 用）。
+ * 借主人浏览器的网络栈（代理/证书/cookie 都随浏览器），服务端直连不可达的
+ * API 走这条路通常能通。不落任何页面，纯数据请求。
+ */
+async function fetchJson(url, opts = {}) {
+  const { chromium } = require('playwright');
+  const context = await getContext();
+  const page = await context.newPage();
+  const timeoutMs = opts.timeoutMs || 20000;
+  try {
+    const payload = await Promise.race([
+      page.evaluate(async (u) => {
+        try {
+          const r = await fetch(u, { headers: { 'Accept': 'application/json' }, credentials: 'include' });
+          if (!r.ok) return { __http: r.status };
+          return await r.json();
+        } catch (e) {
+          return { __err: String(e && e.message || e) };
+        }
+      }, url),
+      new Promise(resolve => setTimeout(() => resolve({ __err: 'timeout' }), timeoutMs)),
+    ]);
+    return payload;
+  } finally {
+    await page.close().catch(() => {});
   }
 }
 
@@ -546,6 +575,7 @@ module.exports = {
   ensureBrowser,
   getContext,
   fetchPage,
+  fetchJson,
   closeBrowser,
   isCloudflareChallenge,
   findBrowserPath,

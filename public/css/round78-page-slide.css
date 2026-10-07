@@ -1,0 +1,112 @@
+/* ============================================================
+   round78 · Page side-by-side 转场（Transitions.dev 方案）
+   ------------------------------------------------------------
+   同系列内容的「摞卡 ⇄ 展开页」切换，从原先整网格重渲染的硬切，
+   改为两页并排（side-by-side）的横滑过渡：
+     · page1 向左退出、page2 向右退出（反向切换则方向相反）
+     · 位移 + 模糊 + 淡入淡出 三通道同时进行
+     · --page-exit-enabled: 0 → 关闭退出动画，退化为纯交叉淡化
+
+   可调变量（写在 .t-page-slide 或其祖先上即可覆盖）：
+     --page-duration      过渡时长            默认 520ms
+     --page-ease          缓动曲线            默认 cubic-bezier(.22,.68,.28,1)
+     --page-shift         位移距离（相对页宽） 默认 100%
+     --page-blur          退出页模糊半径(px)  默认 10
+     --page-exit-enabled  0=关退出动画        默认 1
+   ============================================================ */
+
+.t-page-slide {
+  --page-duration: 520ms;
+  --page-ease: cubic-bezier(.22, .68, .28, 1);
+  --page-shift: 100%;
+  --page-blur: 10;
+  --page-exit-enabled: 1;
+
+  /* #movieGrid 是 grid，视图根必须通栏（顶层铁律 1） */
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+/* 转场期间裁掉滑出页，避免与相邻内容重叠 */
+.t-page-slide.is-moving { overflow: hidden; }
+
+/* 两页叠在同一格 */
+.t-page {
+  grid-area: 1 / 1;
+  min-width: 0;
+  transition:
+    transform var(--page-duration) var(--page-ease),
+    opacity var(--page-duration) var(--page-ease),
+    filter var(--page-duration) var(--page-ease);
+}
+/* 转场结束后收起离场页 —— 让容器高度收敛到当前页（grid 同格时高度取 max） */
+.t-page[hidden] { display: none; }
+
+/* --- 在场页：原位、完全不透明、不模糊 --- */
+.t-page-slide[data-page="1"] > .t-page[data-page="1"],
+.t-page-slide[data-page="2"] > .t-page[data-page="2"] {
+  transform: none;
+  opacity: 1;
+  filter: none;
+}
+
+/* --- page1 退出：向左位移 + 模糊 + 淡出 --- */
+.t-page-slide[data-page="2"] > .t-page[data-page="1"] {
+  transform: translate3d(calc(-1 * var(--page-shift) * var(--page-exit-enabled)), 0, 0);
+  opacity: 0;
+  filter: blur(calc(var(--page-blur) * var(--page-exit-enabled) * 1px));
+  pointer-events: none;
+}
+
+/* --- page2 退出：向右位移 + 模糊 + 淡出 --- */
+.t-page-slide[data-page="1"] > .t-page[data-page="2"] {
+  transform: translate3d(calc(var(--page-shift) * var(--page-exit-enabled)), 0, 0);
+  opacity: 0;
+  filter: blur(calc(var(--page-blur) * var(--page-exit-enabled) * 1px));
+  pointer-events: none;
+}
+
+/* ============================================================
+   两种布局语境
+   grid —— #movieGrid 主网格（影片/小说/漫画/动漫卡片墙）
+   board —— av-board 书架（章节卡，列数由 --av-cols 控制）
+   ============================================================ */
+
+.t-page-slide[data-layout="grid"] > .t-page {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+@media (min-width: 861px) {
+  .t-page-slide[data-layout="grid"] > .t-page {
+    grid-template-columns: repeat(auto-fill, minmax(calc(253px * var(--card-w-scale, 1)), 1fr));
+  }
+}
+@media (max-width: 860px) {
+  .t-page-slide[data-layout="grid"] > .t-page {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .t-page-slide[data-layout="grid"] > .t-page { gap: 12px; }
+}
+
+/* 嵌套进 .t-page 后不再是 #movieGrid 直接子，
+   round14.css:201 的 portrait 比例要在这里补一条（后写的覆盖层，不改旧文件） */
+html[data-poster-ratio="portrait"] .t-page-slide[data-layout="grid"] > .t-page > .movie-card {
+  aspect-ratio: 3 / 4;
+}
+
+/* ============================================================
+   降级：prefers-reduced-motion
+   位移与模糊全部归零，只保留短交叉淡化 —— 不做位移动画，不闪。
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .t-page-slide {
+    --page-duration: 180ms;
+    --page-shift: 0%;
+    --page-blur: 0;
+  }
+}

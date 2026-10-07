@@ -6,9 +6,15 @@
  *   · 精确键分组 + Levenshtein ≥0.8 模糊合并 + 前缀包含
  *   · groupItems(list, titleFn) → Map(系列名 → 成员数组)，只含 ≥2 成员的系列
  *
- * UI 两件套（样式由本模块自注入，无需改 CSS 文件）：
+ * UI 三件套（样式由本模块自注入，无需改 CSS 文件）：
  *   · SeriesUI.capsuleRow(seriesMap, active, onClick)  系列胶囊行（横向滚动）
- *   · SeriesUI.stackWrap(name, count, innerHtml)       摞卡外壳（内层放原海报卡）
+ *   · SeriesUI.stackWrap(name, count, innerHtml)       摞卡外壳（内层放原卡片）
+ *   · SeriesUI.slide*                                  round78 Page side-by-side 转场
+ *
+ * round78：摞卡 ⇄ 展开页的切换改用 Page side-by-side 转场（Transitions.dev 方案）。
+ * 容器 .t-page-slide 叠两页 .t-page，用 data-page 在 1/2 间切；
+ * page1 向左退出、page2 向右退出，位移+模糊+淡出三通道并行。
+ * 样式在 public/css/round78-page-slide.css；这里只管状态与时序。
  */
 (function () {
   'use strict';
@@ -189,7 +195,9 @@
     '.av-stack .av-stack-name{position:relative;z-index:2;margin-top:5px;font-size:12px;color:var(--text,#ddd);',
     'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
     '.movie-grid .av-stack .movie-card{height:100%;}',
-    '#seriesGridBar{grid-column:1/-1;}'
+    '#seriesGridBar{grid-column:1/-1;}',
+    /* round78：转场后胶囊行有两份（page1/page2 各一），id 不能重复 → 用 class 也给通栏 */
+    '.seriesGridBar{grid-column:1/-1;}'
   ].join('');
   var styleTag = null;
   function injectCss() {
@@ -262,6 +270,75 @@
     });
   }
 
+  /* ---------------- round78 · Page side-by-side 转场 ---------------- */
+
+  /**
+   * 两页并排容器的外壳。
+   *
+   * @param {string} layout 'grid'（影片网格语境）| 'board'（av-board 书架语境）
+   * @param {string} page1Html 首页 HTML（摞卡网格）
+   * @param {string} page2Html 次页 HTML（系列展开态）
+   * @param {string} active '1' | '2'，初始停在第几页
+   */
+  function slideWrap(layout, page1Html, page2Html, active) {
+    var cur = String(active) === '2' ? '2' : '1';
+    return '<div class="t-page-slide" data-layout="' + escAttr(layout || 'grid') + '" data-page="' + cur + '">' +
+      '<div class="t-page" data-page="1">' + page1Html + '</div>' +
+      '<div class="t-page" data-page="2"' + (cur === '2' ? '' : ' hidden') + '>' + page2Html + '</div>' +
+      '</div>';
+  }
+
+  /** 取当前页码 */
+  function slidePage(container) {
+    return String(container && container.getAttribute('data-page')) === '2' ? '2' : '1';
+  }
+
+  /** 读出实际过渡时长（ms），供 JS 决定何时收起离场页 */
+  function slideDuration(container) {
+    if (!container || !window.getComputedStyle) return 520;
+    var v = getComputedStyle(container).getPropertyValue('--page-duration');
+    var n = parseFloat(v);
+    if (!isFinite(n)) return 520;
+    return v.indexOf('ms') >= 0 ? n : n * 1000;   // 0.52s → 520
+  }
+
+  /**
+   * 切页。转场结束后把离场页 hidden —— 两页在 grid 里同格，
+   * 不收起的话容器高度会被较高的一页撑住。
+   */
+  function slideTo(container, page) {
+    if (!container) return;
+    var next = String(page) === '2' ? '2' : '1';
+    if (slidePage(container) === next) return;
+
+    var pages = container.querySelectorAll(':scope > .t-page');
+    var incoming = container.querySelector(':scope > .t-page[data-page="' + next + '"]');
+    if (!incoming) return;
+
+    // 先解除 hidden 并复位到离场态，再切属性 —— 否则浏览器看不到起始帧，不会有过渡
+    pages.forEach(function (p) { p.hidden = false; });
+    void container.offsetWidth;                 // 强制回流，锁定起始帧
+
+    container.classList.add('is-moving');
+    container.setAttribute('data-page', next);
+
+    if (container.__slideTimer) clearTimeout(container.__slideTimer);
+    var dur = slideDuration(container);
+    container.__slideTimer = setTimeout(function () {
+      container.classList.remove('is-moving');
+      container.querySelectorAll(':scope > .t-page').forEach(function (p) {
+        if (p.getAttribute('data-page') !== next) p.hidden = true;
+      });
+      container.__slideTimer = null;
+    }, dur + 40);                                // +40ms 兜底，别让最后一帧被砍
+  }
+
+  /** 只给容器标注「第几页是语义上的当前态」，不触发转场（首次渲染用） */
+  function slideMark(container, page) {
+    if (!container) return;
+    container.setAttribute('data-page', String(page) === '2' ? '2' : '1');
+  }
+
   function escHtml(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -269,5 +346,5 @@
 
   injectCss();
 
-  window.SeriesUI = { groupItems: groupItems, capsuleRow: capsuleRow, capsuleRowCounts: capsuleRowCounts, stackWrap: stackWrap, bindStacks: bindStacks, extractSeriesKey: extractSeriesKey };
+  window.SeriesUI = { groupItems: groupItems, capsuleRow: capsuleRow, capsuleRowCounts: capsuleRowCounts, stackWrap: stackWrap, bindStacks: bindStacks, extractSeriesKey: extractSeriesKey, slideWrap: slideWrap, slideTo: slideTo, slidePage: slidePage, slideMark: slideMark };
 })();

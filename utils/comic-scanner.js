@@ -13,7 +13,9 @@ const {
   upsertMovie,
   getMovieByPath,
   updateMovieRelations,
-  recalcHotScore
+  recalcHotScore,
+  recordScrapeFailure,
+  clearScrapeFailure
 } = require('./db');
 const { parseNfo, findLocalCover, generateNfo } = require('./nfo_utils');
 const { downloadPoster } = require('./poster-fetcher');
@@ -93,6 +95,9 @@ async function processSingleComic(filePath) {
     
     // 4. 网络刮削（如果本地数据不全）——漫画库走 kmoe
     let webData = null;
+    // 失败清单判定基准：本地封面是否本就存在、是否真的发起过网络刮削
+    const hadLocalCover = !!localCover;
+    const webScrapeAttempted = !nfoData || !nfoData.title || !localCover;
     if (!nfoData || !nfoData.title || !localCover) {
       try {
         const KmoeCrawler = require('./crawler/kmoe');
@@ -249,7 +254,34 @@ async function processSingleComic(filePath) {
         console.log(`  ⚠️ 内容页兜底异常：${e.message}`);
       }
     }
-    
+
+    // ★ 刮削失败清单补全：此前只有视频管线写 scrape_failures，
+    //   漫画刮削失败在失败清单里永远看不到（只会在海报健康页露头）。
+    //   语义与视频管线对齐：真刮到了（网络或本地封面）→ 清记录；
+    //   没刮到但兜底出了图 → 留痕（仍是兜底图，值得重刮）；
+    //   连兜底都没有 → 留痕（白框）。
+    try {
+      if (!webScrapeAttempted || (webData && webData.cover) || hadLocalCover) {
+        clearScrapeFailure.run(filePath);
+      } else if (posterPath) {
+        recordScrapeFailure.run({
+          filePath,
+          movieId: movieId || null,
+          type: 'comic',
+          reason: '网络刮削未命中，当前为内容页兜底封面',
+          failedAt: Date.now()
+        });
+      } else {
+        recordScrapeFailure.run({
+          filePath,
+          movieId: movieId || null,
+          type: 'comic',
+          reason: '网络刮削未命中且内容页兜底失败',
+          failedAt: Date.now()
+        });
+      }
+    } catch (e) { /* 失败记录不影响扫描主流程 */ }
+
     // 10. 导出 NFO（如果启用）
     const exportCfg = config.export || {};
     if (exportCfg.enableNfoExport && !nfoData) {

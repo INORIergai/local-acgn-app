@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getSimilarMovies,
   getRandomMovies,
+  getRandomMoviesTyped,
   getMoviesByHot,
   getUnwatchedMovies,
   getFavoriteMovies,
@@ -46,18 +47,24 @@ router.get('/random', (req, res) => {
         const limit = parseInt(req.query.limit) || 12;
         const type = req.query.type || 'all';
 
-        let movies = getRandomMovies.all(limit * 4); // 多取一些，筛选后再随机
+        /* ★ round81：类型条件下推到 SQL。
+           原来是全表 RANDOM() 取 limit*4 条再按 type 过滤 —— 小说只有 9/3987，
+           随机 160 条命中的概率约 30%，实测 6 次里 5 次是 0 条，
+           小说视图的「精选推荐」几乎永远是空的。 */
+        const typeLower0 = String(type || 'all').toLowerCase();
+        let movies = (typeLower0 !== 'all' && typeLower0 !== 'adult')
+          ? getRandomMoviesTyped.all(typeLower0, limit * 4)
+          : getRandomMovies.all(limit * 4);
 
         // round43 隐私分割器：adult=只要 AV/里番；exclude=排除 AV/里番
         const pf = privacyFilter(req);
         if (pf) movies = movies.filter(pf);
 
-        // 按类型筛选（adult 已在上面处理，跳过）
-        if (type && type !== 'all' && type !== 'adult') {
-            const typeLower = String(type).toLowerCase();
+        // 兜底：类型已在 SQL 里过滤过（NULL type 按 jav 归类，与 movie.js 口径一致）
+        if (typeLower0 !== 'all' && typeLower0 !== 'adult') {
             movies = movies.filter(m => {
                 const mType = (m.type || 'jav').toLowerCase();
-                return mType === typeLower;
+                return mType === typeLower0;
             });
         }
         

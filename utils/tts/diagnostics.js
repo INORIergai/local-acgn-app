@@ -23,9 +23,9 @@ const VITS_REQUIRED = ['torch', 'numba', 'librosa', 'scipy', 'numpy',
 function candidatePythons() {
   const c = [];
   const add = (p) => { if (p && !/WindowsApps/i.test(p) && !c.includes(p)) c.push(p); };
-  add('%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python312\\python.exe');
-  add('%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python311\\python.exe');
-  add('%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python310\\python.exe');
+  add('C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe');
+  add('C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\python.exe');
+  add('C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python310\\python.exe');
   // 从 PATH 里找，但排除 WindowsApps
   for (const d of (process.env.PATH || '').split(';')) {
     const p = path.join(d.trim(), 'python.exe');
@@ -343,7 +343,7 @@ async function diagnose(cfg) {
 function scanCandidates(searchRoots) {
   const roots = searchRoots && searchRoots.length
     ? searchRoots
-    : ['D:\\ai program', '%USERPROFILE%'];
+    : ['D:\\ai program', 'C:\\Users\\Administrator'];
   const vits = P.findDirs(roots, d => {
     try { return fs.existsSync(path.join(d, 'speakers_list.txt')) && fs.existsSync(path.join(d, 'models.py')); } catch (e) { return false; }
   });

@@ -21,7 +21,7 @@
 const {
     getActressesForMonitor,
     addNotification,
-    getAllNotifications,
+    getAllNotificationRows,
     pruneNotifications,
     getActressById,
 } = require('./db');
@@ -186,10 +186,11 @@ class NewReleaseChecker {
         }
     }
 
-    /** 已有通知集合：`女优名|番号` */
+    /** 已有通知集合：`女优名|番号`。必须扫全表 —— 旧版只取最近 100 条，
+     *  一轮扫描就能把更早的作品挤出窗口，下一轮全部重复入库。 */
     buildSeenSet() {        const set = new Set();
         try {
-            for (const n of getAllNotifications.all()) {
+            for (const n of getAllNotificationRows.all()) {
                 if (n.type !== 'new_release') continue;
                 try {
                     const ex = JSON.parse(n.extra || '{}');

@@ -62,6 +62,12 @@
     <link rel="stylesheet" href="css/round42.css?v=13">
     <!-- 第 75 轮覆盖层：AI 对话玻璃态（首页聊天卡 + AI 抽屉气泡/输入行 + 任务分解步骤条） -->
     <link rel="stylesheet" href="css/round75-glass-chat.css?v=1">
+    <!-- 第 78 轮覆盖层：同系列内容 Page side-by-side 转场（.t-page-slide / data-page） -->
+    <link rel="stylesheet" href="css/round78-page-slide.css?v=1">
+    <!-- round79：精选推荐挤压式轮播样式 -->
+    <link rel="stylesheet" href="css/round79-squeeze.css?v=4">
+    <!-- r82 动效统一版：通知弹层进出场/图片淡入/检查按钮 busy/侧栏微移/Cookie 导入弹层 -->
+    <link rel="stylesheet" href="css/motion-v2.css?v=4">
 </head>
 
 <body>
@@ -435,7 +441,7 @@
             </div>
 
             <!-- 画廊模式（首页轮播） -->
-            <div id="gallerySection" class="gallery-section">
+            <div id="gallerySection" class="gallery-section is-squeeze">
                 <div class="gallery-title"><svg class="ic ic-reel" width="18" height="18" style="vertical-align:-3px;margin-right:6px;"><use href="#ic-reel"/></svg> 精选推荐</div>
                 <div class="gallery-container" id="galleryContainer">
                     <div class="gallery-track" id="galleryTrack"></div>
@@ -890,20 +896,23 @@
 
     <script src="lib/hls.min.js"></script>
     <script src="js/gate.js?v=1"></script>
+    <!-- round79：精选推荐挤压式轮播（必须在 app.js 之前加载，app.js 依赖 window.SqueezeCarousel） -->
+    <script src="js/squeeze-carousel.js?v=5"></script>
     <script src="js/icons.js?v=2"></script>
     <script src="js/danmaku.js?v=1"></script>
-    <script src="js/app.js?v=93"></script>
+    <script src="js/app.js?v=99"></script>
     <script src="js/magic-likes.js?v=30"></script>
     <script src="js/command-palette.js?v=2"></script>
-    <script src="js/features.js?v=44"></script>
+    <script src="js/features.js?v=46"></script>
     <script src="js/home.js?v=14"></script>
 <script src="js/media-source.js?v=1"></script>
-    <script src="js/series-ui.js?v=4"></script>
-    <script src="js/av-board.js?v=13"></script>
+    <script src="js/series-ui.js?v=5"></script>
+    <script src="js/av-board.js?v=15"></script>
     <script src="js/motion.js?v=1"></script>
+    <script src="js/motion-v2.js?v=4"></script>
     <script src="js/motion-flip.js?v=1"></script>
     <script src="js/ambilight.js?v=1"></script>
-    <script src="js/facet-filter.js?v=1"></script>
+    <script src="js/facet-filter.js?v=2"></script>
     <!-- round72：全局任务胶囊（右上角，任何视图都能看后台任务进度） -->
     <script src="js/task-capsule.js?v=2"></script>
     <!-- round74：语音朗读设置面板 -->

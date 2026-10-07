@@ -81,9 +81,21 @@ router.get('/timeline', (req, res) => {
             return { ...n, sortTs: ts || n.createdAt };
         }).sort((a, b) => b.sortTs - a.sortTs);
 
+        // 同一部作品（同 URL）只出一张卡：库里同一部多女优作品按女优各存一条
+        //（「只看她」筛选用），时间线上全渲染就是同封面重复刷屏。
+        // URL 先规范化：javbus 同一部作品存在 /ABC-123 与 /ABC-123_2026-09-20 两种形态。
+        const normNrUrl = (u) => String(u || '').replace(/_\d{4}-\d{2}-\d{2}$/, '').replace(/\/$/, '');
+        const seenUrls = new Set();
+        const uniqList = list.filter(n => {
+            const key = n.url ? `${n.type}|${normNrUrl(n.url)}` : `id:${n.id}`;
+            if (seenUrls.has(key)) return false;
+            seenUrls.add(key);
+            return true;
+        });
+
         // 按天分组（前端直接渲染，不用再算）
         const byDay = new Map();
-        for (const n of list) {
+        for (const n of uniqList) {
             const d = new Date(n.sortTs);
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             if (!byDay.has(key)) byDay.set(key, []);
@@ -101,7 +113,7 @@ router.get('/timeline', (req, res) => {
                 since,
                 days,
                 kind,
-                total: list.length,
+                total: uniqList.length,
                 groups,
             },
         });

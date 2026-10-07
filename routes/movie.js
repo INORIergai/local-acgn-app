@@ -1156,6 +1156,121 @@ router.get('/poster-health/repair/status', (req, res) => {
     res.json({ code: 0, data: _healthJob || { running: false, done: 0, total: 0, ok: 0, fail: 0 } });
 });
 
+// ★ 漫画/小说全量重刮一次封面：force 模式跑 repairOne（刮一遍，
+//   但只有新候选严格更优才替换，宁缺勿错不回退）。与 /poster-health/repair
+//   的区别：那个只处理判定为 bad 的；这个对指定类型每一条都刮一遍。
+let _coverRescrapeJob = { running: false, done: 0, total: 0, replaced: 0, kept: 0, fail: 0 };
+router.post('/poster-health/rescrape-covers', (req, res) => {
+    try {
+        if (_coverRescrapeJob.running) {
+            return res.json({ code: -1, msg: '已有重刮任务在跑', data: _coverRescrapeJob });
+        }
+        const posterHealth = require('../utils/poster-health');
+        const body = req.body || {};
+        const types = (Array.isArray(body.types) && body.types.length)
+            ? body.types.map(String) : ['comic', 'novel'];
+        const limit = Number(body.limit) || 0;
+        // 可选：只处理判定等级命中的条目（如 ['missing']，补白框不惊动已有好封面的）
+        const levels = (Array.isArray(body.levels) && body.levels.length) ? body.levels.map(String) : null;
+        // 条与条之间歇口气，kmoe/zlibrary 对连打都敏感
+        const interval = Math.max(0, Number(body.interval) ?? 600);
+
+        let rows = db.prepare(
+            `SELECT * FROM movies WHERE type IN (${types.map(() => '?').join(',')}) ORDER BY id`
+        ).all(...types);
+        if (levels) {
+            const posterHealth = require('../utils/poster-health');
+            rows = rows.filter(m => {
+                try { return levels.includes(posterHealth.judgeMovie(m).level); } catch (e) { return false; }
+            });
+        }
+        if (limit > 0 && rows.length > limit) rows.length = limit;
+
+        _coverRescrapeJob = {
+            running: true, startedAt: Date.now(), finishedAt: 0,
+            total: rows.length, done: 0, replaced: 0, kept: 0, fail: 0,
+            lastTitle: '', failures: [], types,
+        };
+        res.json({ code: 0, msg: '已开始重刮 ' + rows.length + ' 个封面', data: _coverRescrapeJob });
+
+        (async () => {
+            // inlineOnly：跳过网络搜索，直接用「内容页兜底」（PDF 首页/EPUB 内封）
+            // 补白框。kmoe/zlibrary 会话失效时先用它止血，凭据修好后再跑完整版
+            //（force 模式下官方封面分会赢过内容页兜底）。
+            const inlineOnly = !!body.inlineOnly;
+            const { inlineContentCover, resetInlineBudget } = require('../utils/cover-fallback');
+            // 本任务就是显式要兜底全部白框，把扫描器那套「每轮 40 张」的防连跑预算放开
+            if (inlineOnly) resetInlineBudget(Infinity);
+            for (let i = 0; i < rows.length; i++) {
+                const m = rows[i];
+                _coverRescrapeJob.done = i + 1;
+                _coverRescrapeJob.lastTitle = (m.title || m.fileName || '').slice(0, 40);
+                let r;
+                if (inlineOnly) {
+                    try {
+                        const ir = await inlineContentCover(db, m.filePath, s => console.log('[封面兜底] ' + s));
+                        if (ir && ir.ok && ir.posterPath) {
+                            // inlineContentCover 内部已写 posterPath/localPosterPath，这里补健康判定字段
+                            const abs = path.join(path.resolve(__dirname, '..'), 'cache', 'posters', ir.posterPath);
+                            let h = { level: 'ok', reason: '内容封面' };
+                            try {
+                                const posterHealth2 = require('../utils/poster-health');
+                                h = posterHealth2.healthOf(abs, { isVideo: false, type: m.type, looseMinWidth: Number(body.minWidth) || undefined });
+                            } catch (e) { /* 判定失败按 ok 记 */ }
+                            db.prepare('UPDATE movies SET posterHealth = ?, posterHealthReason = ?, posterHealthAt = ? WHERE id = ?')
+                                .run(h.level, h.reason, Date.now(), m.id);
+                            r = { ok: true, strategy: 'replaced', reason: h.reason };
+                        } else {
+                            r = { ok: false, strategy: 'inline-fail', reason: (ir && (ir.skipped || ir.error)) || '内容页兜底失败' };
+                        }
+                    } catch (e) {
+                        r = { ok: false, strategy: 'error', reason: e.message };
+                    }
+                } else {
+                    try {
+                        r = await posterHealth.repairOne(db, m, {
+                            force: true,
+                            // acceptOk：官方刮削结果 ≥ 现有分即替换（把 PDF 兜底图/本地图升级成官方封面）
+                            acceptOk: !!body.acceptOk,
+                            // minWidth：放宽内容封面的最小宽判据（kmoe 官方 !cover_l 是 280x400）
+                            looseMinWidth: Number(body.minWidth) || undefined,
+                            log: s => console.log('[封面重刮] ' + s),
+                        });
+                    } catch (e) {
+                        r = { ok: false, strategy: 'error', reason: e.message };
+                    }
+                }
+                if (r && r.ok && r.strategy === 'replaced') _coverRescrapeJob.replaced++;
+                else if (r && r.ok) _coverRescrapeJob.kept++;
+                else {
+                    _coverRescrapeJob.fail++;
+                    if (_coverRescrapeJob.failures.length < 40) {
+                        _coverRescrapeJob.failures.push({
+                            id: m.id, fileName: m.fileName,
+                            strategy: (r && r.strategy) || 'unknown',
+                            reason: (r && r.reason) || '',
+                        });
+                    }
+                }
+                if (interval > 0 && i < rows.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, interval));
+                }
+            }
+            _coverRescrapeJob.running = false;
+            _coverRescrapeJob.finishedAt = Date.now();
+            console.log(`[封面重刮] 完成：替换 ${_coverRescrapeJob.replaced} / 保留 ${_coverRescrapeJob.kept} / 失败 ${_coverRescrapeJob.fail}`);
+        })();
+    } catch (e) {
+        console.log('[封面重刮] 启动异常', e.message);
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 重刮进度
+router.get('/poster-health/rescrape-covers/status', (req, res) => {
+    res.json({ code: 0, data: _coverRescrapeJob });
+});
+
 // 单张修复（详情弹窗用）：forceCheck=true 时忽略已锁定
 router.post('/:id/poster-health/repair', async (req, res) => {
     try {

@@ -411,12 +411,12 @@
         const actressRows = annualRankBars(d.topActresses);
 
         const topMovies = (d.topMovies || []).map((r, i) => `
-            <div class="annual-rank rank-movie-item" style="--i:${i};">
-                <span class="idx idx-${i + 1}">${i < 3 ? ['👑', '🥈', '🥉'][i] : String(i + 1).padStart(2, '0')}</span>
-                ${getPosterUrl(r) ? `<img class="annual-rank-poster" src="${getPosterUrl(r)}" data-id="${r.id}" alt="" loading="lazy">` : ''}
-                <span class="name" title="${escapeHtml(r.title || r.avid || '')}">${escapeHtml(r.title || r.avid || '—')}</span>
-                <span class="val">${r.playCount} 次</span>
-            </div>`).join('') || '<div class="cp-empty" style="padding:24px;">今年还没有播放记录</div>';
+            <div class="annual-fame-row" data-id="${r.id}" style="--i:${i};">
+                <span class="idx idx-${i + 1}" style="font-size:16px;">${i < 3 ? ['👑', '🥈', '🥉'][i] : String(i + 1).padStart(2, '0')}</span>
+                ${getPosterUrl(r) ? `<img class="annual-rank-poster" src="${getPosterUrl(r)}" data-id="${r.id}" alt="" loading="lazy" style="width:36px;height:48px;border-radius:6px;object-fit:cover;">` : ''}
+                <span class="name" style="flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.title || r.avid || '')}">${escapeHtml(r.title || r.avid || '—')}</span>
+                <span class="val" style="font-family:var(--font-mono);font-size:12px;color:var(--gold-primary);font-weight:700;">${r.playCount} 次</span>
+            </div>`).join('') || '<div class="cp-empty" style="padding:28px;text-align:center;color:var(--text-muted);"><div style="font-size:32px;margin-bottom:8px;opacity:.5;">🎬</div>暂无重看记录</div>';
 
         const reading = (d.readingSummary || []);
         const comicMin = Math.round((reading.find(r => r.type === 'comic') || {}).totalMinutes || 0);
@@ -424,43 +424,79 @@
 
         const addedByType = {};
         (d.addedByType || []).forEach(r => { addedByType[r.type || 'jav'] = r.count; });
+        const totalAdded = Object.values(addedByType).reduce((a, b) => a + b, 0);
 
         view.innerHTML = `
-            <div class="panel-section annual-container">
-                <div class="panel-head">
-                    <div class="toolbar-title" style="border:none;margin:0;padding:0;">📈 ${annualYear} 年度观影报告</div>
-                    <div style="display:flex;align-items:center;gap:12px;">
-                        <select class="select-input" id="annualYearSelect" style="width:auto;">
-                            ${years.map(y => `<option value="${y}" ${y === annualYear ? 'selected' : ''}>${y} 年</option>`).join('')}
-                        </select>
+            <div class="panel-section annual-container" style="background:transparent;border:none;padding:0;">
+                <div class="annual-bento-hero">
+                    <div class="abh-head">
+                        <div>
+                            <div class="abh-kicker">CINEMA VAULT · ANNUAL WRAPPED</div>
+                            <h2 class="abh-title">${annualYear} 年度光影纪事</h2>
+                            <p class="abh-subtitle">回溯你在光影与画卷中度过的每一刻珍贵时光</p>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <select class="select-input" id="annualYearSelect" style="width:auto;background:rgba(0,0,0,0.4);border-color:rgba(245,158,11,0.3);color:#fff;">
+                                ${years.map(y => `<option value="${y}" ${y === annualYear ? 'selected' : ''}>${y} 年</option>`).join('')}
+                            </select>
+                        </div>
                     </div>
-                </div>
 
-                ${r34SliceBar('annual', r34Slice.annual || 'all')}
+                    <div style="margin-bottom:20px;">
+                        ${r34SliceBar('annual', r34Slice.annual || 'all')}
+                    </div>
 
-                <div class="annual-hero">
-                    <div class="annual-card" style="--i:0;"><div class="num">${plays.totalPlays || 0}</div><div class="label">播放次数</div></div>
-                    <div class="annual-card" style="--i:1;"><div class="num">${plays.uniqueMovies || 0}</div><div class="label">看过不同影片</div></div>
-                    <div class="annual-card" style="--i:2;"><div class="num">${hours}h</div><div class="label">观影总时长</div></div>
-                    <div class="annual-card" style="--i:3;"><div class="num">${comicMin >= 60 ? Math.floor(comicMin / 60) + 'h' + (comicMin % 60) : comicMin + 'm'}</div><div class="label">漫画阅读</div></div>
-                    <div class="annual-card" style="--i:4;"><div class="num">${novelMin >= 60 ? Math.floor(novelMin / 60) + 'h' + (novelMin % 60) : novelMin + 'm'}</div><div class="label">小说阅读</div></div>
-                    <div class="annual-card" style="--i:5;"><div class="num">${Object.values(addedByType).reduce((a, b) => a + b, 0)}</div><div class="label">新入库</div></div>
+                    <!-- Bento 便当盒核心成就栅格 -->
+                    <div class="annual-bento-grid">
+                        <div class="bento-card bento-span-2" style="--bi:0;">
+                            <div class="bento-icon">🎬</div>
+                            <div class="bento-num" data-val="${plays.totalPlays || 0}">${plays.totalPlays || 0}</div>
+                            <div class="bento-label">观影总次数 · ${hours} 小时漫游</div>
+                        </div>
+                        <div class="bento-card" style="--bi:1;">
+                            <div class="bento-icon">🎞️</div>
+                            <div class="bento-num" data-val="${plays.uniqueMovies || 0}">${plays.uniqueMovies || 0}</div>
+                            <div class="bento-label">不同影片部数</div>
+                        </div>
+                        <div class="bento-card" style="--bi:2;">
+                            <div class="bento-icon">📦</div>
+                            <div class="bento-num" data-val="${totalAdded}">${totalAdded}</div>
+                            <div class="bento-label">新入库作品</div>
+                        </div>
+                        <div class="bento-card" style="--bi:3;">
+                            <div class="bento-icon">📚</div>
+                            <div class="bento-num" data-val="${comicMin >= 60 ? Math.floor(comicMin / 60) : comicMin}" data-unit="${comicMin >= 60 ? 'h' : 'm'}">${comicMin >= 60 ? Math.floor(comicMin / 60) + 'h' : comicMin + 'm'}</div>
+                            <div class="bento-label">漫画阅读时长</div>
+                        </div>
+                        <div class="bento-card" style="--bi:4;">
+                            <div class="bento-icon">📖</div>
+                            <div class="bento-num" data-val="${novelMin >= 60 ? Math.floor(novelMin / 60) : novelMin}" data-unit="${novelMin >= 60 ? 'h' : 'm'}">${novelMin >= 60 ? Math.floor(novelMin / 60) + 'h' : novelMin + 'm'}</div>
+                            <div class="bento-label">轻小说阅读时长</div>
+                        </div>
+                        <div class="bento-card bento-span-2" style="--bi:5;background:linear-gradient(135deg,rgba(139,92,246,0.1),rgba(255,255,255,0.02));">
+                            <div class="bento-icon">✨</div>
+                            <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px;">年度鉴赏家徽章</div>
+                            <div style="font-size:12.5px;color:var(--text-secondary);line-height:1.6;">
+                                ${plays.totalPlays > 0 ? `你已在光影中探索了 ${hours} 小时，打卡 ${plays.uniqueMovies} 部作品。` : '开启新一轮观影之旅，专属年度勋章正在为你点亮。'}
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="annual-grid">
-                    <div class="annual-block" style="--i:0;">
+                    <div class="annual-block bento-card" style="--i:0;">
                         <h4>每月播放分布</h4>
                         <div class="annual-chart">${chart}</div>
                     </div>
-                    <div class="annual-block" style="--i:1;">
+                    <div class="annual-block bento-card" style="--i:1;">
                         <h4>最常重看</h4>
                         ${topMovies}
                     </div>
-                    <div class="annual-block" style="--i:2;">
+                    <div class="annual-block bento-card" style="--i:2;">
                         <h4>年度演员</h4>
                         ${actressRows}
                     </div>
-                    <div class="annual-block" style="--i:3;">
+                    <div class="annual-block bento-card" style="--i:3;">
                         <h4>年度标签</h4>
                         ${tagBubbles}
                     </div>
@@ -473,6 +509,9 @@
         view.querySelectorAll('.annual-rank-poster').forEach(img => {
             img.addEventListener('click', () => showMovieDetail(parseInt(img.dataset.id)));
         });
+
+        // r85：年度报告核心数字平滑滚动 + 卡片错峰入场
+        if (window.mvAnnualReveal) window.mvAnnualReveal(view);
     }
 
     // ================= 逐个修正封面（手动选健康海报） =================

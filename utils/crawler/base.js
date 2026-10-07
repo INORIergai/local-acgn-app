@@ -54,7 +54,9 @@ class Request {
     this.cookies = options.cookies || {};
     this.timeout = options.timeout || DEFAULT_TIMEOUT;
     this.retry = options.retry ?? DEFAULT_RETRY;
-    this.proxy = config.network?.proxyServer || null;
+    // ★ options.proxy 可按源覆盖：undefined=用全局代理，null=强制直连
+    //   （kmoe 按 IP 绑会话，必须直连；见 kmoe.js 构造器注释）
+    this.proxy = options.proxy !== undefined ? options.proxy : (config.network?.proxyServer || null);
     this.referer = options.referer || null;
     this._agent = null;
 

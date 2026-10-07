@@ -13,12 +13,12 @@
 
 // 路径映射表（/media/... 容器挂载点 → Windows 盘符；不命中则原样返回，故 exe 下安全）
 const pathMappings = [
-    { win: 'D:\\Movies', linux: '/media/movies' },
-    { win: 'D:\\Movies2', linux: '/media/movies2' },
-    { win: 'D:\\Anime', linux: '/media/anime' },
-    { win: 'D:\\Comics', linux: '/media/comic' },
-    { win: 'D:\\Novels', linux: '/media/novel' },
-    { win: 'D:\\Downloads\\Movies', linux: '/media/downloads' }
+    { win: 'E:\\Aokazu', linux: '/media/aokazu_e' },
+    { win: 'F:\\Aokazu', linux: '/media/aokazu_f' },
+    { win: 'F:\\Aokazu anime', linux: '/media/anime' },
+    { win: 'G:\\kmoe_manga', linux: '/media/comic' },
+    { win: 'G:\\zlibrary_novel', linux: '/media/novel' },
+    { win: 'G:\\迅雷下载\\OKAZU', linux: '/media/okazu' }
 ];
 
 /**

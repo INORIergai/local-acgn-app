@@ -35,7 +35,7 @@ function defaultCacheDir() {
   if (process.env.CINEMAVAULT_TTS_CACHE) return process.env.CINEMAVAULT_TTS_CACHE;
   // 常见项目位置（打包后 exe 旁边的可写数据区）
   const roots = [
-    '%INSTALLDIR%\\exe\\本地数据-敏感',
+    'D:\\ai program\\local-movie-library\\exe\\本地数据-敏感',
     'G:\\ai program\\local-movie-library\\exe\\本地数据-敏感',
   ];
   for (const r of roots) {

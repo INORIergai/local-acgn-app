@@ -214,9 +214,12 @@ function healthOf(absPath, opt) {
     const bad = (reason, score) => Object.assign(base, info, { level: 'bad', reason, score });
 
     /* 漫画 / 小说：封面来自内容页或 epub 内嵌图，比例本就无规律，走宽松规则。
-       否则 2048x829 的小说封面、900x1460 的漫画封面会被 16:9 判据误杀。 */
+       否则 2048x829 的小说封面、900x1460 的漫画封面会被 16:9 判据误杀。
+       o.looseMinWidth：调用方可放宽最小宽（如 kmoe 官方封面是 280x400 的
+       !cover_l 规格，全局 400px 会把官方图全误杀——只在显式传入时放宽）。 */
     if (o.isVideo === false) {
-        if (w >= TH.LOOSE_MIN_WIDTH && bytes >= TH.LOOSE_MIN_BYTES) return ok('内容封面', 85);
+        const minW = Number(o.looseMinWidth) || TH.LOOSE_MIN_WIDTH;
+        if (w >= minW && bytes >= TH.LOOSE_MIN_BYTES) return ok('内容封面', 85);
         return bad('内容封面过小', 20);
     }
 
@@ -259,7 +262,7 @@ function needsRepair(r) {
  * 给一条影片记录做判定（含路径解析）。
  * @returns 判定结果 + absPath / missing
  */
-function judgeMovie(movie) {
+function judgeMovie(movie, opt) {
     const isVideo = isVideoMovie(movie);
     const abs = resolvePosterPath(movie);
     if (!abs) {
@@ -269,7 +272,7 @@ function judgeMovie(movie) {
             isVideo, hasField: !!((movie && movie.posterPath) || '').trim(),
         };
     }
-    const r = healthOf(abs, { isVideo, type: movie && movie.type });
+    const r = healthOf(abs, { isVideo, type: movie && movie.type, looseMinWidth: opt && opt.looseMinWidth });
     r.absPath = abs;
     r.isVideo = isVideo;
     r.hasField = !!((movie && movie.posterPath) || '').trim();
@@ -351,8 +354,8 @@ async function repairOne(db, movie, opt) {
     const say = (s) => { if (typeof o.log === 'function') o.log(s); };
     const maxCands = Number(o.maxCands) || 3;
 
-    const before = judgeMovie(movie);
-    if (before.level !== 'bad') {
+    const before = judgeMovie(movie, { looseMinWidth: o.looseMinWidth });
+    if (before.level !== 'bad' && !o.force) {
         return { ok: true, strategy: 'skip', reason: '当前封面判定为 ' + before.level + '，无需修复' };
     }
 
@@ -384,7 +387,7 @@ async function repairOne(db, movie, opt) {
         const tmp = path.join(tmpDir, `h${movie.id}-${crypto.createHash('md5').update(c.url).digest('hex').slice(0, 10)}.img`);
         try {
             await downloadPoster(c.url, tmp);
-            const h = healthOf(tmp, { isVideo, type: finalType });
+            const h = healthOf(tmp, { isVideo, type: finalType, looseMinWidth: o.looseMinWidth });
             tried.push({ source: c.source, level: h.level, reason: h.reason, w: h.w, h: h.h, bytes: h.bytes });
             if (h.level === 'ok' && (!best || h.score > best.h.score)) best = { c, h, tmp };
         } catch (e) {
@@ -399,6 +402,15 @@ async function repairOne(db, movie, opt) {
             reason: `候选 ${cands.length} 个，无一通过健康判定（宁缺勿错，保留原图）`,
             detail: { tried },
         };
+    }
+
+    // force 全量重刮模式：默认现有封面已达标时，新候选必须严格更优才值得换
+    //（漫画/小说的内容封面宽松判据都是 85 分，同分即视为不更优，保留原图）。
+    // acceptOk：显式要求「官方刮削结果 ≥ 现有即替换」——用于用 kmoe/zlibrary
+    // 官方封面换掉内容页兜底图/本地缩略图的场景（用户明确要求全量刮一次时用）。
+    if (o.force && before.level === 'ok' && !o.acceptOk && best.h.score <= before.score) {
+        try { for (const f of fs.readdirSync(tmpDir)) if (f.startsWith(`h${movie.id}-`)) fs.unlinkSync(path.join(tmpDir, f)); } catch (e) { }
+        return { ok: true, strategy: 'keep', reason: `现有封面 ${before.score} 分已达标，最优候选 ${best.h.score} 分不更优，保留原图` };
     }
 
     // 落盘：文件名沿用 batch-poster 的稳定做法（md5(filePath + 时间戳)），
@@ -424,6 +436,9 @@ async function repairOne(db, movie, opt) {
 
     // 换完立刻回收上一张（引用安全：别人还在用就不删）
     try { retirePoster([movie.posterPath, movie.localPosterPath], outName); } catch (e) { }
+
+    // 封面修好了，顺带清掉这条路径的刮削失败记录（若有），避免失败清单留陈账
+    try { if (movie.filePath) db.prepare('DELETE FROM scrape_failures WHERE filePath = ?').run(movie.filePath); } catch (e) { }
 
     say(`  ✅ #${movie.id} ← ${best.c.source} ${best.h.w}x${best.h.h}（${best.h.reason}）`);
     return {

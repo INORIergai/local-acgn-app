@@ -338,6 +338,44 @@ function migrate() {
     );
   `);
 
+  // ★ 新作监视去重：旧版 buildSeenSet 只看最近 100 条通知，同一部作品每轮扫描
+  //   都会重新入库（实测 MKMP-758 重复 595 次，8772 条通知只有 195 部不同作品）。
+  //   urlKey = 规范化后的作品 URL（javbus 同一部作品存在 /ABC-123 与
+  //   /ABC-123_2026-09-20 两种形态，剥掉尾缀才能归一）。写入时在 JS 侧算好。
+  //   存量重复在这里一次性清掉（同一「类型+urlKey+女优」保留最早一条）；
+  //   女优维度保留：同一部多女优作品要在「只看她」筛选下对每位女优都可见。
+  try { db.exec(`ALTER TABLE notifications ADD COLUMN urlKey TEXT`); } catch (e) { /* 列已存在 */ }
+  try {
+    const normUrlKey = (u) => String(u || '').trim().replace(/_\d{4}-\d{2}-\d{2}$/, '').replace(/\/$/, '');
+    const getNotifActress = (extra) => {
+      try { return JSON.parse(extra || '{}').actress || ''; } catch (e) { return ''; }
+    };
+    const backfillKey = db.prepare(`UPDATE notifications SET urlKey = ? WHERE id = ?`);
+    for (const r of db.prepare(`SELECT id, url FROM notifications WHERE url IS NOT NULL AND url <> '' AND (urlKey IS NULL OR urlKey = '')`).all()) {
+      backfillKey.run(normUrlKey(r.url), r.id);
+    }
+    const dupIds = [];
+    const seenKeys = new Set();
+    for (const r of db.prepare(`SELECT id, type, urlKey, extra FROM notifications WHERE urlKey IS NOT NULL AND urlKey <> '' ORDER BY id`).all()) {
+      const key = `${r.type}|${r.urlKey}|${getNotifActress(r.extra)}`;
+      if (seenKeys.has(key)) dupIds.push(r.id);
+      else seenKeys.add(key);
+    }
+    if (dupIds.length) {
+      const delDup = db.prepare(`DELETE FROM notifications WHERE id = ?`);
+      db.transaction(() => { for (const id of dupIds) delDup.run(id); })();
+      console.log(`[数据库] 通知去重：清除重复 ${dupIds.length} 条`);
+    }
+    db.exec(`
+      DROP INDEX IF EXISTS idx_notifications_dedup;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedup
+        ON notifications(type, urlKey, COALESCE(json_extract(extra, '$.actress'), ''))
+        WHERE urlKey IS NOT NULL AND urlKey <> '';
+    `);
+  } catch (e) {
+    console.error('[数据库] 通知去重迁移失败:', e.message);
+  }
+
   // 播放进度（续播）
   db.exec(`
     CREATE TABLE IF NOT EXISTS playback_progress (
@@ -631,6 +669,19 @@ const getSimilarMovies = db.prepare(`
 
 const getRandomMovies = db.prepare(`
   SELECT * FROM movies
+  ORDER BY RANDOM()
+  LIMIT ?
+`);
+
+/* ★ round81：随机池支持「先按类型抽」。
+   原实现只有上面这一条 —— 调用方拿全表随机 N 条再在 JS 里按 type 过滤。
+   全库 3987 条里只有 9 条小说，随机抽 160 条能命中的概率约 30%，
+   实测连续 6 次请求 type=novel，返回条数是 0/0/1/0/0/1
+   ⇒ 小说视图的「精选推荐」常年是空白区（用户眼里就是「这块没做」）。
+   小众类型必须把类型条件下推进 SQL。 */
+const getRandomMoviesTyped = db.prepare(`
+  SELECT * FROM movies
+  WHERE LOWER(COALESCE(type, 'jav')) = LOWER(?)
   ORDER BY RANDOM()
   LIMIT ?
 `);
@@ -970,14 +1021,29 @@ const getAllNotifications = db.prepare(`
   SELECT * FROM notifications ORDER BY createdAt DESC LIMIT 100
 `);
 
+// 全量通知行（新作监视去重 Set 用）：getAllNotifications 只取最近 100 条，
+// 不足以判重。表有 120 天过期清理兜底，全表量级有限。
+const getAllNotificationRows = db.prepare(`
+  SELECT type, url, extra FROM notifications
+`);
+
 const getUnreadNotificationCount = db.prepare(`
   SELECT COUNT(*) as count FROM notifications WHERE read = 0
 `);
 
-const addNotification = db.prepare(`
-  INSERT INTO notifications (type, title, content, url, cover, extra, createdAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+// OR IGNORE：命中 idx_notifications_dedup 唯一索引的重复通知静默丢弃，
+// 任何调用方（扫描器/手动接口）都不用再自己防重。
+// urlKey 在写入侧规范化，与迁移回填共用同一规则。
+const _addNotificationStmt = db.prepare(`
+  INSERT OR IGNORE INTO notifications (type, title, content, url, cover, extra, urlKey, createdAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
+const addNotification = {
+    run(type, title, content, url, cover, extra, createdAt) {
+        const u = String(url || '').trim().replace(/_\d{4}-\d{2}-\d{2}$/, '').replace(/\/$/, '');
+        return _addNotificationStmt.run(type, title, content, url || '', cover || '', extra || '', u, createdAt || 0);
+    },
+};
 
 const markNotificationRead = db.prepare(`
   UPDATE notifications SET read = 1 WHERE id = ?
@@ -1249,6 +1315,7 @@ module.exports = {
   getMoviesByTags,
   getSimilarMovies,
   getRandomMovies,
+  getRandomMoviesTyped,
   updatePlayRecord,
   addWatchHistory,
   getWatchHistory,
@@ -1297,6 +1364,7 @@ module.exports = {
   getStatsByFormat,
   // 通知
   getAllNotifications,
+  getAllNotificationRows,
   getUnreadNotificationCount,
   addNotification,
   markNotificationRead,

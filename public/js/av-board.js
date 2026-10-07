@@ -609,9 +609,9 @@
         }
 
         // 作品卡片区
-        if (chapters.length) {
-            h += '<div id="avShelf"></div>';
-        }
+        /* round78：根层可能 chapters 为空（只有文件夹卡），但系列胶囊点击后要把成员
+           铺进 shelf —— 所以 #avShelf 一律建出来，转场容器由 ensureSlide() 填充。 */
+        h += '<div id="avShelf"></div>';
         h += '</div></div>';
 
         grid.innerHTML = h;
@@ -622,6 +622,28 @@
         }
 
         var shelf = document.getElementById('avShelf');
+
+        /* round78：Page side-by-side 转场容器 —— 摞卡页(page1) ⇄ 系列展开页(page2) 并存，
+           data-page 切换，page1 向左退出 / page2 向右退出。首次调用时建壳。
+           注意：根层系列胶囊那条异步链路会在 chapters 为空时**动态创建** #avShelf，
+           而上面的 var shelf 是提前捕获的旧引用 —— 所以这里一律走惰性查询。 */
+        function ensureSlide() {
+            if (!window.SeriesUI) return null;
+            var host = document.getElementById('avShelf');
+            if (!host) {
+                var row = document.getElementById('avSeriesRow');
+                if (!row) return null;
+                host = document.createElement('div');
+                host.id = 'avShelf';
+                row.parentNode.insertBefore(host, row.nextSibling);
+            }
+            var s = host.querySelector('.t-page-slide');
+            if (!s) {
+                host.innerHTML = window.SeriesUI.slideWrap('board', '', '', '1');
+                s = host.querySelector('.t-page-slide');
+            }
+            return s;
+        }
 
         function renderShelf(filter) {
             var list = chapters;
@@ -637,7 +659,15 @@
                 isSeriesView = true;
             }
             if (!list.length) {
-                shelf.innerHTML = '<div class="av-empty"><div class="ico">📂</div>这个筛选下暂时没有内容</div>';
+                /* round78：空态写进 page1 内部，别覆盖掉转场容器 ——
+                   否则根层「只有文件夹卡」时容器被抹掉，系列胶囊再点就没地方铺成员了。 */
+                var host0 = document.getElementById('avShelf') || shelf;
+                if (host0) {
+                    var sl0 = ensureSlide();
+                    var pg0 = sl0 && sl0.querySelector('.t-page[data-page="1"]');
+                    if (pg0) { pg0.innerHTML = '<div class="av-empty"><div class="ico">📂</div>这个筛选下暂时没有内容</div>'; }
+                    else host0.innerHTML = '<div class="av-empty"><div class="ico">📂</div>这个筛选下暂时没有内容</div>';
+                }
                 return;
             }
 
@@ -666,6 +696,16 @@
                 cardsHtml = list.map(function (it, i) { return textCard(it, type, i); }).join('');
             }
 
+            /* round78：内容写进对应的那一页，而不是整块重渲染 */
+            var slide = ensureSlide();
+            var targetPage = isSeriesView ? '2' : '1';
+            var pageEl = slide && slide.querySelector('.t-page[data-page="' + targetPage + '"]');
+            if (!pageEl) {                 // 无转场能力（SeriesUI 缺失）→ 原路径
+                pageEl = shelf;
+            } else {
+                pageEl.hidden = false;     // 先显示，否则 applyAvCols 量不到宽度
+            }
+
             /* ★ round73：取消「>10 条走横向 slider」分支，统一网格。
                原因（实测）：slider 分支的 shelf.innerHTML 直接写 .av-slider、
                **不存在 .av-board 这个类** ⇒ round14.css:90 那条
@@ -674,7 +714,7 @@
                .av-slider / bindSlider 的代码全部保留，用户仍可用 data-av-shelf="slider" 切回。 */
             var useSlider = (window.__avShelfMode === 'slider') && !isNovel && list.length > 10;
             if (false) {
-                shelf.innerHTML =
+                pageEl.innerHTML =
                     '<div class="av-slider-wrap">' +
                     '<button class="av-slide-nav prev" type="button" aria-label="向左翻">‹</button>' +
                     '<div class="av-slider">' + cardsHtml + '</div>' +
@@ -685,7 +725,7 @@
                     '<span class="av-slide-tip">按住拖动 / 滚轮 / 点两侧 ‹ › 都能翻</span>' +
                     '</div>';
             } else if (useSlider) {
-                shelf.innerHTML =
+                pageEl.innerHTML =
                     '<div class="av-slider-wrap">' +
                     '<button class="av-slide-nav prev" type="button" aria-label="向左翻">‹</button>' +
                     '<div class="av-slider">' + cardsHtml + '</div>' +
@@ -696,22 +736,24 @@
                     '<span class="av-slide-tip">按住拖动 / 滚轮 / 点两侧 ‹ › 都能翻</span>' +
                     '</div>';
             } else {
-                shelf.innerHTML = '<div class="av-board">' + cardsHtml + '</div>';
+                pageEl.innerHTML = '<div class="av-board">' + cardsHtml + '</div>';
                 /* ★ round73：列数夹到「卡片数」——
                    repeat(auto-fill,·) 生成的轨道数常常多于卡片数（小说 5 本在 1920px 下
                    生成 7 轨、1280px 下 4 轨放 5 张），末行会空出一大片随机空档。
                    先量自适应轨道数，再 min(卡片数, 轨数) 夹住，孤儿行就没了。 */
-                try { applyAvCols(shelf.querySelector('.av-board')); } catch (e) {}
+                try { applyAvCols(pageEl.querySelector('.av-board')); } catch (e) {}
             }
-            bindCards(shelf, type);
-            bindSlider(shelf);
-            /* round75：摞卡点击 → 展开该系列（拦截在卡片自身 click 之前） */
-            if (window.SeriesUI) window.SeriesUI.bindStacks(shelf, function (name) {
+            bindCards(pageEl, type);
+            bindSlider(pageEl);
+            /* round75：摞卡点击 → 展开该系列（拦截在卡片自身 click 之前）
+               round78：不再重渲染，走转场切到 page2 */
+            if (window.SeriesUI) window.SeriesUI.bindStacks(pageEl, function (name) {
                 seriesFilter = name;
                 renderSeriesChips(name);
                 grid.querySelectorAll('[data-av-filter]').forEach(function (x) { x.classList.remove('on'); });
                 renderShelf('series:' + name);
             });
+            if (slide) window.SeriesUI.slideTo(slide, targetPage);
         }
 
         /* 横向书架的翻页手段（2026-09-22 新增）
@@ -910,8 +952,9 @@
                                 row.querySelectorAll('.av-scap').forEach(function (x) { x.classList.remove('active'); });
                                 /* 再点同一个 = 取消，收起展开的系列卡 */
                                 if (wasActive) {
-                                    var sh0 = document.getElementById('avShelf');
-                                    if (sh0) sh0.remove();
+                                    /* round78：切回摞卡页（page2 向右退出），而不是删掉整个 shelf */
+                                    var slBack = ensureSlide();
+                                    if (slBack) window.SeriesUI.slideTo(slBack, '1');
                                     renderSeriesChips('');
                                     return;
                                 }
@@ -924,16 +967,18 @@
                                         if (!items.length || mySeq !== rootSeriesSeq) return;
                                         var rowNow = document.getElementById('avSeriesRow');
                                         if (!rowNow || !rowNow.isConnected) return;
-                                        var sh = document.getElementById('avShelf');
-                                        if (!sh) {
-                                            sh = document.createElement('div');
-                                            sh.id = 'avShelf';
-                                            rowNow.parentNode.insertBefore(sh, rowNow.nextSibling);
-                                        }
-                                        sh.innerHTML = '<div class="av-board">' +
+                                        /* round78：写进 page2 并走转场，而不是直接重写整个 shelf。
+                                           ⚠️ 根层（chapters 为空）时 #avShelf 尚未建 —— 必须先 ensureSlide()
+                                           把容器造出来，不能在此之前就要求它存在。 */
+                                        var sl = ensureSlide();
+                                        var target = sl && sl.querySelector('.t-page[data-page="2"]');
+                                        if (!target) return;
+                                        target.hidden = false;
+                                        target.innerHTML = '<div class="av-board">' +
                                             items.map(function (it, i) { return textCard(it, type, i); }).join('') + '</div>';
-                                        try { applyAvCols(sh.querySelector('.av-board')); } catch (e) {}
-                                        bindCards(sh, type);
+                                        try { applyAvCols(target.querySelector('.av-board')); } catch (e) {}
+                                        bindCards(target, type);
+                                        window.SeriesUI.slideTo(sl, '2');
                                     }).catch(function () {});
                             });
                         });
@@ -941,7 +986,7 @@
             })();
         }
 
-        if (shelf) renderShelf('all');
+        if (shelf) renderShelf('all');   // round78：#avShelf 现在恒存在，根层无章节时内部为空壳
         return true;
     }
 
@@ -1088,6 +1133,34 @@
             });
 
             renderGuessBoard('all');
+
+            /* ★ r84：展台下方追加「更多可能 · 漂移长廊」。
+             *   fetchGuess 的 exclude 表已记下展台这批 id，再取一批天然不重复；
+             *   双轨对向自动漂移（样式在 motion-v2.css），悬停暂停、点封面开详情。 */
+            fetchGuess(24).then(function (more) {
+                if (seq !== guessState.seq) return;
+                var tools = grid.querySelector('.av-tools');
+                if (!tools || !more || !more.length) return;
+                var card = function (m) {
+                    return '<div class="mv-rail-card" data-mid="' + m.id + '" role="button" tabindex="0" title="' +
+                        (window.escapeHtml ? window.escapeHtml(m.title || '') : '') + '">' +
+                        '<div class="mrc-poster"><img src="' + window.getPosterUrl(m) + '" alt="" loading="lazy" decoding="async"></div>' +
+                        '<div class="mrc-title">' + (window.escapeHtml ? window.escapeHtml(m.title || m.fileName || '') : '') + '</div></div>';
+                };
+                var track = function (list) {
+                    var half = list.map(card).join('');
+                    return '<div class="mv-rail-track">' + half + half + '</div>';
+                };
+                var rail = '<div class="guess-more-title">更多可能 · 继续逛</div>' +
+                    '<div class="mv-rail">' + track(more) + '</div>';
+                tools.insertAdjacentHTML('afterend', rail);
+                grid.querySelectorAll('.mv-rail-card').forEach(function (c) {
+                    c.addEventListener('click', function () {
+                        var id = parseInt(c.dataset.mid, 10);
+                        if (id && typeof showMovieDetail === 'function') showMovieDetail(id);
+                    });
+                });
+            });
         });
     }
 

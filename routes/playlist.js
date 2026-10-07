@@ -2,16 +2,34 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../utils/db');
 
-// 获取所有播放列表
+// 获取所有播放列表（附带前 3 部影片封面供 3D 扇出堆叠卡片展示）
 router.get('/', (req, res) => {
     try {
-        const lists = db.prepare(`
-            SELECT p.*, COUNT(pi.id) as movieCount
+        const rows = db.prepare(`
+            SELECT p.*, COUNT(pi.id) as movieCount,
+              (SELECT json_group_array(json_object('id', m.id, 'posterPath', m.posterPath, 'localPosterPath', m.localPosterPath))
+               FROM (SELECT m2.id, m2.posterPath, m2.localPosterPath
+                     FROM playlist_items pi2
+                     JOIN movies m2 ON m2.id = pi2.movieId
+                     WHERE pi2.playlistId = p.id
+                     ORDER BY pi2.sortOrder ASC LIMIT 3) m
+              ) as topCoversJson
             FROM playlists p
             LEFT JOIN playlist_items pi ON pi.playlistId = p.id
             GROUP BY p.id
             ORDER BY p.createdAt DESC
         `).all();
+
+        const lists = rows.map(r => {
+            let topCovers = [];
+            try {
+                topCovers = JSON.parse(r.topCoversJson || '[]');
+                if (!Array.isArray(topCovers)) topCovers = [];
+            } catch (e) { topCovers = []; }
+            delete r.topCoversJson;
+            return { ...r, topCovers };
+        });
+
         res.json({ code: 0, data: lists });
     } catch (e) {
         res.json({ code: -1, msg: e.message });

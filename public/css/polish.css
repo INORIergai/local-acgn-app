@@ -2024,12 +2024,13 @@ html[data-v4skin="aurora"] .facet-group {
     cursor: grabbing;
 }
 
-/* CPU/GPU 加速与内存瘦身：视口外海报卡片使用 content-visibility 避免浪费解码与合成显存 */
+/* r82 修复「滚动时海报消失、停下又重现」：
+   原 content-visibility:auto 让 Chromium 滚动时延迟绘制刚进入视口的卡片
+   （海报整片空白，停稳后才补画）。省的那点解码显存远不如视觉稳定重要，
+   移除之；只保留合成层提升 hints。图片本身有 loading=lazy + onload 淡入兜内存。 */
 .movie-grid .movie-card,
 .movie-card-compact,
 .av-card {
-    content-visibility: auto;
-    contain-intrinsic-size: 160px 240px;
     transform: translateZ(0);
     backface-visibility: hidden;
 }

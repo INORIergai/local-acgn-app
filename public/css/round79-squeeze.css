@@ -1,0 +1,285 @@
+/* ============================================================
+   CinemaVault · round79-squeeze.css —— 精选推荐「挤压式轮播」
+   ------------------------------------------------------------
+   原生移植 SqueezeCarousel（React 版 → 无框架版）。
+   ★★ 几何语义在 squeeze-carousel.js 的 compute() 里，CSS 不写死份额，
+      这里只管「残条 vs 正面列的层叠关系」+ 尺寸主导权。
+
+   round80 定稿（主卡不再左移）：
+     r=-1 残条   left = 0,     w = 0.085  → 叠在主卡左缘，z-index 最高
+     r= 0 主卡   left = 0,     w = 0.52
+     r= 1 次卡   left = 0.52,  w = 0.28
+     r= 2 尾巴   left = 0.80,  w = 0.20   → 右缘正好贴容器右边
+   正面三列 Σ = 1，与残条宽度无关。
+
+   ⚠️ 与旧轮播的冲突处理：
+   · polish.css 给 .gallery-track 写了 transform:none !important，
+     所以本组件的位移动效一律走内层 .sq-strip，不碰 track 本身。
+   · .gallery-track 保留了 style.css 的 aspect-ratio:16/9，
+     这正是「16:9 固定基准块裁切」，直接继承。
+   · ⚠️ style.css:369 的 .gallery-container 有 overflow:hidden ——
+     所以残条**不能**画到容器左侧外（会被整条裁掉），只能压叠在主卡之上。
+   ============================================================ */
+
+/* ---------- 残条（上一张）—— ★ round80 修偏左的关键 ----------
+   旧设计把残条当「装饰」：不参与交互 ⇒ 拿不到 .is-interactive ⇒ opacity:0。
+   但旧 JS 又让它带**负份额**，把主卡整体推到 -6% 出血 ——
+   于是左边空一块、主卡偏左（用户原话：「海报封面不在正中，反而偏左」）。
+
+   round80 两处同时改：
+     ① JS 去掉负份额，主卡 left 恒为 0；
+     ② 残条可见 + 压在主卡之上，读作「上一张的背影挤在左缘」。
+   ───────────────────────────────────────────────────────────── */
+/* z-index 已由 JS 按 r 行内写入（见 squeeze-carousel.js apply()）；
+   round81 之前这里是四条例行行对应的静态规则，列数一多就漏配。
+   这里只留**不是层级**的那部分：残条可见 + 参与点击。
+   ★ round81 Task#9：加 [data-sq-motion="A"] 限定 —— B/C 不产生残条，
+     若不限定，B 的左邻卡拿到 sqR=-1 时会被误当成残条（压暗 + 内阴影）。 */
+[data-sq-motion="A"] .sq-card[data-sq-r="-1"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 残条更暗 + 只露窄边，读作「上一张卡的一角」而非完整一张 */
+[data-sq-motion="A"] .sq-card[data-sq-r="-1"] img {
+  filter: brightness(.42) saturate(.9);
+  box-shadow: inset -14px 0 18px -14px rgba(0, 0, 0, .85);
+}
+
+/* ---------- 容器：挤压式要横向空间 ----------
+   ⚠️ 反复踩的坑（实测截图 + getBoundingClientRect 量化）：
+      旧 polish.css 的 max-height:52vh 配合 aspect-ratio:16/9 会让**宽度被高度反推**，
+      容器被压到 832px（视口 1600 的 52%），四列只铺这一段、右侧大片空白。
+      挤压式的列宽本身就是份额，尺寸必须**宽度主导**：
+      宽度给 88%，高度由 16:9 自然推导；只在极端超宽屏才用 max-height 兜底，
+      且兜底时同步收窄宽度（min() 而不是二选一）。
+   ============================================================= */
+@media (min-width: 861px) {
+  .gallery-section:has(.sq-strip) .gallery-container,
+  .gallery-section.is-squeeze .gallery-container {
+    /* ★ 宽度主导：显式给 width，别让 aspect-ratio 用高度反推宽度。
+       ★★ round80 修正：原来的 `min(92%, calc(52vh*16/9))` 里，
+          第二项在 900px 高视口下只有 832px —— 比视口的 52% 还窄，
+          于是四列挤在中间一小条、左右各留两百多像素空白，
+          正是用户截图里「海报偏左 + 形态不对」的另一半原因。
+          现在上限放宽到 78vh（1050px 高视口 ≈ 872px→宽度 1550px 的 88%），
+          并让宽度真正主导；16/9 换算值只作为「超宽屏不撑破」的兜底。 */
+    width: min(100%, calc(78vh * 16 / 9));
+    max-width: none;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .gallery-section:has(.sq-strip) .gallery-track,
+  .gallery-section.is-squeeze .gallery-track {
+    max-height: none;          /* ★ 交出尺寸主导权给宽度 */
+    /* ★ round81：不再写死 16/9 —— 改为读 JS 按海报真实比例算出的 --sq-ar。
+         默认兜底 1.7778 = 旧行为，JS 没跑起来时完全退回 round80 的样子。 */
+    aspect-ratio: var(--sq-ar, 1.7778);
+    width: 100%;
+  }
+}
+
+.gallery-track:has(.sq-strip) { position: relative; }
+.gallery-section.is-squeeze .gallery-track {
+  position: relative;
+  /* 盖掉 style.css 的 flex 长条 + 旧 transition，本组件自己控时序 */
+  transition: none;
+}
+
+/* ---------- 胶片齿孔边的让位 ----------
+   style.css 的 .gallery-container::before/::after 是上下两条 10px 齿孔，
+   压在列上会切掉海报上下沿（目检实见黑条压图）。
+   做法：把齿孔**移到列区之外** —— 给容器留出上下的内边距，
+   齿孔落在 padding 里，海报不再被切。
+   ============================================================= */
+.gallery-section:has(.sq-strip) .gallery-container,
+.gallery-section.is-squeeze .gallery-container {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  box-sizing: content-box;      /* padding 不占 16:9 基准块的宽度 */
+}
+.gallery-section:has(.sq-strip) .gallery-container::before,
+.gallery-section:has(.sq-strip) .gallery-container::after,
+.gallery-section.is-squeeze .gallery-container::before,
+.gallery-section.is-squeeze .gallery-container::after {
+  height: 8px;
+}
+
+/* ---------- 列间隙 ----------
+   挤压是「宽度递减」，不是「无缝相接」—— 留 1px 描边让每列各自成形，
+   否则四列糊成一张连续图，右侧递减的层次读不出来。 */
+.sq-card {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .3);   /* 与相邻列分隔（暗色下也可见） */
+}
+
+/* ---------- 条带：所有列的定位坐标系 ----------
+   ⚠️ 必须 pointer-events:none —— 它铺满 inset:0 且位于 .sq-card 之下，
+   若吃指针事件会把所有子卡的 hover 全吃掉（实测 Playwright 直接被它拦截）。 */
+.sq-strip {
+  position: absolute;
+  inset: 0;
+  transform-style: flat;
+  pointer-events: none;
+}
+
+/* ---------- 单列 ---------- */
+.sq-card {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  /* 几何位移全部走 left/width 过渡 —— 列数 ≤10，开销可忽略，
+     换来的是「份额重分配」能被一条 transition 自然表达 */
+  transition:
+    left   var(--sq-dur) var(--sq-ease),
+    width  var(--sq-dur) var(--sq-ease),
+    filter var(--sq-dur) var(--sq-ease),
+    box-shadow var(--sq-dur) var(--sq-ease);
+  overflow: hidden;
+  border-radius: calc(var(--radius-md, 10px));
+  background: var(--bg-elevated);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  will-change: left, width;
+  backface-visibility: hidden;
+}
+.sq-card.is-interactive { opacity: 1; pointer-events: auto; }
+
+.sq-card img {
+  width: 100%;
+  height: 100%;
+  /* 16:9 基准块固定裁切：列宽多少都填满，绝不拉伸 */
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  filter: brightness(.72) saturate(1.04);
+  transition: filter var(--sq-dur) var(--sq-ease), transform .8s var(--sq-ease);
+  transform: scale(1);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* 主卡：提亮 + 抬升 */
+.sq-card.is-active img { filter: brightness(1) saturate(1.06); }
+.sq-card.is-active { box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .7); }
+
+/* hover：被指着的那列 STRETCHED，其余 SQUEEZED（份额由 JS 重算，这里只管质感） */
+.sq-card.is-stretched { box-shadow: 0 20px 44px -18px rgba(0, 0, 0, .8); }
+.sq-card.is-stretched img { transform: scale(1.035); }
+.sq-card.is-squeezed img { filter: brightness(.6) saturate(.98); }
+
+/* 右侧递减列：右缘压暗，提示「左边还有下一张」。
+   round81：原来是 [data-sq-r="2"] 一条，超过 3 列就只有最右一条有阴影；
+           改挂 JS 打的 .is-tail，列数怎么变都覆盖得到。 */
+.sq-card.is-tail img {
+  box-shadow: inset 14px 0 18px -14px rgba(0, 0, 0, .8);
+}
+
+/* ---------- 手机：3 列（份额换档由 JS 的 FACES_MOBILE 同步） ---------- */
+@media (max-width: 860px) {
+  .gallery-section.is-squeeze .gallery-container { max-width: 100%; }
+  .sq-card { border-radius: 8px; }
+}
+
+/* ============================================================
+   ★★ round81 Task#9：B「3D 牌堆」/ C「光环转环」
+   ------------------------------------------------------------
+   这两版不再用 left/width 定位 —— 卡片是**居中固定尺寸**的 3D 层，
+   一切位移/缩放/旋转都走 transform，只碰合成层，不触发重排重绘。
+   这正是用户说的「没有网页上看到的丝滑」的解法：A 版每帧都要按新的
+   列宽重新栅格化一遍封面（object-fit:cover 跟着宽度变），10 张大图
+   同时重栅格必然掉帧；B/C 只在合成器里挪动已经画好的图层。
+
+   与 A 的分工：
+     · 定位基线（left/top/width/height）—— 本段给，A 段给 left/width
+     · 过渡曲线 —— B 用带回弹的 cubic-bezier(.34,1.56,.64,1)
+                   C 用 easeOutExpo cubic-bezier(.16,1,.3,1)
+     · 几何数值（tx/tz/ry/scale/θ）—— 一律 JS 算，CSS 不写死
+   ============================================================ */
+[data-sq-motion="B"] .sq-strip,
+[data-sq-motion="C"] .sq-strip {
+  /* ★ 3D 舞台：没有 perspective，rotateY / translateZ 就退化成正交投影，
+       看着只是「横向被压扁」，完全没有纵深。1200px 是 deck 原版的手感。 */
+  perspective: 1200px;
+  perspective-origin: 50% 45%;
+  /* ⚠️ 故意不改 pointer-events（A 段写的是 none）：
+       父级 none + 子级 .is-interactive 的 auto，事件照样能冒泡到 strip，
+       C 版的拖拽监听绑在 strip 上依然收得到；
+       而一旦把 strip 放开成 auto，它会盖住 #galleryPrev / #galleryNext 箭头。 */
+}
+
+[data-sq-motion="B"] .sq-card,
+[data-sq-motion="C"] .sq-card {
+  /* ★ 居中基线：JS 的 transform 一律以 calc(-50% + Npx) 起算，
+     所以 left/top 必须钉在 50%，靠 translate 把卡挪到位。 */
+  left: 50%;
+  top: 50%;
+  width: var(--sq-card-w, 190px);
+  height: var(--sq-card-h, 280px);
+  will-change: transform, opacity;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .65);
+  /* ⚠️ A 的 left/width 过渡在这里必须去掉 —— 留着会和 transform 打架，
+     出现「位置到位了但宽度还在慢慢收」的两段式怪动画。 */
+  transition-property: transform, opacity, box-shadow, filter;
+}
+
+[data-sq-motion="B"] .sq-card {
+  transition: transform 450ms cubic-bezier(.34, 1.56, .64, 1),
+              opacity 450ms ease,
+              box-shadow 300ms ease;
+  border: 1px solid rgba(255, 255, 255, .14);
+}
+[data-sq-motion="C"] .sq-card {
+  transition: transform 520ms cubic-bezier(.16, 1, .3, 1),
+              opacity 400ms ease,
+              box-shadow 300ms ease;
+  border: 1px solid rgba(255, 255, 255, .12);
+}
+
+/* 主卡高亮：两版都要能一眼看出「当前推荐的是哪张」 */
+[data-sq-motion="B"] .sq-card.is-active,
+[data-sq-motion="C"] .sq-card.is-active {
+  border-color: var(--primary, #d5187d);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .7), 0 0 0 2px var(--primary, #d5187d);
+}
+[data-sq-motion="B"] .sq-card.is-active img,
+[data-sq-motion="C"] .sq-card.is-active img {
+  filter: brightness(1) saturate(1.06);
+}
+
+/* hover 抬一下（缩放已由 JS 乘进 transform，这里只加质感） */
+[data-sq-motion="B"] .sq-card.is-stretched img,
+[data-sq-motion="C"] .sq-card.is-stretched img {
+  filter: brightness(1.04) saturate(1.08);
+}
+
+/* ★ C 版拖拽期间：关掉过渡才能「跟手」。
+   留着过渡的话手指停了卡片还在滑，是最典型的拖拽手感 bug。 */
+[data-sq-motion="C"] .is-sq-dragging .sq-card {
+  transition: none !important;
+}
+[data-sq-motion="C"] .sq-card { cursor: grab; }
+[data-sq-motion="C"] .is-sq-dragging .sq-card { cursor: grabbing; }
+
+/* 手机：3D 层叠在窄屏容易糊成一团，收窄振幅靠 JS 处理，这里只管圆角与阴影 */
+@media (max-width: 860px) {
+  [data-sq-motion="B"] .sq-card,
+  [data-sq-motion="C"] .sq-card {
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .6);
+  }
+}
+
+/* ---------- 暗色主题：底色不能是纯黑，卡缝要分得开 ---------- */
+html[data-v4skin="aurora"] .sq-card { background: #14161f; }
+
+/* ---------- 动效降级 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .sq-card,
+  .sq-card img {
+    transition-duration: 1ms !important;
+    transition-timing-function: linear !important;
+  }
+  .sq-card.is-stretched img { transform: none; }
+}

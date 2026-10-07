@@ -14,7 +14,7 @@
  *   - 旧版详情失败时会硬塞一条「可能有新卷」的噪音通知；现在详情失败直接跳过。
  */
 
-const { getComicsForMonitor, getAllNotifications, addNotification, pruneNotifications } = require('./db');
+const { getComicsForMonitor, getAllNotificationRows, addNotification, pruneNotifications } = require('./db');
 const { getPosterCacheName } = require('./poster-fetcher');
 const config = require('./config');
 const KmoeCrawler = require('./crawler/kmoe');
@@ -169,7 +169,7 @@ class ComicNewReleaseChecker {
     buildSeenSet() {
         const set = new Set();
         try {
-            for (const n of getAllNotifications.all()) {
+            for (const n of getAllNotificationRows.all()) {
                 if (n.type !== 'comic_new_release') continue;
                 try {
                     const ex = JSON.parse(n.extra || '{}');

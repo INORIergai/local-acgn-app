@@ -553,68 +553,8 @@ function createWindow() {
     win.webContents.on('did-fail-load', (e, code, desc, url) => {
         blog(`did-fail-load code=${code} desc=${desc} url=${url}`);
     });
-
-    /* 「界面突然卡死」自愈：渲染主线程失去响应（用户表现＝刷新/点哪都没反应，
-     * 窗口白屏或僵住）时，先自动强崩渲染进程并立即重载恢复现场；
-     * 反复发生（≥2 次）则大概率是 GPU/驱动问题 → 写入 software-render 标记
-     * （下次启动走软件渲染），并提供「立即重启」。不处理的话 Chromium 会弹
-     * 英文的 "Pages aren't responding" 系统框，用户只能干等或杀进程。 */
-    let unresponsiveCount = 0;
-    let lastUnresponsiveAt = 0;
-    let recoveringUnresponsive = false;
-    win.webContents.on('unresponsive', () => {
-        if (recoveringUnresponsive) return;
-        // 距上次太久的不累计 —— 否则相隔几天/几周的两回卡死也会凑满 2 次误降级
-        const now = Date.now();
-        if (now - lastUnresponsiveAt > 30 * 60 * 1000) unresponsiveCount = 0;
-        lastUnresponsiveAt = now;
-        recoveringUnresponsive = true;
-        blog(`渲染进程无响应（第 ${unresponsiveCount} 次）→ 自动强崩并重载恢复`);
-        try {
-            win.webContents.forcefullyCrashRenderer();
-        } catch (e) {
-            try { win.webContents.reload(); } catch (e2) { /* 忽略 */ }
-        }
-        if (unresponsiveCount >= 2 && !fs.existsSync(GPU_FLAG)) {
-            try {
-                fs.writeFileSync(GPU_FLAG,
-                    `渲染进程反复无响应 ${unresponsiveCount} 次（${new Date().toISOString()}）。\n` +
-                    '已自动切换为软件渲染。删除本文件即可恢复硬件加速。\n');
-                blog('反复无响应 → 写入 software-render 标记，下次启动走软件渲染');
-            } catch (e2) { /* 忽略 */ }
-            dialog.showMessageBox(win, {
-                type: 'warning',
-                title: '界面无响应已自动恢复',
-                message: '界面刚发生了卡死，已自动恢复正常。',
-                detail: '这已是本次运行第 ' + unresponsiveCount + ' 次。多为显卡驱动/硬件加速兼容问题，' +
-                    '已自动切换为软件渲染（下次启动生效）。\n\n建议立即重启应用让降级生效。',
-                buttons: ['立即重启', '下次再说'],
-                defaultId: 0,
-                cancelId: 1,
-            }).then(({ response }) => {
-                if (response !== 0) return;
-                blog('用户选择立即重启（无响应降级）');
-                killServer();
-                app.releaseSingleInstanceLock();
-                app.relaunch({ args: process.argv.slice(1) });
-                app.exit(0);
-            }).catch(() => {});
-        }
-    });
-    win.webContents.on('responsive', () => {
-        if (recoveringUnresponsive) {
-            recoveringUnresponsive = false;
-            blog('渲染进程已恢复响应');
-        }
-    });
     win.webContents.on('render-process-gone', (e, d) => {
         blog('渲染进程退出 ' + JSON.stringify(d));
-        if (recoveringUnresponsive && win && !win.isDestroyed()) {
-            // 崩溃型恢复走不到 responsive 事件（进程都没了），必须在这里复位守卫，
-            // 否则标志卡死在 true，下一次真卡死会被开头那句 return 静默吞掉
-            recoveringUnresponsive = false;
-            try { win.webContents.reload(); } catch (e2) { /* 忽略 */ }
-        }
     });
 
     // 应用内的 URL 一律在窗口里跑；外部链接丢给系统浏览器

@@ -350,22 +350,40 @@ router.post('/cookies/:source', (req, res) => {
     try {
         const { source } = req.params;
         const { cookie } = req.body;
-        
+
         if (!cookie) {
             return res.json({ code: -1, msg: 'Cookie不能为空' });
         }
-        
+
         const cfg = readConfig();
-        
+
         if (!cfg.sources) cfg.sources = {};
         if (!cfg.sources[source]) cfg.sources[source] = {};
-        
+
         cfg.sources[source].cookie = cookie;
+        // ★ hanime 特例：导入 cookie 即自动启用该源（App API 竖版封面通道），
+        //   用户无需再手动改 config.json 的 sources.hanime.enabled
+        let extraMsg = '';
+        if (source === 'hanime' && !cfg.sources.hanime.enabled) {
+            cfg.sources.hanime.enabled = true;
+            extraMsg = '，hanime 源已自动启用';
+        }
         writeConfig(cfg);
-        
-        res.json({ 
-            code: 0, 
-            msg: 'Cookie更新成功，重启服务后生效' 
+
+        // ★ 热生效：utils/config 模块导出的 config 对象被所有爬虫共享引用，
+        //   就地改写它，下一次 new 爬虫立即拿到新 cookie，不必重启应用。
+        //   （test 接口用的是写死的官方域名，不存在用户可控 URL）
+        try {
+            const live = require('../utils/config');
+            live.sources = live.sources || {};
+            live.sources[source] = live.sources[source] || {};
+            live.sources[source].cookie = cookie;
+            if (source === 'hanime') live.sources.hanime.enabled = true;
+        } catch (e) { /* 模块不可用则退回重启生效 */ }
+
+        res.json({
+            code: 0,
+            msg: 'Cookie 更新成功，已即时生效' + extraMsg
         });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
@@ -389,14 +407,15 @@ router.post('/cookies/:source/test', async (req, res) => {
         let message = '';
         
         if (source === 'kmoe') {
-            // 测试Kmoe Cookie
+            // 测试Kmoe Cookie —— 判据与 kmoe.js checkLogin() 一致（两个标记必须同时出现，
+            // 只用 || 的话首页任意一处静态 '/u/' 字样就会把无效 cookie 误判成已登录）
             const { Request } = require('../utils/crawler/base');
             const req = new Request({ cookies: parseCookie(cookie) });
             try {
                 const res = await req.get('https://kzo.moe/');
                 const html = await res.text();
-                valid = html.includes('/u/') || html.includes('主頁');
-                message = valid ? 'Cookie有效，已登录' : 'Cookie无效，未登录';
+                valid = html.includes('/u/') && html.includes('主頁');
+                message = valid ? 'Cookie有效，已登录' : 'Cookie无效或已过期（未登录）';
             } catch (e) {
                 message = '测试失败: ' + e.message;
             }
@@ -405,12 +424,29 @@ router.post('/cookies/:source/test', async (req, res) => {
             const { Request } = require('../utils/crawler/base');
             const req = new Request({ cookies: parseCookie(cookie) });
             try {
-                const res = await req.post('https://drive-pc.quark.cn/1/clouddrive/file/list?pr=ucpro&fr=pc&uc_param_str=&__t=' + Date.now() + '&__dt=1000', 
+                const res = await req.post('https://drive-pc.quark.cn/1/clouddrive/file/list?pr=ucpro&fr=pc&uc_param_str=&__t=' + Date.now() + '&__dt=1000',
                     { pdir_fid: '0', page: 1, size: 10 }
                 );
                 const data = await res.json();
                 valid = data.data && data.data.list;
                 message = valid ? `Cookie有效，文件数: ${data.data.list.length}` : 'Cookie无效';
+            } catch (e) {
+                message = '测试失败: ' + e.message;
+            }
+        } else if (source === 'hanime') {
+            // 测试 hanime1.me Cookie：登录后导航会出现「登出」/个人链接，匿名只有「登入」
+            const { Request } = require('../utils/crawler/base');
+            const req = new Request({ cookies: parseCookie(cookie) });
+            try {
+                const res = await req.get('https://hanime1.me/');
+                const html = await res.text();
+                if (/Attention Required!/.test(html)) {
+                    message = '被 Cloudflare 拦截（服务端直连不可达，封面抓取需 CDP 浏览器模式）';
+                } else {
+                    valid = html.includes('登出') || html.includes('/users/');
+                    message = valid ? 'Cookie有效，已登录'
+                        : (html.includes('登入') ? 'Cookie无效或未登录' : '无法确认登录态（站点可能改版）');
+                }
             } catch (e) {
                 message = '测试失败: ' + e.message;
             }

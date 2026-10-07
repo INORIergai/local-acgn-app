@@ -235,6 +235,60 @@
             height: 100%;
             overflow: hidden;
         }
+
+        /* ===== round79：纸张卷曲层 =====
+         * .paged-inner 被 DomCurl 改造成两层：.curl-lower（承载真实内容，
+         * **留在文档流里**，完整继承 .paged-inner 的 flex 列布局）
+         * 与 .curl-upper（旧页快照，绝对定位盖在上面，卷走时显形）。
+         * ⚠️ 两层必须区别对待：
+         *    lower 若也绝对定位 → flex:1 失效 → #pagedText 高度塌陷成 0
+         *      → 正文溢出到 .paged-hint 按钮下方被遮（实测截图确认）。 */
+        .paged-inner.curl-armed {
+            perspective: 1400px;
+            transform-style: preserve-3d;
+        }
+        /* 共用：列布局 + 3D 变换承载 */
+        .curl-layer {
+            display: flex;
+            flex-direction: column;
+            transform-origin: left center;
+            will-change: transform, filter, opacity;
+        }
+        /* 上层：绝对定位盖住 lower */
+        .curl-upper {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            display: none;
+            pointer-events: none;
+            overflow: hidden;
+            /* 纸背底色：卷起时露出的那一面必须与正文纸色一致，否则像贴了张白纸 */
+            background: var(--rd-paper-bg, #f5f0e6);
+        }
+        .curl-upper.is-curling { display: flex; }
+
+        /* 底层承载真实内容。
+   ⚠️ 这一段踩过两个坑，改动前先读 round79 的验收报告：
+     ① 不能加 flex-shrink —— pageHeight() 读 #pagedText.clientHeight，
+        收缩行为一变，分页就错乱（每页渲染出相同内容）。
+     ② 不能绝对定位 —— flex:1 失效，#pagedText 高度塌陷成 0，
+        正文溢出到 .paged-hint 按钮下方被遮住。
+   正确做法：lower 留在文档流，**完整复刻** .paged-inner 原有的 flex 列布局，
+   这样 #pagedText 的高度与卷曲前完全一致，分页与裁剪都不受影响。 */
+        .curl-lower {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+        }
+        /* 夜间：跟正文背景一起变深 */
+        body.night-mode .curl-upper { background: var(--rd-paper-bg-night, #1a1a1a); }
+        body.night-mode .curl-lower { background: #1a1a1a; }
+        /* reduced-motion：不卷曲 */
+        @media (prefers-reduced-motion: reduce) {
+            .curl-layer { transition: none !important; }
+            .curl-upper { display: none !important; }
+        }
         /* 正文容器拿「标题之外的剩余高度」，它的 clientHeight 就是准确的一页可用高度 */
         #pagedText {
             flex: 1 1 auto;
@@ -626,6 +680,8 @@
     </style>
     <!-- round74：小说朗读 -->
     <link rel="stylesheet" href="css/round74-reader.css?v=1">
+    <!-- round81：阅读器设置面板（小说 / 漫画共用） -->
+    <link rel="stylesheet" href="css/reader-settings.css?v=1">
 </head>
 <body>
     <div class="reader-container">
@@ -685,47 +741,10 @@
             </div>
         </div>
         
-        <!-- 设置面板 -->
+        <!-- round81：内部由 js/reader-settings.js 按 SCHEMA 全量渲染，
+             加 / 删 / 改名选项只动那一个文件，不用再碰这里 -->
         <div class="settings-panel" id="settingsPanel">
-            <div class="settings-title">⚙️ 阅读设置</div>
-            
-            <div class="setting-group">
-                <div class="setting-label">字号</div>
-                <div class="setting-options">
-                    <div class="setting-option" onclick="setFontSize(14)">小</div>
-                    <div class="setting-option active" onclick="setFontSize(18)">中</div>
-                    <div class="setting-option" onclick="setFontSize(22)">大</div>
-                    <div class="setting-option" onclick="setFontSize(26)">特大</div>
-                </div>
-            </div>
-            
-            <div class="setting-group">
-                <div class="setting-label">行距</div>
-                <div class="setting-options">
-                    <div class="setting-option" onclick="setLineHeight(1.5)">紧凑</div>
-                    <div class="setting-option active" onclick="setLineHeight(1.8)">标准</div>
-                    <div class="setting-option" onclick="setLineHeight(2.2)">宽松</div>
-                </div>
-            </div>
-            
-            <div class="setting-group">
-                <div class="setting-label">背景色</div>
-                <div class="bg-colors">
-                    <div class="bg-color active" style="background:#f5f0e6;" onclick="setBgColor('#f5f0e6', false)"></div>
-                    <div class="bg-color" style="background:#ffffff;" onclick="setBgColor('#ffffff', false)"></div>
-                    <div class="bg-color" style="background:#c7edcc;" onclick="setBgColor('#c7edcc', false)"></div>
-                    <div class="bg-color" style="background:#1a1a1a;" onclick="setBgColor('#1a1a1a', true)"></div>
-                </div>
-            </div>
-            
-            <div class="setting-group">
-                <div class="setting-label">页边距</div>
-                <div class="setting-options">
-                    <div class="setting-option" onclick="setPadding(10)">窄</div>
-                    <div class="setting-option active" onclick="setPadding(20)">标准</div>
-                    <div class="setting-option" onclick="setPadding(30)">宽</div>
-                </div>
-            </div>
+            <div id="rsNovelRoot"></div>
         </div>
         
         <!-- 遮罩层 -->
@@ -745,7 +764,13 @@
     
     <!-- 轻量提示 -->
     <div id="toast" class="reader-toast"></div>
-    
+
+    <!-- round79：纸张卷曲翻页（PaperCurl，默认动效）
+         ⚠️ 必须在内联脚本之前：内联脚本在 DOMContentLoaded 时就会 initPageCurl() -->
+    <script src="js/paper-curl.js?v=3"></script>
+    <!-- round81：设置面板引擎（必须在内联脚本之前，loadSettings 会用到） -->
+    <script src="js/reader-settings.js?v=1"></script>
+
     <script>
         // 全局状态
         let novelId = null;
@@ -1064,6 +1089,8 @@
                 if (dir < 0) prevBook(); else nextBook();
                 return;
             }
+            // 手动翻页要重置自动翻页倒计时，否则设置里的秒数会被半路截胡
+            if (typeof restartNovelAutoTurn === 'function') restartNovelAutoTurn();
             const last = pageStarts.length - 1;
             let target = currentPage + dir;
             if (target < 0) {
@@ -1076,25 +1103,80 @@
                 }
                 target = last;
             }
-            showPage(target);
+            if (target === currentPage) return;     // 到头了，不必卷
+
+            /* round81：翻页样式由设置决定，不再是「有 paper-curl 就必卷」
+                 curl  -> PaperCurl（WebGL / DOM 卷曲）
+                 slide -> 平移；fade -> 淡入；none -> 硬切
+               后三者走 CSS animation，body[data-turn-style] 已在 applyNovelSettings 写好 */
+            var style = (novelRS && novelRS.turnStyle) || 'curl';
+            if (style === 'curl' && pageCurl && window.PaperCurl && !window.PaperCurl.REDUCED) {
+                curlTarget = target;
+                window.PaperCurl.setSpeed(novelRS ? novelRS.turnSpeed : 'normal');
+                pageCurl.turn(dir);
+                return;
+            }
+            if (style === 'slide') {
+                document.body.classList.toggle('turn-back', dir < 0);
+                clearTimeout(window.__turnBackTimer);
+                window.__turnBackTimer = setTimeout(function () {
+                    document.body.classList.remove('turn-back');
+                }, ReaderSettings ? ReaderSettings.speedMs(novelRS && novelRS.turnSpeed) : 560);
+            }
+            showPageDirect(target);
         }
 
-        function showPage(idx) {
-            if (!pageStarts.length) return;
-            currentPage = Math.max(0, Math.min(pageStarts.length - 1, idx));
+        /* round79：showPage 已并入 showPageDirect（卷曲版需要「换页」与「写内容」分离）。
+           保留 showPage 作为同义别名 —— 文件内 4 处调用点与调试桥 __readerBridge 都还在用它。 */
+        function showPage(idx) { showPageDirect(idx); }
+
+        /* round79：纸张卷曲翻页（PaperCurl，默认动效）
+         *
+         * 数据流（这一段绕了两个坑才理顺，记录下来别再改错）：
+         *   ① showPage 是**同步覆写** #pagedText.innerHTML。若直接把卷曲
+         *      套在 showPage 外面，新页会瞬间替换旧页 —— 卷曲只剩空壳。
+         *      所以把「写内容」拆成 fillPage()，动效在 pageTurn 层做。
+         *   ② 卷曲期间 currentPage 必须**保持旧值**，直到卷过半真正换页；
+         *      提前改会让「上一页/下一页」的边界判断读到新页，末页判断失效。
+         */
+        function fillPage(idx) {
             const box = document.getElementById('pagedText');
-            const start = pageStarts[currentPage];
-            const end = currentPage + 1 < pageStarts.length ? pageStarts[currentPage + 1] : chapterBlocks.length;
+            const start = pageStarts[idx];
+            const end = idx + 1 < pageStarts.length ? pageStarts[idx + 1] : chapterBlocks.length;
             box.innerHTML = chapterBlocks.slice(start, end).join('');
-            // 图片重新挂 error 兜底
             box.querySelectorAll('img').forEach(img => {
                 img.addEventListener('error', () => { img.classList.add('img-broken'); });
             });
+            document.getElementById('pagedInfo').textContent = `${idx + 1} / ${pageStarts.length}`;
+            saveProgress();
+        }
+
+        // 不带动效的换页（首屏、换章、repaginate 复位都用它）
+        function showPageDirect(idx) {
+            if (!pageStarts.length) return;
+            currentPage = Math.max(0, Math.min(pageStarts.length - 1, idx));
+            fillPage(currentPage);
+            const box = document.getElementById('pagedText');
             box.classList.remove('page-in');
             void box.offsetWidth;
             box.classList.add('page-in');
-            document.getElementById('pagedInfo').textContent = `${currentPage + 1} / ${pageStarts.length}`;
-            saveProgress();
+        }
+
+        // 卷曲舞台 = .paged-inner（.paged-content 已被 CSS 占了绝对定位，见文件内 round26 说明）
+        let pageCurl = null;
+        let curlTarget = 0;          // 卷曲期间的目标页（卷过半才真正写入）
+        function initPageCurl() {
+            if (pageCurl || !window.PaperCurl) return;
+            const stage = document.querySelector('.paged-inner');
+            if (!stage) return;
+            pageCurl = window.PaperCurl.attachText({
+                stage,
+                isActive: () => readMode === 'page',
+                applyNext: () => {
+                    // 只在卷曲真正发生时换页；currentPage 在此刻才推进
+                    showPageDirect(curlTarget);
+                }
+            });
         }
 
         // 等两帧，让 display:flex 之后的布局真正落定（否则测到 0 高度）
@@ -1107,7 +1189,9 @@
         //   .paged-inner 里还有 h1 标题占位，用它当页高会让每页多塞 2-3 行 → 底部被裁 → 内容不全。
         function pageHeight() {
             const box = document.getElementById('pagedText');
-            const container = document.querySelector('.paged-inner');
+            // round79：内容可能被搬进 .curl-lower（卷曲层），兜底容器要跟着换，
+            // 否则 .paged-inner 的高度包含卷曲层，页高会算大、每页少塞内容。
+            const container = document.querySelector('.curl-lower') || document.querySelector('.paged-inner');
             const title = document.getElementById('pagedTitle');
             let H = box ? box.clientHeight : 0;
             if ((!H || H < 40) && container) {
@@ -1210,6 +1294,8 @@
             const paged = document.getElementById('pagedContent');
             const chat = document.getElementById('chapterContent');
             const btn = document.getElementById('btnReadMode');
+            // round79：进入翻页模式时惰性建立卷曲舞台（此时 DOM 已就位）
+            if (readMode === 'page') initPageCurl();
             if (readMode === 'page') {
                 document.body.classList.add('read-mode-page');
                 paged.style.display = 'flex';
@@ -1352,35 +1438,126 @@
             document.getElementById('overlay').classList.remove('visible');
         }
         
-        // 切换夜间模式
-        function toggleNightMode() {
-            isNightMode = !isNightMode;
-            document.body.classList.toggle('night-mode', isNightMode);
-            saveSettings();
-        }
-        
-        // 设置字号
-        function setFontSize(size) {
-            currentFontSize = size;
-            document.getElementById('readerArea').style.fontSize = size + 'px';
-            document.querySelector('.paged-content').style.fontSize = size + 'px';
-            document.querySelectorAll('.setting-options .setting-option').forEach((el, i) => {
-                el.classList.toggle('active', [14, 18, 22, 26][i] === size);
-            });
-            saveSettings();
-            repaginateIfNeeded();
-        }
-        
-        // 设置行距
-        function setLineHeight(height) {
-            currentLineHeight = height;
-            document.getElementById('readerArea').style.lineHeight = height;
-            document.querySelector('.paged-content').style.lineHeight = height;
-            saveSettings();
-            repaginateIfNeeded();
+        /* ============================================================
+           round81：设置面板改由 js/reader-settings.js 驱动
+           ------------------------------------------------------------
+           旧实现每个选项占三段代码（一段硬编码 HTML、一个 setXxx()、
+           loadSettings 里一行白名单），加一项要改三处，而且这套取名
+           （字号/行距/页边距/背景色）跟漫画那边完全对不上 —— 用户报
+           「设置按钮都没了」的时候，小说这边是有的，漫画那边连影子都没有。
+           现在两边读同一份 SCHEMA：
+             唯一真源 = novelRS 对象
+             -> applyNovelSettings() 把它落成真实样式
+             -> ReaderSettings.render() 把它画成面板
+           加 / 删一项只动 reader-settings.js。
+           ============================================================ */
+        var novelRS = null;                 // 设置项唯一真源
+        var novelAutoTurn = null;           // 自动翻页定时器句柄
+
+        /* 旧版本（round80 及更早）用 localStorage['novelReaderSettings']，
+           迁移一次，别让用户辛辛苦苦调过的字号行距一夜回到解放前。 */
+        function migrateLegacyNovelSettings(def) {
+            try {
+                var raw = localStorage.getItem('novelReaderSettings');
+                if (!raw) return def;
+                var o = JSON.parse(raw) || {};
+                if (o.fontSize) def.fontSize = o.fontSize;
+                if (o.lineHeight) def.lineHeight = o.lineHeight;
+                if (o.padding) def.padding = o.padding;
+                if (o.nightMode) { def.night = true; def.bg = '#2a2a2a'; }
+                else if (o.bgColor) def.bg = o.bgColor;
+                localStorage.removeItem('novelReaderSettings');
+            } catch (e) { /* 读不出来就用默认 */ }
+            return def;
         }
 
-        // 翻页模式下：排版参数变了要重排（异步静默）
+        function rsNovelRoot() { return document.getElementById('rsNovelRoot'); }
+
+        // 把 novelRS 落成真实样式。opts.repag === false 时跳过重排（首次加载用）
+        function applyNovelSettings(opts) {
+            var s = novelRS;
+            if (!s) return;
+            var noRepag = opts && opts.repag === false;
+
+            currentFontSize = Number(s.fontSize) || 18;
+            currentLineHeight = Number(s.lineHeight) || 1.8;
+            currentPadding = Number(s.padding) || 20;
+            isNightMode = !!s.night;
+
+            var ra = document.getElementById('readerArea');
+            var pc = document.querySelector('.paged-content');
+            [ra, pc].forEach(function (el) {
+                if (!el) return;
+                el.style.fontSize = currentFontSize + 'px';
+                el.style.lineHeight = String(currentLineHeight);
+            });
+            if (ra) {
+                ra.style.paddingLeft = currentPadding + '%';
+                ra.style.paddingRight = currentPadding + '%';
+            }
+            if (pc) {
+                pc.style.paddingLeft = currentPadding + '%';
+                pc.style.paddingRight = currentPadding + '%';
+            }
+
+            // 字体：正文 .chapter-content 自带宋体栈，只能靠 body[data-rs-font] 提权
+            document.body.setAttribute('data-rs-font', s.fontFamily || 'serif');
+
+            // 背景 / 夜间：夜间交给 CSS（body.night-mode），日间才写行内背景
+            document.body.classList.toggle('night-mode', isNightMode);
+            document.body.style.background = isNightMode ? '' : (s.bg || '#f5f0e6');
+
+            // 翻页演出
+            var dur = ReaderSettings.speedMs(s.turnSpeed);
+            document.body.setAttribute('data-turn-style', s.turnStyle || 'curl');
+            document.body.style.setProperty('--rs-turn-dur', dur + 'ms');
+            document.body.style.setProperty('--rs-turn-x', '26px');
+            if (window.PaperCurl) window.PaperCurl.setSpeed(s.turnSpeed);
+
+            restartNovelAutoTurn();
+
+            ReaderSettings.save('novel', s);
+            renderNovelPanel();
+            if (!noRepag) repaginateIfNeeded();
+        }
+
+        function renderNovelPanel() {
+            var root = rsNovelRoot();
+            if (!root) return;
+            ReaderSettings.render(root, 'novel', novelRS, onNovelPick, '⚙️ 阅读设置');
+        }
+
+        // 面板点击回调
+        function onNovelPick(id, val) {
+            novelRS[id] = val;
+            if (id !== 'autoTurn') restartNovelAutoTurn();
+            applyNovelSettings({ repag: false });
+            // 排版类改动要重排（repaginateIfNeeded 自带 120ms 去抖）
+            if (id === 'fontSize' || id === 'lineHeight' || id === 'padding') repaginateIfNeeded();
+            if (id === 'turnStyle' || id === 'turnSpeed') showToast('翻页：' + turnStyleLabel() + ' / ' + (ReaderSettings.speedMs(novelRS.turnSpeed)) + 'ms');
+        }
+
+        function turnStyleLabel() {
+            var hit = null;
+            ReaderSettings.SCHEMA.common.forEach(function (g) {
+                if (g.id === 'turnStyle') {
+                    g.options.forEach(function (o) { if (o.v === novelRS.turnStyle) hit = o.label; });
+                }
+            });
+            return hit || novelRS.turnStyle;
+        }
+
+        /* ---- 自动翻页：只在「翻页模式」下有意义（滚动模式没有页的概念）---- */
+        function restartNovelAutoTurn() {
+            if (!novelAutoTurn) novelAutoTurn = ReaderSettings.autoTurn(
+                function () { return (readMode === 'page') ? Number(novelRS.autoTurn) || 0 : 0; },
+                function () { if (readMode === 'page') pageTurn(1, true); }
+            );
+            novelAutoTurn.restart();
+        }
+
+        /* 翻页模式下：排版参数变了要重排（异步静默）
+           —— 从旧的「每个 setXxx 各调一次」收敛到这里统一由 applyNovelSettings 触发 */
         function repaginateIfNeeded() {
             if (readMode !== 'page') return;
             if (typeof paginate !== 'function') return;
@@ -1393,62 +1570,31 @@
                 showPage(Math.min(keep, pageStarts.length - 1));
             }, 120);
         }
-        
-        // 设置背景色
+
+        // 切换夜间模式
+        function toggleNightMode() {
+            novelRS.night = !novelRS.night;
+            applyNovelSettings({ repag: false });
+        }
+
+        /* ---- 兼容层：旧函数名保留，转发到新引擎 ---- */
+        function setFontSize(size) { onNovelPick('fontSize', size); }
+        function setLineHeight(height) { onNovelPick('lineHeight', height); }
+        function setPadding(padding) { onNovelPick('padding', padding); }
         function setBgColor(color, night) {
-            isNightMode = night;
-            document.body.classList.toggle('night-mode', night);
-            document.body.style.background = color;
-            document.querySelectorAll('.bg-color').forEach((el, i) => {
-                el.classList.toggle('active', ['#f5f0e6', '#ffffff', '#c7edcc', '#1a1a1a'][i] === color);
-            });
-            saveSettings();
+            novelRS.bg = night ? '#2a2a2a' : color;
+            novelRS.night = !!night;
+            applyNovelSettings({ repag: false });
         }
-        
-        // 设置页边距
-        function setPadding(padding) {
-            currentPadding = padding;
-            document.getElementById('readerArea').style.paddingLeft = padding + '%';
-            document.getElementById('readerArea').style.paddingRight = padding + '%';
-            // 翻页层边距跟随（左右给相同百分比，移动端有媒体查询兜底）
-            const pc = document.querySelector('.paged-content');
-            if (pc) {
-                pc.style.paddingLeft = padding + '%';
-                pc.style.paddingRight = padding + '%';
-            }
-            saveSettings();
-            repaginateIfNeeded();
-        }
-        
+
         // 保存设置到localStorage
-        function saveSettings() {
-            const settings = {
-                fontSize: currentFontSize,
-                lineHeight: currentLineHeight,
-                padding: currentPadding,
-                nightMode: isNightMode,
-                bgColor: document.body.style.background
-            };
-            localStorage.setItem('novelReaderSettings', JSON.stringify(settings));
-        }
-        
+        function saveSettings() { if (novelRS) ReaderSettings.save('novel', novelRS); }
+
         // 加载设置
         function loadSettings() {
             try {
-                const saved = localStorage.getItem('novelReaderSettings');
-                if (saved) {
-                    const settings = JSON.parse(saved);
-                    if (settings.fontSize) setFontSize(settings.fontSize);
-                    if (settings.lineHeight) setLineHeight(settings.lineHeight);
-                    if (settings.padding) setPadding(settings.padding);
-                    if (settings.nightMode) {
-                        isNightMode = true;
-                        document.body.classList.add('night-mode');
-                    }
-                    if (settings.bgColor) {
-                        document.body.style.background = settings.bgColor;
-                    }
-                }
+                novelRS = migrateLegacyNovelSettings(ReaderSettings.load('novel'));
+                applyNovelSettings({ repag: false });
                 // ★ 恢复上次的阅读模式（滚动 / 翻页）
                 const m = localStorage.getItem('novelReadMode');
                 if (m === 'page' || m === 'scroll') readMode = m;

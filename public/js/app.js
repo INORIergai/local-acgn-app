@@ -369,6 +369,9 @@ const api = {
 };
 
 // ========== 画廊模式 ==========
+// round79：「精选推荐」从「单张 full-bleed 大图 flip 轮播」改为
+// 挤压式轮播（4 列 + 右侧 slat 尾巴，hover 挤压）。原生移植 SqueezeCarousel。
+let gallerySq = null;                                   // SqueezeCarousel 实例
 async function initGallery(view = 'movies') {
     try {
         let type = 'all';
@@ -388,7 +391,7 @@ async function initGallery(view = 'movies') {
             hideGallery();
             return;
         }
-        
+
         showGallery();
         renderGallery();
         startGalleryAutoPlay();
@@ -398,94 +401,58 @@ async function initGallery(view = 'movies') {
 }
 
 function renderGallery() {
-    const track = document.getElementById('galleryTrack');
+    const container = document.getElementById('galleryContainer');
     const dots = document.getElementById('galleryDots');
+    if (!container) return;
 
-    track.innerHTML = galleryMovies.map((m, i) => {
-        const title = m.title || m.fileName || '未命名';
-        // 2026-09-22：用户要求去掉底部信息遮罩层（gallery-overlay）——整幅海报干干净净
-        return `
-        <div class="gallery-slide${i === 0 ? ' is-active' : ' is-parked-fwd'}" data-id="${m.id}" title="${escapeHtml(title)}">
-            <img src="${getPosterUrl(m)}" alt="${title}" loading="lazy" decoding="async">
-        </div>
-        `;
-    }).join('');
+    // round79：重建前先销毁旧实例，否则上一轮的自动播放定时器会一直跑
+    if (gallerySq) { gallerySq.destroy(); gallerySq = null; }
 
-    // 重新渲染后页码归零（galleryIndex 可能还停在上一份列表的位置）
     galleryIndex = 0;
     galleryShownIndex = 0;
     galleryDir = 1;
 
-    dots.innerHTML = galleryMovies.map((_, i) => `
-        <div class="gallery-dot ${i === 0 ? 'active' : ''}" data-index="${i}"></div>
-    `).join('');
-
-    // 绑定事件：整幅 slide 可点开详情，箭头/圆点切图
-    track.querySelectorAll('.gallery-slide').forEach(slide => {
-        slide.addEventListener('click', () => {
-            const id = parseInt(slide.dataset.id);
-            if (id) showMovieDetail(id);
+    if (dots) {
+        dots.innerHTML = galleryMovies.map((_, i) => `
+            <div class="gallery-dot ${i === 0 ? 'active' : ''}" data-index="${i}"></div>
+        `).join('');
+        dots.querySelectorAll('.gallery-dot').forEach(dot => {
+            dot.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const target = parseInt(dot.dataset.index);
+                if (gallerySq) { gallerySq.go(target); gallerySq.startAuto(); }
+            });
         });
+    }
+
+    if (!window.SqueezeCarousel) {           // 模块没加载 → 静默隐藏，绝不留空白容器
+        hideGallery();
+        return;
+    }
+
+    gallerySq = window.SqueezeCarousel.create({
+        container,
+        movies: galleryMovies.map(m => ({
+            id: m.id,
+            title: m.title || m.fileName || '未命名',
+            poster: getPosterUrl(m)
+        })),
+        onOpen: (mv) => { if (mv && mv.id) showMovieDetail(mv.id); },
+        onChange: (idx) => { galleryIndex = idx; galleryShownIndex = idx; syncGalleryDots(idx); }
     });
 
-    dots.querySelectorAll('.gallery-dot').forEach(dot => {
-        dot.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const target = parseInt(dot.dataset.index);
-            galleryDir = target >= galleryShownIndex ? 1 : -1;
-            galleryIndex = target;
-            updateGallery();
-            resetGalleryAutoPlay();
-        });
-    });
+    // 容器级交互：悬停暂停 + 箭头翻页
+    container.onmouseenter = () => stopGalleryAutoPlay();
+    container.onmouseleave = () => { if (gallerySq) gallerySq.pauseHover(); startGalleryAutoPlay(); };
 
-    document.getElementById('galleryPrev').addEventListener('click', (e) => {
-        e.stopPropagation();
-        galleryDir = -1;
-        galleryIndex = (galleryIndex - 1 + galleryMovies.length) % galleryMovies.length;
-        updateGallery();
-        resetGalleryAutoPlay();
-    });
-
-    document.getElementById('galleryNext').addEventListener('click', (e) => {
-        e.stopPropagation();
-        galleryDir = 1;
-        galleryIndex = (galleryIndex + 1) % galleryMovies.length;
-        updateGallery();
-        resetGalleryAutoPlay();
-    });
-
-    // 悬停暂停
-    const container = document.getElementById('galleryContainer');
-    container.addEventListener('mouseenter', stopGalleryAutoPlay);
-    container.addEventListener('mouseleave', startGalleryAutoPlay);
+    const prevBtn = document.getElementById('galleryPrev');
+    const nextBtn = document.getElementById('galleryNext');
+    if (prevBtn) prevBtn.onclick = (e) => { e.stopPropagation(); if (gallerySq) { gallerySq.prev(); gallerySq.startAuto(); } };
+    if (nextBtn) nextBtn.onclick = (e) => { e.stopPropagation(); if (gallerySq) { gallerySq.next(); gallerySq.startAuto(); } };
 }
 
 function updateGallery() {
-    const track = document.getElementById('galleryTrack');
-    if (!track) return;
-    const slides = Array.from(track.querySelectorAll('.gallery-slide'));
-    const n = slides.length;
-    if (!n) return;
-
-    const idx = ((galleryIndex % n) + n) % n;
-    const prev = galleryShownIndex;
-    syncGalleryDots(idx);
-    if (prev === idx) return;
-
-    const fwd = galleryDir >= 0;
-    slides.forEach((s, i) => {
-        const isActive = i === idx;
-        const isOut = !isActive && i === prev;
-        s.classList.toggle('is-active', isActive);
-        s.classList.toggle('is-out-left', isOut && fwd);
-        s.classList.toggle('is-out-right', isOut && !fwd);
-        // 其它牌一律「停靠在翻页方向的入场位」——状态已经落盘，
-        // 所以轮到它时只要摘掉停靠位就一定会走 transition（不需要强制回流）
-        s.classList.remove('is-parked-fwd', 'is-parked-back');
-        if (!isActive && !isOut) s.classList.add(fwd ? 'is-parked-fwd' : 'is-parked-back');
-    });
-    galleryShownIndex = idx;
+    if (gallerySq) gallerySq.go(galleryIndex);
 }
 
 function syncGalleryDots(idx) {
@@ -495,23 +462,88 @@ function syncGalleryDots(idx) {
 }
 
 function startGalleryAutoPlay() {
-    if (galleryTimer) return;
-    galleryTimer = setInterval(() => {
-        galleryIndex = (galleryIndex + 1) % galleryMovies.length;
-        updateGallery();
-    }, 4000);
+    if (gallerySq) gallerySq.startAuto(5200);
 }
 
 function stopGalleryAutoPlay() {
-    if (galleryTimer) {
-        clearInterval(galleryTimer);
-        galleryTimer = null;
-    }
+    if (gallerySq) gallerySq.stopAuto();
 }
 
 function resetGalleryAutoPlay() {
     stopGalleryAutoPlay();
     startGalleryAutoPlay();
+}
+
+/* ========== round81 Task#9：精选推荐海报墙动效（设置页切换） ==========
+   名单与写入逻辑都委托给 squeeze-carousel.js 导出的 MOTIONS / persistMotion ——
+   app.js 不手抄一份，否则将来加第四版时两边必然漂移。 */
+
+/** 当前生效的动效版本（默认 C 光环转环） */
+function currentSqueezeMotion() {
+    const sc = window.SqueezeCarousel;
+    if (sc && sc.resolveMotion) {
+        try { return sc.resolveMotion(); } catch (e) { /* localStorage 不可用时走默认 */ }
+    }
+    return 'C';
+}
+
+/** 设置页「精选推荐 · 海报墙动效」三选卡片 */
+function renderSqueezeMotionGrid() {
+    const grid = document.getElementById('sqMotionGrid');
+    if (!grid) return;
+    const sc = window.SqueezeCarousel;
+    if (!sc || !sc.MOTIONS) {
+        grid.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">动效模块未加载</div>';
+        return;
+    }
+    const cur = currentSqueezeMotion();
+    const DOT = {
+        A: 'linear-gradient(135deg,#F1EEE6 50%,#9A6A15 50%)',
+        B: 'linear-gradient(135deg,#22D3EE,#818CF8)',
+        C: 'linear-gradient(135deg,#6E8BFF,#C084FC)'
+    };
+    const DESC = {
+        A: '海报横向铺满一条，鼠标悬停哪一列就把那列挤宽。层级最稳，几何经过 103 项断言校验。',
+        B: '借鉴「猜你喜欢」的 3D 牌堆：卡片带回弹地推远 / 拉近，正中间一张最大。',
+        C: '卡片沿椭圆环运行 —— 一个角度同时决定位置、大小和前后层叠，可用鼠标直接拖动整环。'
+    };
+    grid.innerHTML = Object.keys(sc.MOTIONS).map((k) => {
+        const m = sc.MOTIONS[k];
+        return `<div class="theme-card sqm-card ${k === cur ? 'active' : ''}" data-motion="${k}" onclick="setSqueezeMotion('${k}')">
+                    <div class="theme-dot" style="background:${DOT[k] || DOT.C}"></div>
+                    <div class="theme-card-info">
+                        <div style="font-weight:600;font-size:14px;">${k} · ${m.name}${k === cur ? '（当前）' : ''}</div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;line-height:1.6;">${DESC[k] || ''}</div>
+                    </div>
+                </div>`;
+    }).join('');
+}
+
+/** 切换动效版本：写 localStorage → 摘掉 URL 上的试版参数 → 立刻重建画廊 */
+function setSqueezeMotion(k) {
+    const sc = window.SqueezeCarousel;
+    if (!sc || !sc.persistMotion) { showNotification('动效模块未加载', '请重启程序后再试'); return; }
+    const key = sc.persistMotion(k);
+    if (!key) { showNotification('切换失败', '未知的动效版本：' + k); return; }
+
+    /* ★ URL 上的 ?sqMotion= 优先级高于 localStorage（那是给「直接开链接试版」用的）。
+       不清掉它，用户在设置页点哪一版都会被 URL 钉死 —— 表现为「点了完全没反应」。 */
+    try {
+        const u = new URL(location.href);
+        if (u.searchParams.has('sqMotion')) {
+            u.searchParams.delete('sqMotion');
+            history.replaceState(null, '', u.toString());
+        }
+    } catch (e) { /* 老内核不支持 URL 构造就算了，本地场景可忽略 */ }
+
+    try {
+        if (gallerySq) { gallerySq.destroy(); gallerySq = null; }
+        renderGallery();                       // 用现有 galleryMovies 原地重建，不重新拉数据
+        startGalleryAutoPlay();
+    } catch (e) { console.log('重建画廊失败:', e); }
+
+    renderSqueezeMotionGrid();                 // 刷新「（当前）」标注
+    showNotification('精选推荐动效已切换', (sc.MOTIONS[key].name || key) + ' —— 已即时生效');
 }
 
 // ========== 渲染函数 ==========
@@ -604,8 +636,10 @@ function renderMovies(movies, fromFilter = false) {
     
     emptyTip.style.display = 'none';
 
-    /* round75：系列摞卡 —— film/cartoon 网格里同名（相似度≥80%）作品归系列：
-       胶囊行点系列名筛选该系列全部；网格里同系列渲染成一摞卡，点击展开。 */
+    /* round78：系列摞卡 —— film/cartoon 网格里同名（相似度≥80%）作品归系列：
+       胶囊行点系列名筛选该系列全部；网格里同系列渲染成一摞卡，点击展开。
+       切换动效 = Page side-by-side 转场：摞卡页(page1) ⇄ 展开页(page2) 并存于
+       .t-page-slide，data-page 切页，page1 向左退出 / page2 向右退出。 */
     if (!fromFilter) window.__seriesGridFilter = '';
     var seriesMap = null;
     if (window.SeriesUI) {
@@ -617,15 +651,12 @@ function renderMovies(movies, fromFilter = false) {
         }
     }
     var sActive = window.__seriesGridFilter || '';
+    var seriesHit = null;   // round78：本次点开的系列名（用来判断转场方向）
 
-    if (seriesMap && seriesMap.size && sActive && seriesMap.has(sActive)) {
-        /* 系列展开态：只显示该系列 + 返回胶囊 */
-        var list = seriesMap.get(sActive);
-        grid.innerHTML = '<div id="seriesGridBar">' + window.SeriesUI.capsuleRow(seriesMap, sActive) + '</div>' +
-            list.map(renderMovieCard).join('');
-    } else if (seriesMap && seriesMap.size) {
+    if (seriesMap && seriesMap.size) {
+        /* ---- page1：摞卡页（胶囊行 + 每系列一张摞卡 + 非系列散卡） ---- */
         var consumed = new Set();
-        var parts = ['<div id="seriesGridBar">' + window.SeriesUI.capsuleRow(seriesMap, '') + '</div>'];
+        var page1 = ['<div id="seriesGridBar" class="seriesGridBar">' + window.SeriesUI.capsuleRow(seriesMap, '') + '</div>'];
         movies.forEach(function (m) {
             if (consumed.has(m)) return;
             var sname = null;
@@ -633,13 +664,21 @@ function renderMovies(movies, fromFilter = false) {
             if (sname) {
                 var members = seriesMap.get(sname);
                 members.forEach(function (x) { consumed.add(x); });
-                parts.push(window.SeriesUI.stackWrap(sname, members.length, renderMovieCard(m)));
+                page1.push(window.SeriesUI.stackWrap(sname, members.length, renderMovieCard(m)));
             } else {
                 consumed.add(m);
-                parts.push(renderMovieCard(m));
+                page1.push(renderMovieCard(m));
             }
         });
-        grid.innerHTML = parts.join('');
+
+        /* ---- page2：展开页（胶囊行 + 该系列全部），语义与 round75 一致 ---- */
+        var page2 = '';
+        if (sActive && seriesMap.has(sActive)) {
+            page2 = '<div class="seriesGridBar">' + window.SeriesUI.capsuleRow(seriesMap, sActive) + '</div>' +
+                seriesMap.get(sActive).map(renderMovieCard).join('');
+            seriesHit = sActive;
+        }
+        grid.innerHTML = window.SeriesUI.slideWrap('grid', page1.join(''), page2, seriesHit ? '2' : '1');
     } else {
         grid.innerHTML = movies.map(renderMovieCard).join('');
     }
@@ -650,17 +689,72 @@ function renderMovies(movies, fromFilter = false) {
     // 绑定点击事件
     bindMovieCardClicks(grid);
 
-    // round75：系列胶囊/摞卡点击
+    // round78：系列胶囊/摞卡点击 —— 走 Page side-by-side 转场，不再重渲染整个网格
     if (seriesMap && seriesMap.size) {
-        window.SeriesUI.bindStacks(grid, function (name) {
-            window.__seriesGridFilter = name;
-            renderMovies(window._rawViewMovies || movies, true);
-        });
-        grid.querySelectorAll('#seriesGridBar .av-scap').forEach(function (b) {
-            b.addEventListener('click', function () {
-                window.__seriesGridFilter = b.getAttribute('data-series');
-                renderMovies(window._rawViewMovies || movies, true);
+        var slide = grid.querySelector('.t-page-slide');
+        var page2El = slide && slide.querySelector('.t-page[data-page="2"]');
+        var page1El = slide && slide.querySelector('.t-page[data-page="1"]');
+
+        /** 填充 page2 内容（胶囊行 + 该系列全部卡） */
+        function fillPage2(name) {
+            if (!page2El || !name) return false;
+            page2El.innerHTML = '<div class="seriesGridBar">' + window.SeriesUI.capsuleRow(seriesMap, name) + '</div>' +
+                (seriesMap.get(name) || []).map(renderMovieCard).join('');
+            applyAmbientGlow(page2El);
+            bindMovieCardClicks(page2El);
+            return true;
+        }
+
+        if (seriesHit && page2El) {
+            // 首屏就停在 page2：胶囊行也要重绑一次（上面 fill 的 HTML 是新节点）
+            page2El.querySelectorAll('.seriesGridBar .av-scap').forEach(function (b) {
+                b.addEventListener('click', function () { onCapsule(b.getAttribute('data-series')); });
             });
+        }
+
+        function onCapsule(name) {
+            if (!slide) {   // 无转场容器（理论上不会发生）→ 退回旧的重渲染
+                window.__seriesGridFilter = name;
+                renderMovies(window._rawViewMovies || movies, true);
+                return;
+            }
+            // 点当前已展开的系列 = 收起，回到摞卡页
+            if (window.__seriesGridFilter === name) {
+                window.__seriesGridFilter = '';
+                window.SeriesUI.slideTo(slide, '1');
+                syncCapsules(page1El, '');
+                return;
+            }
+            window.__seriesGridFilter = name;
+            var wasOnPage2 = window.SeriesUI.slidePage(slide) === '2';
+            fillPage2(name);
+            if (!wasOnPage2) {
+                window.SeriesUI.slideTo(slide, '2');
+            } else {
+                syncCapsules(page2El, name);   // 同页换系列：只更新胶囊高亮 + 内容，不重复转场
+            }
+        }
+
+        function syncCapsules(scope, active) {
+            if (!scope) return;
+            scope.querySelectorAll('.seriesGridBar .av-scap').forEach(function (x) {
+                x.classList.toggle('active', x.getAttribute('data-series') === active);
+            });
+        }
+
+        window.SeriesUI.bindStacks(grid, function (name) {
+            if (!page2El || !fillPage2(name)) {          // ← 折叠页的摞卡
+                window.__seriesGridFilter = name;
+                renderMovies(window._rawViewMovies || movies, true);
+                return;
+            }
+            window.__seriesGridFilter = name;
+            window.SeriesUI.slideTo(slide, '2');
+        });
+
+        /* 胶囊：两页各自的胶囊行都要能点（page1 折叠态 / page2 展开态） */
+        grid.querySelectorAll('.seriesGridBar .av-scap').forEach(function (b) {
+            b.addEventListener('click', function () { onCapsule(b.getAttribute('data-series')); });
         });
     }
 }
@@ -741,7 +835,7 @@ function renderHotRanking(movies) {
     if (!movies || !movies.length) { grid.innerHTML = ''; emptyTip.style.display = 'block'; return; }
     emptyTip.style.display = 'none';
 
-    const plays = m => `▶ ${m.playCount || 0} 次`;
+    const plays = m => `<span class="hr-plays" data-count="${m.playCount || 0}">▶ 0 次</span>`;
     const avid = m => m.avid ? `<span class="hr-avid">${escapeHtml(m.avid)}</span>` : '';
 
     // 领奖台：2-1-3，冠军最大、戴皇冠，台下基座刻名次
@@ -779,6 +873,8 @@ function renderHotRanking(movies) {
             <div class="hot-rest">${rows}</div>
         </div>`;
     bindDetailClicks(grid);
+    // r84：入场错峰浮现 + 播放次数滚动 + 热度条 scaleX 展开
+    if (window.mvHotReveal) window.mvHotReveal(grid.querySelector('.hot-stage'));
 }
 
 /* ============================================================================
@@ -1337,49 +1433,35 @@ function renderMuseum(movies) {
     if (!movies || !movies.length) { grid.innerHTML = ''; emptyTip.style.display = 'block'; return; }
     emptyTip.style.display = 'none';
 
-    // 每件展品一套随机漂浮参数（周期 / 延迟 / 摆角），肉眼上互不同步
+    // r86：沉浸式电影大画廊展品（浮雕金框 + 物理三维轻浮 + 聚光灯流光）
     const exhibits = movies.map((m, i) => {
-        const dur = (4.2 + ((i * 7) % 30) / 10).toFixed(2);      // 4.2 ~ 7.1s
-        const delay = (-((i * 13) % 40) / 10).toFixed(2);        // 负延迟 → 一开场就在半程
-        const tilt = (((i * 29) % 50) / 10 - 2.5).toFixed(1);    // -2.5 ~ 2.5deg
+        const dur = (5.0 + ((i * 7) % 25) / 10).toFixed(2);      // 5.0 ~ 7.4s
+        const delay = (-((i * 13) % 40) / 10).toFixed(2);        // 负延迟开场即在半程
+        const tilt = (((i * 29) % 40) / 10 - 2.0).toFixed(1);    // -2.0 ~ 2.0deg
         return `
-        <figure class="exhibit" data-mid="${m.id}"
-                style="--mdur:${dur}s;--mdelay:${delay}s;--mtilt:${tilt}deg">
-            <div class="exhibit-frame">
+        <div class="gallery-frame-item" data-mid="${m.id}"
+             style="--gdur:${dur}s;--gdelay:${delay}s;--gtilt:${tilt}deg;"
+             role="button" tabindex="0">
+            <div class="gallery-canvas">
                 <img src="${getPosterUrl(m)}" alt="${escapeHtml(m.title || '')}" loading="lazy" decoding="async">
             </div>
-            <figcaption title="${escapeHtml(m.title || '')}">${escapeHtml(m.title || m.fileName || '')}</figcaption>
-            <span class="exhibit-plaque">${m.avid ? escapeHtml(m.avid) : `No.${i + 1}`}</span>
-        </figure>`;
+            <div class="gallery-caption" title="${escapeHtml(m.title || '')}">${escapeHtml(m.title || m.fileName || '')}</div>
+            <span class="gallery-plaque">${m.avid ? escapeHtml(m.avid) : `ARCHIVE #${i + 1}`}</span>
+        </div>`;
     }).join('');
 
     grid.innerHTML = `
-        <div class="fav-custom-bar-wrap" style="grid-column:1/-1;width:100%;">${renderFavCustomBar()}</div>
-        <div class="museum">
-            <div class="museum-hall">
-                <div class="museum-marquee">
-                    <span class="mm-star">🏛</span> 珍藏馆
-                    <span class="mm-sub">— 馆藏 ${movies.length} 件 · 每一件都值得再看一遍 —</span>
-                </div>
-                <div class="museum-shelf">${exhibits}</div>
+        <div class="fav-custom-bar-wrap" style="grid-column:1/-1;width:100%;margin-bottom:12px;">${renderFavCustomBar()}</div>
+        <div class="gallery-hall">
+            <div class="gallery-header">
+                <div class="gallery-kicker">CINEMA VAULT · MASTERPIECE ARCHIVE</div>
+                <h2 class="gallery-title">🏛 私家珍藏档案馆</h2>
+                <p class="gallery-desc">馆藏 ${movies.length} 部典藏之作 · 浮雕金框舞台聚光展陈 · 悬停探赏原画细节</p>
             </div>
+            <div class="gallery-grid">${exhibits}</div>
         </div>`;
     bindDetailClicks(grid);
     bindFavCustomBar();
-    // 第 15 轮：页面做满 —— 按实际列数给最后一行补「虚位以待」空金框
-    requestAnimationFrame(() => {
-        const shelf = grid.querySelector('.museum-shelf');
-        if (!shelf) return;
-        const cols = getComputedStyle(shelf).gridTemplateColumns.split(' ').filter(Boolean).length;
-        const need = (cols - (movies.length % cols)) % cols;
-        for (let i = 0; i < need; i++) {
-            const f = document.createElement('figure');
-            f.className = 'exhibit is-ghost';
-            f.style.setProperty('--mdur', (5 + i).toFixed(2) + 's');
-            f.innerHTML = '<div class="exhibit-frame"></div><figcaption>虚位以待</figcaption>';
-            shelf.appendChild(f);
-        }
-    });
 }
 
 // —— 最近观看：一根线时间轴，两端手柄拖动筛选观看时间范围 ——
@@ -2583,7 +2665,47 @@ async function loadFavHub() {
     }
 }
 
-// 视频播放列表板块：复用播放列表卡片，但画在 favBody 里，不再动 #movieGrid
+/* ★ r85：现代化 3 层海报扇出堆叠播单卡片（Fan-out Stack Carousel）
+ *   悬停时底层/中层/顶层海报带有物理角度扇出展开，告别扁平单调图标 */
+function renderPlaylistDeckCardHtml(list) {
+    const covers = Array.isArray(list.topCovers) ? list.topCovers : [];
+    let stageHtml = '';
+    if (covers.length > 0) {
+        const items = covers.slice(0, 3).map((c, i) => {
+            const posClass = 'pos-' + i;
+            const url = getPosterUrl(c);
+            return `<div class="pld-poster-item ${posClass}">
+                <img src="${escapeAttr(url)}" alt="" loading="lazy" decoding="async">
+            </div>`;
+        }).join('');
+        stageHtml = `<div class="pld-stage">${items}</div>`;
+    } else {
+        stageHtml = `
+            <div class="pld-stage">
+                <div class="pld-empty-card">
+                    <span class="pld-ico">🎬</span>
+                    <span>暂无影片</span>
+                </div>
+            </div>`;
+    }
+
+    return `
+        <div class="playlist-deck-card" data-id="${list.id}" tabindex="0" role="button" aria-label="${escapeAttr(list.name || '')}">
+            ${stageHtml}
+            <div class="pld-meta-head">
+                <div class="pld-name" title="${escapeAttr(list.name || '')}">${escapeHtml(list.name || '')}</div>
+                <span class="pld-count">${list.movieCount || 0} 部</span>
+            </div>
+            ${list.description ? `<div class="pld-desc">${escapeHtml(list.description)}</div>` : '<div class="pld-desc" style="color:var(--text-muted);font-style:italic;">未填写说明</div>'}
+            <div class="pld-actions">
+                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();playPlaylist(${list.id})">▶️ 播放</button>
+                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();deletePlaylist(${list.id})">🗑️ 删除</button>
+            </div>
+        </div>
+    `;
+}
+
+// 视频播放列表板块：现代化扇出卡片
 async function renderFavVideoBoard(lists) {
     const body = document.getElementById('favBody');
     if (!body) return;
@@ -2596,22 +2718,8 @@ async function renderFavVideoBoard(lists) {
             </div>`;
         return;
     }
-    body.innerHTML = lists.map((list) => `
-        <div class="stats-card playlist-card" data-id="${list.id}" style="cursor:pointer;padding:20px;">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-                <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:24px;">📋</div>
-                <div>
-                    <div style="font-size:16px;font-weight:600;">${escapeHtml(list.name)}</div>
-                    <div style="font-size:12px;color:var(--text-muted);">${list.movieCount || 0} 部影片</div>
-                </div>
-            </div>
-            ${list.description ? `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">${escapeHtml(list.description)}</div>` : ''}
-            <div style="display:flex;gap:8px;">
-                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();playPlaylist(${list.id})">▶️ 播放</button>
-                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();deletePlaylist(${list.id})">🗑️ 删除</button>
-            </div>
-        </div>`).join('');
-    body.querySelectorAll('.playlist-card').forEach((card) => {
+    body.innerHTML = lists.map(renderPlaylistDeckCardHtml).join('');
+    body.querySelectorAll('.playlist-deck-card').forEach((card) => {
         card.addEventListener('click', () => showPlaylistDetail(parseInt(card.dataset.id)));
     });
 }
@@ -2707,25 +2815,10 @@ function renderPlaylists(lists) {
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
     
-    grid.innerHTML = lists.map(list => `
-        <div class="stats-card playlist-card" data-id="${list.id}" style="cursor:pointer;padding:20px;">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-                <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:24px;">📋</div>
-                <div>
-                    <div style="font-size:16px;font-weight:600;">${list.name}</div>
-                    <div style="font-size:12px;color:var(--text-muted);">${list.movieCount || 0} 部影片</div>
-                </div>
-            </div>
-            ${list.description ? `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">${list.description}</div>` : ''}
-            <div style="display:flex;gap:8px;">
-                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();playPlaylist(${list.id})">▶️ 播放</button>
-                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();deletePlaylist(${list.id})">🗑️ 删除</button>
-            </div>
-        </div>
-    `).join('');
+    grid.innerHTML = lists.map(renderPlaylistDeckCardHtml).join('');
     
     // 绑定点击事件
-    grid.querySelectorAll('.playlist-card').forEach(card => {
+    grid.querySelectorAll('.playlist-deck-card').forEach(card => {
         card.addEventListener('click', () => {
             const id = parseInt(card.dataset.id);
             showPlaylistDetail(id);
@@ -4584,6 +4677,11 @@ function renderNewReleasePage() {
         </div>
     `;
 
+    // r84：切片 tabs 滑动指示背板就位（瞬时对位到当前 active）
+    if (window.mvInitSlidePill) window.mvInitSlidePill(document.getElementById('nrTabs'));
+    // r85：新作监视时间线流式交错进场
+    if (window.mvNrReveal) window.mvNrReveal(grid);
+
     // 已选女优时显示取消按钮
     const clearBtn = document.getElementById('nrClearBtn');
     if (clearBtn && nrState.selectedActress) clearBtn.style.display = '';
@@ -4609,11 +4707,11 @@ function renderActressChips() {
 
 function renderNrTabs() {
     const t = (k, label) => `
-        <button class="nr-tab ${nrState.kind === k ? 'active' : ''}" onclick="setNrKind('${k}')">${label}</button>
+        <button class="nr-tab ${nrState.kind === k ? 'active' : ''}" onclick="setNrKind('${k}', this)">${label}</button>
     `;
     // round34：六切片 = 影视 / 动漫 / 轻小说 / 漫画 / AV / 里番
     return `
-        <div class="nr-tabs">
+        <div class="nr-tabs" id="nrTabs">
             ${t('all', '全部')}
             ${t('jav', '🎬 AV')}
             ${t('anime', '🎌 里番')}
@@ -4640,19 +4738,22 @@ function renderNrBody() {
                     <div class="nr-empty-desc">目录监控发现新文件并入库后会出现在这里</div>
                 </div>`;
         }
-        return groups.map(g => `
-            <section class="nr-day">
-                <div class="nr-day-head">
-                    <span class="nr-day-label">${escapeHtml(g.label)}</span>
-                    <span class="nr-day-date">${escapeHtml(g.date)}</span>
-                    <span class="nr-day-line"></span>
-                    <span class="nr-day-count">${g.items.length}</span>
-                </div>
-                <div class="nr-day-items">
-                    ${g.items.map(renderNrMovieCard).join('')}
-                </div>
-            </section>
-        `).join('');
+        return `
+            <div class="nr-feed-stage">
+                <div class="nr-timeline-spine"></div>
+                ${groups.map((g, gi) => `
+                    <div class="nr-feed-group" style="--gi:${gi};">
+                        <div class="nr-feed-node">
+                            <span class="nfn-date">${escapeHtml(g.label)} · ${escapeHtml(g.date)}</span>
+                            <span class="nfn-badge">${g.items.length} 部新入库</span>
+                        </div>
+                        <div class="nr-feed-cards">
+                            ${g.items.map(renderNrMovieCard).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
     }
 
     // 按选中的女优过滤
@@ -4660,6 +4761,20 @@ function renderNrBody() {
         const want = nrState.selectedActress.name;
         groups = groups
             .map(g => ({ ...g, items: g.items.filter(n => n.actress === want) }))
+            .filter(g => g.items.length);
+    }
+
+    // 同一部作品（同 URL）只出一张卡 —— 后端时间线已去重，这里是旧缓存兜底
+    {
+        const normNrUrl = (u) => String(u || '').replace(/_\d{4}-\d{2}-\d{2}$/, '').replace(/\/$/, '');
+        const seenNrUrls = new Set();
+        groups = groups
+            .map(g => ({ ...g, items: g.items.filter(n => {
+                const key = n.url ? `${n.type}|${normNrUrl(n.url)}` : `id:${n.id}`;
+                if (seenNrUrls.has(key)) return false;
+                seenNrUrls.add(key);
+                return true;
+            }) }))
             .filter(g => g.items.length);
     }
 
@@ -4677,19 +4792,22 @@ function renderNrBody() {
             </div>`;
     }
 
-    return groups.map(g => `
-        <section class="nr-day">
-            <div class="nr-day-head">
-                <span class="nr-day-label">${escapeHtml(g.label)}</span>
-                <span class="nr-day-date">${escapeHtml(g.date)}</span>
-                <span class="nr-day-line"></span>
-                <span class="nr-day-count">${g.items.length}</span>
-            </div>
-            <div class="nr-day-items">
-                ${g.items.map(renderNrCard).join('')}
-            </div>
-        </section>
-    `).join('');
+    return `
+        <div class="nr-feed-stage">
+            <div class="nr-timeline-spine"></div>
+            ${groups.map((g, gi) => `
+                <div class="nr-feed-group" style="--gi:${gi};">
+                    <div class="nr-feed-node">
+                        <span class="nfn-date">${escapeHtml(g.label)} · ${escapeHtml(g.date)}</span>
+                        <span class="nfn-badge">${g.items.length} 部新上架</span>
+                    </div>
+                    <div class="nr-feed-cards">
+                        ${g.items.map(renderNrCard).join('')}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
 }
 
 /** round34：新作监视「入库流」切片的影片卡片（影视/动漫/里番），点卡片开详情 */
@@ -4850,7 +4968,9 @@ function formatNrDayLabel(dateStr) {
     return `${(days / 365).toFixed(1)} 年前`;
 }
 
-function setNrKind(kind) {
+function setNrKind(kind, btn) {
+    // r84：先让滑动指示背板 180ms 滑向目标（重渲染会瞬时对位，视觉无缝）
+    if (btn && window.mvSlidePillTo) window.mvSlidePillTo(btn);
     nrState.kind = kind;
     renderNewReleasePage();
     refreshNewReleases();
@@ -4877,6 +4997,7 @@ function clearNrActressFilter() {
 async function triggerNewReleaseCheck(scope) {
     const scopeLabel = scope === 'comic' ? '漫画新卷' : '全库女优';
     showNotification('正在检查', `正在扫描${scopeLabel}的近一月新作，需要一点时间…`);
+    if (window.mvSetNrBusy) window.mvSetNrBusy(true);   // r82：按钮转细环，结束自动收回
     try {
         const res = await fetch('/api/new-release/check', {
             method: 'POST',
@@ -4888,9 +5009,11 @@ async function triggerNewReleaseCheck(scope) {
             showNotification('已开始', data.msg || '检查已在后台运行');
             startNewReleasePolling();
         } else {
+            if (window.mvSetNrBusy) window.mvSetNrBusy(false);
             showNotification('检查失败', data.msg || '未知错误');
         }
     } catch (e) {
+        if (window.mvSetNrBusy) window.mvSetNrBusy(false);
         showNotification('检查失败', e.message);
     }
 }
@@ -4903,12 +5026,15 @@ function startNewReleasePolling() {
         ticks++;
         if (currentView !== 'new-releases' || ticks > 60) {
             stopNewReleasePolling();
+            if (window.mvSetNrBusy) window.mvSetNrBusy(false);
             return;
         }
         try {
             const st = await fetch('/api/new-release/status').then(r => r.json());
             const running = st.code === 0 && (st.data.movie?.checking || st.data.comic?.checking);
             await refreshNewReleases();
+            // refresh 会重建按钮 DOM，busy 态要重新补上；结束则收回
+            if (window.mvSetNrBusy) window.mvSetNrBusy(running);
             if (!running) stopNewReleasePolling();
         } catch (e) { /* 忽略 */ }
     }, 8000);
@@ -4986,6 +5112,8 @@ async function loadSettings() {
         if (data.code === 0) {
             renderSettings(data.data);
             refreshAuthTip();
+            // round81 Task#9：精选推荐动效三选
+            setTimeout(() => renderSqueezeMotionGrid(), 0);
             // 加载AI配置
             setTimeout(() => loadAIConfig(), 100);
             // 侧栏同款：设置项 3D Remotion 动效图标错峰登场演出
@@ -6374,6 +6502,17 @@ function renderSettings(config) {
                         </div>
                         <div id="fxCategoryGrid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(360px, 1fr));gap:16px;margin-top:12px;"></div>
                     </div>
+
+                    <!-- round81 Task#9：「精选推荐」海报墙动效三选。
+                         默认值 C 光环转环 —— 用户在三版对比页实测后挑定的。
+                         名单由 SqueezeCarousel.MOTIONS 提供（app.js 不手抄，防漂移）。 -->
+                    <div class="settings-group">
+                        <div class="settings-group-title" style="display:flex;align-items:center;gap:6px;">
+                            ${uiIcon('reel', 16)} 精选推荐 · 海报墙动效
+                        </div>
+                        <p class="settings-section-desc" style="margin:6px 0 12px;">决定「精选推荐」卡片墙的运行方式，点选后立刻重建生效。</p>
+                        <div id="sqMotionGrid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));gap:14px;"></div>
+                    </div>
                 </section>
 
                 <!-- 📂 扫描路径 -->
@@ -6394,7 +6533,7 @@ function renderSettings(config) {
                             `).join('')}
                         </div>
                         <div class="folder-add">
-                            <input type="text" class="folder-input" id="movieFolderInput" placeholder="输入文件夹路径，如 D:\\Movies">
+                            <input type="text" class="folder-input" id="movieFolderInput" placeholder="输入文件夹路径，如 E:\Aokazu">
                             <button class="btn btn-sm" onclick="addFolder('movie')">添加</button>
                         </div>
                         <button class="btn btn-sm scan-module-btn" onclick="startModuleScan('movie')">▶️ 扫描影片</button>
@@ -7096,6 +7235,7 @@ function renderSettings(config) {
                             <textarea class="settings-input" id="kmoeCookie" style="height:80px;resize:vertical;" placeholder="粘贴Kmoe的Cookie"></textarea>
                         </div>
                         <div class="settings-btn-row">
+                            <button class="btn btn-sm" onclick="openCookieImporter('kmoe')">📥 一键导入（Cookie Editor）</button>
                             <button class="btn btn-sm" onclick="testCookie('kmoe')">🔍 测试有效性</button>
                             <button class="btn btn-sm" style="background:var(--primary);" onclick="saveCookie('kmoe')">💾 保存Cookie</button>
                         </div>
@@ -7109,6 +7249,7 @@ function renderSettings(config) {
                             <textarea class="settings-input" id="quarkCookieSetting" style="height:80px;resize:vertical;" placeholder="粘贴夸克网盘的Cookie"></textarea>
                         </div>
                         <div class="settings-btn-row">
+                            <button class="btn btn-sm" onclick="openCookieImporter('quark')">📥 一键导入（Cookie Editor）</button>
                             <button class="btn btn-sm" onclick="testCookie('quark')">🔍 测试有效性</button>
                             <button class="btn btn-sm" style="background:var(--primary);" onclick="saveCookie('quark')">💾 保存Cookie</button>
                         </div>
@@ -7116,8 +7257,21 @@ function renderSettings(config) {
                     </div>
 
                     <div class="settings-group">
-                        <div class="settings-group-title">夸克网盘 · 扫码登录（推荐）</div>
+                        <div class="settings-group-title">hanime1.me（里番海报源）</div>
                         <div class="settings-item">
+                            <label>Cookie（可选，配合 CDP 浏览器模式取官方竖版封面）</label>
+                            <textarea class="settings-input" id="hanimeCookie" style="height:80px;resize:vertical;" placeholder="粘贴 hanime1.me 的 Cookie（可不填）"></textarea>
+                        </div>
+                        <div class="settings-btn-row">
+                            <button class="btn btn-sm" onclick="openCookieImporter('hanime')">📥 一键导入（Cookie Editor）</button>
+                            <button class="btn btn-sm" onclick="testCookie('hanime')">🔍 测试有效性</button>
+                            <button class="btn btn-sm" style="background:var(--primary);" onclick="saveCookie('hanime')">💾 保存Cookie</button>
+                        </div>
+                        <div id="hanimeCookieStatus" style="font-size:12px;color:var(--text-muted);margin-top:8px;">状态：未检测</div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">夸克网盘 · 扫码登录（推荐）</div>                        <div class="settings-item">
                             <label>🦊 一键运行「夸克登录.bat」—— 扫码后自动写回 Cookie 并校验取流</label>
                             <div style="font-size:12px;color:var(--text-muted);margin:4px 0 8px;">
                                 脚本位置：<code id="quarkBatPath" style="color:var(--text);">检测中…</code>
@@ -8207,6 +8361,139 @@ async function saveAIConfig() {
 
 // ========== Cookie 管理 ==========
 
+// ========== r82 Cookie 一键导入（Cookie Editor / Netscape / Header 通用解析） ==========
+// 用法：浏览器登录目标站 → Cookie Editor 扩展 → Export（JSON）→ 粘贴进来 → 导入并保存。
+// 也支持直接粘贴「name=value; name2=value2」头字符串或 Netscape 导出文件。
+const COOKIE_SITES = {
+    kmoe:   { label: 'Kmoe / KOOBONE', domain: 'kzo.moe',    textareaId: 'kmoeCookie' },
+    quark:  { label: '夸克网盘',        domain: 'quark.cn',   textareaId: 'quarkCookieSetting' },
+    hanime: { label: 'hanime1.me（里番源）', domain: 'hanime1.me', textareaId: 'hanimeCookie' },
+};
+
+function parseCookieImport(text, siteDomain) {
+    text = String(text || '').trim();
+    if (!text) return { ok: false, msg: '内容为空，请先粘贴' };
+    let pairs = [];
+
+    if (text[0] === '[' || text[0] === '{') {
+        // ① Cookie Editor 的 JSON 导出（数组，或 {cookies:[...]} 包一层）
+        try {
+            const data = JSON.parse(text);
+            const arr = Array.isArray(data) ? data : (Array.isArray(data.cookies) ? data.cookies : null);
+            if (!arr) return { ok: false, msg: 'JSON 里没找到 cookie 数组' };
+            for (const c of arr) {
+                if (!c || !c.name || c.value === undefined) continue;
+                pairs.push({ name: String(c.name).trim(), value: String(c.value), domain: String(c.domain || '').toLowerCase() });
+            }
+        } catch (e) {
+            return { ok: false, msg: 'JSON 解析失败：' + e.message };
+        }
+    } else if (text.includes('\t') && !/^\s*[\w-]+\s*=/.test(text.split(/\r?\n/)[0])) {
+        // ② Netscape cookie 文件（7 列制表符，第 6 列 name / 第 7 列 value）
+        for (const line of text.split(/\r?\n/)) {
+            if (!line || line.startsWith('#')) continue;
+            const cols = line.split('\t');
+            if (cols.length >= 7 && cols[5]) {
+                pairs.push({ name: cols[5].trim(), value: cols[6].trim(), domain: String(cols[0] || '').toLowerCase() });
+            }
+        }
+    } else {
+        // ③ Header 字符串 name=value; name2=value2
+        for (const seg of text.split(/;\s*/)) {
+            const i = seg.indexOf('=');
+            if (i > 0) pairs.push({ name: seg.slice(0, i).trim(), value: seg.slice(i + 1).trim(), domain: '' });
+        }
+    }
+
+    if (!pairs.length) return { ok: false, msg: '没有解析到任何 cookie' };
+
+    // 域名过滤：有 domain 信息时只保留属于目标站点的（浏览器会把别的域一并导出）
+    let dropped = 0;
+    if (siteDomain) {
+        const matched = pairs.filter(p => !p.domain
+            || p.domain.includes(siteDomain)
+            || siteDomain.includes(p.domain.replace(/^\./, '')));
+        if (matched.length) {
+            dropped = pairs.length - matched.length;
+            pairs = matched;
+        }
+    }
+
+    // 同名去重（保留最后一次出现）
+    const map = new Map();
+    for (const p of pairs) map.set(p.name, p.value);
+    const cookie = [...map.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+    return { ok: true, cookie, count: map.size, dropped };
+}
+
+function openCookieImporter(source) {
+    const site = COOKIE_SITES[source];
+    if (!site) { showNotification('不支持的源', 'error'); return; }
+    let mask = document.getElementById('cimpMask');
+    if (!mask) {
+        mask = document.createElement('div');
+        mask.id = 'cimpMask';
+        mask.className = 'cimp-mask';
+        mask.innerHTML = `
+            <div class="cimp-card">
+                <div class="cimp-title" id="cimpTitle">📥 一键导入 Cookie</div>
+                <div class="cimp-desc" id="cimpDesc"></div>
+                <textarea class="cimp-textarea" id="cimpText" placeholder="粘贴 Cookie Editor 导出的 JSON（数组），或直接粘贴 name=value; ... 字符串"></textarea>
+                <div class="cimp-preview" id="cimpPreview">等待粘贴…</div>
+                <div class="cimp-foot">
+                    <button class="btn btn-sm btn-secondary" onclick="closeCookieImporter()">取消</button>
+                    <button class="btn btn-sm" style="background:var(--primary);" id="cimpGo" onclick="cimpImport()">导入并保存</button>
+                </div>
+            </div>`;
+        mask.addEventListener('click', (e) => { if (e.target === mask) closeCookieImporter(); });
+        document.body.appendChild(mask);
+        document.getElementById('cimpText').addEventListener('input', cimpPreviewLive);
+    }
+    mask.dataset.source = source;
+    document.getElementById('cimpTitle').textContent = `📥 一键导入 Cookie · ${site.label}`;
+    document.getElementById('cimpDesc').innerHTML =
+        `浏览器登录 <code>${site.domain}</code> → 用 Cookie Editor 扩展点 <b>Export</b>（JSON）→ 全选复制粘贴到下面。也支持直接粘贴 <code>name=value; ...</code> 头字符串；会自动只保留属于 <code>${site.domain}</code> 的 cookie。`;
+    document.getElementById('cimpText').value = '';
+    const pv = document.getElementById('cimpPreview');
+    pv.textContent = '等待粘贴…';
+    pv.className = 'cimp-preview';
+    mask.classList.add('show');
+    setTimeout(() => document.getElementById('cimpText').focus(), 220);
+}
+
+function closeCookieImporter() {
+    const mask = document.getElementById('cimpMask');
+    if (mask) mask.classList.remove('show');
+}
+
+function cimpPreviewLive() {
+    const source = document.getElementById('cimpMask').dataset.source;
+    const site = COOKIE_SITES[source];
+    const r = parseCookieImport(document.getElementById('cimpText').value, site && site.domain);
+    const pv = document.getElementById('cimpPreview');
+    if (r.ok) {
+        pv.textContent = `✅ 解析到 ${r.count} 条 cookie` + (r.dropped ? `（已剔除 ${r.dropped} 条其它站点的）` : '');
+        pv.className = 'cimp-preview ok';
+    } else {
+        pv.textContent = r.msg;
+        pv.className = 'cimp-preview err';
+    }
+}
+
+async function cimpImport() {
+    const mask = document.getElementById('cimpMask');
+    const source = mask && mask.dataset.source;
+    const site = COOKIE_SITES[source];
+    if (!site) return;
+    const r = parseCookieImport(document.getElementById('cimpText').value, site.domain);
+    if (!r.ok) { cimpPreviewLive(); return; }
+    // 回填到该源的 textarea，走既有的保存+测试链路
+    const ta = document.getElementById(site.textareaId);
+    if (ta) ta.value = r.cookie;
+    closeCookieImporter();
+    await saveCookie(source);
+}
+
 // 测试Cookie有效性
 async function testCookie(source) {
     const statusEl = document.getElementById(source + 'CookieStatus');
@@ -8214,8 +8501,9 @@ async function testCookie(source) {
     statusEl.style.color = 'var(--text-muted)';
     
     try {
-        // 读取输入框中的cookie值（如果有）
-        const cookieEl = document.getElementById(source === 'quark' ? 'quarkCookieSetting' : 'kmoeCookie');
+        // 读取输入框中的cookie值（如果有）—— textarea 按 COOKIE_SITES 映射取（r82 前 kmoe 是硬编码）
+        const site = COOKIE_SITES[source];
+        const cookieEl = document.getElementById(site ? site.textareaId : (source === 'quark' ? 'quarkCookieSetting' : 'kmoeCookie'));
         const cookieValue = cookieEl ? cookieEl.value.trim() : '';
         
         const res = await fetch(`/api/config/cookies/${source}/test`, {
@@ -8245,9 +8533,10 @@ async function testCookie(source) {
 
 // 保存Cookie
 async function saveCookie(source) {
-    const cookieEl = document.getElementById(source === 'quark' ? 'quarkCookieSetting' : 'kmoeCookie');
-    const cookie = cookieEl.value.trim();
-    
+    const site = COOKIE_SITES[source];
+    const cookieEl = document.getElementById(site ? site.textareaId : (source === 'quark' ? 'quarkCookieSetting' : 'kmoeCookie'));
+    const cookie = cookieEl ? cookieEl.value.trim() : '';
+
     if (!cookie) {
         showNotification('请输入Cookie', 'error');
         return;
@@ -8262,7 +8551,7 @@ async function saveCookie(source) {
         const data = await res.json();
         
         if (data.code === 0) {
-            showNotification('Cookie保存成功，重启后生效', 'success');
+            showNotification(data.msg || 'Cookie保存成功', 'success');
             testCookie(source);
         } else {
             showNotification('保存失败: ' + data.msg, 'error');
@@ -9903,10 +10192,14 @@ async function doAddToPlaylist(list, movieId) {
 // 画廊显示/隐藏
 function showGallery() {
     document.getElementById('gallerySection').style.display = 'block';
+    // round79：section 加标记，CSS 才知道要走挤压式的容器宽度（:has 兜底）
+    document.getElementById('gallerySection').classList.add('is-squeeze');
 }
 
 function hideGallery() {
     document.getElementById('gallerySection').style.display = 'none';
+    // round79：隐藏时必须停表，否则 30+ 处 hideGallery 会留下一堆空转定时器
+    if (typeof stopGalleryAutoPlay === 'function') stopGalleryAutoPlay();
 }
 
 // ========== 视图切换 ==========
@@ -10483,6 +10776,7 @@ function renderRandomDeckView(movies) {
             if (wrap) wrap.style.transform = 'none';
         };
         stage.onmousemove = (e) => {
+            if (stage.dataset && stage.dataset.dragging) return;   // 拖拽中让位给跟手位移
             const rect = stage.getBoundingClientRect();
             const x = (e.clientX - rect.left) / rect.width - 0.5;
             const y = (e.clientY - rect.top) / rect.height - 0.5;
@@ -10524,13 +10818,21 @@ document.addEventListener('keydown', (e) => {
 function bindDeckDrag(stage) {
     let startX = 0, dragging = false, moved = false, suppressClickUntil = 0;
     stage.style.cursor = 'grab';
+    const wrap = () => document.getElementById('deckWrap');
+
     const onMove = (e) => {
         if (!dragging) return;
         const dx = e.clientX - startX;
-        if (Math.abs(dx) >= 60) {
+        // r84：整叠牌跟手平移 + 轻微偏航（拖拽期间不吃过渡，松手再弹簧）
+        stage.dataset.dragging = '1';   // 告知视差 handler 让位
+        const w = wrap();
+        if (w) w.style.transform = `translateX(${dx}px) rotateY(${dx * 0.04}deg)`;
+        if (Math.abs(dx) >= 90) {
             shiftDeck(dx < 0 ? 1 : -1);
             startX = e.clientX;
             moved = true;
+            // 翻牌后归零拖拽偏移，让下一张继续跟手
+            if (w) w.style.transform = 'none';
         }
     };
     const endDrag = () => {
@@ -10542,19 +10844,35 @@ function bindDeckDrag(stage) {
         if (!dragging) return;
         dragging = false;
         stage.style.cursor = 'grab';
+        delete stage.dataset.dragging;
+        // r84：弹簧归位 —— 3%~5% 级回弹曲线，360ms
+        const w = wrap();
+        if (w) {
+            w.style.transition = 'transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1)';
+            w.style.transform = 'none';
+            setTimeout(() => { w.style.transition = ''; }, 380);
+        }
         if (moved) suppressClickUntil = Date.now() + 350;   // 拖完的合成 click 不当点按
     };
     stage.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         startX = e.clientX; dragging = true; moved = false;
         stage.style.cursor = 'grabbing';
+        const w = wrap();
+        if (w) w.classList.add('mv-dragging');   // 拖拽期间禁用卡片过渡，保证跟手
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', endDrag);
         window.addEventListener('pointercancel', endDrag);
     });
+    const cleanup = () => {
+        const w = wrap();
+        if (w) w.classList.remove('mv-dragging');
+    };
     stage.addEventListener('click', (ev) => {
+        cleanup();
         if (Date.now() < suppressClickUntil) { ev.stopPropagation(); ev.preventDefault(); }
     }, true);
+    window.addEventListener('pointerup', cleanup, { once: false });
 }
 
 function updateDeckCards() {
@@ -10583,7 +10901,7 @@ function updateDeckCards() {
                      tabindex="0" role="button" aria-label="${escapeHtml(m.title || m.fileName || '')}"
                      style="transform: translate3d(calc(-50% + ${tx}px), -50%, ${tz}px) rotateY(${ry}deg) scale(${sc});
                             z-index: ${zIndex}; opacity: ${op};">
-                    <img class="deck-card-poster" src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async">
+                    <img class="deck-card-poster" src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async" draggable="false">
                     <div class="deck-card-info">
                         <div class="deck-card-title">${escapeHtml(m.title || m.fileName || '')}</div>
                         ${m.avid ? `<span class="deck-card-avid">${escapeHtml(m.avid)}</span>` : ''}
@@ -10637,7 +10955,54 @@ function handleDeckCardClick(idx) {
 async function loadGuess(privacy = 'exclude') {
     updateToolbarTitle(privacy === 'adult' ? '🔞 猜你喜欢' : '✨ 猜你喜欢');
     const movies = await api.getGuessMovies(48, privacy);
-    renderMovies(movies);
+    renderGuessRail(movies, privacy);
+}
+
+/* ============================================================================
+ * ★ r84：猜你喜欢 → 双向自动漂移海报长廊
+ *   两轨对向漂移（上轨向左 / 下轨向右），轨道卡片列表复制一份实现无缝循环；
+ *   悬停暂停（animation-play-state）+ 单卡上浮放大；两端渐隐遮罩融进背景。
+ *   点击卡片打开详情（复用 [data-mid] 点击绑定）。
+ * ========================================================================== */
+function renderGuessRail(movies, privacy) {
+    const grid = document.getElementById('movieGrid');
+    const emptyTip = document.getElementById('emptyTip');
+    grid.classList.remove('tree-mode');
+    if (!movies || !movies.length) { grid.innerHTML = ''; emptyTip.style.display = 'block'; return; }
+    emptyTip.style.display = 'none';
+
+    const card = (m) => `
+        <div class="mv-rail-card" data-mid="${m.id}" role="button" tabindex="0" title="${escapeHtml(m.title || '')}">
+            <div class="mrc-poster"><img src="${getPosterUrl(m)}" alt="" loading="lazy" decoding="async"></div>
+            <div class="mrc-title">${escapeHtml(m.title || m.fileName || '')}</div>
+        </div>`;
+    // 轨道 = 列表 ×2（无缝循环的关键：总宽 ≥ 视口宽时 translateX(-50%) 正好回环）
+    const track = (list) => {
+        const half = list.map(card).join('');
+        return `<div class="mv-rail-track">${half}${half}</div>`;
+    };
+
+    // 保证复制后的一半也够铺满视口：不足 12 张时整份重复填充
+    const fill = (list) => {
+        let out = list.slice();
+        while (out.length && out.length < 12) out = out.concat(list);
+        return out;
+    };
+    const half = Math.ceil(movies.length / 2);
+    const top = fill(movies.slice(0, half));
+    const bottom = fill(movies.slice(half));
+
+    grid.innerHTML = `
+        <div class="guess-stage">
+            <div class="guess-stage-title">
+                <span class="gst-tag">${uiIcon('spark', 16)} 猜你喜欢</span>
+                <span class="gst-hint">自动漂移 · 悬停暂停 · 点击封面看详情</span>
+            </div>
+            <div class="mv-rail">${track(top)}</div>
+            ${bottom.length ? `<div class="mv-rail rev">${track(bottom)}</div>` : ''}
+        </div>
+    `;
+    bindDetailClicks(grid);
 }
 
 async function loadUnwatched(privacy = 'exclude') {
@@ -12079,6 +12444,8 @@ async function confirmUploadPoster() {
 
 // 切换收藏
 async function toggleFav(id) {
+    const btn = document.querySelector('.dbtn[data-act="fav"]');
+    if (btn && window.mvHeartPop) window.mvHeartPop(btn);
     await api.toggleFavorite(id);
     showMovieDetail(id);
     updateStats();
@@ -14332,7 +14699,7 @@ async function toggleActressPicker() {
                 }
             } catch (e) { _allActressesCache = []; }
         }
-        renderActressChips('');
+        renderActressPickerChips('');
         const fi = document.getElementById('editActressFilter');
         if (fi) fi.focus();
     } else {
@@ -14340,7 +14707,9 @@ async function toggleActressPicker() {
     }
 }
 
-function renderActressChips(kw) {
+// ★ 与新作监视页的 renderActressChips()（返回 HTML 字符串）同名冲突过：
+//   函数声明提升让后者覆盖前者，编辑弹窗侧改名为 renderActressPickerChips
+function renderActressPickerChips(kw) {
     const container = document.getElementById('editActressChips');
     if (!container || !_allActressesCache) return;
     const curVal = document.getElementById('editActresses')?.value || '';
@@ -14367,7 +14736,7 @@ function renderActressChips(kw) {
 }
 
 function filterActressPicker(kw) {
-    renderActressChips(kw);
+    renderActressPickerChips(kw);
 }
 
 function togglePickActress(name) {
@@ -14382,7 +14751,7 @@ function togglePickActress(name) {
     }
     input.value = list.join(', ');
     const kw = (document.getElementById('editActressFilter')?.value || '');
-    renderActressChips(kw);
+    renderActressPickerChips(kw);
 }
 
 async function toggleTagPicker() {

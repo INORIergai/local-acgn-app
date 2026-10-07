@@ -113,9 +113,6 @@ app.use('/pdfjs', express.static(path.join(__dirname, 'node_modules', 'pdfjs-dis
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/movie', require('./routes/movie'));
 app.use('/api/scanner', require('./routes/scanner'));
-app.use('/api/tasks', require('./routes/tasks'));        // round72：全局任务中心（右上角胶囊 / AI 查状态）
-app.use('/api/media', require('./routes/media-progress')); // round73：漫画/小说阅读进度与状态
-app.use('/api/tts', require('./routes/tts'));   // round74：语音朗读（一键体检/自启/音色）
 app.use('/api/actress', require('./routes/actress'));
 app.use('/api/tags', require('./routes/tags'));
 app.use('/api/recommend', require('./routes/recommend'));
@@ -268,25 +265,10 @@ app.listen(PORT, '0.0.0.0', () => {
             }
             report.end();
             console.log('[启动] 快速增量扫描全部结束');
-            // round75：扫描完成后做一次系列归类（≥80% 同名合并到系列名下，写 movies.serial）
-            try {
-                const { recomputeSerials } = require('./utils/series-group');
-                const t0s = Date.now();
-                const r = recomputeSerials(db, ['comic', 'novel', 'cartoon', 'film']);
-                console.log(`[系列] 归类完成：${r.series} 个系列，更新 ${r.changed} 条（${Date.now() - t0s}ms）`);
-            } catch (e) {
-                console.log('[系列] 归类失败（不影响扫描结果）:', e.message);
-            }
             startDirWatch();
         }, 1000);
     } else {
         console.log('[启动] 已禁用自动扫描（DISABLE_AUTO_SCAN）');
-        // round75：禁扫描时也要回填一次系列（存量库首次升级）
-        try {
-            const { recomputeSerials } = require('./utils/series-group');
-            const r = recomputeSerials(db, ['comic', 'novel', 'cartoon', 'film']);
-            console.log(`[系列] 归类完成：${r.series} 个系列，更新 ${r.changed} 条`);
-        } catch (e) { /* 不影响启动 */ }
         setTimeout(startDirWatch, 3000);
     }
 

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>漫画阅读器</title>
+    <!-- round81：阅读器设置面板（小说 / 漫画共用） -->
+    <link rel="stylesheet" href="css/reader-settings.css?v=1">
     <style>
         /* ==========================================================
            漫画阅读器 · 暖夜版 v2（2026-09-21 重构）
@@ -142,7 +144,61 @@
         }
         .comic-image.panning { cursor: grabbing; }
 
-        /* 翻页动画：新页从翻页方向滑入并淡入（由 JS 加 .page-in-* 触发） */
+        /* ---- round81：缩放默认值（fit）—— body[data-cfit] 由 applyComicSettings 写入
+              contain = 适应屏幕：整页缩到一屏内看得全（★默认，等同改动前的行为，跨页图最稳）
+              width  = 适应宽度：整幅铺满横向，超出屏高的部分纵向滚动（长条漫 / 竖版的最爱）
+              none   = 原尺寸 100%：按图片真实像素，两个方向都可滚
+              ⚠️ 只有 width / none 需要放开 .reader-area 的 overflow，否则多出来的部分会被裁掉
+                 （原来的 overflow:hidden 是为 page-nav 定位留的，纵向放开不影响它）
+              ⚠️ contain 故意**不写规则** —— 直接吃 .comic-image 自带的
+                 max-width/max-height:100%，跟改动前一模一样，避免宽幅跨页横向溢出 ---- */
+        body[data-cfit="width"] .reader-area { overflow-y: auto; overflow-x: hidden; }
+        body[data-cfit="none"]  .reader-area { overflow: auto; }
+
+        body[data-cfit="width"] .comic-image { max-width: 100%; max-height: none; }
+        body[data-cfit="none"]  .comic-image { max-width: none;  max-height: none; }
+
+        /* ---- round81：设置抽屉（右侧）。
+              缩略图目录已经占了左侧，设置放右边互不干扰。
+              内部样式见 css/reader-settings.css 的 .rs-* ---- */
+        .rs-drawer {
+            position: fixed;
+            right: -340px;
+            top: 0;
+            bottom: 0;
+            width: 340px;
+            max-width: 86vw;
+            background: #17171c;
+            color: #e8e6e1;
+            box-shadow: -5px 0 20px rgba(0, 0, 0, .45);
+            z-index: 220;
+            transition: right .3s ease;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .rs-drawer.open { right: 0; }
+
+        body.night-mode .rs-drawer { background: #0e0e11; }
+
+        .rs-scrim {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .45);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 210;
+            transition: opacity .25s ease;
+        }
+        .rs-scrim.visible { opacity: 1; pointer-events: auto; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .rs-drawer, .rs-scrim { transition: none; }
+        }
+
+        /* 翻页动画：新页从翻页方向滑入并淡入（由 JS 加 .page-in-* 触发）
+           ⚠️ round79 起这只是 **降级路径**：默认走 WebGL 纸张卷曲
+              （#comicCurl 覆盖层），仅在无 WebGL / 纹理上传失败 /
+              reduced-motion 时才回落到这套滑入。 */
         .comic-image.page-in-next { animation: pageInNext .3s var(--rd-ease-pop); }
         .comic-image.page-in-prev { animation: pageInPrev .3s var(--rd-ease-pop); }
         @keyframes pageInNext {
@@ -153,6 +209,25 @@
             from { opacity: 0; transform: translateX(-34px) scale(.985); }
             to { opacity: 1; transform: translateX(0) scale(1); }
         }
+
+        /* ---- round79：WebGL 纸张卷曲覆盖层 ----
+           ⚠️ 必须 position:absolute —— 它是 #comicStage 的 flex 子项，
+              若留在流里会把 img1/img2 挤偏（flex 居中 + 多一个元素）。
+           ⚠️ pointer-events:none —— 卷曲期间不能吃掉点击/拖拽，
+              否则页面中途点一下会打在 canvas 上而不是图片上。
+           ⚠️ 不能设 z-index 太高：要在 .page-nav（z-index:10）之下，
+              否则卷曲时左右翻页热区被盖住，翻到一半就翻不动了。 */
+        .comic-curl {
+            position: absolute;
+            display: none;
+            pointer-events: none;
+            z-index: 6;
+            border-radius: 4px;
+            /* 卷曲期间新页已在下面就位，卷走的是旧页 —— 不加阴影会显得像贴纸 */
+            filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55));
+        }
+        /* 夜间模式：卷曲层要跟图片一起反色，否则旧页是亮的、新页是黑的，翻页时闪白 */
+        body.night-mode .comic-curl { filter: invert(1) hue-rotate(180deg) drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55)); }
 
         /* 翻页区域 */
         .page-nav {
@@ -534,6 +609,8 @@
             .comic-image.page-in-next, .comic-image.page-in-prev,
             .finish-inner { animation: none; }
             .toolbar, .progress-bar, .thumbnail-sidebar { transition: none; }
+            /* WebGL 卷曲也一并关掉（JS 侧 PaperCurl.REDUCED 同样会拦住，双保险） */
+            .comic-curl { display: none !important; }
         }
     </style>
 </head>
@@ -552,6 +629,10 @@
                 <button class="btn" id="btnRtl" onclick="toggleRtlMode()" title="翻页方向切换：常规左翻 / 日漫从右往左翻">⇄ 左翻</button>
                 <button class="btn" id="btnToc" onclick="toggleThumbnails()" aria-expanded="false" aria-controls="thumbnailSidebar">📑 目录</button>
                 <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
+                <!-- round81：把「设置」按钮找回来。
+                     排版方式 / 阅读方向 原本各占一个工具栏按钮（📖、⇄），保留作快捷开关，
+                     完整设置（含缩放默认值、背景、翻页样式、翻页速度、自动翻页）进抽屉。 -->
+                <button class="btn" id="btnSettings" onclick="toggleComicSettings()" title="阅读设置：排版 / 方向 / 背景 / 翻页">⚙️ 设置</button>
                 <button class="btn" onclick="resetZoom()">🔍 重置</button>
             </div>
         </div>
@@ -567,9 +648,15 @@
                 <div>加载中...</div>
             </div>
             
-            <div id="comicStage" style="display:flex;align-items:center;justify-content:center;gap:6px;max-width:100%;max-height:100%;height:100%;">
+            <!-- position:relative 是卷曲覆盖层的定位基准 —— 少了它
+                 #comicCurl 会去 .reader-area 当参照物，卷曲层整体错位 -->
+            <div id="comicStage" style="position:relative;display:flex;align-items:center;justify-content:center;gap:6px;max-width:100%;max-height:100%;height:100%;">
                 <img class="comic-image" id="comicImage" style="display:none;" alt="漫画页面">
                 <img class="comic-image" id="comicImage2" style="display:none;" alt="漫画页面2">
+                <!-- round79：WebGL 纸张卷曲覆盖层。绝对定位铺在当前页之上，
+                     卷走的是「旧页」，卷走后露出下面已经换好的新页。
+                     display 由 JS 控制（attachImage 播放时置 block，收尾置 none）。 -->
+                <canvas id="comicCurl" class="comic-curl" aria-hidden="true"></canvas>
             </div>
             
             <div class="page-nav next" id="navNext" onclick="onNavSideClick('right')">
@@ -596,6 +683,13 @@
         <!-- 点击目录面板以外的区域也能收起 -->
         <div class="thumbnail-scrim" id="thumbnailScrim"></div>
         
+        <!-- round81：阅读设置抽屉。内部由 js/reader-settings.js 按 SCHEMA 渲染，
+             加 / 删 / 改名选项只动那一个文件。 -->
+        <div class="rs-scrim" id="comicSettingsScrim" onclick="closeComicSettings()"></div>
+        <div class="rs-drawer" id="comicSettingsPanel" role="dialog" aria-label="阅读设置" aria-hidden="true">
+            <div id="rsComicRoot"></div>
+        </div>
+
         <!-- 底部进度栏 -->
         <div class="progress-bar" id="progressBar">
             <button class="btn" onclick="prevPage()">‹ 上一页</button>
@@ -624,6 +718,11 @@
         </div>
     </div>
     
+    <!-- round79：纸张卷曲引擎（WebGL 图片卷曲 + DOM 文本卷曲共用） -->
+    <script src="js/paper-curl.js?v=3"></script>
+    <!-- round81：设置面板引擎（必须在内联脚本之前） -->
+    <script src="js/reader-settings.js?v=1"></script>
+
     <script>
         // 全局状态
         let comicId = null;
@@ -646,8 +745,10 @@
         let toastTimer = null;
 
         // 【P1-2】双页跨页拼合与日漫右翻模式
-        let dualPageMode = localStorage.getItem('comic_dual_page') === '1';
-        let rtlMode = localStorage.getItem('comic_rtl_mode') === '1';
+        // round81：初值不再是 localStorage —— 由 loadComicSettings() 从 ReaderSettings 注入
+        //          （旧的 comic_dual_page / comic_rtl_mode 键会在那里迁移一次后删除）
+        let dualPageMode = false;
+        let rtlMode = false;
 
         function updateModeButtons() {
             const btnD = document.getElementById('btnDualPage');
@@ -664,16 +765,148 @@
 
         function toggleDualPage() {
             dualPageMode = !dualPageMode;
-            localStorage.setItem('comic_dual_page', dualPageMode ? '1' : '0');
+            // 工具栏按钮是「快捷开关」：值写回同一个 comicRS，跟抽屉里的面板同源，
+            // 不会出现「按钮显示双页、抽屉显示单页」这种互相对不上的情况。
+            setComicSetting('layout', dualPageMode ? 'dual' : 'single');
             updateModeButtons();
             loadPage(currentPage, 1);
         }
 
         function toggleRtlMode() {
             rtlMode = !rtlMode;
-            localStorage.setItem('comic_rtl_mode', rtlMode ? '1' : '0');
+            setComicSetting('rtl', rtlMode ? 'rtl' : 'ltr');
             updateModeButtons();
             loadPage(currentPage, 1);
+        }
+
+        /* ============================================================
+           round81：把「设置」按钮找回来 —— 漫画侧设置面板
+           ------------------------------------------------------------
+           事实先摆清楚：改动之前整个 comic-reader.html 里 grep 不出
+           任何一个 settings / 设置 —— 用户的「全都被你整没了」是实测结论，
+           不是错觉。小说那边面板一直在，但两边取名互不相干。
+           现在两边同读 js/reader-settings.js 的 SCHEMA：
+             唯一真源 = comicRS
+             -> applyComicSettings() 落成真实样式
+             -> ReaderSettings.render() 画进抽屉
+           工具栏的 📖 / ⇄ 不再是独立开关，而是写回 comicRS 的快捷入口。
+           ============================================================ */
+        var comicRS = null;
+        var comicAutoTurn = null;
+
+        /** 旧键一次性迁移：comic_dual_page / comic_rtl_mode（round80 及更早） */
+        function migrateLegacyComicSettings(def) {
+            try {
+                if (localStorage.getItem('comic_dual_page') === '1') def.layout = 'dual';
+                if (localStorage.getItem('comic_rtl_mode') === '1') def.rtl = 'rtl';
+                localStorage.removeItem('comic_dual_page');
+                localStorage.removeItem('comic_rtl_mode');
+            } catch (e) { /* localStorage 不可用就用默认 */ }
+            return def;
+        }
+
+        /** 入口：DOMContentLoaded 里第一个调用 */
+        function loadComicSettings() {
+            try {
+                comicRS = migrateLegacyComicSettings(ReaderSettings.load('comic'));
+            } catch (e) {
+                comicRS = ReaderSettings.defaults('comic');
+            }
+            applyComicSettings();
+        }
+
+        /** 把 comicRS 落成真实 DOM / 全局变量。**不含**翻页重排（避免递归） */
+        function applyComicSettings() {
+            var s = comicRS;
+            if (!s) return;
+
+            dualPageMode = (s.layout === 'dual');
+            rtlMode = (s.rtl === 'rtl');
+            isNightMode = !!s.night;
+
+            // 缩放默认值：交由 CSS 的 body[data-cfit] 规则处理三种适配
+            document.body.setAttribute('data-cfit', s.fit || 'contain');
+
+            // 背景：漫画默认观赏黑（= 主题色 --rd-bg #12100c）。
+            // 夜间模式不改背景色，只给图片叠反色（见 applyNightImageFilter）。
+            document.body.style.background = s.bg || '#12100c';
+            document.body.classList.toggle('night-mode', isNightMode);
+            applyNightImageFilter();
+
+            // 翻页演出
+            document.body.setAttribute('data-turn-style', s.turnStyle || 'curl');
+            document.body.style.setProperty('--rs-turn-dur', ReaderSettings.speedMs(s.turnSpeed) + 'ms');
+            if (window.PaperCurl) window.PaperCurl.setSpeed(s.turnSpeed);
+
+            restartComicAutoTurn();
+            updateModeButtons();
+            ReaderSettings.save('comic', s);
+            renderComicPanel();
+        }
+
+        /** 面板单项变更的统一入口（抽屉点击走这里） */
+        function onComicPick(id, val) {
+            setComicSetting(id, val);
+            // 需要立刻重排只为这几项；其余等下一次翻页自然生效
+            if (id === 'layout' || id === 'rtl') loadPage(currentPage, 1);
+        }
+
+        /** 写入 + 持久化 + 落盘到全局状态（工具栏快捷按钮也走这里） */
+        function setComicSetting(id, val) {
+            if (!comicRS) return;
+            comicRS[id] = val;
+            applyComicSettings();
+        }
+
+        function renderComicPanel() {
+            var root = document.getElementById('rsComicRoot');
+            if (!root) return;
+            ReaderSettings.render(root, 'comic', comicRS, onComicPick, '⚙️ 阅读设置');
+        }
+
+        function toggleComicSettings() {
+            var panel = document.getElementById('comicSettingsPanel');
+            if (!panel) return;
+            var open = panel.classList.contains('open');
+            if (open) closeComicSettings();
+            else {
+                renderComicPanel();
+                panel.classList.add('open');
+                panel.setAttribute('aria-hidden', 'false');
+                document.getElementById('comicSettingsScrim').classList.add('visible');
+            }
+        }
+
+        function closeComicSettings() {
+            var panel = document.getElementById('comicSettingsPanel');
+            if (panel) { panel.classList.remove('open'); panel.setAttribute('aria-hidden', 'true'); }
+            var scrim = document.getElementById('comicSettingsScrim');
+            if (scrim) scrim.classList.remove('visible');
+        }
+
+        function settingsOpen() {
+            var p = document.getElementById('comicSettingsPanel');
+            return !!(p && p.classList.contains('open'));
+        }
+
+        /** 图片反色：夜间模式的 filter 只在 <img> 上，跟 body.night-mode 同步 */
+        function applyNightImageFilter() {
+            var f = isNightMode ? 'invert(1) hue-rotate(180deg)' : 'none';
+            ['comicImage', 'comicImage2'].forEach(function (id) {
+                var im = document.getElementById(id);
+                if (im) im.style.filter = f;
+            });
+        }
+
+        /** 自动翻页到下一页（到最后一页就停，不越过「下一本」） */
+        function restartComicAutoTurn() {
+            if (!comicAutoTurn) {
+                comicAutoTurn = ReaderSettings.autoTurn(
+                    function () { return Number(comicRS && comicRS.autoTurn) || 0; },
+                    function () { if (currentPage < totalPages - 1) nextPage(); }
+                );
+            }
+            comicAutoTurn.restart();
         }
 
         function onNavSideClick(side) {
@@ -746,6 +979,8 @@
             }
             parseSiblings(_sibParam);
             
+            // round81：必须在 updateModeButtons() 之前 —— 双页/右翻的初值从这里来
+            loadComicSettings();
             updateModeButtons();
             loadComicInfo();
             setupKeyboardControls();
@@ -909,10 +1144,127 @@
             return Promise.resolve(`/api/comic/${comicId}/page/${pageIndex}`);
         }
 
+        // ==========================================================
+        //  round79：WebGL 纸张卷曲（默认翻页动效）
+        // ==========================================================
+        //  与小说侧的 DOM 卷曲共用 paper-curl.js 的弹簧动力学（OMEGA_TURN=4.5），
+        //  但走的是**真片元着色器**：圆柱卷轴反解 + 纸背透印 + 卷曲投影。
+        //
+        //  ★ 覆盖层模型（关键）
+        //    #comicCurl 是绝对定位的 canvas，精确铺在**旧页**的渲染矩形上。
+        //    canvas 里画旧页；卷走的那部分 discard（透明），
+        //    于是**下层已经换好的新页就露出来了**。
+        //    ⚠️ 千万别开 alpha:false —— 透明区会被填成不透明黑，整页糊死。
+        //
+        //  ★ 何时不用卷曲（降级到原 page-in-* 滑入）
+        //    - 无 WebGL / 着色器编译失败 / 纹理上传失败（CORS、超大图）
+        //    - prefers-reduced-motion
+        //    - 首屏（没有「旧页」可卷）
+        //    - 正在拖拽平移中（zoom != 1，矩形对不齐，卷起来会错位）
+        let curlSession = null;
+        let curlLastRect = null;
+
+        function curlCanvas() {
+            return document.getElementById('comicCurl');
+        }
+
+        /** 当前是否允许走卷曲 */
+        function curlEligible() {
+            if (!window.PaperCurl) return false;
+            if (window.PaperCurl.REDUCED) return false;
+            // round81：用户在设置里选了 slide / fade / none 时不要偷偷卷起来
+            if (comicRS && comicRS.turnStyle && comicRS.turnStyle !== 'curl') return false;
+            if (curlSession) return false;          // 上一轮还没结束
+            if (zoomLevel !== 1 || panDrag) return false;
+            // ⚠️ 双页跨页暂不走卷曲：覆盖层只铺 img1 的矩形，
+            //    img2 会原地不动 ⇒ 看起来像「只翻了一半」。
+            //    与其做个半吊子，不如老实降级到滑入动画。
+            if (dualPageMode) return false;
+            const img = document.getElementById('comicImage');
+            // 必须已有解码完成的旧页，否则没有可卷的纹理
+            if (!img || !img.src || !img.complete || !img.naturalWidth) return false;
+            if (img.style.display === 'none') return false;
+            return true;
+        }
+
+        /** 把覆盖层 canvas 精确铺到旧页的渲染矩形上（相对 #comicStage） */
+        function curlLayout(img) {
+            const cv = curlCanvas();
+            const stage = document.getElementById('comicStage');
+            if (!cv || !stage) return false;
+            const ir = img.getBoundingClientRect();
+            const sr = stage.getBoundingClientRect();
+            if (ir.width < 8 || ir.height < 8) return false;
+            cv.style.display = 'block';
+            cv.style.left = (ir.left - sr.left) + 'px';
+            cv.style.top = (ir.top - sr.top) + 'px';
+            cv.style.width = ir.width + 'px';
+            cv.style.height = ir.height + 'px';
+            curlLastRect = { x: ir.left - sr.left, y: ir.top - sr.top, w: ir.width, h: ir.height };
+            return true;
+        }
+
+        /** 把新页真正装到 DOM 上（卷曲过半时调用，或降级路径直接调用） */
+        function applyComicPage(u1, u2, isDual) {
+            const img1 = document.getElementById('comicImage');
+            const img2 = document.getElementById('comicImage2');
+            img1.src = u1;
+            img1.style.display = 'block';
+            img1.style.maxWidth = isDual ? '49.5%' : '100%';
+            if (isDual && u2) {
+                img2.src = u2;
+                img2.style.display = 'block';
+                img2.style.maxWidth = '49.5%';
+            } else if (img2) {
+                img2.style.display = 'none';
+            }
+            resetZoom();
+        }
+
+        /**
+         * 播一次卷曲。返回 Promise<boolean>：
+         *   true  = 已放卷曲（调用方不要再动 DOM）
+         *   false = 不可用，调用方走原 page-in-* 降级动画
+         */
+        function playComicCurl(oldImg, dir, applyNext) {
+            return new Promise((resolve) => {
+                if (!curlLayout(oldImg)) { resolve(false); return; }
+                /* ★ round81：翻页速度在这里落到引擎。
+                     attachImage 内部读的是模块级 duration —— 只认上一次 setSpeed 的值，
+                     所以每次播放前必须按当前设置重设，否则改了速度不生效
+                     （这个坑很隐蔽：界面看着改了，动画还是老速度）。 */
+                if (window.PaperCurl) window.PaperCurl.setSpeed(comicRS ? comicRS.turnSpeed : 'normal');
+                // 纸背色：**两种主题都传同一个米白**，不要按 isNightMode 改暗。
+                // ⚠️ 踩过的坑：一开始夜间传 [0.10,0.10,0.11] 想着「夜里纸背该是深的」，
+                //    结果方向反了两次 —— 卷曲层整体已经被 CSS filter: invert(1) 翻过一次，
+                //    着色器里再传暗值 ⇒ 暗被翻成亮 ⇒ 夜里卷起的纸背比周围还亮，像在发光。
+                //    反过来：传米白 → 夜间经 invert 自动落到近黑，白天保持米白，两边都对。
+                const paperBack = [0.96, 0.93, 0.86];
+                const handle = window.PaperCurl.attachImage({
+                    canvas: curlCanvas(),
+                    oldImg: oldImg,
+                    dir: dir,
+                    paperBack: paperBack,
+                    applySwap: applyNext,
+                    done: function () { resolve(true); }
+                });
+                if (!handle) {
+                    const cv = curlCanvas();
+                    if (cv) cv.style.display = 'none';
+                    resolve(false);
+                    return;
+                }
+                curlSession = handle;
+                handle.play();
+            });
+        }
+
         // 加载指定页（dir：1 向前翻 / -1 向后翻，决定新页滑入方向）
         async function loadPage(pageIndex, dir) {
             if (pageIndex < 0 || pageIndex >= totalPages) return;
             if (dir === undefined) dir = 1;
+            // round81：手动翻页要重置自动翻页倒计时，否则「5 秒自动翻」会在半路被截胡
+            if (typeof restartComicAutoTurn === 'function') restartComicAutoTurn();
 
             currentPage = pageIndex;
             const img1 = document.getElementById('comicImage');
@@ -920,9 +1272,17 @@
             const stage = document.getElementById('comicStage');
             const loading = document.getElementById('loading');
 
-            loading.style.display = 'flex';
-            img1.style.display = 'none';
-            if (img2) img2.style.display = 'none';
+            // 旧页在卷曲期间要一直留在台上，所以这里**不能**先 display:none。
+            // 但也不能空等 —— 先把新页 fetch/decode 好，再决定走哪条路。
+            const useCurl = curlEligible();
+            if (!useCurl) {
+                loading.style.display = 'flex';
+                img1.style.display = 'none';
+                if (img2) img2.style.display = 'none';
+            } else {
+                // 卷曲时旧页就是「正在被卷走的那张」，必须留在原处、保持可见
+                loading.style.display = 'none';
+            }
 
             const isDual = dualPageMode && (pageIndex + 1 < totalPages);
             const p1 = pageIndex;
@@ -934,32 +1294,52 @@
 
             try {
                 const u1 = await getPageUrl(leftIdx);
-                img1.src = u1;
-                img1.style.display = 'block';
-                img1.style.maxWidth = isDual ? '49.5%' : '100%';
+                const u2 = (isDual && rightIdx >= 0) ? await getPageUrl(rightIdx) : null;
 
-                if (isDual && rightIdx >= 0) {
-                    const u2 = await getPageUrl(rightIdx);
-                    img2.src = u2;
-                    img2.style.display = 'block';
-                    img2.style.maxWidth = '49.5%';
-                } else if (img2) {
-                    img2.style.display = 'none';
+                if (useCurl) {
+                    // ⚠️ 纹理源必须是「旧页」当前真实渲染的那张 img。
+                    //    直接把 img1 传给 attachImage 会踩一个坑：
+                    //    applySwap 里会把 img1.src 换成新页，
+                    //    而 WebGL 纹理是**上传时刻的快照**（texImage2D 已拷贝），
+                    //    所以换 src 不会影响正在卷的旧页 —— 这一点是安全的。
+                    //
+                    // ⚠️ dir ≠ 卷曲方向。dir 表达的是「页码往哪走」（1=往后），
+                    //    而 shader 的 uDir 表达的是「旧页往哪边卷」。
+                    //    常规左翻：往后翻 ⇒ 旧页往左卷 ⇒ uDir = -1
+                    //    日漫右翻（rtlMode）：语义整个反过来 ⇒ uDir = +dir
+                    const curlDir = rtlMode ? dir : -dir;
+                    const played = await playComicCurl(img1, curlDir, () => {
+                        applyComicPage(u1, u2, isDual);
+                    });
+                    curlSession = null;
+                    if (played) {
+                        const cv = curlCanvas();
+                        if (cv) cv.style.display = 'none';
+                    } else {
+                        // 卷曲不可用 → 降级：硬切 + 原滑入动画
+                        applyComicPage(u1, u2, isDual);
+                        stage.classList.remove('page-in-next', 'page-in-prev');
+                        void stage.offsetWidth;
+                        stage.classList.add(dir < 0 ? 'page-in-prev' : 'page-in-next');
+                    }
+                } else {
+                    applyComicPage(u1, u2, isDual);
+                    loading.style.display = 'none';
+                    stage.classList.remove('page-in-next', 'page-in-prev');
+                    void stage.offsetWidth;
+                    stage.classList.add(dir < 0 ? 'page-in-prev' : 'page-in-next');
                 }
-
-                loading.style.display = 'none';
-                resetZoom();
-
-                stage.classList.remove('page-in-next', 'page-in-prev');
-                void stage.offsetWidth;
-                stage.classList.add(dir < 0 ? 'page-in-prev' : 'page-in-next');
 
                 // 预取下一组
                 const step = isDual ? 2 : 1;
                 prefetchPage(currentPage + step);
                 prefetchPage(currentPage + step + 1);
             } catch (err) {
+                const cv = curlCanvas();
+                if (cv) cv.style.display = 'none';
+                curlSession = null;
                 reportPdfError('renderPage', err && err.message, { pageIndex: pageIndex, totalPages: totalPages });
+                loading.style.display = 'flex';
                 loading.innerHTML = '<div style="color:#ef4444;">加载失败: ' + err.message + '</div>';
             }
 
@@ -1136,15 +1516,10 @@
         }
         
         // 夜间模式
+        // round81：不再是「一个跟设置毫无关系的游离布尔」，写回 comicRS,
+        //         这样面板里的「夜间模式」开关和工具栏 🌙 永远同步。
         function toggleNightMode() {
-            isNightMode = !isNightMode;
-            document.body.classList.toggle('night-mode', isNightMode);
-            const img = document.getElementById('comicImage');
-            if (isNightMode) {
-                img.style.filter = 'invert(1) hue-rotate(180deg)';
-            } else {
-                img.style.filter = 'none';
-            }
+            setComicSetting('night', !isNightMode);
         }
         
         // 切换工具栏显示
@@ -1245,7 +1620,10 @@
                         resetZoom();
                         break;
                     case 'Escape':
-                        if (document.getElementById('thumbnailSidebar').classList.contains('open')) {
+                        // round81：设置抽屉优先级高于目录 —— Esc 先关最上层
+                        if (settingsOpen()) {
+                            closeComicSettings();
+                        } else if (document.getElementById('thumbnailSidebar').classList.contains('open')) {
                             toggleThumbnails(false);
                         } else {
                             closeReader();

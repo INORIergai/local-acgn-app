@@ -21,7 +21,10 @@ class KmoeCrawler {
 
     this.request = new Request({
       baseUrl: this.baseUrl,
-      proxy: config.network?.proxyServer,
+      // ★ kmoe 默认直连，不走全局代理：站点按 IP 绑定会话（实测同一 cookie
+      //   直连是登录态、走 clash 代理出口就是匿名页），且 kzo.moe 国内可直连。
+      //   确有需要时在 config.sources.kmoe.proxy 里显式指定代理。
+      proxy: options.proxy !== undefined ? options.proxy : (config.sources?.kmoe?.proxy || null),
       timeout: config.network?.timeout || 15000,
       retryCount: config.network?.retryCount || 2
     });

@@ -359,70 +359,112 @@ async function searchFromTMDB(name) {
 }
 
 /**
+ * 内容库（漫画/小说）搜索词候选。
+ * 章节型文件（001：预告-日月同错.pdf / 1.epub）文件名本身搜不中，
+ * 真正的系列名/书名在库根下的祖先目录里（G:\kmoe_manga\<系列>\<子目录>\xx.pdf）。
+ * 候选顺序：文件名清洗 → 文件名剥章节号 → 祖先目录名（浅→深，各带剥卷号变体）。
+ */
+function contentKeywordCandidates(fileName, filePath, type) {
+    const cands = [];
+    const push = (k) => {
+        k = String(k || '').replace(/\s+/g, ' ').trim();
+        if (k && k.length >= 2 && !cands.includes(k)) cands.push(k);
+    };
+    const cleanText = (s) => String(s || '')
+        .replace(/\.[^.]+$/, '')
+        .replace(/\[.*?\]/g, ' ')
+        .replace(/\(.*?\)/g, ' ')
+        .replace(/【.*?】/g, ' ')
+        .replace(/(epub|mobi|pdf|txt|zip|rar|cbz|cbr|azw3|全一冊|全一册|第\s*[\d一二三四五六七八九十百]+\s*[話话回卷章节]|汉化组|自购|单话版|漢化|汉化|简中|繁中|連載|连载)/gi, ' ')
+        .replace(/[！？♥〜～\uFF01\uFF1F：:、·]/g, ' ')
+        .replace(/[-_.]/g, ' ');
+    const fromFile = cleanText(fileName);
+    push(fromFile);
+    // 「001 预告 日月同错」→ 剥掉行首章节号
+    push(fromFile.replace(/^\s*\d+(?:\.\d+)?\s*/, ''));
+    // 祖先目录：相对库根，浅层优先（kmoe_manga\日月同错\单话版\xx.pdf → 先试 日月同错）
+    try {
+        const roots = (type === 'comic' ? config.comicFolders : config.novelFolders) || [];
+        for (const root of roots) {
+            const rel = path.relative(root, path.dirname(String(filePath || '')));
+            if (!rel || rel.startsWith('..')) continue;
+            const segs = rel.split(/[\\/]+/).filter(Boolean);
+            for (const seg of segs) {
+                const c = cleanText(seg);
+                push(c);
+                // 「这个恋爱喜剧有获得幸福的义务 1」→ 剥掉尾部卷号
+                push(c.replace(/\s+\d+(?:\.\d+)?\s*$/, ''));
+            }
+        }
+    } catch (e) { /* 路径异常忽略 */ }
+    return cands;
+}
+
+/**
  * kmoe 漫画搜索封装（按库硬分流使用）
  * 返回与 searchMovie 一致的结构
  */
-async function searchFromKmoe(fileName) {
+async function searchFromKmoe(fileName, filePath) {
     if (!config.sources?.kmoe?.enabled) {
         console.log('[kmoe] 数据源未开启，跳过漫画刮削');
         return null;
     }
-    // 清洗文件名：去扩展名、去 [字幕组] 前缀、去标签
-    let keyword = fileName.replace(/\.[^.]+$/, '')
-        .replace(/\[.*?\]/g, ' ')
-        .replace(/\(.*?\)/g, ' ')
-        .replace(/【.*?】/g, ' ')
-        .replace(/(epub|mobi|pdf|txt|zip|rar|cbz|cbr|azw3|全一冊|全一册|第.*?卷|汉化组|自购)/gi, ' ')
-        .replace(/[！？♥〜～\uFF01\uFF1F]/g, ' ')
-        .replace(/[-_.]/g, ' ')
-        .trim().replace(/\s+/g, ' ');
-    if (keyword.length < 2) return null;
+    const cands = contentKeywordCandidates(fileName, filePath, 'comic');
+    if (!cands.length) return null;
+    const crawler = new KmoeCrawler(config.sources?.kmoe || {});
 
-    console.log(`[kmoe搜索] 文件名: ${fileName}`);
-    console.log(`[kmoe搜索] 清洗后关键词: ${keyword}`);
+    for (const keyword of cands.slice(0, 4)) {
+        console.log(`[kmoe搜索] 文件名: ${fileName}`);
+        console.log(`[kmoe搜索] 关键词: ${keyword}`);
 
-    try {
-        const crawler = new KmoeCrawler(config.sources?.kmoe || {});
-        const list = await crawler.search(keyword);
-        if (!Array.isArray(list) || list.length === 0) {
-            console.log('[kmoe] 未检索到结果');
-            return null;
+        try {
+            const list = await crawler.search(keyword);
+            if (!Array.isArray(list) || list.length === 0) {
+                console.log('[kmoe] 未检索到结果，换下一个关键词');
+                continue;
+            }
+
+            const first = list[0];
+            const detail = await crawler.getDetail(first.url);
+            const title = detail?.title || first.title;
+            const cover = detail?.cover || first.cover || '';
+
+            return {
+                title: title || keyword,
+                originalTitle: title || '',
+                overview: detail?.intro || '',
+                releaseDate: '',
+                cover,
+                genres: detail?.category ? [detail.category] : [],
+                author: detail?.author || first.author || '',
+                source: 'kmoe'
+            };
+        } catch (e) {
+            console.log(`[kmoe搜索] 异常: ${e.message}`);
         }
-
-        const first = list[0];
-        const detail = await crawler.getDetail(first.url);
-        const title = detail?.title || first.title;
-        const cover = detail?.cover || first.cover || '';
-
-        return {
-            title: title || keyword,
-            originalTitle: title || '',
-            overview: detail?.intro || '',
-            releaseDate: '',
-            cover,
-            genres: detail?.category ? [detail.category] : [],
-            author: detail?.author || first.author || '',
-            source: 'kmoe'
-        };
-    } catch (e) {
-        console.log(`[kmoe搜索] 异常: ${e.message}`);
-        return null;
     }
+    return null;
 }
 
 /**
  * zlibrary 小说搜索封装（按库硬分流使用）
  */
-async function searchFromZlibrary(fileName) {
+async function searchFromZlibrary(fileName, filePath) {
     if (!config.sources?.zlibrary?.enabled) {
         console.log('[zlibrary] 数据源未开启，跳过小说刮削');
         return null;
     }
     try {
         const crawler = new ZLibraryCrawler(config.sources?.zlibrary || {});
-        const detail = await crawler.searchByFileName(fileName);
+        // 文件名搜不中时逐个换候选（书名常在祖先目录里：zlibrary_novel\<书名>\epub\1.epub）
+        const cands = contentKeywordCandidates(fileName, filePath, 'novel');
+        let detail = null;
+        for (const kw of (cands.length ? cands : ['']).slice(0, 4)) {
+            detail = await crawler.searchByFileName(kw || fileName);
+            if (detail) break;
+            console.log('[zlibrary] 未检索到结果，换下一个关键词');
+        }
         if (!detail) {
-            console.log('[zlibrary] 未检索到结果');
             return null;
         }
         return {
@@ -519,7 +561,7 @@ async function searchMovie(cleanName, fileName, type, filePath) {
   }
 
   if (type === 'comic') {
-    const comicResult = await searchFromKmoe(fileName);
+    const comicResult = await searchFromKmoe(fileName, filePath);
     if (comicResult) {
       return normalizeResult(comicResult, 'kmoe', null);
     }
@@ -574,7 +616,7 @@ async function searchMovie(cleanName, fileName, type, filePath) {
   }
 
   if (type === 'novel') {
-    const novelResult = await searchFromZlibrary(fileName);
+    const novelResult = await searchFromZlibrary(fileName, filePath);
     if (novelResult) {
       return normalizeResult(novelResult, 'zlibrary', null);
     }
@@ -1095,7 +1137,7 @@ async function searchAllPosters(avid, cleanName, fileName, type, filePath) {
   // ===== 漫画库 → kmoe =====
   if (type === 'comic') {
     if (config.sources?.kmoe?.enabled) {
-      const comicResult = await searchFromKmoe(fileName);
+      const comicResult = await searchFromKmoe(fileName, filePath);
       if (comicResult && comicResult.cover) {
         results.push({
           source: 'kmoe',
@@ -1111,7 +1153,7 @@ async function searchAllPosters(avid, cleanName, fileName, type, filePath) {
   // ===== 小说库 → zlibrary =====
   if (type === 'novel') {
     if (config.sources?.zlibrary?.enabled) {
-      const novelResult = await searchFromZlibrary(fileName);
+      const novelResult = await searchFromZlibrary(fileName, filePath);
       if (novelResult && novelResult.cover) {
         results.push({
           source: 'zlibrary',
