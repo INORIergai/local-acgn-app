@@ -1,0 +1,224 @@
+/* ==========================================================================
+   round15.css —— 第 15 轮样式覆盖层（2026-09-22）
+   --------------------------------------------------------------------------
+   加载顺序：round14.css 之后、mobile.css 之前（越靠后优先级越高）。
+   内容：
+     1  精选推荐 · 海报居中（修复 track 被 aspect-ratio+max-height 约束
+        传递压窄后靠左，右侧留一条空底的问题）
+     2  热门排行 · 领奖台占满整行 + 榜单行加大
+     3  我的收藏 · 页面做满（展品网格铺满馆墙，空位补「虚位以待」金框）
+     4  最近观看 · 时间线筛选条（一根线两端手柄拖动筛选范围）
+     5  标签/演员 · 类似影片弹出放大 2 倍以上
+     6  全部影片/影片库/动漫库 · 列表海报与「未观看」同尺寸（253px 基准）
+   ========================================================================== */
+
+/* ============ 1. 精选推荐 · 居中 ============
+   根因：polish.css 给 .gallery-track 设了 aspect-ratio:16/9 + max-height:52vh，
+   高度被钳制后 aspect-ratio 把宽度反向传递压窄（982→878），块级元素窄了就靠左，
+   容器右侧多出一条空底 —— 看起来就是「海报不居中、靠左」。
+   修法：把高度上限换算成容器宽度上限（52vh × 16/9），track 恢复撑满容器。 */
+@media (min-width: 861px) {
+    .gallery-container {
+        max-width: min(60%, calc(52vh * 16 / 9));
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .gallery-track { max-height: none; }
+}
+.gallery-slide img { object-position: center; }
+
+/* ============ 2. 热门排行 · 行占满 + 更大 ============ */
+/* 领奖台从「居中一撮」改为 space-evenly 拉满整行，海报同步放大 */
+.hot-podium {
+    justify-content: space-evenly;
+    gap: 12px;
+    padding: 42px 28px 34px;
+}
+.hp-step { width: clamp(210px, 18vw, 320px); }
+.hp-1 { width: clamp(250px, 21vw, 380px); }
+.hp-base b { font-size: 30px; }
+.hp-title { font-size: 13.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+
+/* 榜单行加大：缩略图 42×56 → 64×85，标题 13→14.5px */
+.hr-row { padding: 9px 12px; gap: 14px; }
+.hr-thumb { width: 64px; height: 85px; border-radius: 8px; }
+.hr-rank { font-size: 19px; width: 36px; }
+.hr-name { font-size: 14.5px; }
+.hr-plays { font-size: 13px; }
+.hr-hotbar { height: 6px; }
+
+/* ============ 3. 我的收藏 · 页面做满 ============ */
+/* 馆墙至少撑到一屏高；展品区从 flex 居中改为网格铺满整行宽 */
+.museum { display: block; }
+.museum-hall {
+    min-height: calc(100vh - var(--nav-h, 60px) - 150px);
+    display: flex;
+    flex-direction: column;
+}
+.museum-shelf {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+    gap: 34px 28px;
+    align-content: space-evenly;
+    padding: 6px 4px 10px;
+}
+.exhibit { width: auto; }
+/* 空位补白框（JS 按列数补齐最后一行） */
+.exhibit.is-ghost { animation: none; pointer-events: none; cursor: default; }
+.exhibit.is-ghost .exhibit-frame {
+    border: 3px dashed rgba(202, 160, 79, .45);
+    background: rgba(0, 0, 0, .18);
+    box-shadow: none;
+    display: grid;
+    place-items: center;
+}
+.exhibit.is-ghost .exhibit-frame::after {
+    content: '虚位以待';
+    font-size: 13px;
+    letter-spacing: .3em;
+    text-indent: .3em;
+    color: rgba(233, 217, 174, .38);
+}
+.exhibit.is-ghost figcaption,
+.exhibit.is-ghost .exhibit-plaque { visibility: hidden; }
+
+/* ============ 4. 最近观看 · 时间线筛选条 ============ */
+.rw-wrap { grid-column: 1 / -1; }
+.rw-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+.rw-head b { font-family: var(--font-display); font-size: 15px; }
+.rw-head > span { font-size: 12px; color: var(--text-muted); }
+.rw-count { font-family: var(--font-mono); margin-left: auto; }
+.rw-chips { display: inline-flex; gap: 6px; }
+.rw-chip {
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 99px;
+    cursor: pointer;
+    transition: all .15s ease;
+}
+.rw-chip:hover, .rw-chip.on { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+
+/* 一根线：轨道 + 刻度 + 两端手柄 */
+.rw-axis {
+    position: relative;
+    height: 46px;
+    margin: 14px 8px 2px;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.rw-track {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+.rw-sel {
+    position: absolute;
+    top: 0; bottom: 0;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--pl-amber, #fbb663), #ff008c);
+    opacity: .85;
+}
+/* 每次观看记录在轴上落一个刻度点 */
+.rw-tick {
+    position: absolute;
+    top: 50%;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: #b4ab9a;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+.rw-h {
+    position: absolute;
+    top: 50%;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg-elevated);
+    border: 3px solid var(--primary);
+    box-shadow: 0 3px 10px -2px rgba(0, 0, 0, .35);
+    cursor: grab;
+    padding: 0;
+}
+.rw-h:active { cursor: grabbing; scale: 1.15; }
+.rw-labels {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin: 0 8px 16px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+.rw-range { color: var(--primary); font-weight: 700; }
+.rw-grid { grid-column: 1 / -1; display: grid; }
+
+/* ============ 5. 标签/演员 · 类似影片弹出放大 2 倍+ ============ */
+/* 详情弹窗的标签切片浮层（fixed，JS 已做视口夹紧） */
+.tag-slicer-pop {
+    max-width: min(920px, 94vw);
+    gap: 8px;
+    padding: 12px;
+    border-radius: 16px;
+}
+.tag-slicer-pop img { width: 136px; border-radius: 8px; }
+.tag-slicer-pop .tsp-empty { font-size: 13px; padding: 10px 14px; }
+
+/* 标签库方块：预览从 6 张一排改成 3 张一排（单张约 2.5 倍大） */
+.tag-list { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.tb-preview { gap: 6px; }
+.tb-preview img { width: calc((100% - 12px) / 3); border-radius: 6px; }
+.tag-block:hover .tb-preview { max-height: 200px; }
+
+/* 演员库悬停预览：从「贴卡片宽的 52px 小图」改为 380px 浮出大卡（约 2.4 倍） */
+.actress-preview {
+    left: 50%;
+    right: auto;
+    width: max-content;
+    max-width: min(380px, 60vw);
+    padding: 10px;
+    gap: 8px;
+    border-radius: 14px;
+    transform: translate(-50%, 10px) scale(.94);
+}
+.actress-card:hover .actress-preview { transform: translate(-50%, 0) scale(1); }
+.actress-preview img { width: 106px; max-width: none; border-radius: 8px; }
+.actress-preview .ap-more { font-size: 12.5px; }
+
+/* ============ 6. 列表海报与「未观看」同尺寸 ============
+   round14 把 #movieGrid 的列宽基准改成了 158px（海报大小滑杆），
+   而 .uw-grid 走 .movie-grid 的 253px —— 同一个网格两种大小。
+   现在统一到 253px 基准，滑杆继续生效（--card-w-scale 乘数）。 */
+@media (min-width: 861px) {
+    #movieGrid,
+    #movieGrid > .uw-grid,
+    #movieGrid > .rw-grid {
+        grid-template-columns: repeat(auto-fill, minmax(calc(253px * var(--card-w-scale, 1)), 1fr));
+    }
+}
+@media (max-width: 860px) {
+    #movieGrid,
+    #movieGrid > .uw-grid,
+    #movieGrid > .rw-grid {
+        grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    }
+}
+html[data-poster-ratio="portrait"] #movieGrid .movie-card { aspect-ratio: 3 / 4; }

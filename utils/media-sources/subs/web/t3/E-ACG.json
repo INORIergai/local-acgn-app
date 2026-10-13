@@ -1,0 +1,58 @@
+{
+  "factoryId": "web-selector",
+  "version": 2,
+  "arguments": {
+    "name": "E-ACG",
+    "description": "直连，来自E-ACG，导航：https://www.eacg1.com/",
+    "iconUrl": "https://i.loli.net/2019/12/09/17hvXK2LemTtgfs.png",
+    "searchConfig": {
+      "searchUrl": "https://www.eacg1.com/vodsearch/-------------.html?wd={keyword}",
+      "searchUseOnlyFirstWord": true,
+      "subjectFormatId": "a",
+      "selectorSubjectFormatA": {
+        "selectLists": "body > div.fed-main-info.fed-min-width > div > div > dl > dd.fed-deta-content > h1 a",
+        "preferShorterName": true
+      },
+      "channelFormatId": "index-grouped",
+      "selectorChannelFormatFlattened": {
+        "selectChannelNames": ".fed-drop-boxs.fed-drop-tops.fed-matp-v a",
+        "matchChannelName": "",
+        "selectEpisodeLists": ".fed-play-item.fed-drop-item",
+        "selectEpisodesFromList": "a.fed-btns-info",
+        "selectEpisodeLinksFromList": "",
+        "matchEpisodeSortFromName": "第\\s*(?<ep>.+)\\s*[话集]"
+      },
+      "defaultResolution": "1080P",
+      "defaultSubtitleLanguage": "CHS",
+      "onlySupportsPlayers": [],
+      "selectMedia": {
+        "distinguishSubjectName": true,
+        "distinguishChannelName": true
+      },
+      "matchVideo": {
+        "enableNestedUrl": true,
+        "matchNestedUrl": "$^",
+        "matchVideoUrl": "(^http(s)?:\\/\\/(?!.*http).+\\.(mp4|m3u8|flv|mkv))|(url=(?<v>http(s)?:\\/\\/.+\\.(mp4|m3u8|flv|mkv)))|(^http(s)?:\\/\\/(?!.*http).+(sign\\.bytetos|sign\\.byteimg|mcloud\\.139|cloudflarestorage|tos-cn)\\.com(?!.*\\.ts).+(-expires|-signature))|((bilivideo|akamaized|szbdyd)\\.com(?!.*\\.ts))|(\\/video\\/tos\\/alisg\\/)|(\\/video\\/.*mime_type=video)",
+        "cookies": "quality=1080",
+        "addHeadersToVideo": {
+          "referer": ""
+        }
+      }
+    },
+    "tier": 3,
+    "channelTiers": {
+      "EDD动漫": 1,
+      "线路13": 1,
+      "高清在线": 1,
+      "极速在线": 4,
+      "海外专线": 4,
+      "线路3(若黑屏用手机)": 5,
+      "线路4": 5,
+      "172": 6,
+      "看吧③": 6,
+      "看吧④": 6,
+      "看吧⑤": 6,
+      "看吧备用": 6
+    }
+  }
+}

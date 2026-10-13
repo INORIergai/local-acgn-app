@@ -1,0 +1,226 @@
+/* ============================================================
+   午夜场 · 设计令牌 v4  「暮色极光」 Dusk Aurora
+   ------------------------------------------------------------
+   融合：AMBIENT 的中性炭黑做骨架（久看不累、与播放器统一）
+        + AURORA 的极光渐变做高光（主按钮/进度条/选中态/英雄区）
+   原则：极光只出现在「需要被注意」的地方，占比 < 5% 面积。
+        其余一切靠中性灰阶与 1px 发丝线分层。
+   ============================================================ */
+
+:root {
+  /* ---------- 中性灰阶（骨架，来自 AMBIENT） ---------- */
+  --bg:            #0F0F14;   /* 碳黑，非纯黑，避免 OLED 拖影 */
+  --bg-elev-1:     #16161C;   /* 一级浮起：卡片 */
+  --bg-elev-2:     #1D1D25;   /* 二级浮起：卡内区块、输入框 */
+  --bg-elev-3:     #26262F;   /* 三级浮起：悬停、下拉项 */
+  --bg-sunken:     #0A0A0E;   /* 凹陷：播放器底、代码块 */
+
+  --line:          rgba(255, 255, 255, 0.075);  /* 发丝线，默认 */
+  --line-strong:   rgba(255, 255, 255, 0.15);   /* 悬停/强调 */
+  --line-faint:    rgba(255, 255, 255, 0.04);   /* 网格线、分隔 */
+
+  --text:          #F2F2F5;   /* 主文本 */
+  --text-2:        #A8A8B4;   /* 次级：说明、元信息 */
+  --text-3:        #6E6E7A;   /* 三级：占位、禁用 */
+  --text-inv:      #0B0B10;   /* 反色：渐变按钮上的字 */
+
+  /* ---------- 极光强调色（高光，来自 AURORA） ---------- */
+  --au-cyan:   #22D3EE;
+  --au-indigo: #818CF8;
+  --au-violet: #C084FC;
+  --aurora:    linear-gradient(115deg, #22D3EE 0%, #818CF8 48%, #C084FC 100%);
+  --aurora-soft: linear-gradient(115deg, rgba(34,211,238,.16), rgba(129,140,248,.20), rgba(192,132,252,.16));
+
+  --focus:     #818CF8;              /* 焦点环，独立于品牌色确保可见 */
+  --accent:    #818CF8;              /* 单色强调（不宜用渐变处） */
+  --accent-dim: rgba(129, 140, 248, 0.14);
+
+  /* ---------- 语义色（状态，独立色阶避免与极光混淆） ---------- */
+  --ok:        #34D399;   --ok-bg:      rgba(52, 211, 153, 0.12);
+  --warn:      #FBBF24;   --warn-bg:    rgba(251, 191, 36, 0.12);
+  --danger:    #F87171;   --danger-bg:  rgba(248, 113, 113, 0.12);
+  --info:      #60A5FA;   --info-bg:    rgba(96, 165, 250, 0.12);
+  --neutral:   #8A8A96;   --neutral-bg: rgba(138, 138, 150, 0.12);
+
+  /* ---------- 字体 ---------- */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "MiSans", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "JetBrains Mono", monospace;
+
+  /* 字号阶梯（1.125 比例，13 为基准避免过小） */
+  --fs-2xs: 10.5px;  /* 徽标、角标 —— 仅限非正文 */
+  --fs-xs:  11.5px;  /* 元信息、时间码 */
+  --fs-sm:  12.5px;  /* 次级说明、表格 */
+  --fs-md:  13.5px;  /* 正文、导航、卡片标题（基准） */
+  --fs-lg:  15px;    /* 区块标题 */
+  --fs-xl:  18px;    /* 页面副标题 */
+  --fs-2xl: 22px;    /* 详情标题 */
+  --fs-3xl: 28px;    /* 页面主标题 */
+  --fs-4xl: 36px;    /* 数据看板大数字 */
+
+  --fw-r: 400;  --fw-m: 500;  --fw-s: 600;  --fw-b: 700;
+  --lh-tight: 1.3;  --lh-body: 1.6;  --lh-loose: 1.75;
+  --ls-tight: -0.01em;  --ls-wide: 0.18em;
+
+  /* ---------- 间距（4px 基数） ---------- */
+  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 20px;  --sp-6: 24px;  --sp-8: 32px;  --sp-10: 40px;
+  --sp-12: 48px; --sp-16: 64px;
+
+  /* ---------- 圆角 ---------- */
+  --r-xs: 6px;   --r-sm: 9px;   --r-md: 12px;  --r-lg: 16px;
+  --r-xl: 22px;  --r-full: 999px;
+
+  /* ---------- 阴影（深色下靠亮度分层，阴影只做轻微托底） ---------- */
+  --sh-1: 0 1px 2px rgba(0,0,0,.4);
+  --sh-2: 0 8px 24px -8px rgba(0,0,0,.55);
+  --sh-3: 0 20px 50px -18px rgba(0,0,0,.7);
+  --sh-glow: 0 12px 34px -10px rgba(129,140,248,.45);   /* 极光高光专用 */
+
+  /* ---------- 层级 ---------- */
+  --z-base: 1; --z-sticky: 100; --z-dropdown: 200; --z-overlay: 400;
+  --z-modal: 500; --z-toast: 700; --z-cmd: 800;
+
+  /* ---------- 动效：缓动 ---------- */
+  /* 进入/退出 → ease-out（起步快，感知响应迅速） */
+  --e-out-quad:  cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --e-out:       cubic-bezier(0.215, 0.61, 0.355, 1);     /* 默认 */
+  --e-out-quint: cubic-bezier(0.23, 1, 0.32, 1);          /* 大胆版 */
+  /* 屏内移动 → ease-in-out */
+  --e-inout:     cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* 悬停/变色 → ease */
+  --e-ease:      cubic-bezier(0.4, 0, 0.2, 1);
+  /* 弹性 → 仅用于抽屉/弹窗这类被"抛出"的层 */
+  --e-spring:    cubic-bezier(0.34, 1.32, 0.64, 1);
+  /* 匀速 → 仅用于跑马灯/加载环 */
+  --e-linear:    linear;
+
+  /* ---------- 动效：时长 ---------- */
+  --d-instant: 90ms;    /* 按下反馈 */
+  --d-fast:    130ms;   /* 微交互、图标变色 */
+  --d-base:    180ms;   /* 悬停、变色、下拉 */
+  --d-slow:    240ms;   /* 弹窗、抽屉进入（上限 300ms） */
+  --d-exit:    150ms;   /* 退出比进入快约 20% */
+  --d-enter-list: 320ms;/* 列表入场整段，单项之间 stagger 40ms */
+  --d-ambient: 18s;     /* 环境光/极光漂移，超慢，几乎察觉不到循环 */
+}
+
+/* ============================================================
+   浅色模式：同一套结构，把骨架换成纸感中性灰
+   极光高光在浅色下降低饱和，避免刺眼
+   ============================================================ */
+:root[data-mode="light"] {
+  --bg:         #F4F4F6;
+  --bg-elev-1:  #FCFCFD;
+  --bg-elev-2:  #FFFFFF;
+  --bg-elev-3:  #F0F0F3;
+  --bg-sunken:  #E8E8EC;
+
+  --line:        rgba(15, 15, 20, 0.09);
+  --line-strong: rgba(15, 15, 20, 0.18);
+  --line-faint:  rgba(15, 15, 20, 0.05);
+
+  --text:   #16161C;
+  --text-2: #5C5C68;
+  --text-3: #9494A0;
+  --text-inv: #FFFFFF;
+
+  --au-cyan:   #0891B2;
+  --au-indigo: #4F46E5;
+  --au-violet: #9333EA;
+  --aurora: linear-gradient(115deg, #0891B2 0%, #4F46E5 48%, #9333EA 100%);
+  --aurora-soft: linear-gradient(115deg, rgba(8,145,178,.10), rgba(79,70,229,.12), rgba(147,51,234,.10));
+
+  --focus: #4F46E5;
+  --accent: #4F46E5;
+  --accent-dim: rgba(79, 70, 229, 0.10);
+
+  --ok: #059669;  --ok-bg: rgba(5,150,105,.10);
+  --warn: #B45309; --warn-bg: rgba(180,83,9,.10);
+  --danger: #DC2626; --danger-bg: rgba(220,38,38,.10);
+  --info: #2563EB; --info-bg: rgba(37,99,235,.10);
+  --neutral: #6B6B76; --neutral-bg: rgba(107,107,118,.10);
+
+  --sh-1: 0 1px 2px rgba(15,15,20,.06);
+  --sh-2: 0 8px 24px -10px rgba(15,15,20,.14);
+  --sh-3: 0 20px 50px -20px rgba(15,15,20,.2);
+  --sh-glow: 0 12px 30px -12px rgba(79,70,229,.3);
+}
+
+/* ============================================================
+   图标基类
+   ============================================================ */
+.ic {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  transition: color var(--d-fast) var(--e-ease);
+}
+.ic-block { display: block; }
+
+/* 图标按钮：保证 44px 触达区（视觉可小，命中区不可小） */
+.ic-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 34px; height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-elev-1);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color var(--d-base) var(--e-ease),
+              border-color var(--d-base) var(--e-ease),
+              background var(--d-base) var(--e-ease),
+              transform var(--d-fast) var(--e-ease);
+}
+.ic-btn::after {
+  content: '';
+  position: absolute;
+  inset: -5px;              /* 视觉 34px → 命中 44px */
+}
+.ic-btn:hover { color: var(--text); border-color: var(--line-strong); background: var(--bg-elev-2); }
+.ic-btn:active { transform: scale(0.96); }   /* 按下反馈 90ms */
+
+/* ============================================================
+   全局焦点态（此前全站缺失 —— 键盘可达性硬伤）
+   ============================================================ */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+/* 深色背景上的元素给一圈背景色内描边，防止焦点环被吞 */
+.ic-btn:focus-visible,
+.nav-item:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--bg);
+}
+
+/* ============================================================
+   动效降级：全站统一（此前只有 index.html 有）
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 保留不依赖位移的状态变化，仅去掉位移/缩放/视差 */
+  .card:hover .ph,
+  .card:hover { transform: none !important; }
+}
+
+/* 触摸设备：避免 tap 触发 hover 造成"卡住"的高亮 */
+@media (hover: none) {
+  .ic-btn:hover { color: var(--text-2); border-color: var(--line); background: var(--bg-elev-1); }
+}
