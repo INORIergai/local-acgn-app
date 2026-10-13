@@ -1,0 +1,841 @@
+/* ==========================================================================
+   theme-v4.css —— 首页右上角「风格切换」皮肤层
+   --------------------------------------------------------------------------
+   2026-09-21 新增。三套皮肤，由 <html data-v4skin="..."> 切换：
+     (空 / "classic")  当前 Aardvark 白底纸感风格（默认，本文件不参与）
+     "aurora"          V4.1 AURORA 极光 —— docs/redesign/v4-1-aurora.html
+     "ambient"         V4.4 AMBIENT 暮色沉浸 —— docs/redesign/v4-4-ambient.html
+
+   实现策略（低风险、可回滚）：
+   · 本文件是纯覆盖层，只改颜色/阴影/圆角/背景，不动任何布局尺寸。
+   · 所有规则都挂在 html[data-v4skin="xxx"] 下，classic 状态下零影响。
+   · 通过重定义 style.css 的 CSS 变量（--bg / --text / --card-bg …）拿到
+     80% 的换肤效果，剩下的组件（顶栏、侧栏、卡片、抽屉）单独微调。
+   · 删掉本文件 + library.html 里的 <link> 即可完全回滚。
+   ========================================================================== */
+
+/* ==========================================================================
+   V4.1 · AURORA 极光
+   深蓝紫底 + 漂移极光背景场 + 玻璃卡片 + 卡片扫光
+   ========================================================================== */
+
+html[data-v4skin="aurora"] {
+    --bg: #0A0E1A;
+    --bg-elevated: #121828;
+    --card-bg: #121828;
+    --card-bg-hover: #182034;
+    --text: #E8ECF8;
+    --text-muted: #8B95B4;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+
+    --primary: #818CF8;
+    --primary-strong: #A5B4FC;
+    --primary-soft: rgba(129, 140, 248, 0.16);
+    --danger: #F87171;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+
+    --sprocket-bg: #070A14;
+    --sprocket-hole: #0A0E1A;
+
+    --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 18px 48px -16px rgba(0, 0, 0, 0.8);
+
+    /* 极光三色 */
+    --au-cyan: #22D3EE;
+    --au-indigo: #818CF8;
+    --au-violet: #C084FC;
+    --au-aurora: linear-gradient(115deg, #22D3EE 0%, #818CF8 48%, #C084FC 100%);
+    --au-glass: rgba(255, 255, 255, 0.045);
+    --au-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+html[data-v4skin="aurora"] body {
+    background: var(--bg);
+    color: var(--text);
+}
+
+/* ---------- 漂移极光背景场 ---------- */
+html[data-v4skin="aurora"] body::before {
+    content: '';
+    position: fixed;
+    inset: -20vh -10vw;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(38vw 38vw at 18% 22%, rgba(34, 211, 238, .22), transparent 62%),
+        radial-gradient(42vw 42vw at 78% 16%, rgba(129, 140, 248, .26), transparent 64%),
+        radial-gradient(40vw 40vw at 62% 78%, rgba(192, 132, 252, .20), transparent 66%);
+    filter: blur(90px);
+    animation: auDrift1 19s ease-in-out infinite alternate;
+}
+html[data-v4skin="aurora"] body::after {
+    content: '';
+    position: fixed;
+    inset: -20vh -10vw;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(34vw 34vw at 88% 62%, rgba(34, 211, 238, .16), transparent 64%),
+        radial-gradient(30vw 30vw at 10% 82%, rgba(192, 132, 252, .18), transparent 62%);
+    filter: blur(90px);
+    animation: auDrift2 23s ease-in-out infinite alternate;
+}
+@keyframes auDrift1 {
+    from { transform: translate3d(-2%, -1%, 0) scale(1); }
+    to   { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+@keyframes auDrift2 {
+    from { transform: translate3d(2%, 1%, 0) scale(1.05); }
+    to   { transform: translate3d(-3%, -2%, 0) scale(1); }
+}
+/* 内容层压在极光之上 */
+html[data-v4skin="aurora"] .navbar,
+html[data-v4skin="aurora"] .main-container { position: relative; z-index: 1; }
+
+/* ---------- 顶栏：玻璃 ---------- */
+html[data-v4skin="aurora"] .navbar {
+    background: rgba(10, 14, 26, 0.72);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border-bottom: 1px solid var(--border);
+}
+html[data-v4skin="aurora"] .logo {
+    font-family: var(--font-display);
+    color: var(--text);
+}
+html[data-v4skin="aurora"] .logo::before {
+    background: var(--au-aurora);
+    box-shadow: 0 0 14px 2px rgba(129, 140, 248, .7);
+}
+html[data-v4skin="aurora"] .search-box input,
+html[data-v4skin="aurora"] #searchInput {
+    background: var(--au-glass);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 999px;
+}
+html[data-v4skin="aurora"] #searchInput::placeholder { color: var(--text-muted); }
+html[data-v4skin="aurora"] #searchInput:focus {
+    border-color: rgba(129, 140, 248, .6);
+    box-shadow: 0 0 0 4px rgba(129, 140, 248, .18);
+    outline: none;
+}
+html[data-v4skin="aurora"] .theme-toggle {
+    background: var(--au-glass);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 50%;
+}
+html[data-v4skin="aurora"] .theme-toggle:hover { border-color: var(--border-strong); }
+
+/* ---------- 主按钮：极光渐变 ---------- */
+html[data-v4skin="aurora"] .btn:not(.btn-secondary):not(.btn-danger),
+html[data-v4skin="aurora"] .btn-primary {
+    background: var(--au-aurora);
+    background-size: 200% 100%;
+    border: 0;
+    color: #0B1030;
+    font-weight: 700;
+    animation: auPan 8s ease-in-out infinite alternate;
+}
+@keyframes auPan {
+    from { background-position: 0% 50%; }
+    to   { background-position: 100% 50%; }
+}
+html[data-v4skin="aurora"] .btn-secondary {
+    background: var(--au-glass);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+}
+
+/* ---------- 侧栏 ---------- */
+html[data-v4skin="aurora"] .sidebar {
+    background: rgba(10, 14, 26, .5);
+    border-right: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+}
+html[data-v4skin="aurora"] .sidebar-section h3 { color: var(--text-muted); }
+html[data-v4skin="aurora"] .nav-item {
+    color: var(--text-muted);
+    border-left: 2px solid transparent;
+    border-radius: 12px;
+}
+html[data-v4skin="aurora"] .nav-item:hover {
+    background: var(--au-glass);
+    color: var(--text);
+}
+html[data-v4skin="aurora"] .nav-item.active {
+    background: linear-gradient(100deg, rgba(34, 211, 238, .18), rgba(129, 140, 248, .18) 55%, rgba(192, 132, 252, .16));
+    border-left-color: transparent;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(129, 140, 248, .35);
+}
+html[data-v4skin="aurora"] .nav-item.active .count { color: var(--au-cyan); }
+html[data-v4skin="aurora"] .stat-card {
+    background: var(--au-glass);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+
+/* ---------- 工具条 ---------- */
+html[data-v4skin="aurora"] .toolbar { border-bottom: 1px solid var(--border); }
+html[data-v4skin="aurora"] .toolbar-title { color: var(--text); }
+html[data-v4skin="aurora"] .toolbar-count { color: var(--text-muted); }
+
+/* ---------- 影片卡片：玻璃 + 扫光 ---------- */
+html[data-v4skin="aurora"] .movie-card,
+html[data-v4skin="aurora"] .movie-card-compact {
+    background: var(--au-glass);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+}
+html[data-v4skin="aurora"] .movie-card:hover {
+    border-color: rgba(129, 140, 248, .55);
+    box-shadow: 0 22px 46px -20px rgba(34, 211, 238, .38), 0 0 0 1px rgba(129, 140, 248, .25);
+}
+/* 扫光：一道斜向高光从左上扫到右下 */
+html[data-v4skin="aurora"] .movie-card .movie-poster-wrap::after,
+html[data-v4skin="aurora"] .movie-card-compact .movie-poster-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .22) 46%, transparent 62%);
+    transform: translateX(-130%);
+    transition: transform .62s ease;
+    z-index: 3;
+}
+html[data-v4skin="aurora"] .movie-card:hover .movie-poster-wrap::after,
+html[data-v4skin="aurora"] .movie-card-compact:hover .movie-poster-wrap::after {
+    transform: translateX(130%);
+}
+html[data-v4skin="aurora"] .movie-grid > .movie-card::before { background-color: var(--sprocket-bg); }
+html[data-v4skin="aurora"] .movie-title-below { background: transparent; color: var(--text); }
+html[data-v4skin="aurora"] .movie-title-below .mtb-meta { color: var(--text-muted); }
+html[data-v4skin="aurora"] .card-progress { background: rgba(255, 255, 255, .14); }
+html[data-v4skin="aurora"] .card-progress-fill,
+html[data-v4skin="aurora"] .card-progress::after { background: var(--au-aurora); }
+
+/* ---------- 首页推荐轮播 ---------- */
+html[data-v4skin="aurora"] .gallery-container {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+}
+html[data-v4skin="aurora"] .gallery-container::before,
+html[data-v4skin="aurora"] .gallery-container::after {
+    background-color: var(--sprocket-bg);
+    background-image: radial-gradient(circle at 50% 50%, var(--sprocket-hole) 2.4px, transparent 3px);
+}
+html[data-v4skin="aurora"] .gallery-dot.active { background: var(--au-cyan); }
+
+/* ---------- 详情抽屉 / 弹窗 ---------- */
+html[data-v4skin="aurora"] #detailModal.modal {
+    background: rgba(4, 6, 14, .72);
+    backdrop-filter: blur(8px);
+}
+html[data-v4skin="aurora"] #detailModal .modal-content.detail-modal {
+    background: #10162A;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+}
+html[data-v4skin="aurora"] .detail-head { border-bottom: 1px solid var(--border); }
+html[data-v4skin="aurora"] .detail-title { color: var(--text); }
+html[data-v4skin="aurora"] .detail-avid {
+    color: var(--au-cyan);
+    background: rgba(34, 211, 238, .14);
+}
+html[data-v4skin="aurora"] .detail-head-meta .hm { border-bottom: 1px dashed var(--border); }
+html[data-v4skin="aurora"] .detail-head-meta .hm b { color: var(--text-muted); }
+html[data-v4skin="aurora"] .detail-head-meta .hm span { color: var(--text); }
+html[data-v4skin="aurora"] .detail-scroll { background: transparent; }
+html[data-v4skin="aurora"] .detail-section h4 { color: var(--text-muted); }
+html[data-v4skin="aurora"] .detail-overview { color: var(--text); }
+html[data-v4skin="aurora"] .detail-tag,
+html[data-v4skin="aurora"] .detail-actress {
+    background: var(--au-glass);
+    border-color: var(--border);
+    color: var(--text);
+}
+html[data-v4skin="aurora"] .detail-path {
+    background: var(--au-glass);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+html[data-v4skin="aurora"] .detail-primary-actions .btn-primary {
+    background: var(--au-aurora);
+    color: #0B1030;
+}
+
+/* ---------- 分页 / 空态 ---------- */
+html[data-v4skin="aurora"] .pagination-item,
+html[data-v4skin="aurora"] .page-btn {
+    background: var(--au-glass);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+html[data-v4skin="aurora"] .pagination-item.active,
+html[data-v4skin="aurora"] .page-btn.active {
+    background: var(--au-aurora);
+    color: #0B1030;
+    border-color: transparent;
+}
+
+/* ---------- V4.1 入场：卡片依次升起 ---------- */
+html[data-v4skin="aurora"] .movie-grid > .movie-card {
+    animation: auRise .5s var(--au-spring) backwards;
+}
+@keyframes auRise {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+}
+
+/* ==========================================================================
+   V4.4 · AMBIENT 暮色沉浸
+   中性炭黑 + UI 完全退后 + 卡片环境光溢出 + 3D 微倾斜
+   ========================================================================== */
+
+html[data-v4skin="ambient"] {
+    --bg: #0F0F14;
+    --bg-elevated: #17171D;
+    --card-bg: #17171D;
+    --card-bg-hover: #1E1E26;
+    --text: #F2F2F5;
+    --text-muted: #9C9CA8;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.14);
+
+    --primary: #6E8BFF;
+    --primary-strong: #8FA5FF;
+    --primary-soft: rgba(110, 139, 255, 0.14);
+    --danger: #F87171;
+    --danger-soft: rgba(248, 113, 113, 0.12);
+
+    --sprocket-bg: #0A0A0E;
+    --sprocket-hole: #0F0F14;
+
+    --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 18px 46px -16px rgba(0, 0, 0, 0.75);
+
+    --am-accent: #6E8BFF;
+    --am-soft: cubic-bezier(.3, 1.1, .4, 1);
+    --am-ease: cubic-bezier(.25, .7, .3, 1);
+}
+
+html[data-v4skin="ambient"] body {
+    background: var(--bg);
+    color: var(--text);
+}
+
+/* ---------- 顶栏：几乎隐形 ---------- */
+html[data-v4skin="ambient"] .navbar {
+    background: rgba(15, 15, 20, .82);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+}
+html[data-v4skin="ambient"] .logo::before {
+    background: radial-gradient(circle at 35% 30%, #8FA5FF, #4356A8 70%);
+    box-shadow: 0 0 18px rgba(110, 139, 255, .5);
+}
+html[data-v4skin="ambient"] .search-box input,
+html[data-v4skin="ambient"] #searchInput {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 999px;
+}
+html[data-v4skin="ambient"] #searchInput::placeholder { color: #62626E; }
+html[data-v4skin="ambient"] #searchInput:focus {
+    border-color: rgba(110, 139, 255, .5);
+    box-shadow: 0 0 0 4px rgba(110, 139, 255, .16);
+    outline: none;
+}
+html[data-v4skin="ambient"] .theme-toggle {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 50%;
+}
+html[data-v4skin="ambient"] .theme-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+
+/* ---------- 主按钮：反白（设计稿 .btn-main 是白底黑字） ---------- */
+html[data-v4skin="ambient"] .btn:not(.btn-secondary):not(.btn-danger),
+html[data-v4skin="ambient"] .btn-primary {
+    background: var(--text);
+    color: #111;
+    border: 0;
+    font-weight: 600;
+    transition: transform .3s var(--am-soft), box-shadow .3s var(--am-soft);
+}
+html[data-v4skin="ambient"] .btn:not(.btn-secondary):not(.btn-danger):hover,
+html[data-v4skin="ambient"] .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 26px -8px rgba(255, 255, 255, .25);
+}
+html[data-v4skin="ambient"] .btn-secondary {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+}
+
+/* ---------- 侧栏 ---------- */
+html[data-v4skin="ambient"] .sidebar {
+    background: transparent;
+    border-right: 1px solid var(--border);
+}
+html[data-v4skin="ambient"] .sidebar-section h3 { color: #62626E; }
+html[data-v4skin="ambient"] .nav-item {
+    color: var(--text-muted);
+    border-left: 2px solid transparent;
+    border-radius: 12px;
+    transition: background .25s var(--am-ease), color .25s var(--am-ease);
+}
+html[data-v4skin="ambient"] .nav-item:hover {
+    background: var(--bg-elevated);
+    color: var(--text);
+}
+html[data-v4skin="ambient"] .nav-item.active {
+    background: #1E1E26;
+    border-left-color: transparent;
+    color: var(--text);
+    font-weight: 600;
+}
+html[data-v4skin="ambient"] .nav-item.active .count { color: var(--am-accent); }
+html[data-v4skin="ambient"] .stat-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+
+/* ---------- 工具条 ---------- */
+html[data-v4skin="ambient"] .toolbar { border-bottom: 1px solid var(--border); }
+html[data-v4skin="ambient"] .toolbar-count { color: #62626E; }
+
+/* ---------- 影片卡片：环境光溢出 + 3D 微倾斜 ---------- */
+html[data-v4skin="ambient"] .movie-card,
+html[data-v4skin="ambient"] .movie-card-compact {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: visible;
+    transition: transform .35s var(--am-soft), border-color .3s var(--am-ease), box-shadow .35s var(--am-ease);
+}
+html[data-v4skin="ambient"] .movie-card:hover,
+html[data-v4skin="ambient"] .movie-card-compact:hover {
+    transform: perspective(700px) rotateX(3deg) rotateY(-2.4deg) translateY(-4px) scale(1.025);
+    border-color: var(--border-strong);
+    box-shadow: 0 26px 60px -24px rgba(0, 0, 0, .85);
+}
+/* 环境光：用真实子元素 .am-glow 做（不能占用 ::before/::after —— 齿孔与放映机光束已经用了），
+   z-index: -1 + 卡片自身的层叠上下文，保证光在卡片背后溢出来。
+   --glow 由 JS 按海报色写入，缺省用强调色。 */
+html[data-v4skin="ambient"] .am-glow {
+    position: absolute;
+    inset: -14px -10px -6px;
+    border-radius: 26px;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(closest-side, var(--glow, rgba(110, 139, 255, .35)), transparent 78%);
+    opacity: 0;
+    transform: scale(.86);
+    transition: opacity .45s var(--am-ease), transform .45s var(--am-ease);
+}
+html[data-v4skin="ambient"] .movie-card:hover > .am-glow,
+html[data-v4skin="ambient"] .movie-card-compact:hover > .am-glow {
+    opacity: 1;
+    transform: scale(1);
+}
+/* 卡片内层压在环境光之上 */
+html[data-v4skin="ambient"] .movie-card > .movie-poster-wrap,
+html[data-v4skin="ambient"] .movie-card > .movie-title-below,
+html[data-v4skin="ambient"] .movie-card > .card-progress,
+html[data-v4skin="ambient"] .movie-card > .badge-fav,
+html[data-v4skin="ambient"] .movie-card > .badge-watched,
+html[data-v4skin="ambient"] .movie-card-compact > .movie-poster-wrap,
+html[data-v4skin="ambient"] .movie-card-compact > .movie-title-below { position: relative; z-index: 1; }
+/* 非 ambient 皮肤下这个元素完全隐形 */
+.am-glow { display: none; }
+html[data-v4skin="ambient"] .am-glow { display: block; }
+html[data-v4skin="ambient"] .movie-title-below { background: transparent; color: var(--text); }
+html[data-v4skin="ambient"] .movie-title-below .mtb-meta { color: #62626E; }
+html[data-v4skin="ambient"] .card-progress { background: rgba(255, 255, 255, .16); }
+html[data-v4skin="ambient"] .card-progress-fill,
+html[data-v4skin="ambient"] .card-progress::after { background: var(--am-accent); }
+
+/* ---------- 首页推荐轮播 ---------- */
+html[data-v4skin="ambient"] .gallery-container {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+}
+html[data-v4skin="ambient"] .gallery-container::before,
+html[data-v4skin="ambient"] .gallery-container::after {
+    background-color: var(--sprocket-bg);
+    background-image: radial-gradient(circle at 50% 50%, var(--sprocket-hole) 2.4px, transparent 3px);
+}
+html[data-v4skin="ambient"] .gallery-container img { animation: amKenburns 20s var(--am-ease) infinite alternate; }
+@keyframes amKenburns {
+    from { transform: scale(1); }
+    to   { transform: scale(1.08) translate(-10px, -6px); }
+}
+html[data-v4skin="ambient"] .gallery-dot.active { background: var(--am-accent); }
+
+/* ---------- 详情抽屉 / 弹窗 ---------- */
+html[data-v4skin="ambient"] #detailModal.modal {
+    background: rgba(8, 8, 12, .62);
+    backdrop-filter: blur(5px);
+}
+html[data-v4skin="ambient"] #detailModal .modal-content.detail-modal {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+}
+html[data-v4skin="ambient"] .detail-head { border-bottom: 1px solid var(--border); }
+html[data-v4skin="ambient"] .detail-title { color: var(--text); }
+html[data-v4skin="ambient"] .detail-avid {
+    color: var(--am-accent);
+    background: rgba(110, 139, 255, .14);
+}
+html[data-v4skin="ambient"] .detail-head-meta .hm { border-bottom: 1px dashed var(--border); }
+html[data-v4skin="ambient"] .detail-head-meta .hm b { color: #62626E; }
+html[data-v4skin="ambient"] .detail-section h4 { color: #62626E; }
+html[data-v4skin="ambient"] .detail-tag,
+html[data-v4skin="ambient"] .detail-actress {
+    background: #1E1E26;
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+html[data-v4skin="ambient"] .detail-path {
+    background: #1E1E26;
+    border-color: var(--border);
+    color: #62626E;
+}
+html[data-v4skin="ambient"] .detail-primary-actions .btn-primary {
+    background: var(--text);
+    color: #111;
+}
+
+/* ---------- 分页 ---------- */
+html[data-v4skin="ambient"] .pagination-item,
+html[data-v4skin="ambient"] .page-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 12px;
+}
+html[data-v4skin="ambient"] .pagination-item.active,
+html[data-v4skin="ambient"] .page-btn.active {
+    background: var(--am-accent);
+    border-color: transparent;
+    color: #0B1030;
+    font-weight: 700;
+}
+
+/* ---------- 设置页 ---------- */
+html[data-v4skin="ambient"] .settings-nav-item,
+html[data-v4skin="aurora"] .settings-nav-item {
+    color: var(--text-muted);
+    border-radius: 12px;
+}
+html[data-v4skin="ambient"] .settings-nav-item.active,
+html[data-v4skin="aurora"] .settings-nav-item.active {
+    background: var(--bg-elevated);
+    color: var(--text);
+}
+html[data-v4skin="aurora"] .settings-nav-item.active {
+    background: linear-gradient(100deg, rgba(34, 211, 238, .16), rgba(129, 140, 248, .16));
+}
+html[data-v4skin="ambient"] .settings-card,
+html[data-v4skin="ambient"] .settings-group,
+html[data-v4skin="aurora"] .settings-card,
+html[data-v4skin="aurora"] .settings-group {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+}
+html[data-v4skin="ambient"] .detail-mode-card,
+html[data-v4skin="aurora"] .detail-mode-card { background: var(--bg-elevated); }
+html[data-v4skin="ambient"] .folder-item,
+html[data-v4skin="aurora"] .folder-item {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+/* ==========================================================================
+   AvBoard（猜你喜欢 / 漫画 / 小说 展台）在各皮肤下的适配
+   —— 原版是 Aardvark 的橙色 blob + 黑字 + 糖果色卡，在深色皮肤下会严重冲突
+   ========================================================================== */
+
+/* ---------- AURORA：hero 无背景（水波纹），只调文字色 ---------- */
+html[data-v4skin="aurora"] .av-hero .av-kicker { color: var(--au-cyan); }
+html[data-v4skin="aurora"] .av-hero h2 { color: var(--text); }
+html[data-v4skin="aurora"] .av-hero .av-sub { color: var(--text-muted); }
+html[data-v4skin="aurora"] .av-hand { color: var(--au-violet); }
+html[data-v4skin="aurora"] .av-chip {
+    background: var(--au-glass);
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+}
+html[data-v4skin="aurora"] .av-chip em { color: var(--au-cyan); opacity: .9; }
+html[data-v4skin="aurora"] .av-chip.on,
+html[data-v4skin="aurora"] .av-chip.dark {
+    background: var(--au-aurora);
+    border-color: transparent;
+    color: #0B1030;
+    box-shadow: none;
+}
+html[data-v4skin="aurora"] .av-chip.ink {
+    background: rgba(192, 132, 252, .85);
+    border-color: transparent;
+    color: #170B2E;
+}
+/* 糖果卡：改成低饱和玻璃卡，字变浅 */
+html[data-v4skin="aurora"] .av-card:not(.wide) {
+    background: var(--au-glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+}
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-title { color: var(--text); }
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-sub { color: var(--text-muted); }
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-sub b { color: var(--text); }
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-num { color: rgba(255, 255, 255, .2); }
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-cta {
+    background: var(--au-aurora);
+    color: #0B1030;
+}
+html[data-v4skin="aurora"] .av-card.wide .av-cover {
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .5), 0 18px 40px -20px rgba(0, 0, 0, .8);
+}
+html[data-v4skin="aurora"] .av-card.wide:hover .av-cover {
+    box-shadow: 0 26px 60px -22px rgba(34, 211, 238, .34), 0 0 0 1px rgba(129, 140, 248, .45);
+}
+html[data-v4skin="aurora"] .av-card.wide .av-cap b { color: var(--text); }
+html[data-v4skin="aurora"] .av-card.wide .av-cap span { color: var(--text-muted); }
+html[data-v4skin="aurora"] .av-empty { color: var(--text-muted); }
+
+/* ---------- AMBIENT：hero 无背景（水波纹），只调文字色 ---------- */
+html[data-v4skin="ambient"] .av-hero .av-kicker { color: var(--am-accent); }
+html[data-v4skin="ambient"] .av-hero h2 { color: var(--text); }
+html[data-v4skin="ambient"] .av-hero .av-sub { color: #62626E; }
+html[data-v4skin="ambient"] .av-hand { color: #8F9AC8; }
+html[data-v4skin="ambient"] .av-chip {
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+html[data-v4skin="ambient"] .av-chip em { color: var(--am-accent); opacity: .9; }
+html[data-v4skin="ambient"] .av-chip.on,
+html[data-v4skin="ambient"] .av-chip.dark {
+    background: var(--text);
+    border-color: transparent;
+    color: #111;
+    box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px var(--text);
+}
+html[data-v4skin="ambient"] .av-chip.ink {
+    background: var(--am-accent);
+    border-color: transparent;
+    color: #0B1030;
+}
+html[data-v4skin="ambient"] .av-card:not(.wide) {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+}
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-title { color: var(--text); }
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-sub { color: #62626E; }
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-sub b { color: var(--text-muted); }
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-num { color: rgba(255, 255, 255, .14); }
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-cta {
+    background: var(--text);
+    color: #111;
+}
+html[data-v4skin="ambient"] .av-card.wide .av-cover {
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .55), 0 18px 40px -20px rgba(0, 0, 0, .8);
+}
+html[data-v4skin="ambient"] .av-card.wide:hover .av-cover {
+    box-shadow: 0 30px 66px -24px rgba(0, 0, 0, .9);
+    border-color: var(--border-strong);
+}
+html[data-v4skin="ambient"] .av-card.wide .av-cap b { color: var(--text); }
+html[data-v4skin="ambient"] .av-card.wide .av-cap span { color: #62626E; }
+html[data-v4skin="ambient"] .av-empty { color: var(--text-muted); }
+/* 兔子在深色皮肤下也保持糖果色（本来就鲜艳，不减分） */
+
+/* ---------- 漫画 / 小说 横向书架 ---------- */
+html[data-v4skin="aurora"] .av-slider::-webkit-scrollbar-thumb,
+html[data-v4skin="ambient"] .av-slider::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .14); }
+html[data-v4skin="aurora"] .av-folder,
+html[data-v4skin="ambient"] .av-folder {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+/* ==========================================================================
+   ★ 深色皮肤下 AvBoard 外壳必须一起翻黑（2026-09-22 修）
+   --------------------------------------------------------------------------
+   背景：av-board.css 给 .av-view 写死了 background:#fff; color:#000
+   （那是经典橙 blob + 白底书架的底），而下面的卡片在深色皮肤里被改成了
+   深玻璃 / 深炭色 —— 两者一撞就是两种烂法，实测：
+     · aurora ：白底 + rgba(255,255,255,.045) 卡片 + #E8ECF8 浅字
+                = 白字白底，实测对比度 1.18，文件名完全看不见
+     · ambient：白底 + #17171D 黑卡 = 黑块浮在白板上，整页视觉崩掉
+   这里把 .av-view 一起翻深，并给卡片补回「糖果色相 + 可辨识描边」，
+   让每章仍然按自己的糖果色区分，但落在深色上是可读的。
+   ========================================================================== */
+html[data-v4skin="aurora"] .av-view,
+html[data-v4skin="ambient"] .av-view {
+    background: var(--bg-elevated);
+    color: var(--text);
+}
+html[data-v4skin="aurora"] .av-view ::selection { background: rgba(34, 211, 238, .28); }
+html[data-v4skin="ambient"] .av-view ::selection { background: rgba(110, 139, 255, .28); }
+
+/* 卡片：保留 --cv（每章的糖果色）色相，压成深色可读版本 */
+html[data-v4skin="aurora"] .av-card:not(.wide),
+html[data-v4skin="ambient"] .av-card:not(.wide) {
+    background: color-mix(in srgb, var(--cv, #818CF8) 15%, var(--bg-elevated));
+    border: 1px solid color-mix(in srgb, var(--cv, #818CF8) 36%, transparent);
+    backdrop-filter: none;
+}
+
+/* 文件大小药丸：基类是 background:#000，在黑卡上等于隐形 → 翻成浅底 */
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-sub span,
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-sub span {
+    background: rgba(255, 255, 255, .16);
+    color: var(--text);
+}
+
+/* 幽灵大数字：深色下再压一档，避免抢标题 */
+html[data-v4skin="aurora"] .av-card:not(.wide) .av-num { color: rgba(255, 255, 255, .09); }
+html[data-v4skin="ambient"] .av-card:not(.wide) .av-num { color: rgba(255, 255, 255, .07); }
+
+/* 横向书架：渐隐底色 / 说明行 / 翻页按钮 跟着皮肤走 */
+html[data-v4skin="aurora"],
+html[data-v4skin="ambient"] { --av-shelf-bg: var(--bg-elevated); }
+
+html[data-v4skin="aurora"] .av-slide-foot,
+html[data-v4skin="ambient"] .av-slide-foot { color: var(--text-muted); }
+html[data-v4skin="aurora"] .av-slide-foot .av-slide-count,
+html[data-v4skin="ambient"] .av-slide-foot .av-slide-count { color: var(--text); }
+
+html[data-v4skin="aurora"] .av-slide-nav {
+    background: var(--au-aurora);
+    color: #0B1030;
+}
+html[data-v4skin="ambient"] .av-slide-nav {
+    background: var(--text);
+    color: #111;
+}
+html[data-v4skin="aurora"] .av-slide-nav:hover,
+html[data-v4skin="ambient"] .av-slide-nav:hover {
+    background: var(--text);
+    color: var(--bg);
+}
+
+html[data-v4skin="aurora"] .av-slider::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, .22);
+    border: 4px solid transparent;
+    background-clip: content-box;
+}
+html[data-v4skin="ambient"] .av-slider::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, .18);
+    border: 4px solid transparent;
+    background-clip: content-box;
+}
+
+/* ---------- Banner 水波纹在深色皮肤下的配色（2026-09-22 第三版） ----------
+   blob/扫光/光斑已全部删除；JS 端 initRipple 从 .av-hero 上读
+   --ripple-light / --ripple-dark（"r,g,b" 格式）渲染波纹明暗。 */
+html[data-v4skin="aurora"] .av-hero {
+    --ripple-light: 165,205,255;   /* 波峰：冷月白 */
+    --ripple-dark: 12,18,48;       /* 波谷：深海底色 */
+}
+html[data-v4skin="ambient"] .av-hero {
+    --ripple-light: 255,255,255;
+    --ripple-dark: 24,26,44;
+}
+
+/* ==========================================================================
+   风格切换器（首页右上角）
+   ========================================================================== */
+.v4-skin-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--bg-elevated, rgba(127, 127, 127, .1));
+    border: 1px solid var(--border, rgba(127, 127, 127, .2));
+}
+.v4-skin-btn {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), background .18s ease;
+}
+.v4-skin-btn:hover { transform: scale(1.12); }
+.v4-skin-btn .v4-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: block;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
+}
+.v4-skin-btn[data-skin="classic"] .v4-dot { background: linear-gradient(135deg, #F1EEE6 50%, #9A6A15 50%); }
+.v4-skin-btn[data-skin="aurora"]  .v4-dot { background: linear-gradient(135deg, #22D3EE, #818CF8 48%, #C084FC); }
+.v4-skin-btn[data-skin="ambient"] .v4-dot { background: linear-gradient(135deg, #0F0F14 50%, #6E8BFF 50%); }
+.v4-skin-btn.on {
+    background: rgba(127, 127, 127, .22);
+    box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .35);
+}
+.v4-skin-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+/* 当前皮肤下给选中点一个光环 */
+.v4-skin-btn.on .v4-dot { box-shadow: 0 0 0 2px var(--bg, #fff), 0 0 0 3px currentColor; }
+
+/* 提示气泡 */
+.v4-skin-btn::after {
+    content: attr(data-label);
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-4px);
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 7px;
+    background: rgba(20, 20, 24, .92);
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease;
+    z-index: 20;
+}
+.v4-skin-btn:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ==========================================================================
+   减少动态效果
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    html[data-v4skin="aurora"] body::before,
+    html[data-v4skin="aurora"] body::after,
+    html[data-v4skin="aurora"] .btn,
+    html[data-v4skin="ambient"] .gallery-container img,
+    html[data-v4skin="aurora"] .movie-grid > .movie-card { animation: none !important; }
+    html[data-v4skin="aurora"] .movie-card .movie-poster-wrap::after { transition: none; }
+    html[data-v4skin="ambient"] .movie-card:hover,
+    html[data-v4skin="ambient"] .movie-card-compact:hover { transform: none; }
+}

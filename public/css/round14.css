@@ -1,0 +1,230 @@
+/* ==========================================================================
+   round14.css —— 第 14 轮样式覆盖层（2026-09-22）
+   --------------------------------------------------------------------------
+   加载顺序：round13.css 之后、mobile.css 之前（越靠后优先级越高）。
+   内容：
+     1  子弹窗层级修复（上传封面/更换海报被压在详情抽屉底下的 bug）
+     2  详情弹窗标签 → 切片器（悬停海报预览 / 点击进筛选 / × 删除）
+     3  漫画/小说工作区 · 填满视窗（卡片网格化 + hero 紧凑左对齐）
+     4  新作监视 · 海报放大
+     5  播放列表选择弹窗（替代原生 prompt 序列号）
+     6  高度自定义 CSS 变量（主页/banner 背景图、侧栏收缩、图表显隐、
+        海报比例大小、播放器大小/位置 —— 全部由设置页写入 html 变量/属性驱动）
+   ========================================================================== */
+
+/* ============ 1. 子弹窗层级修复 ============ */
+/* polish.css 给 #detailModal 提到了 z-index 510，普通 .modal 只有 500，
+   导致从详情抽屉里打开的上传封面/更换海报弹窗被压在抽屉底下。
+   这里统一提到抽屉之上（灯箱是 600，播放列表/上传类弹窗用 560 一档）。 */
+#playerModal,
+#posterModal,
+#uploadPosterModal,
+#aiModal,
+#playlistPickModal { z-index: 560; }
+
+/* ============ 2. 详情弹窗标签 → 切片器 ============ */
+.detail-tags { position: relative; }
+.detail-tag.tag-slicer {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+    overflow: visible;
+    cursor: pointer;
+}
+.detail-tag .dt-name { pointer-events: auto; }
+.detail-tag .dt-x {
+    display: inline-grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, .06);
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+.detail-tag .dt-x:hover {
+    background: #e05555;
+    color: #fff;
+    transform: scale(1.12);
+}
+/* 悬停时的切片高亮（海报预览浮层由 JS 挂 body，见 .tag-slicer-pop） */
+.detail-tag.tag-slicer:hover { border-color: var(--primary); color: var(--primary); }
+
+/* 悬停海报预览浮层（fixed 定位挂在 body 上，压过抽屉 510） */
+.tag-slicer-pop {
+    position: fixed;
+    z-index: 580;
+    display: flex;
+    gap: 5px;
+    padding: 8px;
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    box-shadow: 0 22px 54px -18px rgba(0, 0, 0, .5);
+    opacity: 0;
+    transform: translateY(6px) scale(.96);
+    pointer-events: none;
+    transition: opacity .2s ease, transform .25s cubic-bezier(.32, .72, 0, 1);
+    max-width: min(420px, 90vw);
+}
+.tag-slicer-pop.show { opacity: 1; transform: none; }
+.tag-slicer-pop img {
+    width: 58px;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+    border-radius: 5px;
+    background: var(--bg);
+}
+.tag-slicer-pop .tsp-empty {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    padding: 6px 10px;
+}
+
+/* ============ 3. 漫画/小说工作区 · 填满视窗 ============ */
+/* 之前 .av-board 是居中 flex，作品少时整行缩在中间，两侧大片留白。
+   工作区里改成网格：卡片按功能区撑满右栏宽度。 */
+.av-view.av-workspace .av-main .av-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+    gap: 18px 16px;
+    padding: 20px 0 12px;
+    justify-content: stretch;
+    align-items: stretch;
+}
+.av-view.av-workspace .av-main .av-board > .av-card { width: 100%; }
+/* hero 紧凑化 + 左对齐：标题别占半屏，把空间还给内容 */
+.av-view.av-workspace .av-main .av-hero {
+    text-align: left;
+    padding: 14px 10px 8px;
+    margin: 0;
+}
+.av-view.av-workspace .av-main .av-hero h2 { font-size: clamp(24px, 2.4vw, 40px); }
+.av-view.av-workspace .av-main .av-hero .av-kicker { margin-bottom: 2px; }
+.av-view.av-workspace .av-main .av-hero .av-hand { font-size: 15px; }
+.av-view.av-workspace .av-main .av-chiprow { justify-content: flex-start; margin-top: 10px; }
+.av-view.av-workspace .av-main .av-empty { grid-column: 1 / -1; }
+
+/* ============ 4. 新作监视 · 海报放大 ============ */
+/* minmax 200 → 320：缩略图状态就能看清海报全貌 */
+.nr-day-items {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 18px;
+}
+.nr-card-cover-num { font-size: 15px; }
+
+/* ============ 5. 播放列表选择弹窗 ============ */
+.plp-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+.plp-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, transform .18s cubic-bezier(.32, .72, 0, 1);
+}
+.plp-item:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    transform: translateX(4px);
+}
+.plp-item .plp-ico { font-size: 18px; }
+.plp-item .plp-name { flex: 1; font-weight: 600; font-size: 13.5px; }
+.plp-item .plp-count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* ============ 6. 高度自定义（设置页 → html 变量/属性驱动） ============ */
+
+/* --- 6.1 主页背景图 / banner 背景图 --- */
+body {
+    background-image: var(--page-bg-image, none);
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}
+/* 背景图上保证正文可读：给主容器一层可调透明度的底色纱 */
+html[data-page-bg] .main-container {
+    background: color-mix(in srgb, var(--bg) calc(var(--page-bg-veil, 72) * 1%), transparent);
+    border-radius: 0 0 18px 18px;
+    min-height: calc(100vh - var(--nav-h));
+}
+.av-hero {
+    background-image: var(--banner-bg-image, none);
+    background-size: cover;
+    background-position: center;
+}
+/* banner 有背景图时，水纹画在图上，文字加白底胶囊保证可读 */
+html[data-banner-bg] .av-hero h2,
+html[data-banner-bg] .av-hero .av-kicker,
+html[data-banner-bg] .av-hero .av-sub { color: #fff; text-shadow: 0 2px 14px rgba(0, 0, 0, .55); }
+
+/* --- 6.2 侧栏收缩模式（桌面端：收成图标窄条，悬停浮出） --- */
+@media (min-width: 861px) {
+    html[data-sidebar-collapse] .sidebar {
+        width: 64px;
+        padding-left: 8px;
+        padding-right: 8px;
+        overflow: hidden;
+        transition: width .3s cubic-bezier(.32, .72, 0, 1), box-shadow .3s ease;
+    }
+    html[data-sidebar-collapse] .sidebar:hover,
+    html[data-sidebar-collapse] .sidebar:focus-within {
+        width: 232px;
+        background: var(--bg-elevated);
+        box-shadow: 0 26px 60px -22px rgba(0, 0, 0, .4);
+        z-index: 40;
+    }
+    html[data-sidebar-collapse] .sidebar .nav-item,
+    html[data-sidebar-collapse] .sidebar .sidebar-section h3 { white-space: nowrap; overflow: hidden; }
+    html[data-sidebar-collapse] .sidebar .sidebar-section h3 { opacity: 0; transition: opacity .2s ease; }
+    html[data-sidebar-collapse] .sidebar:hover .sidebar-section h3 { opacity: 1; }
+}
+
+/* --- 6.3 统计图表显示 / 隐藏 --- */
+html[data-hide-charts] #statsPanel,
+html[data-hide-charts] .av-stats,
+html[data-hide-charts] .reading-stats-card { display: none !important; }
+
+/* --- 6.4 海报展示比例 / 大小（仅影片主网格） --- */
+#movieGrid {
+    grid-template-columns: repeat(auto-fill, minmax(calc(158px * var(--card-w-scale, 1)), 1fr));
+}
+html[data-poster-ratio="portrait"] #movieGrid > .movie-card { aspect-ratio: 3 / 4; }
+
+/* --- 6.5 播放器大小 / 位置 --- */
+.player-modal .modal-content { max-width: var(--player-w, 980px); }
+html[data-player-pos="high"] .player-modal { align-items: flex-start; padding-top: 5vh; }
+
+/* 个性化设置页控件 */
+.customize-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--border);
+}
+.customize-row:last-child { border-bottom: none; }
+.customize-row .cr-info { flex: 1; min-width: 0; }
+.customize-row .cr-info b { display: block; font-size: 14px; }
+.customize-row .cr-info span { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.customize-row .cr-ctrl { flex: none; display: flex; align-items: center; gap: 8px; }
+.customize-thumb {
+    width: 92px;
+    height: 56px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background-size: cover;
+    background-position: center;
+    background-color: var(--bg);
+}
+.customize-thumb.empty { display: grid; place-items: center; font-size: 11px; color: var(--text-muted); }

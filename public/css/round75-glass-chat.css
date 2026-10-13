@@ -1,0 +1,241 @@
+/* ==========================================================================
+   round75-glass-chat.css —— AI 对话玻璃态覆盖层（round75）
+   --------------------------------------------------------------------------
+   用户需求：把「对话框」统一成参考图（WorkBuddy 输入卡）的玻璃态风格——
+   半透明磨砂面板 + backdrop-filter 模糊 + 细亮边 + 深投影 + 大圆角 +
+   胶囊输入框 + 圆形渐变发送钮。
+
+   覆盖范围：
+     1. 首页 AI 聊天卡（.home-chat-card / 输入行 / 气泡）
+     2. AI 助手抽屉/弹窗（#aiModal 气泡 / 输入行 / 任务分解步骤条）
+   适配：classic（Aardvark 白底纸感，白玻璃）+ aurora / ambient（暗色，黑玻璃）。
+   纯覆盖层：不改布局尺寸，删除本文件 + library.html 里的 <link> 即可回滚。
+   ========================================================================== */
+
+/* ========== 1. 首页聊天卡：白玻璃面板（classic） ========== */
+.home-chat-card {
+    background: rgba(255, 252, 244, 0.42) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(165%) !important;
+    backdrop-filter: blur(28px) saturate(165%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.55) !important;
+    border-radius: 24px !important;
+    box-shadow:
+        0 24px 70px -28px rgba(60, 38, 8, 0.42),
+        inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+}
+
+/* 输入行：去实底，输入区变胶囊 */
+.home-chat-input {
+    background: transparent !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.38) !important;
+}
+.home-chat-input textarea {
+    background: rgba(255, 255, 255, 0.5) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+    backdrop-filter: blur(16px) saturate(150%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    border-radius: 22px !important;
+    box-shadow: inset 0 1px 3px rgba(60, 38, 8, 0.06) !important;
+}
+.home-chat-input textarea:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--primary-soft), inset 0 1px 3px rgba(60, 38, 8, 0.05) !important;
+}
+
+/* 发送钮：圆形渐变（参考图右侧的圆形箭头钮） */
+.home-chat-input .btn-send {
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, var(--primary-strong, var(--primary)), var(--primary)) !important;
+    box-shadow: 0 8px 20px -6px var(--primary-soft), 0 4px 12px -4px rgba(60, 38, 8, 0.35) !important;
+    color: #fff !important;
+}
+
+/* 气泡：AI = 磨砂白玻璃；用户 = 半透明主题色 */
+.home-msg.ai .bubble {
+    background: rgba(255, 255, 255, 0.46) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+    backdrop-filter: blur(18px) saturate(150%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.55) !important;
+    border-radius: 16px 16px 16px 4px !important;
+    box-shadow: 0 10px 28px -18px rgba(60, 38, 8, 0.4) !important;
+}
+.home-msg.user .bubble {
+    background: color-mix(in srgb, var(--primary) 86%, transparent) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    backdrop-filter: blur(10px) !important;
+    box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--primary) 60%, transparent) !important;
+}
+
+/* ========== 2. 暗色皮肤（aurora / ambient）：黑玻璃 ========== */
+html[data-v4skin="aurora"] .home-chat-card,
+html[data-v4skin="ambient"] .home-chat-card {
+    background: rgba(20, 24, 38, 0.52) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    box-shadow:
+        0 24px 70px -28px rgba(0, 0, 0, 0.7),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+html[data-v4skin="aurora"] .home-chat-input textarea,
+html[data-v4skin="ambient"] .home-chat-input textarea {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+}
+html[data-v4skin="aurora"] .home-chat-input textarea:focus,
+html[data-v4skin="ambient"] .home-chat-input textarea:focus {
+    box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+html[data-v4skin="aurora"] .home-chat-input,
+html[data-v4skin="ambient"] .home-chat-input {
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+html[data-v4skin="aurora"] .home-msg.ai .bubble,
+html[data-v4skin="ambient"] .home-msg.ai .bubble {
+    background: rgba(255, 255, 255, 0.055) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* ========== 3. AI 抽屉 / 弹窗（#aiModal）：气泡与输入行统一玻璃态 ========== */
+/* 卡片本体 round-motion-extras 已是玻璃，这里把内部气泡、输入行对齐同一质感 */
+#aiMessages .ai-msg { margin-bottom: 12px; display: flex; }
+#aiMessages .ai-msg.user { justify-content: flex-end; }
+#aiMessages .ai-msg .bubble {
+    display: inline-block;
+    max-width: 88%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    word-break: break-word;
+    box-sizing: border-box;
+}
+#aiMessages .ai-msg.user .bubble {
+    background: color-mix(in srgb, var(--primary) 86%, transparent);
+    color: #fff;
+    border-radius: 16px 16px 4px 16px;
+    box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+#aiMessages .ai-msg.ai .bubble {
+    background: rgba(255, 255, 255, 0.06);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px 16px 16px 4px;
+    color: var(--text);
+}
+#aiMessages .ai-msg .bubble.typing {
+    color: var(--text-muted);
+    font-style: italic;
+}
+#aiMessages .ai-msg .bubble.error {
+    background: var(--danger-soft, rgba(239, 68, 68, 0.12));
+    color: var(--danger, #ef4444);
+    border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
+}
+
+/* classic（白底）下 AI 气泡用白玻璃才看得清 */
+html:not([data-v4skin]) #aiMessages .ai-msg.ai .bubble,
+html[data-v4skin="classic"] #aiMessages .ai-msg.ai .bubble {
+    background: rgba(255, 255, 255, 0.5);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* 抽屉输入行：胶囊化 + 圆形发送钮（结构不变，只改外观） */
+#aiModal .modal-content.ai-modal-card > div[style*="margin-top:14px"] {
+    gap: 10px;
+}
+#aiModal #aiInput {
+    background: rgba(255, 255, 255, 0.5) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+    backdrop-filter: blur(16px) saturate(150%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    border-radius: 999px !important;
+    padding: 11px 18px !important;
+    height: auto !important;
+}
+#aiModal #aiInput:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+html[data-v4skin="aurora"] #aiModal #aiInput,
+html[data-v4skin="ambient"] #aiModal #aiInput {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+}
+#aiModal .modal-content.ai-modal-card > div[style*="margin-top:14px"] .btn-primary {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    font-size: 15px !important;
+    background: linear-gradient(135deg, var(--primary-strong, var(--primary)), var(--primary)) !important;
+    box-shadow: 0 8px 20px -6px var(--primary-soft), 0 4px 12px -4px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ========== 4. Agent 任务分解步骤条（首页 + 抽屉共用） ========== */
+.ai-agent-steps {
+    display: inline-block;
+    max-width: 88%;
+    padding: 10px 14px;
+    border-radius: 16px 16px 16px 4px;
+    background: rgba(255, 255, 255, 0.34);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+    border: 1px dashed rgba(255, 255, 255, 0.55);
+    box-shadow: 0 10px 28px -18px rgba(60, 38, 8, 0.35);
+    box-sizing: border-box;
+}
+html[data-v4skin="aurora"] .ai-agent-steps,
+html[data-v4skin="ambient"] .ai-agent-steps {
+    background: rgba(255, 255, 255, 0.045);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.8);
+}
+.ai-steps-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.4px;
+    margin-bottom: 7px;
+}
+.ai-step {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    padding: 2.5px 0;
+    animation: aiStepIn 0.3s ease both;
+}
+@keyframes aiStepIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: none; }
+}
+.ai-step .ai-step-ic { flex: none; font-size: 11px; }
+.ai-step .ai-step-label {
+    flex: none;
+    font-weight: 600;
+    color: var(--text);
+}
+.ai-step .ai-step-sum {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.ai-step.fail .ai-step-label { color: var(--danger, #ef4444); }
+
+/* 步骤条也在抽屉消息流里占一个「消息位」 */
+#aiMessages .ai-agent-steps {
+    display: block;
+    max-width: none;
+    margin-bottom: 12px;
+}
+
+/* ========== 5. 窄屏微调 ========== */
+@media (max-width: 860px) {
+    .home-chat-card { border-radius: 18px !important; }
+    #aiMessages .ai-msg .bubble,
+    .ai-agent-steps { max-width: 94%; }
+}

@@ -1,0 +1,74 @@
+/* ============================================================
+ * round90-glass-readability.css —— 玻璃态面板文字可读性修正
+ * --------------------------------------------------------------------------
+ * 用户反馈（2026-10-10）：AI 工作台玻璃态背景太透，字全看不清。
+ * 原则：玻璃感保留，但「有字的表面」提高不透明度；文字一律用主题变量，
+ *       禁止在浅色玻璃上硬编码 #fff 这类浅色字。
+ * 覆盖：AI 工作台（#aiModal / dsn-*）+ 首页聊天卡 + 任务步骤条。
+ * 纯覆盖层：删除本文件 + library.html 里的 <link> 即可整体回滚。
+ * ============================================================ */
+
+/* ========== 1. AI 工作台卡片：62% → 88% 不透明 ========== */
+#aiModal .modal-content.ai-modal-card {
+    background: color-mix(in srgb, var(--card-bg, #1a1a20) 88%, transparent) !important;
+}
+
+/* ========== 2. 侧栏：半透明黑条 → 主题色玻璃（classic 下是浅色） ========== */
+#aiModal .dsn-sidebar {
+    background: color-mix(in srgb, var(--bg-elevated, #FAF8F1) 55%, transparent) !important;
+    border-right-color: var(--border, #DCD5C7) !important;
+}
+#aiModal .dsn-sb-head { border-bottom-color: var(--border, #DCD5C7) !important; }
+#aiModal .dsn-sb-foot { border-top-color: var(--border, #DCD5C7) !important; }
+
+/* ========== 3. 顶栏 / 输入壳：去掉压暗黑条，边框走主题 ========== */
+#aiModal .dsn-topbar {
+    background: transparent !important;
+    border-bottom-color: var(--border, #DCD5C7) !important;
+}
+#aiModal .dsn-input-shell {
+    background: transparent !important;
+    border-top-color: var(--border, #DCD5C7) !important;
+}
+
+/* ========== 4. 硬编码白字 → 主题文字色（浅色玻璃上白字 = 隐形） ========== */
+#aiModal .dsn-topic { color: var(--text, #26211A) !important; }
+#aiModal .dsn-session-item:hover { color: var(--text, #26211A) !important; }
+#aiModal .dsn-act-btn { color: var(--text-muted, #7C7466) !important; }
+#aiModal .dsn-act-btn:hover { color: var(--text, #26211A) !important; }
+#aiModal .dsn-pill-btn {
+    background: color-mix(in srgb, var(--card-bg, #FAF8F1) 68%, transparent) !important;
+    border-color: var(--border, #DCD5C7) !important;
+    color: var(--text, #26211A) !important;
+}
+#aiModal .dsn-pill-btn:hover {
+    background: color-mix(in srgb, var(--card-bg, #FAF8F1) 92%, transparent) !important;
+    color: var(--text, #26211A) !important;
+}
+#aiModal .dsn-pill-btn.active {
+    background: var(--primary-soft, rgba(154, 106, 21, 0.12)) !important;
+    color: var(--primary, #9A6A15) !important;
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 40%, transparent) !important;
+}
+
+/* ========== 5. 首页聊天卡：42% → 72%，气泡同步加实 ========== */
+.home-chat-card {
+    background: rgba(255, 252, 244, 0.72) !important;
+}
+.home-msg.ai .bubble {
+    background: rgba(255, 255, 255, 0.7) !important;
+}
+html:not([data-v4skin]) #aiMessages .ai-msg.ai .bubble,
+html[data-v4skin="classic"] #aiMessages .ai-msg.ai .bubble {
+    background: rgba(255, 255, 255, 0.74) !important;
+}
+.ai-agent-steps {
+    background: rgba(255, 255, 255, 0.68) !important;
+}
+
+/* 暗色皮肤（aurora / ambient）：文字本来就是浅色、底是深玻璃，对比没问题，
+   只把卡片略加实一点，避免海报墙透过来干扰 */
+html[data-v4skin="aurora"] .home-chat-card,
+html[data-v4skin="ambient"] .home-chat-card {
+    background: rgba(20, 24, 38, 0.78) !important;
+}

@@ -1,0 +1,99 @@
+/* ==========================================================================
+   round74 · 语音朗读（TTS）设置面板
+   放在独立文件、library.html 最后 link ⇒ 层叠优先级最高，删掉即回滚。
+   颜色全部走主题变量，经典白底 / aurora / ambient 三套皮肤 + 明暗都自适应。
+   ========================================================================== */
+
+.tts-engine-row,
+.tts-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tts-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 10px 0 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: var(--bg-elevated, rgba(127, 127, 127, .07));
+    font-size: 12px;
+}
+.tts-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #9ca3af; flex: 0 0 8px;
+}
+.tts-dot.ok { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, .7); }
+.tts-dot.wait { background: #f59e0b; animation: ttsPulse 1.2s ease-in-out infinite; }
+.tts-dot.idle { background: #9ca3af; }
+@keyframes ttsPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---------- 体检结果 ---------- */
+.tts-diag-sum {
+    font-size: 12.5px;
+    font-weight: 500;
+    margin: 10px 0 6px;
+}
+.tts-diag-list {
+    max-height: 230px;
+    overflow: auto;
+    border: 1px solid var(--border, rgba(127, 127, 127, .18));
+    border-radius: 8px;
+    padding: 4px 8px;
+    background: var(--bg-elevated, rgba(127, 127, 127, .05));
+}
+.tts-diag-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border, rgba(127, 127, 127, .1));
+}
+.tts-diag-item:last-child { border-bottom: none; }
+.tts-mark { flex: 0 0 14px; text-align: center; font-weight: 700; }
+.tts-mark.ok { color: #22c55e; }
+.tts-mark.warn { color: #f59e0b; }
+.tts-mark.bad { color: #ef4444; }
+.tts-diag-title { flex: 0 0 auto; min-width: 96px; }
+.tts-diag-detail {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    opacity: .72;
+}
+
+/* ---------- 路径折叠 ---------- */
+.tts-paths { margin-top: 10px; font-size: 12px; }
+.tts-paths summary {
+    cursor: pointer;
+    opacity: .7;
+    padding: 4px 0;
+    user-select: none;
+}
+.tts-paths summary:hover { opacity: 1; }
+.tts-path-row {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    line-height: 1.4;
+}
+.tts-path-row b { flex: 0 0 96px; opacity: .7; font-weight: 500; }
+.tts-path-row span {
+    flex: 1; min-width: 0;
+    word-break: break-all;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    opacity: .85;
+}
+
+/* ---------- 暗色皮肤下让次要信息不糊 ---------- */
+html[data-v4skin="aurora"] .tts-diag-detail,
+html[data-v4skin="ambient"] .tts-diag-detail,
+html[data-v4skin="aurora"] .tts-path-row span,
+html[data-v4skin="ambient"] .tts-path-row span { opacity: .78; }
+
+@media (prefers-reduced-motion: reduce) {
+    .tts-dot.wait { animation: none; }
+}
