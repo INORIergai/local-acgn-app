@@ -1,0 +1,849 @@
+/* ==========================================================================
+   AARDVARK 设计层 v1 —— 小说 / 漫画 / 猜你喜欢 + 全局卡片/抽屉微调
+   --------------------------------------------------------------------------
+   参考：aardvarkbookclub.com/books/mazywood（2026-09-21 实测）
+     · 白底黑字 + 糖果粉彩 10 色板 + 桃红 #ff008c + 暖橙 blob #F9A220
+     · 卡片随机散落（--rot/--dy），悬停回正上浮，CTA 从底部滑出
+     · 点击压扁 scale(.955,.925)，非等比 —— 模拟纸张被拇指按下的形变
+   边界：本文件只新增/覆盖样式，不改 style.css 原有规则；
+        回滚 = 删除本文件 + library.html 里的 <link> 一行。
+   ========================================================================== */
+
+/* ---------- 粉彩色板（参考站实测值） ---------- */
+:root {
+    --av-pink: #ff008c;
+    --av-pink-deep: #d5187d;
+    --av-blob: #F9A220;
+    --av-hand: #3b308f;
+    --av-butter: #FAED8F;
+    --av-ease-pop: cubic-bezier(.32, .72, 0, 1);
+    --av-ease-over: cubic-bezier(.34, 1.56, .64, 1);
+    --av-ease-out: cubic-bezier(.59, 1, .88, 1.01);
+}
+
+/* ---------- Aardvark 浅色视图外壳 ---------- */
+.av-view {
+    grid-column: 1 / -1;
+    margin: -18px -24px 0;
+    padding: 0 24px 40px;
+    background: #fff;
+    color: #000;
+    border-radius: 20px 20px 0 0;
+    min-height: 60vh;
+}
+.av-view ::selection { background: #ffdbfd; }
+
+/* ---------- 英雄区：无背景 + 水波纹（2026-09-22 第三版） ----------
+   用户反馈棕色大 blob 太难看 → blob/扫光/光斑全部删除，hero 透明浮在纸面上。
+   鼠标划过时 canvas 里跑真实的二维水波纹（js 端 initRipple，能量耗尽自动停 rAF）。
+   ⚠️ 这里不要给 .av-hero 或其子元素设 z-index！
+   一旦设成 1，就创建了一个层叠上下文；由于 .av-hero 在 DOM 中晚于
+   .movie-grid / #detailModal，它内部的非定位兄弟节点反而会盖到
+   #detailModal 之上（层叠上下文内 z-index:auto 的定位元素按 DOM 顺序排），
+   实测后果是详情抽屉整块无法点击、关闭按钮点不动。 */
+.av-hero {
+    position: relative;
+    margin: 0 -24px;
+    padding: 44px 24px 34px;
+    text-align: center;
+    overflow: hidden;
+    /* 水波纹配色（"r,g,b" 格式，theme-v4.css 按皮肤覆盖） */
+    --ripple-light: 255,255,255;
+    --ripple-dark: 96,74,40;
+}
+.av-hero .av-ripple {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: .85;
+}
+.av-hero .av-kicker {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: #000;
+}
+.av-hero h2 {
+    margin: 0;
+    font-family: 'Arial Black', 'Segoe UI Black', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    font-weight: 900;
+    letter-spacing: -.03em;
+    color: #000;
+    font-size: clamp(34px, 4.6vw, 62px);
+    line-height: 1.02;
+}
+.av-hand {
+    font-family: 'Segoe Script', 'Bradley Hand', 'Comic Sans MS', cursive;
+    color: var(--av-hand);
+    font-size: 18px;
+    line-height: 1.35;
+    transform: rotate(-1.6deg);
+    display: inline-block;
+}
+.av-hero .av-sub {
+    margin: 12px 0 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #000;
+}
+
+/* ---------- 糖果芯片（真筛选） ---------- */
+.av-chiprow {
+    display: flex;
+    gap: 9px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+.av-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #000;
+    background: var(--c, var(--av-butter));
+    cursor: pointer;
+    transition: transform .2s var(--av-ease-out), box-shadow .2s ease;
+}
+.av-chip:hover { transform: scale(1.06); }
+.av-chip:active { transform: scale(.955, .925); }
+.av-chip em { font-style: normal; opacity: .55; font-weight: 800; }
+.av-chip.dark { background: #000; color: #fff; }
+.av-chip.ink { background: var(--av-pink-deep); color: #fff; }
+.av-chip.on {
+    background: #000;
+    color: #fff;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 5px #000;
+}
+.av-chip:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 2px; }
+
+/* ---------- 散落展台（小说 / 猜你喜欢） ---------- */
+.av-board {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 34px 22px;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 34px 8px 26px;
+}
+
+/* 猜你喜欢：卡片放大一倍后，需要更大的行距（给耳朵和尾巴留出生长空间），
+   同时顶部多留一格，否则第一行耳朵会被展台裁掉 */
+.av-board:has(> .av-card.wide) {
+    gap: 62px 40px;
+    padding-top: 118px;          /* 108px 耳朵 + 余量 */
+    padding-bottom: 46px;        /* 给尾巴留出溢出空间 */
+}
+
+/* 兼容不支持 :has() 的浏览器（Firefox < 121 等）——
+   给展台自身加一个类作为兜底，见 av-board.js 的 renderGuessBoard */
+.av-board.has-bunny {
+    gap: 62px 40px;
+    padding-top: 118px;
+    padding-bottom: 46px;
+}
+
+/* ---------- 横向书架（漫画） ---------- */
+.av-slider {
+    display: flex;
+    gap: 22px;
+    overflow-x: auto;
+    align-items: flex-start;
+    padding: 30px 20px 30px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    scrollbar-color: #e8e2d8 transparent;
+}
+.av-slider .av-card { flex: 0 0 auto; scroll-snap-align: center; }
+.av-slider::-webkit-scrollbar { height: 8px; }
+.av-slider::-webkit-scrollbar-thumb { background: #e8e2d8; border-radius: 99px; }
+.av-slider::-webkit-scrollbar-track { background: transparent; }
+/* slider 里散落幅度减半：横向滚动时过大的旋转会互相叠压 */
+.av-slider .av-card {
+    --rot: calc(var(--rot-base, 0deg) * .55);
+    --dy: calc(var(--dy-base, 0px) * .5);
+}
+
+/* ==========================================================================
+   横向书架：翻页手段（2026-09-22 新增）
+   --------------------------------------------------------------------------
+   问题：本库「单话版」共 169 回，排成一条 scrollWidth = 36860px 的横排
+   （视口 1316px ≈ 28 屏宽）。桌面鼠标唯一的手段是拖底部那条 8px 细滚动条，
+   用户实测「无法左右回览，点不到后面的章节图标」。
+   解决：给三种独立手段 —— 左右翻页按钮、竖向滚轮转横滚、按住拖动；
+   同时把滚动条加粗提亮、右侧加渐隐边表示「还有内容」。
+   ========================================================================== */
+:root { --av-shelf-bg: #fff; }          /* 书架底色，深色皮肤在 theme-v4.css 里改写 */
+
+.av-slider-wrap { position: relative; }
+
+/* 左右渐隐边：暗示「这边还有」，同时不遮挡按钮 */
+.av-slider-wrap::before,
+.av-slider-wrap::after {
+    content: '';
+    position: absolute;
+    top: 30px;
+    bottom: 42px;
+    width: 52px;
+    z-index: 6;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .22s ease;
+}
+.av-slider-wrap::before {
+    left: 0;
+    background: linear-gradient(to right, var(--av-shelf-bg) 18%, transparent);
+}
+.av-slider-wrap::after {
+    right: 0;
+    background: linear-gradient(to left, var(--av-shelf-bg) 18%, transparent);
+}
+.av-slider-wrap.can-prev::before { opacity: 1; }
+.av-slider-wrap.can-next::after { opacity: 1; }
+
+/* 翻页按钮：黑底白箭头，悬停变桃红 */
+.av-slide-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 7;
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: #000;
+    color: #fff;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: .88;
+    box-shadow: 0 6px 20px -6px rgba(0, 0, 0, .5);
+    transition: transform .2s var(--av-ease-out), opacity .2s ease, background .2s ease;
+}
+.av-slide-nav.prev { left: 12px; }
+.av-slide-nav.next { right: 12px; }
+.av-slide-nav:hover {
+    opacity: 1;
+    background: var(--av-pink);
+    transform: translateY(-50%) scale(1.1);
+}
+.av-slide-nav:active { transform: translateY(-50%) scale(.94); }
+.av-slide-nav:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 3px; }
+.av-slide-nav[disabled] { opacity: .2; cursor: default; pointer-events: none; }
+
+/* 按住拖动 */
+.av-slider {
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.av-slider.dragging {
+    cursor: grabbing;
+    scroll-snap-type: none;     /* 拖动时关掉吸附，否则手感发粘 */
+}
+.av-slider.dragging .av-card { cursor: grabbing; }
+
+/* 滚动条加粗提亮：原来 8px + #e8e2d8，在白底上几乎看不见 */
+.av-slider { scrollbar-width: auto; }
+.av-slider::-webkit-scrollbar { height: 13px; }
+.av-slider::-webkit-scrollbar-thumb {
+    background: #b4ab9a;
+    border: 4px solid transparent;
+    background-clip: content-box;
+    border-radius: 99px;
+}
+.av-slider::-webkit-scrollbar-thumb:hover {
+    background: var(--av-pink);
+    border: 4px solid transparent;
+    background-clip: content-box;
+}
+
+/* 底部说明行：告诉用户这里能翻 */
+.av-slide-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 0 22px 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(0, 0, 0, .5);
+}
+.av-slide-count { color: #000; }
+.av-slide-tip { opacity: .75; }
+
+/* ---------- 卡片本体 ---------- */
+.av-card {
+    width: 196px;
+    flex: 0 0 auto;
+    position: relative;
+    cursor: pointer;
+    border-radius: 12px;
+    aspect-ratio: 2 / 2.9;
+    overflow: hidden;
+    background: var(--cv, #ffdbfd);
+    transform: rotate(var(--rot, 0deg)) translateY(var(--dy, 0px));
+    box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 10px 26px -14px rgba(0,0,0,.18);
+    transition: transform .42s var(--av-ease-over), box-shadow .3s ease;
+    animation: avPop .6s var(--av-ease-pop) backwards;
+    /* 卡片散落旋转后常驻 will-change 会把每张卡都提为独立合成层，
+       长列表（上百张）会吃掉大量显存并让滚动手感变沉 —— 只在悬停时才提层 */
+}
+.av-card:hover, .av-card:focus-visible { will-change: transform; }
+@keyframes avPop { from { opacity: 0; scale: .62; } }
+.av-card:hover {
+    transform: rotate(0deg) translateY(calc(var(--dy, 0px) - 14px)) scale(1.055);
+    z-index: 6;
+    box-shadow: 0 30px 56px -18px rgba(0,0,0,.32);
+}
+.av-card:active { transform: scale(.955, .925); transition-duration: .15s; }
+.av-card:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 3px; }
+
+.av-card .av-num {
+    position: absolute;
+    right: 8px;
+    top: -6px;
+    font-family: 'Arial Black', 'Segoe UI Black', 'Segoe UI', sans-serif;
+    font-size: 92px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -.05em;
+    color: rgba(0,0,0,.09);
+    pointer-events: none;
+    user-select: none;
+}
+.av-card .av-title {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 58px;
+    color: #000;
+    font-family: 'Arial Black', 'Segoe UI Black', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-weight: 900;
+    letter-spacing: -.02em;
+    font-size: 19px;
+    line-height: 1.15;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.av-card .av-sub {
+    position: absolute;
+    left: 16px;
+    bottom: 14px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.av-card .av-sub b {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    color: rgba(0,0,0,.62);
+    text-transform: uppercase;
+}
+.av-card .av-sub span {
+    display: inline-flex;
+    align-self: flex-start;
+    background: #000;
+    color: #fff;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    font-weight: 700;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* 已读 / 收藏角标（复用现有语义，不新造状态） */
+.av-card .av-flag {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    z-index: 2;
+    font-size: 15px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.2));
+}
+/* 悬停 CTA：桃红药丸从底部滑出 */
+.av-card .av-cta {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 36px;
+    background: var(--av-pink);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 800;
+    opacity: 0;
+    translate: 0 10px;
+    pointer-events: none;
+    transition: opacity .18s ease, translate .22s var(--av-ease-out);
+}
+.av-card .av-cta .arr { transition: translate .22s var(--av-ease-out); }
+.av-card:hover .av-cta { opacity: 1; translate: 0 0; pointer-events: auto; }
+.av-card .av-cta:hover .arr { translate: 3px 0; }
+
+/* ---------- 文件夹卡片（粉彩书系） ---------- */
+.av-folder {
+    position: relative;
+    cursor: pointer;
+    border-radius: 16px;
+    background: var(--cv, #ffdbfd);
+    padding: 22px 20px 18px;
+    min-height: 108px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    transition: transform .25s var(--av-ease-over), box-shadow .25s ease;
+    animation: avPop .5s var(--av-ease-pop) backwards;
+}
+.av-folder:hover { transform: translateY(-5px) rotate(-.8deg); box-shadow: 0 16px 30px -14px rgba(0,0,0,.25); }
+.av-folder:active { transform: scale(.97); }
+.av-folder:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 2px; }
+.av-folder .af-name {
+    font-weight: 900;
+    font-size: 16px;
+    color: #000;
+    font-family: 'Arial Black', 'Segoe UI Black', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    letter-spacing: -.01em;
+    word-break: break-word;
+}
+.av-folder .af-count {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: rgba(0,0,0,.55);
+}
+.av-folder .af-glyph {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    font-family: 'Arial Black', sans-serif;
+    font-size: 34px;
+    font-weight: 900;
+    color: rgba(0,0,0,.09);
+    user-select: none;
+}
+
+/* ---------- 展台工具行 ---------- */
+.av-tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: center;
+    margin: 4px 0 8px;
+}
+.av-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    height: 42px;
+    padding: 0 22px;
+    border: 0;
+    background: var(--av-pink);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 13.5px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: scale .15s cubic-bezier(.4,0,.2,1), translate .2s var(--av-ease-out);
+}
+.av-cta-btn:hover { translate: 0 -2px; }
+.av-cta-btn:active { scale: .955 .925; }
+.av-cta-btn:focus-visible { outline: 3px solid #000; outline-offset: 2px; }
+.av-cta-btn.ghost { background: #000; }
+.av-circ {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    background: #000;
+    color: #fff;
+    border: 0;
+    font-size: 17px;
+    transition: scale .15s cubic-bezier(.4,0,.2,1);
+}
+.av-circ.gray { background: #e9e4da; color: #000; }
+.av-circ:hover { scale: 1.08; }
+.av-circ:active { scale: .92; }
+
+/* ---------- 海报卡（猜你喜欢）：参考站 books-slider 的真实形态 —— 封面 + 图下标题 ----------
+   2026-09-21 升级：卡片放大一倍（202px → 404px），并加入参考站同款「兔耳 / 兔尾」悬停动效。
+   结构：.av-ears（绝对定位在卡片上方，默认塌缩）
+         .av-cover（海报）
+         .av-tail（绝对定位在卡片下方，默认塌缩）
+         .av-cap（图下标题）
+   耳朵/尾巴颜色来自内联 --bunny（每张卡一个糖果色），与参考站 fill:currentColor 同理。 */
+.av-card.wide {
+    width: 404px;                /* 202px × 2：海报放大一倍 */
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;           /* 必须 visible，否则耳朵/尾巴被裁掉 */
+    aspect-ratio: auto;
+    border-radius: 0;
+    /* 悬停时的抬升保持得住，同时给耳朵尾巴留出转场时间 */
+    transition: transform .32s var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
+}
+.av-card.wide .av-cover {
+    position: relative;
+    aspect-ratio: 16 / 10;       /* 保持横版比例 */
+    border-radius: 16px;
+    overflow: hidden;
+    background: #efe9de;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 12px 28px -14px rgba(0,0,0,.22);
+    transition: box-shadow .3s ease;
+}
+.av-card.wide:hover .av-cover { box-shadow: 0 30px 56px -18px rgba(0,0,0,.34); }
+.av-card.wide .av-cover img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.av-card.wide .av-cta { bottom: 10px; }
+.av-card.wide .av-cap { padding: 12px 4px 0; }
+.av-card.wide .av-cap b {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    color: #000;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.av-card.wide .av-cap span {
+    display: block;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .05em;
+    color: rgba(0,0,0,.5);
+}
+
+/* ==========================================================================
+   兔耳朵：绝对定位在封面之上，默认 scale(0) 塌缩，卡片 hover 时长出来
+   —— 尺寸/位移全部照抄参考站实测值（em 相对卡片字号）
+   ========================================================================== */
+.av-card.wide .av-ears {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% - 1px);    /* 贴在封面上沿，不留缝 */
+    height: 114px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    /* 参考站是 margin-right: 2.6em 把整组耳朵往左推，形成"侧头"的错觉 */
+    margin-right: 2.6em;
+    pointer-events: none;        /* 不挡鼠标，避免悬停抖动 */
+    z-index: 2;
+}
+.av-card.wide .av-ear {
+    display: block;
+    transform: scale(0);         /* 默认塌缩（参考站 computed = matrix(0,0,0,0,0,0)） */
+    transform-origin: 50% 100%;  /* 从根部生长 */
+    transition: transform .25s cubic-bezier(.32, .72, 0, 1);
+    will-change: transform;
+}
+/* 左耳：矮胖，向右叠在右耳上，形成耳根转折 */
+.av-card.wide .av-ear-left {
+    width: 63px;
+    height: 65px;
+    margin-right: -23px;         /* 4.875em 宽 / -1.8em 重叠 */
+}
+/* 右耳：细长，比左耳高一截（参考站 3.25em × 9em） */
+.av-card.wide .av-ear-right {
+    width: 48px;
+    height: 108px;
+}
+
+/* ==========================================================================
+   兔尾巴：绝对定位在封面之下，默认 scale(0)，hover 时弹出
+   ========================================================================== */
+.av-card.wide .av-tail {
+    position: absolute;
+    left: 50%;
+    top: calc(100% - 30px);      /* 从封面下沿冒出来，但尾巴本体还藏在卡外 */
+    width: 52px;
+    height: 52px;
+    margin-left: 26px;           /* 偏右一点，像兔子侧身的尾巴 */
+    transform: scale(0);
+    transform-origin: 50% 0%;
+    transition: transform .25s cubic-bezier(.32, .72, 0, 1) .04s; /* 略晚于耳朵，形成先后次序 */
+    pointer-events: none;
+    z-index: 2;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,.18));
+}
+.av-card.wide .av-tail svg { width: 100%; height: 100%; display: block; }
+
+/* ---------- 悬停：耳朵长出来 + 尾巴弹出来 ---------- */
+.av-card.wide:hover .av-ear,
+.av-card.wide:focus-visible .av-ear { transform: scale(1); }
+.av-card.wide:hover .av-tail,
+.av-card.wide:focus-visible .av-tail { transform: scale(1); }
+
+/* 左右耳错开一点点生长时间，看起来更"活"（参考站只给了 0.25s 统一过渡，
+   这里加 40ms 差值，属于克制范围内的增强） */
+.av-card.wide:hover .av-ear-right { transition-delay: .04s; }
+
+/* 键盘聚焦时也给个可见提示 */
+.av-card.wide:focus-visible { outline: 3px solid var(--av-pink, #ff008c); outline-offset: 6px; }
+
+/* ---------- 空态（浅色版） ---------- */
+.av-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: rgba(0,0,0,.55);
+    font-size: 14px;
+    font-weight: 600;
+}
+.av-empty .ico { font-size: 40px; margin-bottom: 10px; }
+
+/* ==========================================================================
+   全局微调区（不动结构，只覆盖样式）
+   ========================================================================== */
+
+/* ----- 详情弹窗 → 右侧抽屉 -----
+   ⚠️ 2026-09-21 起，抽屉/弹窗的定位与尺寸由 detail-mode.css 统一接管
+   （用户可在设置里切换「左侧抽屉 / 居中弹窗」两种模式）。
+   这里只保留两个模式下的公共底色，不再写 justify-content / width / transform。 */
+#detailModal.modal {
+    background: var(--av-dim, rgba(12, 10, 8, .55));
+    backdrop-filter: blur(3px);
+}
+#detailModal .modal-content.detail-modal {
+    background: var(--card-bg);
+    overflow: hidden;
+}
+
+/* ----- 影片卡片：片名下移 + NEW 角标 + 海报下进度条 ----- */
+/* 16:9 从整卡移到海报区：否则标题会挤占海报高度，窄列时海报被压扁 */
+.movie-card-compact { display: flex; flex-direction: column; aspect-ratio: auto; }
+.movie-card-compact .movie-poster-wrap {
+    position: relative;
+    flex: 0 0 auto;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+}
+.movie-card-compact .movie-poster { height: 100%; }
+/* 悬停信息层收敛到海报区域内，片名常驻海报下方 */
+.movie-card-compact .movie-hover-info { bottom: auto; height: 100%; }
+.movie-card-compact .movie-title-below {
+    padding: 6px 7px 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--text);
+    background: var(--card-bg);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 34px;
+}
+.movie-card-compact .movie-title-below .mtb-meta {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: .04em;
+    margin-top: 2px;
+}
+/* NEW 角标：近 7 天入库 */
+.movie-badge-new {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 4;
+    background: linear-gradient(115deg, #ff008c, #d5187d);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    padding: 3px 8px 2px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(255,0,140,.4);
+    pointer-events: none;
+}
+/* 与收藏 ⭐（也在左上）错开：有 ⭐ 时 NEW 下移 */
+.badge-fav ~ .movie-poster-wrap .movie-badge-new { top: 36px; }
+/* 进度条跟随卡片底部（标题区之下贴底），保留齿孔质感 */
+.movie-card-compact .card-progress { bottom: 0; }
+
+/* ----- 顶栏 AI 按钮（开始扫描旁边） ----- */
+#aiTopBtn { margin-right: 4px; }
+
+/* ----- 影片库格子（158 → 316 → 253，最后一次按 0.8 等比缩小） -----
+   用户要求"海报再同比例缩小 20%"：卡片宽度、列间距、圆角、片名字号、
+   片名区高度全部乘 0.8，保持整卡视觉比例不变。
+   超宽屏最多 6 列，避免单行卡片过大失去网格感 */
+.movie-grid { grid-template-columns: repeat(auto-fill, minmax(253px, 1fr)); gap: 18px; }
+@media (min-width: 1900px) { .movie-grid { grid-template-columns: repeat(6, 1fr); } }
+@media (max-width: 760px) { .movie-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; } }
+
+/* ----- 标签云筛选行 / 女优无作品折叠区 ----- */
+.tag-filter-row { width: 100%; margin-bottom: 14px; }
+.tag-filter-input {
+    width: 100%;
+    max-width: 420px;
+    padding: 9px 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease;
+}
+.tag-filter-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.tag-list { display: contents; }
+.tag-more-hint {
+    cursor: default !important;
+    opacity: .6;
+    font-size: 12px;
+}
+.actress-zero-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 4px 6px;
+    border-top: 1px dashed var(--border);
+    margin-top: 8px;
+}
+.actress-zero-list {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+}
+@supports not (grid-template-columns: subgrid) {
+    .actress-zero-list { display: contents; }
+}
+
+/* ----- 动效统一优化（GPU-only，尊重 reduced-motion） ----- */
+.movie-card {
+    transition: transform .22s var(--av-ease-over), box-shadow .22s ease, border-color .18s ease;
+}
+.gallery-arrow, .nav-item, .btn, .toggle-btn, .chip {
+    transition: transform .18s var(--av-ease-out), background .18s ease,
+                color .18s ease, border-color .18s ease, box-shadow .18s ease,
+                opacity .18s ease;
+}
+
+/* ----- 响应式 ----- */
+@media (max-width: 1100px) {
+    /* 放大一倍的卡片在窄屏放不下，回落一半（202px），耳朵等比缩小 */
+    .av-card.wide { width: 300px; }
+    .av-card.wide .av-ears { height: 86px; margin-right: 2em; }
+    .av-card.wide .av-ear-left { width: 47px; height: 49px; margin-right: -17px; }
+    .av-card.wide .av-ear-right { width: 36px; height: 81px; }
+    .av-card.wide .av-tail { width: 40px; height: 40px; margin-left: 20px; top: calc(100% - 24px); }
+    .av-board:has(> .av-card.wide), .av-board.has-bunny { gap: 48px 28px; padding-top: 92px; }
+}
+@media (max-width: 900px) {
+    .av-card { width: 156px; }
+    .av-card .av-title { font-size: 16px; }
+    .av-hero h2 { font-size: 30px; }
+    /* 抽屉/弹窗的宽度由 detail-mode.css 接管，这里不动 */
+}
+@media (max-width: 768px) {
+    /* 参考站断点：991px 以下干脆隐藏耳朵（移动端悬停本来也不成立） */
+    .av-card.wide .av-ears,
+    .av-card.wide .av-tail { display: none; }
+    .av-card.wide { width: 236px; }
+    .av-board:has(> .av-card.wide), .av-board.has-bunny {
+        gap: 26px 16px; padding-top: 26px; padding-bottom: 26px;
+    }
+}
+
+/* ==========================================================================
+   Banner 第三版（2026-09-22）：无背景 + 水波纹
+   --------------------------------------------------------------------------
+   用户反馈：棕色大 blob「做的太难看了」，参照参考网站的水波纹特效，
+   把 banner 的背景都去掉，鼠标移动上去出现水波纹底。
+   实现：背景（blob/扫光/光斑）全部删除；hero 里铺一张 <canvas.av-ripple>，
+   JS 端 initRipple 跑二维高度场模拟（能量耗尽自动停 rAF，绝不自续）。
+   ⚠️ 绝不给 .av-hero 或它的子元素设 z-index 或 isolation ——
+      见本文件顶部注释：一旦 .av-hero 建立层叠上下文，详情抽屉会被整块盖住点不动
+      （2026-09-21 实际踩过）。所以内容层只用 position:relative，靠 DOM 顺序画在 canvas 之上。
+   ========================================================================== */
+
+/* ---- 内容层：position:relative（不设 z-index，不建层叠上下文），
+        这样文字画在 canvas（同为定位元素、但 DOM 在前）之上 ---- */
+.av-hero .av-kicker,
+.av-hero h2,
+.av-hero .av-sub,
+.av-hero .av-chiprow { position: relative; }
+
+/* ---- 划过：标题轻微上浮 + 渐变色（保留一点灵气，与水纹不冲突） ---- */
+.av-hero h2 {
+    transition: transform .45s cubic-bezier(.32, .72, 0, 1), letter-spacing .45s ease;
+}
+.av-hero:hover h2 {
+    transform: translateY(-2px);
+    letter-spacing: -.012em;
+    background: linear-gradient(96deg, #F9A220 0%, #ff008c 36%, #7c5cff 66%, #00b3c9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ---- 划过：筛选药丸浮起 ---- */
+.av-hero .av-chiprow { transition: transform .4s cubic-bezier(.32, .72, 0, 1); }
+.av-hero:hover .av-chiprow { transform: translateY(-3px); }
+.av-hero .av-chip { transition: transform .2s var(--av-ease-out), box-shadow .25s ease; }
+.av-hero:hover .av-chip { box-shadow: 0 6px 18px -8px rgba(0, 0, 0, .38); }
+
+/* ----- 减少动态效果 ----- */
+@media (prefers-reduced-motion: reduce) {
+    .av-card, .av-folder { animation: none !important; transition-duration: .01ms !important; }
+    .av-card:hover { transform: rotate(var(--rot, 0deg)) translateY(var(--dy, 0px)) !important; }
+    .av-card .av-cta { transition: opacity .01ms; }
+    /* 耳朵/尾巴不再"生长"，改为直接显示（保留形态，去掉动效） */
+    .av-card.wide .av-ear,
+    .av-card.wide .av-tail { transition: none; }
+    .av-card.wide:hover .av-ear,
+    .av-card.wide:focus-visible .av-ear,
+    .av-card.wide:hover .av-tail,
+    .av-card.wide:focus-visible .av-tail { transform: scale(1); }
+
+    /* Banner：水纹 canvas 隐藏（JS 端同样判 reduce 不启动），标题 hover 也不变色 */
+    .av-hero .av-ripple { display: none; }
+    .av-hero:hover h2 {
+        transform: none;
+        background: none;
+        -webkit-text-fill-color: currentColor;
+    }
+    .av-hero:hover .av-chiprow { transform: none; }
+}

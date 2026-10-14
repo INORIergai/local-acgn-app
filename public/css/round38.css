@@ -1,0 +1,230 @@
+/* ============================================================
+ * round38 覆盖层：启动动画 / AI 待机与输入动画 / 设置页动画自定义
+ * 规则：只追加不改原规则；.av-hero 及子元素禁 z-index/isolation（铁律 2）
+ * ============================================================ */
+
+/* ---------- 1. 应用启动动画层（全屏，点击/任意键跳过） ----------
+ * z-index 9999 盖过密码门禁(.r34-gate z-index:4000)：
+ * 动画播完/跳过后自然露出门禁或首页，不拦登录逻辑 */
+#startupSplash {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #f4efe4;               /* 与动画纸色一致，加载期不闪黑 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 1;
+    transition: opacity 0.45s ease;
+}
+#startupSplash.ss-hide { opacity: 0; pointer-events: none; }
+#startupSplash video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;                 /* 1280x720 铺满全屏 */
+    display: block;
+}
+.startup-splash-skip {
+    position: absolute;
+    right: 22px;
+    bottom: 18px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(20, 22, 28, 0.42);
+    color: #f4efe4;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    backdrop-filter: blur(4px);
+    animation: ssSkipPulse 2.4s ease-in-out infinite;
+}
+@keyframes ssSkipPulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+}
+
+/* ---------- 2. 看板娘动画态（待机/输入） ----------
+ * 静态 .home-mascot 定位沿用 round33/34（absolute 挂 .home-chat 上沿）；
+ * 动画 webp 自带呼吸动态 ⇒ 关掉 CSS 浮动动画避免叠加，hover 放大保留 */
+.home-mascot-anim {
+    animation: none !important;
+    width: 168px;                      /* 动画构图比静态立绘宽，放大一点对齐视觉大小 */
+    left: -20px;
+    bottom: calc(100% - 40px);         /* 锚点=.home-chat 顶(=卡片顶)：img 底越过卡片顶 40px，
+                                          切割线+羽化白边完全沉入卡片内，手「搭」在卡片后沿 */
+    opacity: 0;
+    transition: opacity 0.22s ease;
+    pointer-events: none;              /* 动画态不接 hover 事件（由 .home-chat:hover 统一处理） */
+}
+.home-mascot-anim.anim-show { opacity: 1; }
+
+/* 窄窗（铁律 7：断点统一 max-width:860px；mobile.css 在前，此处覆盖生效） */
+@media (max-width: 860px) {
+    .home-mascot-anim {
+        width: 108px;
+        left: -10px;
+        bottom: calc(100% - 26px);
+    }
+}
+
+/* ---------- 2b. round39 改版：看板娘「大居中、不要变大变小」 ----------
+ * 用户明确：去掉 hover 放大与浮动动画，直接大尺寸人像居中骑在对话框正中。
+ * 本文件在 round33/34 之后加载，同特异性后者胜出 ⇒ 三条 img 全部居中放大；
+ * 新素材构图人物居中、底部带桌条，桌条沉入卡片顶边即「趴在对话框上」 */
+.home-mascot {
+    animation: none !important;
+    left: 50% !important;
+    right: auto;
+    transform: translateX(-50%) !important;
+    transform-origin: 50% 100%;
+    width: 300px;
+    bottom: calc(100% - 56px);         /* img 底沉入卡片内 56px：桌条被卡片顶边接住 */
+    transition: opacity 0.22s ease;
+    filter: none;
+    cursor: default;
+}
+.home-chat:hover .home-mascot {
+    transform: translateX(-50%) !important;   /* 只抵消 round34 的 hover scale，不再变大 */
+    filter: none;
+    animation-play-state: running;
+}
+.home-chat { margin-top: 236px; }          /* 大立绘高出卡片约 200px，顶距给足，
+                                              否则被 #homeView overflow:hidden 裁头（round37 教训） */
+
+/* ---------- 3. 设置页「动画」自定义卡 ---------- */
+.anim-thumb {
+    width: 96px;
+    height: 60px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    background: rgba(127, 127, 127, 0.12);
+    display: block;
+}
+.anim-thumb.is-video { object-fit: contain; background: #f4efe4; }
+.anim-row-status {
+    font-size: 11px;
+    color: var(--text-3, #9a9a9a);
+    margin-left: 8px;
+}
+
+/* 窄窗适配：小立绘 + 小顶距 */
+@media (max-width: 860px) {
+    .home-mascot {
+        width: 150px;
+        bottom: calc(100% - 30px);
+    }
+    .home-chat { margin-top: 118px; }
+}
+
+/* ================================================================
+   round41 · #8 AV/里番导航默认隐藏（顶栏 🔒 切换，body.adult-hidden）
+   ================================================================ */
+body.adult-hidden .nav-item[data-adult="1"] { display: none !important; }
+
+/* ================================================================
+   round41 · #1 iOS 玻璃特效（首页对话框卡 + 榜单 box）
+   backdrop-filter 开销大 ⇒ 作用域只限两处 + @supports 兜底 + 低性能开关。
+   铁律 2：.av-hero 及子元素禁 z-index/isolation —— 本层不碰。
+   开关：body.glass-off 时全部还原（设置→外观→低性能模式）。
+   ================================================================ */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    body:not(.glass-off) .home-chat-card,
+    body:not(.glass-off) .rank-item {
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(20px) saturate(180%);
+        background: color-mix(in srgb, var(--bg-2, #f5f2ec) 62%, transparent);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5),
+                    inset 0 0 0 1px rgba(255, 255, 255, .18),
+                    0 8px 32px rgba(0, 0, 0, .12);
+    }
+    body:not(.glass-off).dark .home-chat-card,
+    body:not(.glass-off).dark .rank-item {
+        background: color-mix(in srgb, var(--bg-2, #1c1f27) 55%, transparent);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14),
+                    inset 0 0 0 1px rgba(255, 255, 255, .08),
+                    0 8px 32px rgba(0, 0, 0, .38);
+    }
+}
+
+/* ================================================================
+   round41 · 挂账B：首页排版「上空下紧」重排
+   思路：顶部 mascot 区 236→198、卡片瘦身 -84px、热度情报标签改横排、
+   日历卡片加密 —— 垂直空间还给底部内容，消除「上空下紧」
+   ================================================================ */
+/* A. 顶部压缩：mascot 300→264px（视觉仍「大居中」），顶距同步收紧 */
+.home-mascot { width: 264px; bottom: calc(100% - 52px); }
+.home-chat { margin-top: 198px; }      /* 264px 立绘高出卡片 ~212px + 10px 余量防裁头 */
+
+/* B. 对话框卡瘦身：min-height 300→216，消息区空态 170→72 */
+.home-chat-card { min-height: 216px; }
+.home-chat-messages { min-height: 72px; }
+.home-chat-empty { padding: 12px 12px; }
+
+/* C. 热度情报重排：竖排行标签改横排标题，标签/tabs/列表单列纵排 */
+.home-rank-row {
+    grid-template-columns: 1fr;
+    grid-template-areas: "label" "tabs" "list";
+    margin-bottom: 14px;
+}
+.home-rank-row-label {
+    writing-mode: horizontal-tb;
+    letter-spacing: 0.08em;
+    border-left: none;
+    border-bottom: 2px solid var(--primary);
+    padding: 0 0 4px;
+    height: auto;
+    justify-self: start;
+}
+.home-rank-row .home-rank-list { max-height: 300px; }
+.home-rank { margin-top: 18px; }
+
+/* D. 本周放送加密：卡片更小更密，一行放下更多部 */
+.home-calendar { margin-top: 14px; }
+.cal-tabs { margin: 8px 0 10px; }
+.cal-list { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 8px; }
+.cal-item { padding: 6px 8px; gap: 8px; }
+.cal-cover { width: 38px; height: 50px; }
+
+/* E. 窄窗同步收紧 */
+@media (max-width: 860px) {
+    .home-mascot { width: 132px; bottom: calc(100% - 28px); }
+    .home-chat { margin-top: 104px; }
+}
+
+/* ================================================================
+   round41 · 功能导览（首启一次性）
+   ================================================================ */
+.tour-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;                     /* 盖过内容与门禁(4000)，低于启动动画(9999) */
+    background: rgba(10, 12, 16, 0.55);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.tour-card {
+    width: min(640px, 94vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 28px 30px 24px;
+    box-shadow: 0 24px 80px -24px rgba(0, 0, 0, 0.6);
+}
+.tour-brand { font-size: 12px; letter-spacing: 0.12em; color: var(--text-muted, #888); margin-bottom: 6px; }
+.tour-card h2 { margin: 0 0 18px; font-size: 21px; }
+.tour-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.tour-item {
+    padding: 12px 14px;
+    border: 1px solid var(--border, #e2ddd2);
+    border-radius: 12px;
+    background: var(--bg, #faf8f3);
+}
+.tour-item b { display: block; font-size: 13.5px; margin-bottom: 4px; }
+.tour-item span { font-size: 12px; color: var(--text-muted, #888); line-height: 1.5; }
+.tour-actions { margin-top: 20px; text-align: right; }

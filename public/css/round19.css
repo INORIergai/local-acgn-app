@@ -1,0 +1,88 @@
+/* ============================================================
+   第 19 轮覆盖层
+   ============================================================
+   1. 设置页左侧导航：折叠态图标错位修复 + 手机端横排常显
+   （后续小节按本轮改动追加）
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   1. 设置页 · 左侧导航
+   ------------------------------------------------------------
+   病灶：round13.css 让导航折叠成 60px 宽，用
+        `.settings-nav:not(:hover) .settings-nav-item span:last-child { opacity: 0 }`
+        把文字**变透明**——但 opacity 不脱离布局，文字仍然占位。
+        条目是 `justify-content: center`，于是「图标 + 看不见的标签」整体居中，
+        标签越宽条目越往左偏 → 实测 10 个图标的中心 x 从 349.5 漂到 369，
+        极差 19.5px（阶梯状错位），且内容宽度超过 42px 内宽被
+        `.settings-nav{overflow:hidden}` 从两侧裁掉。
+   修法：折叠态把标签**脱离布局**（position:absolute + visibility:hidden），
+        条目里只剩一个宽度固定的图标 → 天然排成一列。
+   ------------------------------------------------------------ */
+
+/* 图标统一占位宽度：不同 emoji 字宽不一致，不给固定宽度会各自为政 */
+.settings-nav .settings-nav-icon {
+    flex: 0 0 20px;
+    width: 20px;
+    text-align: center;
+    font-size: 16px;
+    line-height: 1;
+}
+
+/* 桌面端（>860px）才有「折叠→悬停拉出」这套交互 */
+@media (min-width: 861px) {
+
+    .settings-nav:not(:hover):not(:focus-within) .settings-nav-item {
+        position: relative;
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    /* 关键：脱离布局，什么都不占 */
+    .settings-nav:not(:hover):not(:focus-within) .settings-nav-item>span:last-child {
+        position: absolute;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        white-space: nowrap;
+    }
+}
+
+/* ------------------------------------------------------------
+   手机端（≤860px）：导航是「顶部横向滚动条」，**没有 hover**。
+   mobile.css 本意如此，但只补了 display/gap/overflow，
+   没覆盖 round13 写死的 `width:60px` 与 style.css 的 `flex-direction:column`
+   → 实际渲染成一个 60px 宽的竖条，且标签永久 opacity:0（手机上永远不会显形）。
+   这里一次补齐：横排 + 撑满宽度 + 文字常显。
+   ------------------------------------------------------------ */
+@media (max-width: 860px) {
+
+    .settings-nav {
+        flex-direction: row;
+        width: auto;
+        max-width: 100%;
+        align-self: stretch;
+        position: static;
+        padding: 8px;
+        border-radius: 12px;
+    }
+
+    .settings-nav-item,
+    .settings-nav:not(:hover) .settings-nav-item,
+    .settings-nav:not(:focus-within) .settings-nav-item {
+        justify-content: flex-start;
+        padding: 9px 12px;
+        flex: 0 0 auto;
+    }
+
+    /* 手机无 hover ⇒ 文字必须常显 */
+    .settings-nav-item>span:last-child,
+    .settings-nav:not(:hover) .settings-nav-item span:last-child,
+    .settings-nav:not(:hover):not(:focus-within) .settings-nav-item>span:last-child {
+        position: static;
+        opacity: 1;
+        visibility: visible;
+        width: auto;
+        pointer-events: auto;
+    }
+}
