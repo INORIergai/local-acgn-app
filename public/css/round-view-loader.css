@@ -1,0 +1,115 @@
+/* ============================================================
+   午夜场 · round-view-loader.css —— 换页加载动画「开演 Open Reel」
+   ------------------------------------------------------------
+   只追加、不改 style.css 本体（层叠铁律）。
+   层级：V3 极光线（常驻扫动）→ V1 中央盘动（≥250ms）→ V2 走带（≥800ms）。
+   压暗 = main.content 加 .nvl-dim（旧内容压暗虚化，不清空）。
+   reduced-motion 由 view-loader.js 直接不启用本层。
+   ============================================================ */
+
+.nvl-root {
+  position: fixed;
+  z-index: 150;                 /* 高于内容、低于下拉(200)/浮层(400) */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* V3 极光进度线（纯 transform —— 主线程冻结的重同步渲染期间也能跑） */
+.nvl-line {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  opacity: 0;
+}
+.nvl-line::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 30%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #22D3EE, #818CF8, #C084FC);
+  animation: nvlSlide 0.9s ease-in-out infinite;
+}
+.nvl-v3 .nvl-line, .nvl-v1 .nvl-line, .nvl-v2 .nvl-line { opacity: 0.9; }
+@keyframes nvlSlide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(380%); }
+}
+
+/* V1 中央盘动 */
+.nvl-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.nvl-v1 .nvl-center, .nvl-v2 .nvl-center { opacity: 1; }
+.nvl-reel { width: 72px; height: 72px; display: block; position: relative; }
+.nvl-reel video, .nvl-reel img { width: 100%; height: 100%; display: block; }
+.nvl-reel img { position: absolute; inset: 0; }
+.nvl-center b {
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+  color: var(--text-muted, #6E6E7A);
+}
+
+/* V2 走带 */
+.nvl-strip {
+  position: absolute;
+  left: 0; right: 0; bottom: 26px;
+  margin: auto;
+  width: 200px;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  background: repeating-linear-gradient(90deg,
+    var(--bg-elev-3, #26262F) 0 18px, var(--bg-elev-2, #1D1D25) 18px 22px);
+}
+.nvl-v2 .nvl-strip { opacity: 1; }
+.nvl-strip::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 44px;
+  background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.55), transparent);
+  animation: nvlRun 1s linear infinite;
+}
+@keyframes nvlRun {
+  0% { transform: translateX(-44px); }
+  100% { transform: translateX(210px); }
+}
+
+/* 旧内容压暗虚化（不清空；就位后同帧解除） */
+main.content { transition: filter 0.15s ease; }
+main.content.nvl-dim { filter: brightness(0.78) blur(1px); }
+
+/* hidden 必须赢过 display 规则 */
+.nvl-root [hidden] { display: none !important; }
+
+/* skiper11 像素揭示：收线瞬间像素块错峰溶解（v2） */
+.nvl-root.nvl-px .nvl-line,
+.nvl-root.nvl-px .nvl-center,
+.nvl-root.nvl-px .nvl-strip { display: none; }
+.nvl-pixels {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  grid-auto-rows: 1fr;
+  pointer-events: none;
+  z-index: 6;
+}
+.nvl-pixels i {
+  background: rgba(8, 8, 14, 0.96);
+  animation: nvlPix 0.5s ease both;
+  animation-delay: var(--pd, 0s);
+}
+@keyframes nvlPix { to { opacity: 0; } }

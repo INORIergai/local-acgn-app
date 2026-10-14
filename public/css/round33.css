@@ -1,0 +1,397 @@
+/* ================================================================
+   round33.css —— 首页（Home）+ ACG 热度榜 覆盖层
+   ★ 全部追加，不改 style.css 本体；主题令牌从 theme-v4 / tokens 继承。
+   ================================================================ */
+
+/* ---------- 首页视图容器 ---------- */
+#homeView {
+    display: none;
+    grid-column: 1 / -1;            /* ★ 铁律：覆盖 #movieGrid 的 grid */
+    min-height: calc(100vh - 140px);
+    position: relative;
+    overflow: hidden;
+    padding: 0 32px 48px;
+    color: var(--text);
+}
+#homeView.active { display: block; }
+
+/* 中央淡化的大图标（背景） */
+.home-backdrop {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 0;
+}
+.home-backdrop img {
+    width: min(520px, 64vw);
+    height: auto;
+    opacity: 0.09;                  /* 淡化背景 */
+    filter: blur(1px) saturate(0.85);
+    user-select: none;
+    /* 径向渐隐：免得一张方形图硬邦邦压在页面中央 */
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 76%);
+    mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 76%);
+}
+
+/* ---------- 顶部：欢迎词 ---------- */
+.home-hero {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 44px 0 8px;
+}
+.home-greeting {
+    font-size: 15px;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+}
+.home-question {
+    font-family: var(--font-display, Georgia, serif);
+    font-size: clamp(24px, 4vw, 40px);
+    margin: 0;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+
+/* ---------- 中间：AI 对话框（参照 WorkBuddy：小人趴在输入框上） ---------- */
+.home-chat {
+    position: relative;
+    z-index: 1;
+    max-width: 760px;
+    margin: 40px auto 0;
+}
+
+/* 趴在对话框上边缘的小人：站在卡片后面、上半身探出来 ⇒ 身体切口被卡片挡住 */
+.home-mascot {
+    position: absolute;
+    bottom: calc(100% - 6px);
+    left: -8px;
+    width: 104px;
+    height: auto;
+    pointer-events: none;
+    z-index: 1;                     /* 卡片 z-index:2 ⇒ 卡片盖住小人下沿 */
+    filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28));
+    user-select: none;
+}
+
+.home-chat-card {
+    position: relative;
+    z-index: 2;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    box-shadow: 0 18px 50px -22px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 对话消息区 */
+.home-chat-messages {
+    flex: 1;
+    min-height: 120px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 18px 18px 8px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+.home-chat-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 30px 12px;
+    font-size: 13px;
+}
+.home-chat-empty .hc-sub {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-top: 6px;
+}
+
+.home-msg { margin-bottom: 14px; display: flex; }
+.home-msg.user { justify-content: flex-end; }
+.home-msg .bubble {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.home-msg.user .bubble {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 12px 12px 0 12px;
+}
+.home-msg.ai .bubble {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px 12px 12px 0;
+}
+.home-msg.ai .bubble .ai-movie-ref {
+    color: var(--accent, var(--primary));
+    cursor: pointer;
+    text-decoration: underline;
+}
+.home-msg.ai .bubble.typing { color: var(--text-muted); font-style: italic; }
+
+/* 输入框（小人趴的位置） */
+.home-chat-input {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 14px 16px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+}
+.home-chat-input textarea {
+    flex: 1;
+    resize: none;
+    min-height: 44px;
+    max-height: 140px;
+    padding: 11px 14px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.home-chat-input textarea:focus { outline: none; border-color: var(--primary); }
+.home-chat-input .btn-send {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+}
+.home-chat-input .btn-send:hover { opacity: 0.9; }
+.home-chat-input .btn-send:active { transform: scale(0.96); }
+.home-chat-input .btn-send:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 对话状态提示 */
+.home-chat-status {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 0 18px 10px;
+    text-align: right;
+}
+
+/* ---------- 下方：ACG 热度榜 ---------- */
+.home-rank { position: relative; z-index: 1; max-width: 760px; margin: 28px auto 0; }
+
+.home-rank-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.home-rank-title {
+    font-family: var(--font-display, Georgia, serif);
+    font-size: 18px;
+    letter-spacing: 0.03em;
+}
+.home-rank-tabs { display: flex; gap: 6px; }
+.home-rank-tab {
+    padding: 5px 13px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.home-rank-tab:hover { color: var(--text); border-color: var(--border-strong, var(--border)); }
+.home-rank-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.home-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 460px;
+    overflow-y: auto;
+}
+.rank-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    cursor: pointer;
+    transition: transform 0.12s, border-color 0.12s;
+    text-decoration: none;
+    color: var(--text);
+}
+.rank-item:hover { transform: translateX(3px); border-color: var(--primary); }
+.rank-num {
+    flex: none;
+    width: 34px;
+    text-align: center;
+    font-family: var(--font-mono, monospace);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.rank-item.top1 .rank-num, .rank-item.top2 .rank-num, .rank-item.top3 .rank-num {
+    color: var(--primary);
+}
+.rank-cover {
+    flex: none;
+    width: 48px;
+    height: 68px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: var(--bg-elevated);
+}
+.rank-body { flex: 1; min-width: 0; }
+.rank-title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rank-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.rank-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.rank-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    background: var(--primary-soft, rgba(229,166,60,0.13));
+    border-radius: 4px;
+    color: var(--primary);
+}
+.rank-score {
+    flex: none;
+    font-family: var(--font-mono, monospace);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent, var(--primary));
+}
+.rank-heat {
+    flex: none;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono, monospace);
+    min-width: 52px;
+    text-align: right;
+}
+.rank-loading, .rank-error {
+    text-align: center;
+    padding: 36px 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.rank-refresh {
+    margin-left: 8px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+}
+.rank-refresh:hover { color: var(--text); }
+.rank-refresh.spinning { animation: hc-spin 0.9s linear infinite; }
+@keyframes hc-spin { to { transform: rotate(360deg); } }
+
+/* ---------- ACG 榜单独立视图（左侧「ACG榜单」入口） ---------- */
+#acgView {
+    display: none;
+    grid-column: 1 / -1;
+    padding: 20px 28px 48px;
+}
+#acgView.active { display: block; }
+
+.acg-view-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+}
+.acg-view-head h2 {
+    font-family: var(--font-display, Georgia, serif);
+    font-size: 22px;
+    margin: 0;
+    letter-spacing: 0.03em;
+}
+.acg-view-sub { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+
+.acg-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 16px;
+}
+.acg-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    overflow: hidden;
+    text-decoration: none;
+    color: var(--text);
+    transition: transform 0.15s, border-color 0.15s;
+    display: flex;
+    flex-direction: column;
+}
+.acg-card:hover { transform: translateY(-4px); border-color: var(--primary); }
+.acg-card-cover {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    background: var(--bg-elevated);
+}
+.acg-card-body { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; }
+.acg-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+.acg-card-meta {
+    margin-top: auto;
+    padding-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.acg-card-score { color: var(--accent, var(--primary)); font-weight: 700; font-family: var(--font-mono, monospace); }
+
+/* 空态 / 错误 */
+.acg-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+
+/* ---------- 移动端（≤860px） ---------- */
+@media (max-width: 860px) {
+    #homeView { padding: 0 16px 32px; }
+    .home-hero { padding-top: 24px; }
+    .home-backdrop img { width: min(360px, 76vw); opacity: 0.06; }
+    .home-mascot { width: 60px; left: -4px; }
+    .home-chat { margin-top: 24px; }
+    .home-rank { margin-top: 20px; }
+    .rank-cover { width: 40px; height: 56px; }
+    #acgView { padding: 16px 12px 40px; }
+}

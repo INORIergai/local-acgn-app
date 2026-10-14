@@ -1,0 +1,415 @@
+/* ============================================================
+   移动端适配层 · mobile.css
+   ------------------------------------------------------------
+   加载顺序：最后一个（在 theme-v4.css 之后），优先级最高。
+   作用域：@media (max-width: 860px)（与 style.css 主断点一致）
+   原则：只做覆盖，绝不改 style.css 本体。
+
+   本机实测的根因（不要"优化"掉这几条）：
+   1) .nav-right 在 style.css 里是 flex-shrink:0，拒绝收缩 →
+      在 390px 设备上把布局视口撑到 500px，页面比屏幕宽 110px
+   2) @media 860px 里 .sidebar-section { min-width: max-content } →
+      .stats-row 右边缘顶到 574px
+   3) .v4-skin-switch 在窄屏是多余的（风格切换属于设置）
+   ============================================================ */
+
+/* ============================================================
+   桌面端（≥861px）：移动端专属元素一律隐藏
+   这些元素在 library.html 里始终存在，靠这里在桌面端藏掉
+   注意：所有「桌面隐藏」的基础规则必须写在下面那个 @media 之前，
+   否则同优先级时后写的 display:none 会把移动端的 display:flex 覆盖掉
+   ============================================================ */
+.m-drawer-btn,
+.m-nav-mask,
+.mobile-only-actions { display: none; }
+
+/* ---------- 底部标签栏（基础定义，移动端由媒体查询打开 display） ---------- */
+.m-tabbar {
+    display: none;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: calc(var(--m-tab-h, 58px) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    z-index: 190;
+}
+.m-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    background: none; border: none; padding: 0;
+    color: var(--text-muted);
+    font-family: inherit; font-size: 10.5px;
+    cursor: pointer;
+    transition: color .18s ease;
+    position: relative;
+}
+.m-tab-glyph { font-size: 19px; line-height: 1; transition: transform .22s cubic-bezier(.32,.72,0,1); }
+.m-tab-label { font-size: 10.5px; line-height: 1; letter-spacing: .01em; }
+.m-tab.active { color: var(--primary); }
+.m-tab.active .m-tab-glyph { transform: translateY(-2px) scale(1.06); }
+.m-tab.active::before {
+    content: '';
+    position: absolute; left: 50%; top: 0;
+    width: 26px; height: 2.5px; border-radius: 0 0 3px 3px;
+    background: var(--primary, #9A6A15);
+    transform: translateX(-50%);
+}
+.m-tab:active { background: var(--primary-soft); }
+
+@media (max-width: 860px) {
+
+    :root {
+        --nav-h: 56px;              /* 导航栏单行高度 */
+        --m-tab-h: 58px;            /* 底部标签栏高度（不含安全区） */
+        --m-pad: 14px;              /* 内容左右留白 */
+        --m-tap: 44px;              /* 最小点击目标 */
+    }
+
+    /* ---------- 0. 全局 ---------- */
+    html { -webkit-text-size-adjust: 100%; }
+    body { overscroll-behavior-y: none; }
+
+    /* 去掉移动端默认的点击高亮块 */
+    * { -webkit-tap-highlight-color: transparent; }
+
+    /* iOS 聚焦输入框时若字号 <16px 会自动放大页面 → 统一 16px 阻止 */
+    input, select, textarea { font-size: 16px !important; }
+
+    /* 内容区给底部标签栏留出空间 */
+    .content {
+        padding: 14px var(--m-pad) calc(var(--m-tab-h) + 28px + env(safe-area-inset-bottom));
+        overflow-x: clip;
+    }
+    .main-container { min-width: 0; overflow-x: clip; }
+
+    /* ============================================================
+       1. 导航栏：改成可换行两行
+       第一行 = logo + 右侧图标按钮；第二行 = 全宽搜索框
+       这样 .nav-right 永远不需要收缩，也不会顶出屏幕
+       ============================================================ */
+    .navbar {
+        flex-wrap: wrap;
+        height: auto;
+        min-height: var(--nav-h);
+        padding: 8px var(--m-pad);
+        gap: 8px;
+        row-gap: 8px;
+    }
+    .nav-left { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .logo { font-size: 16px; letter-spacing: .02em; min-width: 0; }
+
+    /* 汉堡按钮：打开侧边抽屉 */
+    .m-drawer-btn {
+        flex: 0 0 auto;
+        width: var(--m-tap); height: var(--m-tap);
+        display: inline-flex; align-items: center; justify-content: center;
+        background: transparent; border: 1px solid var(--border);
+        border-radius: 10px; font-size: 18px; line-height: 1;
+        color: var(--text); cursor: pointer;
+    }
+    .m-drawer-btn:active { background: var(--primary-soft); }
+
+    /* 抽屉顶部：从导航栏搬过来的风格切换 / 扫描 */
+    .mobile-only-actions {
+        display: block;
+        padding-bottom: 16px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid var(--border);
+    }
+    .mobile-only-actions .v4-skin-switch {
+        display: flex;             /* 桌面端被隐藏，抽屉里要放出来 */
+        justify-content: flex-start;
+        margin: 0 0 12px;
+    }
+    .mobile-only-actions #scanBtn,
+    .mobile-only-actions .btn { display: inline-flex; }
+    .mobile-only-actions .scan-status { display: block; font-size: 12px; margin-top: 8px; }
+
+    /* 搜索框独占第二行 */
+    .nav-center { order: 3; flex: 1 1 100%; min-width: 0; }
+    .search-box { width: 100%; }
+
+    /* ⚠️ 覆盖 flex-shrink:0 —— 这是撑破屏幕的元凶 */
+    .nav-right { flex: 0 0 auto; gap: 6px; }
+    .nav-right #notificationBtn,
+    .nav-right #themeToggle,
+    .nav-right #aiTopBtn {
+        /* style.css 里是 width:36px;height:36px，两轴都要覆盖 */
+        width: var(--m-tap); height: var(--m-tap); font-size: 17px;
+    }
+    /* 窄屏上移入抽屉 / 隐藏，腾出横向空间 */
+    .v4-skin-switch { display: none; }      /* 风格切换 → 抽屉 */
+    #scanBtn { display: none; }             /* 扫描 → 抽屉 */
+    .scan-status { display: none; }
+    #scanProgressBar { border-radius: 0; }
+
+    /* ============================================================
+       2. 侧边栏 → 左侧滑出抽屉
+       复用原有 .sidebar 元素（nav-item 的事件绑定保持不变）
+       ============================================================ */
+    .m-nav-mask {
+        display: block;            /* 桌面端被隐藏，移动端放出来 */
+        position: fixed; inset: 0;
+        background: rgba(20, 16, 12, .45);
+        -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+        opacity: 0; visibility: hidden;
+        transition: opacity .26s ease, visibility .26s ease;
+        z-index: 210;
+    }
+    .m-nav-mask.open { opacity: 1; visibility: visible; }
+
+    .sidebar {
+        position: fixed;
+        left: 0; top: 0; bottom: 0;
+        width: min(84vw, 320px);
+        height: 100vh; height: 100dvh;
+        /* display:flex / overflow-x:auto / min-width:max-content 都来自
+           style.css 的 860 断点，必须全部覆盖 */
+        display: block;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 20px 14px calc(28px + env(safe-area-inset-bottom));
+        background: var(--bg-elevated);
+        border-right: 1px solid var(--border);
+        border-bottom: none;
+        box-shadow: none;
+        transform: translateX(-102%);
+        transition: transform .3s cubic-bezier(.32, .72, 0, 1), box-shadow .3s;
+        z-index: 220;
+    }
+    .sidebar.open {
+        transform: translateX(0);
+        box-shadow: 0 0 60px rgba(20, 16, 12, .3);
+    }
+    .sidebar-section { min-width: 0; margin-bottom: 20px; }
+    .sidebar-section h3 { font-size: 11px; }
+
+    /* 抽屉里的 nav-item：44px 高度，便于点按 */
+    .nav-item {
+        min-height: var(--m-tap);
+        padding: 10px 12px;
+        font-size: 14px;
+    }
+    /* 统计卡在抽屉里完整铺开（原来 160px 撑到 574px） */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stats-row + .stats-row { margin-top: 8px !important; }
+    .stat-card { min-width: 0; }
+
+    /* ============================================================
+       3. 底部标签栏
+       ============================================================ */
+    .m-tabbar { display: flex; }
+
+    /* 批量操作栏是 fixed，会被标签栏压住 → 抬高到标签栏之上。
+       ⚠️ 只改 bottom 不够：原来的隐藏态 translateY(80px) 是按 bottom:24px 算的，
+       抬高后按钮会探进视口拦截标签栏点击。这里改成按自身高度推出屏幕 + visibility:hidden，
+       既保证完全出画，也不参与命中测试。 */
+    .batch-toolbar {
+        bottom: calc(var(--m-tab-h) + 12px + env(safe-area-inset-bottom));
+        transform: translateX(-50%) translateY(calc(100% + 90px));
+        visibility: hidden;
+        max-width: calc(100vw - 24px);
+        flex-wrap: wrap;
+        justify-content: center;
+        row-gap: 6px;
+        transition: transform .28s cubic-bezier(.32, .72, 0, 1), visibility 0s .28s;
+    }
+    .batch-toolbar.show {
+        transform: translateX(-50%) translateY(0);
+        visibility: visible;
+        transition: transform .28s cubic-bezier(.32, .72, 0, 1), visibility 0s 0s;
+    }
+
+    /* 通知面板 / 命令面板：窄屏用满宽 */
+    .notification-panel {
+        position: fixed;
+        left: 8px; right: 8px; top: calc(var(--nav-h) + 52px);
+        width: auto;
+        max-height: 62vh;
+        overflow-y: auto;
+    }
+    .cp-overlay .cp-panel { width: calc(100vw - 20px); max-width: none; }
+
+    /* ============================================================
+       4. 触控：把实测偏小的点击目标统一提到可点尺寸
+       数值来自 _verify-mobile.js 的实测（括号内为改前高度）
+       ============================================================ */
+
+    /* 主按钮 44px；小按钮 38px（用 :not 避免两者互相覆盖） */
+    .btn:not(.btn-sm) { min-height: var(--m-tap); padding-left: 16px; padding-right: 16px; }
+    .btn-sm { height: auto; min-height: 38px; padding: 0 14px; font-size: 13px; }
+
+    /* 分页：原来 34px 且不换行，403px 塞进 362px → 换成换行 + 40px */
+    .pagination { flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .page-btn { min-width: 40px; height: 40px; padding: 0 12px; font-size: 13px; }
+
+    /* 选择器 36px → 44px */
+    .select-input { height: var(--m-tap); font-size: 16px; }
+
+    /* 开关：视觉保持小巧，但把可点区域扩到 44px（::before 未被占用） */
+    .toggle-btn { position: relative; }
+    .toggle-btn::before {
+        content: '';
+        position: absolute; left: -10px; right: -10px; top: -11px; bottom: -11px;
+    }
+
+    /* 新作监视卡片操作按钮：26px × 1928 个，太小了点不中 */
+    .nr-act { min-height: 40px; padding: 0 12px; font-size: 13px; }
+    .nr-card-actions { gap: 8px; }
+    /* 手机上一行放 2 张，卡片内部元素同步收紧 */
+    .nr-day-items { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }
+    .nr-tab { min-height: 40px; padding: 10px 16px; font-size: 13px; }
+
+    /* 女优卡上的单刮按钮：原来是「隐形 + 24px」，实测 428 个。这里既让它常显，
+       也把尺寸提到可点（right/bottom 收到 0 贴着头像右下角，避免过大显得突兀） */
+    .actress-avatar-scrape { width: 40px; height: 40px; right: 0; bottom: 0; font-size: 16px; }
+
+    /* 猜你喜欢的胶囊筛选 34px → 40px */
+    .av-chip { padding: 10px 16px; min-height: 40px; }
+
+    /* ============================================================
+       5. 逐视图修正
+       ============================================================ */
+
+    /* 猜你喜欢板块：桌面端靠 margin:0 -24px 做全出血，配合 26px 内边距。
+       移动端内边距只有 14px，照抄会每侧多出 10px → 改成跟随移动端内边距 */
+    .av-view,
+    .av-hero {
+        margin-left: calc(-1 * var(--m-pad));
+        margin-right: calc(-1 * var(--m-pad));
+        overflow-x: clip;
+    }
+
+    /* 在线观看：面板内 4px 溢出（负外边距导致） */
+    .panel-section.watch-full { margin-left: 0; margin-right: 0; }
+    .watch-bar, .watch-tabs { padding-left: 0; padding-right: 0; }
+
+    /* 卡片网格：手机上 3 列比 2 列更密、更好滑 */
+    .movie-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+
+    /* 首页精选轮播：桌面参数在手机上直接把字幕撑爆
+       （overlay padding 26px / 标题最小 18px / meta 限宽 70% → 番号和体积被挤断行） */
+    .gallery-overlay { padding: 12px 14px 14px; }
+    .gallery-slide-title {
+        font-size: 14px;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;          /* 长日文标题最多两行 */
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .gallery-slide-meta {
+        max-width: 100%;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+    }
+    .gallery-slide-meta span { font-size: 11px; }
+    /* 手机上 16:9 太扁，字幕只剩一条；略高一点让两行标题有呼吸空间 */
+    .gallery-track { aspect-ratio: 16 / 10; }
+
+    /* 工具栏标题在窄屏会换行挤在一起 */
+    .toolbar { gap: 6px; align-items: flex-start; }
+    .toolbar-title { font-size: 16px; line-height: 1.35; }
+    .toolbar-count { font-size: 12px; }
+
+    /* 详情弹窗 / 抽屉：手机上满屏 */
+    .modal .modal-content {
+        width: 100%;
+        max-width: 100%;
+        max-height: 100vh;
+        max-height: 100dvh;
+        border-radius: 0;
+        margin: 0;
+    }
+    #detailModal .modal-content,
+    #posterModal .modal-content,
+    #uploadPosterModal .modal-content { border-radius: 0; }
+    .detail-head { flex-direction: column; align-items: stretch; padding: 16px var(--m-pad) 12px; }
+    .detail-poster { max-width: none; max-height: 40vh; width: auto; margin: 0 auto; }
+    .detail-head-meta { gap: 8px; }
+    .dm-block { flex: 1 1 128px; }
+    .detail-scroll { padding: 14px var(--m-pad) 24px; }
+    .detail-actions { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+
+    /* 播放器：满屏 + 底部控件换行 */
+    .player-modal .modal-content { border-radius: 0; }
+    .player-head { padding: 10px 12px; }
+    .ph-title { font-size: 14px; }
+    .player-stage { aspect-ratio: auto; height: auto; }
+    #videoPlayer { max-height: 52vh; }
+    .player-foot { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+    .player-progress { flex: 1 1 100%; order: 3; }
+
+    /* 设置页：左侧导航变顶部横向滚动 */
+    .settings-shell { gap: 14px; }
+    .settings-nav {
+        display: flex; gap: 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 6px;
+        scrollbar-width: none;
+    }
+    .settings-nav::-webkit-scrollbar { display: none; }
+    .settings-nav > * { flex: 0 0 auto; white-space: nowrap; min-height: 40px; }
+
+    /* 阅读器：顶部按钮在窄屏会互相挤压 */
+    .reader-header {
+        flex-wrap: wrap; gap: 8px;
+        padding: 8px var(--m-pad);
+        height: auto;
+    }
+    .reader-title { order: 3; flex: 1 1 100%; font-size: 13px; text-align: center; }
+    .reader-nav-btn, .reader-close-btn { min-height: 40px; }
+
+    /* 女优库 / 标签云：窄屏多一列 */
+    .actress-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+    .tag-cloud { gap: 8px; }
+
+    /* 年度报告 / 刮削失败等长文本行：允许截断但别撑宽 */
+    .fail-title, .annual .name, .report-row { min-width: 0; }
+
+    /* ============================================================
+       6. 去掉「悬停才出现」的交互
+       手机上永远没有 hover —— 这些元素原本对手机用户是隐形甚至不可用的
+       （已逐个核对源码确认它们承载真实功能）
+       ============================================================ */
+
+    /* 影片卡的番号角标：原来 hover 才显示，手机上等于没有 */
+    .movie-avid-overlay { opacity: 1; }
+
+    /* 女优卡右下角的「刮削头像」按钮：默认 opacity:0 + scale(.8)，
+       只有当鼠标悬停整张卡时才现形 —— 手机上 428 个按钮全是隐形的 */
+    .actress-avatar-scrape { opacity: 1; transform: scale(1); }
+
+    /* 猜你喜欢卡片底部的行动按钮：原来 hover 才滑出 */
+    .av-card .av-cta { opacity: 1; transform: translateY(0); }
+
+    /* 猜你喜欢「魔术卡片」中央播放按钮 */
+    .magic-card .mc-play { opacity: 1; transform: scale(1); }
+
+    /* 工具栏标题在窄屏是白占的垂直空间：这 4 个视图自己已经渲染了同名标题
+       （由 mobile-nav.js 把当前视图写到 body[data-mview] 上驱动） */
+    body[data-mview="guess"] .toolbar,
+    body[data-mview="comic"] .toolbar,
+    body[data-mview="novel"] .toolbar,
+    body[data-mview="new-releases"] .toolbar { display: none; }
+
+    /* ---------- 7. 补齐仍偏小的点击目标（实测复测后的剩余项） ---------- */
+    .btn-sm { min-height: 40px; }              /* 38 → 40 */
+    .v4-skin-btn { width: 40px; height: 40px; }/* 32 → 40（在抽屉里） */
+    .nr-chip { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+    .nr-btn { min-height: 40px; }
+}
+
+/* 底部标签栏的基础样式统一放在媒体查询之前定义（见文件开头第 2 节），
+   这里只保留 reduced-motion 覆盖，避免同优先级下把 display:flex 覆盖掉 */
+@media (prefers-reduced-motion: reduce) {
+    .sidebar { transition: none; }
+    .m-tab-glyph, .m-tab { transition: none; }
+}

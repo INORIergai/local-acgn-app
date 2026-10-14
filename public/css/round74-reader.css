@@ -1,0 +1,86 @@
+/* ==========================================================================
+   round74 · 小说阅读器朗读条
+   独立文件，novel-reader.html 最后 link ⇒ 删掉即回滚。
+   ========================================================================== */
+
+.nv-tts-bar {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 460;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: var(--bg-elevated, #fff);
+    border: 1px solid var(--border, rgba(0, 0, 0, .12));
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .18);
+    font-size: 12px;
+    color: var(--text, #1a1a1a);
+    user-select: none;
+}
+
+.nv-tts-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #9ca3af; flex: 0 0 8px;
+}
+.nv-tts-dot.ok { background: #22c55e; }
+.nv-tts-dot.on {
+    background: #f59e0b;
+    animation: nvTtsPulse 1.1s ease-in-out infinite;
+}
+@keyframes nvTtsPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+.nv-tts-idx {
+    font-variant-numeric: tabular-nums;
+    opacity: .75;
+    min-width: 44px;
+    text-align: center;
+}
+
+.nv-tts-btn {
+    border: 1px solid var(--border, rgba(0, 0, 0, .14));
+    background: transparent;
+    color: inherit;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.nv-tts-btn:hover:not(:disabled) { border-color: var(--primary, #6366f1); color: var(--primary, #6366f1); }
+.nv-tts-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.nv-tts-tip {
+    opacity: .7;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 当前朗读段落的高亮 —— 只做「左侧竖条 + 淡底」，不遮挡文字 */
+.nv-tts-cur {
+    background: rgba(245, 158, 11, .13) !important;
+    border-left: 3px solid #f59e0b;
+    padding-left: 8px !important;
+    border-radius: 3px;
+    transition: background .18s ease;
+}
+
+/* 暗色皮肤下把高亮压暗一点，避免正文被染亮 */
+html[data-v4skin="aurora"] .nv-tts-cur,
+html[data-v4skin="ambient"] .nv-tts-cur {
+    background: rgba(245, 158, 11, .16) !important;
+}
+body.dark .nv-tts-bar { box-shadow: 0 6px 22px rgba(0, 0, 0, .5); }
+
+@media (max-width: 640px) {
+    .nv-tts-bar { left: 10px; right: 10px; bottom: 10px; justify-content: center; }
+    .nv-tts-tip { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nv-tts-dot.on { animation: none; }
+    .nv-tts-cur { transition: none; }
+}
