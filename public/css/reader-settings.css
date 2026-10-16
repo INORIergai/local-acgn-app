@@ -1,0 +1,181 @@
+/* ============================================================
+   CinemaVault · reader-settings.css —— 阅读器设置面板通用样式
+   配合 public/js/reader-settings.js 使用。
+   ------------------------------------------------------------
+   ★ 为什么单独拆一个文件
+     小说阅读器的旧面板样式（.setting-*）是内联在各自大 HTML 里的，
+     漫画阅读器本来连面板都没有。这里给两个阅读器一套统一的 .rs-*，
+     视觉语言对齐原有的 #d5187d 主色 / 夜间模式两套肤色，
+     以后改样式只改这一处。
+
+   ★ 只包含「面板内部」的样式。
+     面板外壳（定位 / 宽度 / 抽屉动画）仍由各阅读器自己的 .settings-panel 负责，
+     避免破坏已有的打开关闭逻辑与层级。
+   ============================================================ */
+
+.rs-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(0, 0, 0, .1);
+}
+
+.night-mode .rs-title,
+body.night-mode .rs-title { border-bottom-color: rgba(255, 255, 255, .1); }
+
+.rs-group { margin-bottom: 22px; }
+
+.rs-label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: rgba(0, 0, 0, .7);
+}
+
+.night-mode .rs-label,
+body.night-mode .rs-label { color: rgba(255, 255, 255, .7); }
+
+/* 选项说明：只在少数需要解释的项上出现（参考微信读书的灰色小字注释） */
+.rs-hint {
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(0, 0, 0, .38);
+    margin-bottom: 8px;
+}
+
+.night-mode .rs-hint,
+body.night-mode .rs-hint { color: rgba(255, 255, 255, .38); }
+
+.rs-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.rs-option {
+    padding: 6px 12px;
+    border: 1px solid rgba(0, 0, 0, .1);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: inherit;
+    background: transparent;
+    transition: background .2s ease, border-color .2s ease, color .2s ease;
+    user-select: none;
+}
+
+.night-mode .rs-option,
+body.night-mode .rs-option { border-color: rgba(255, 255, 255, .1); }
+
+.rs-option:hover { border-color: #d5187d; }
+
+.rs-option.active {
+    background: #d5187d;
+    color: #fff;
+    border-color: #d5187d;
+}
+
+/* 背景色 / 纸张色板 */
+.rs-swatches {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.rs-swatch {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid rgba(0, 0, 0, .12);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+    transition: border-color .2s ease, transform .2s ease;
+    user-select: none;
+}
+
+.night-mode .rs-swatch,
+body.night-mode .rs-swatch { border-color: rgba(255, 255, 255, .18); }
+
+.rs-swatch:hover { transform: scale(1.06); }
+
+.rs-swatch.active {
+    border-color: #d5187d;
+    transform: scale(1.12);
+}
+
+/* 面板底部留出滚动余量，最后一项不会被抽屉边缘切掉 */
+.rs-foot { height: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .rs-option,
+    .rs-swatch { transition: none; }
+    .rs-swatch.active { transform: none; }
+}
+
+/* ============================================================
+   ★ 字体切换（小说阅读器）
+     正文 .chapter-content 自带宋体栈，只给祖先设 font-family 覆盖不掉，
+     所以用 body[data-rs-font] 提权命中。
+   ============================================================ */
+body[data-rs-font="serif"] .chapter-content,
+body[data-rs-font="serif"] .chapter-title {
+    font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif;
+}
+body[data-rs-font="sans"] .chapter-content,
+body[data-rs-font="sans"] .chapter-title {
+    font-family: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+}
+body[data-rs-font="kai"] .chapter-content,
+body[data-rs-font="kai"] .chapter-title {
+    font-family: 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', serif;
+}
+body[data-rs-font="hei-light"] .chapter-content,
+body[data-rs-font="hei-light"] .chapter-title {
+    font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei Light', 'Microsoft YaHei', sans-serif;
+    font-weight: 300;
+}
+
+/* ============================================================
+   ★ 翻页样式（turnStyle）—— 与 PaperCurl 卷曲并列的另外三种演出
+     curl  = WebGL / DOM 卷曲（PaperCurl，走 js/paper-curl.js）
+     slide = 平移（纯 transform，无 3D，最低开销）
+     fade  = 淡入
+     none  = 无动画（硬切）
+   body[data-turn-style] 由各阅读器在应用设置时写入。
+   ============================================================ */
+body[data-turn-style="none"] .page-in,
+body[data-turn-style="none"] .turn-fx { animation: none !important; transition: none !important; }
+
+body[data-turn-style="slide"] .page-in {
+    animation-name: rs-slide-in;
+    animation-duration: var(--rs-turn-dur, 320ms);
+    animation-timing-function: cubic-bezier(.22, .61, .36, 1);
+    animation-fill-mode: both;
+}
+body[data-turn-style="slide"].turn-back .page-in {
+    animation-name: rs-slide-in-back;
+}
+body[data-turn-style="fade"] .page-in {
+    animation-name: rs-fade-in;
+    animation-duration: var(--rs-turn-dur, 320ms);
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+}
+
+@keyframes rs-slide-in {
+    from { opacity: 0; transform: translate3d(var(--rs-turn-x, 26px), 0, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes rs-slide-in-back {
+    from { opacity: 0; transform: translate3d(calc(-1 * var(--rs-turn-x, 26px)), 0, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes rs-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body[data-turn-style] .page-in { animation: none !important; }
+}

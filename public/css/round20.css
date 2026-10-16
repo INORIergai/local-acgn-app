@@ -1,0 +1,146 @@
+/* ==========================================================================
+   round20.css —— 手机端弹窗自适应 + 可滚动（2026-09-23）
+   --------------------------------------------------------------------------
+   用户反馈：手机端打开详情弹窗后「弹窗不能自适应大小，也不能下拉，
+   导致无法点击在线播放等下面的按钮」。
+
+   实测根因（Playwright，375x667 视口，iPhone 尺寸）：
+
+   1) 弹窗压根没铺满 —— 宽 353px（94vw），左边露出 23px 遮罩。
+      原因是 detail-mode.css 用 `html[data-detail-mode="drawer"]
+      #detailModal .modal-content.detail-modal` 这类高特异性选择器写死了
+      `width: min(760px, 94vw)`，而 mobile.css 里铺满的那条 `.modal .modal-content`
+      特异性只有 (0,2,0) —— 打不过它，所以「手机上满屏」这套规则一直没生效。
+
+   2) 「不能下拉」的真凶是高度链断掉，而不是缺 overflow：
+      .detail-body 是 height:100% + overflow:hidden 的 flex 列；
+      .detail-head 是它的第一个 flex item，自然高度（封面 40vh + 标题 + meta 块
+      + 两个主按钮）实测 853px，比整个弹窗（667px）还高。
+      flex 默认 min-height:auto 不允许它被压缩 → head 撑破 body，
+      把 .detail-scroll（flex:1）挤成 **38px** 高。
+      结果：封面下面的一切（在线播放 / PotPlayer / 工具区 / 相似推荐）
+      全部落在视口之外，而 .detail-body 自己是 overflow:hidden、滚不动。
+      实测：「▶ 在线播放」y=726（视口只有 667），17 个按钮里 16 个点不到；
+      把 .detail-body 硬滚到底，工具区仍在 y=954~1219。
+
+   本文件的修法（只动手机断点，桌面端一个字不改）：
+     · 弹窗遮罩去掉 padding —— 否则 align-items:center 会把 max-height:100dvh
+       的弹窗上下各顶出 24px，被视口裁掉（同样是「点不到」的成因之一）。
+     · 所有弹窗铺满宽度、最大高度用 100dvh（跟随移动浏览器地址栏收缩）。
+     · 详情弹窗把 .detail-body 从「不可滚的裁剪盒」改成**整块滚动容器**，
+       .detail-head / .detail-scroll 都改成 flex:0 0 auto 自然展开 —— 这样
+       从封面到最底部图标区可以一路滑下去，底部按钮全部可达（用户要的「下拉」）。
+     · 封面限高 40vh → 32vh：竖屏手机上海报不该吃掉半个屏幕。
+     · 底部留 safe-area，避免 iPhone 手势条压住最后一排按钮。
+
+   回滚方式：删掉本文件 + 移除 library.html 里的 <link> 即可。
+   ========================================================================== */
+
+@media (max-width: 860px) {
+
+    /* ----------------------------------------------------------------------
+       0. 遮罩层：手机上不留 padding
+       ---------------------------------------------------------------------- */
+    .modal {
+        padding: 0 !important;
+        align-items: stretch !important;
+    }
+
+    /* ----------------------------------------------------------------------
+       1. 通用弹窗：铺满宽度 + 限高到可视区 + 内容可滚
+          （海报/上传/AI/播放列表/播放器… 共用的底座规则）
+       ---------------------------------------------------------------------- */
+    html body .modal .modal-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: 100dvh !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    /* ----------------------------------------------------------------------
+       2. 详情弹窗
+          注意：必须用 `html[data-detail-mode] #detailModal .modal-content.detail-modal`
+          这个特异性，否则被 detail-mode.css 的抽屉规则反杀（见文件头说明）
+       ---------------------------------------------------------------------- */
+    html[data-detail-mode] #detailModal.modal {
+        justify-content: stretch !important;
+        align-items: stretch !important;
+        padding: 0 !important;
+    }
+
+    html[data-detail-mode] #detailModal .modal-content.detail-modal {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        overflow: hidden !important;   /* 滚动交给 .detail-body */
+    }
+
+    /* ★ 整块内容区可下拉：封面 → 标题 → 在线播放 → 工具区 → 相似推荐，一路滑到底 */
+    #detailModal .detail-body {
+        height: 100% !important;
+        overflow-y: auto !important;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;             /* 滚到底不要把页面一起带着滚 */
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    }
+    #detailModal .detail-body::-webkit-scrollbar { width: 4px; }
+    #detailModal .detail-body::-webkit-scrollbar-thumb {
+        background: rgba(127, 127, 127, .35);
+        border-radius: 4px;
+    }
+
+    /* head / scroll 都退回「自然高度」，不再互相抢高度 */
+    #detailModal .detail-head {
+        flex: 0 0 auto;
+        padding-bottom: 14px;
+    }
+    #detailModal .detail-scroll {
+        flex: 0 0 auto;
+        overflow: visible !important;
+        max-height: none !important;
+    }
+
+    /* 竖屏手机上海报限高：40vh（267px）太高，会把「在线播放」顶出首屏。
+       28vh（≈187px）既能看清封面，又能让主按钮留在第一屏。 */
+    #detailModal .detail-poster { max-height: 28vh !important; }
+
+    /* 信息块（番号/时长/大小/女优数…）在手机上压缩到两行以内，
+       元数据块本来只是速览，不该把主按钮挤到屏幕外 */
+    #detailModal .detail-head-meta.dm-blocks {
+        gap: 6px;
+        margin-top: 10px;
+    }
+    #detailModal .dm-block {
+        padding: 5px 9px;
+        min-width: 0;
+    }
+    #detailModal .dm-block-k { font-size: 9.5px; }
+    #detailModal .dm-block-v { font-size: 12px; }
+    #detailModal .detail-title { font-size: 17px; }
+    #detailModal .detail-primary-actions { margin-top: 12px; }
+
+    /* 关闭按钮：滚到哪儿都能一眼看到（它相对 .modal-content 绝对定位，
+       把热区略微放大，手指更好按） */
+    html[data-detail-mode] #detailModal .close-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--card-bg, #fff) 82%, transparent);
+        backdrop-filter: blur(4px);
+    }
+
+    /* 播放器：控制条在窄屏要留出安全区，别被手势条压住 */
+    .player-modal .modal-content {
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    }
+}

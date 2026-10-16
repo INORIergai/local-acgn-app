@@ -1,0 +1,317 @@
+/* ============================================================================
+   round26 覆盖层（2026-09-25）
+   ----------------------------------------------------------------------------
+   只追加、不改 style.css 本体（项目铁律）。放在最后加载，保证优先级最高。
+   覆盖内容：
+     #5  刮削失败清单整行可点（含「🖼️ 换封面」按钮样式）
+     #10 入库日期标签 + 入库时间线的搜索框 / 天数 chips / 日期行
+     #4  启动自动扫描的过程与结果悬浮条
+   ============================================================================ */
+
+/* ---------------- #5 刮削失败清单 ---------------- */
+.fail-row.is-clickable {
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.fail-row.is-clickable:hover {
+    background: var(--accent-soft, rgba(213, 24, 125, .08));
+    border-color: var(--accent, #d5187d);
+}
+
+.fail-row.is-clickable:active { transform: scale(.995); }
+
+.fail-row.is-clickable:focus-visible {
+    outline: 2px solid var(--accent, #d5187d);
+    outline-offset: 2px;
+}
+
+.fail-row .fail-open {
+    flex-shrink: 0;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: background .18s ease, color .18s ease, border-color .18s ease;
+}
+
+.fail-row.is-clickable:hover .fail-open {
+    background: var(--accent, #d5187d);
+    border-color: var(--accent, #d5187d);
+    color: #fff;
+}
+
+/* 手机上「换封面」按钮不占行，直接铺满一行的右侧 */
+@media (max-width: 860px) {
+    .fail-row { flex-wrap: wrap; }
+    .fail-row .fail-main { flex: 1 1 60%; }
+    .fail-row .fail-open { order: 9; }
+}
+
+/* ---------------- #10 入库日期标签 ---------------- */
+.movie-card .movie-badge-added {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    line-height: 1.5;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    color: #fff;
+    background: rgba(0, 0, 0, .62);
+    border-radius: 999px;
+    backdrop-filter: blur(3px);
+    pointer-events: none;
+}
+
+.movie-card .movie-badge-new + .movie-badge-added { left: 6px; }
+
+/* ---------------- #10 入库时间线：搜索 / 筛选 ---------------- */
+.tl-head .tl-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.tl-search {
+    width: 190px;
+    max-width: 44vw;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    outline: none;
+}
+
+.tl-search:focus { border-color: var(--accent, #d5187d); }
+
+.tl-chip {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .18s ease, color .18s ease, border-color .18s ease;
+}
+
+.tl-chip:hover { color: var(--text); border-color: var(--accent, #d5187d); }
+
+.tl-chip.active {
+    background: var(--accent, #d5187d);
+    border-color: var(--accent, #d5187d);
+    color: #fff;
+}
+
+.tl-card .tl-date {
+    display: block;
+    font-size: 10px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    color: var(--text-muted);
+    letter-spacing: -.02em;
+}
+
+.tl-empty {
+    padding: 22px 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.tl-note {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    padding: 6px 2px 0;
+}
+
+@media (max-width: 860px) {
+    .tl-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .tl-head .tl-tools { margin-left: 0; width: 100%; }
+    .tl-search { width: 100%; max-width: none; }
+}
+
+/* ---------------- #4 启动自动扫描提示条 ---------------- */
+.startup-scan-bar {
+    position: fixed;
+    top: 64px;
+    right: 18px;
+    z-index: 420;                 /* 低于详情弹窗(500/510)，高于常规内容 */
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    max-width: min(560px, calc(100vw - 36px));
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .16);
+    font-size: 12.5px;
+    color: var(--text);
+    animation: ssbIn .28s cubic-bezier(.32, .72, 0, 1);
+}
+
+@keyframes ssbIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: none; }
+}
+
+.startup-scan-bar .ssb-text { line-height: 1.5; }
+.startup-scan-bar .ssb-text b { color: var(--accent, #d5187d); }
+
+.startup-scan-bar .ssb-meta {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.startup-scan-bar .ssb-icon { font-size: 15px; }
+
+.startup-scan-bar .ssb-spin {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent, #d5187d);
+    animation: ssbSpin .8s linear infinite;
+}
+
+@keyframes ssbSpin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .startup-scan-bar { animation: none; }
+    .startup-scan-bar .ssb-spin { animation: none; }
+}
+
+.startup-scan-bar .ssb-btn {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 999px;
+    border: 1px solid var(--accent, #d5187d);
+    background: var(--accent, #d5187d);
+    color: #fff;
+    cursor: pointer;
+}
+
+.startup-scan-bar .ssb-close {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    line-height: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+.startup-scan-bar .ssb-close:hover { background: var(--border); color: var(--text); }
+
+@media (max-width: 860px) {
+    .startup-scan-bar {
+        top: auto;
+        bottom: 74px;               /* 避开手机底部导航 */
+        left: 12px;
+        right: 12px;
+        max-width: none;
+    }
+}
+
+/* ============================================================
+   round26 续 #7：夸克「文件列表能读、取流被拒」的会话过期告警条
+   背景：夸克 API 对过期 cookie 仍返回 200，只有真正取流才被 CDN 回呼拒绝
+   （RequestDeniedByCallback / auth expired），所以必须主动提示，别等用户
+   点开 PDF 撞一句「HTTP 403」。
+   ============================================================ */
+.quark-session-warn {
+    grid-column: 1 / -1;              /* #movieGrid 是 grid，自定义块必须占满整行 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--accent, #d5187d);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent, #d5187d) 10%, transparent);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.quark-session-warn .btn-sm {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    font-size: 13px;
+}
+
+@media (max-width: 860px) {
+    .quark-session-warn { align-items: flex-start; }
+}
+
+/* ============================================================
+   round26 续 #17：树视图卡片（小说库 / 漫画库）显示真实封面
+   ─────────────────────────────────────────────────────────────
+   真因：av-board.js 的 textCard() 原先只画糖果色块 + 文字，一张 <img> 都不产出。
+   所以「换了封面卡片也不变」不是数据问题 —— 库里 posterPath 已经写对、
+   /api/movie/poster/<hash> 实测返 200 + 616KB，只是卡片压根不画图。
+   .av-card 本身就是 2:2.9 的竖版比例，正好当书封位，直接复用。
+   层级（.av-card 带 transform ⇒ 自身是层叠上下文）：
+     0 封面图 → 1 上下遮罩 → 2 标题 / 底部信息 → 3 悬停 CTA（原有）
+   ============================================================ */
+.av-card.has-art { background: #17130f; }
+
+.av-card.has-art .av-art {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* 上遮罩给标题、下遮罩给「第 N 卷 / 打开这一卷」，中间留亮，别把封面糊死 */
+.av-card.has-art::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(180deg,
+        rgba(0, 0, 0, .66) 0%,
+        rgba(0, 0, 0, .22) 38%,
+        rgba(0, 0, 0, .10) 55%,
+        rgba(0, 0, 0, .72) 100%);
+}
+
+/* 大号数字水印压在照片上只会糊成一团，有封面时收起来 */
+.av-card.has-art .av-num { display: none; }
+
+.av-card.has-art .av-title,
+.av-card.has-art .av-sub {
+    z-index: 2;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .85), 0 0 12px rgba(0, 0, 0, .45);
+}
+.av-card.has-art .av-sub b { color: rgba(255, 255, 255, .86); }
+.av-card.has-art .av-sub span {
+    background: rgba(0, 0, 0, .72);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.av-card.has-art .av-flag { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .9)); }

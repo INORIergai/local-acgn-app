@@ -1,0 +1,161 @@
+/* ==========================================================================
+   detail-mode.css —— 详情呈现方式双模式
+   --------------------------------------------------------------------------
+   2026-09-21 新增。用户可在「设置 → 外观 → 点击海报后打开」里切换：
+     html[data-detail-mode="drawer"]  右侧滑出抽屉（默认）
+     html[data-detail-mode="modal"]   居中大弹窗（改动之前的经典样式）
+
+   本文件是这两套布局的**唯一权威**，负责覆盖 av-board.css / polish.css 里
+   已有的抽屉定位与尺寸。删掉本文件即可回滚（但设置项按钮会失去样式）。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   共用：抽屉内部结构（海报独占一行 + 信息在下）
+   -------------------------------------------------------------------------- */
+#detailModal .detail-body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   模式 A：右侧抽屉（默认）
+   -------------------------------------------------------------------------- */
+html[data-detail-mode="drawer"] #detailModal.modal {
+    justify-content: flex-end;
+    align-items: stretch;
+    padding: 0;
+}
+html[data-detail-mode="drawer"] #detailModal .modal-content.detail-modal {
+    width: min(760px, 94vw);
+    max-width: 760px;
+    height: 100%;
+    max-height: 100vh;
+    margin: 0;
+    padding: 0;
+    border-radius: 18px 0 0 18px;
+    border-right: 0;
+    transform: translateX(40px);
+    opacity: 0;
+    transition: transform .34s var(--av-ease-pop, cubic-bezier(.32, .72, 0, 1)),
+                opacity .24s ease;
+}
+html[data-detail-mode="drawer"] #detailModal.show .modal-content.detail-modal {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   模式 B：居中大弹窗（改动之前的经典样式）
+   宽度收窄到 720px、上下留白、四角圆角、从下方微微升起
+   -------------------------------------------------------------------------- */
+html[data-detail-mode="modal"] #detailModal.modal {
+    justify-content: center;
+    align-items: center;
+    padding: 32px 20px;
+}
+html[data-detail-mode="modal"] #detailModal .modal-content.detail-modal {
+    width: min(720px, 94vw);
+    max-width: 720px;
+    height: auto;
+    max-height: calc(100vh - 64px);
+    margin: auto;
+    padding: 0;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    transform: translateY(18px) scale(.985);
+    opacity: 0;
+    transition: transform .3s cubic-bezier(.22, .61, .36, 1), opacity .22s ease;
+}
+html[data-detail-mode="modal"] #detailModal.show .modal-content.detail-modal {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+/* 经典弹窗里内容区自己滚动，而不是整屏撑满 */
+html[data-detail-mode="modal"] #detailModal .detail-body { height: auto; }
+html[data-detail-mode="modal"] #detailModal .detail-scroll {
+    overflow-y: auto;
+    max-height: min(46vh, 460px);
+}
+/* 经典弹窗的海报可以更大方一些 */
+html[data-detail-mode="modal"] #detailModal .detail-poster { max-height: 40vh; }
+
+/* --------------------------------------------------------------------------
+   设置页：呈现方式选择卡片
+   -------------------------------------------------------------------------- */
+.detail-mode-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+.detail-mode-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    cursor: pointer;
+    transition: border-color .18s ease, background .18s ease, transform .2s var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
+}
+.detail-mode-card:hover { transform: translateY(-2px); border-color: var(--primary); }
+.detail-mode-card.active { border-color: var(--primary); background: var(--primary-soft); }
+
+/* 缩略示意图：一个框里画出面板位置 */
+.detail-mode-thumb {
+    position: relative;
+    flex: 0 0 auto;
+    width: 52px;
+    height: 40px;
+    border-radius: 7px;
+    background: var(--bg-hover, rgba(127, 127, 127, .12));
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+.dmt-panel {
+    position: absolute;
+    display: block;
+    border-radius: 3px;
+    background: var(--primary);
+    opacity: .85;
+}
+.dmt-panel-right { top: 0; right: 0; bottom: 0; width: 42%; border-radius: 0 0 0 3px; }
+.dmt-panel-center { top: 14%; left: 50%; transform: translateX(-50%); right: 14%; bottom: 14%; width: auto; border-radius: 4px; }
+
+.detail-mode-info { flex: 1; min-width: 0; }
+.detail-mode-check {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0;
+    transform: scale(.6);
+    transition: opacity .18s ease, transform .22s var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
+}
+.detail-mode-card.active .detail-mode-check { opacity: 1; transform: scale(1); }
+
+@media (max-width: 700px) {
+    html[data-detail-mode="modal"] #detailModal.modal { padding: 16px 10px; }
+    html[data-detail-mode="modal"] #detailModal .modal-content.detail-modal {
+        max-height: calc(100vh - 32px);
+    }
+}
+
+/* 减少动态效果 */
+@media (prefers-reduced-motion: reduce) {
+    html[data-detail-mode="drawer"] #detailModal .modal-content.detail-modal,
+    html[data-detail-mode="modal"] #detailModal .modal-content.detail-modal,
+    .detail-mode-card,
+    .detail-mode-check { transition-duration: .01ms; }
+    .detail-mode-card:hover { transform: none; }
+}
