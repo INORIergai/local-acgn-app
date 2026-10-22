@@ -1,0 +1,77 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ─────────────────────────────────────────────────────────────
+// 发布签名（v4.6.0 起）
+// keystore.properties 内含口令，**不入库**；模板见 android/keystore/keystore.properties.example
+// 未提供时自动退回 debug 签名（仅本地调试可用，绝不可作为分发件）
+// ─────────────────────────────────────────────────────────────
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+def hasReleaseSigning = false
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+    hasReleaseSigning = keystoreProps.containsKey('storeFile')
+}
+
+android {
+    namespace 'cn.cinemavault.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "cn.cinemavault.app"
+        minSdk 24
+        targetSdk 34
+        // ⚠ 版本号唯一可信来源：此处的 versionCode / versionName。
+        //   服务端 routes/app-update.js 会解析本文件，原生侧读 BuildConfig，前端读 /api/app/android-version。
+        versionCode 4
+        versionName "4.6.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            // 明确标注：debug 构建仅为本地调试
+            applicationIdSuffix ""
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        // 原生侧用 BuildConfig.VERSION_NAME 取版本，避免手写字符串漂移
+        buildConfig true
+    }
+    lint {
+        // 单 Activity WebView 壳，缺 onPermissionRequest 等提示不阻断构建
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    implementation 'androidx.webkit:webkit:1.12.0'
+}

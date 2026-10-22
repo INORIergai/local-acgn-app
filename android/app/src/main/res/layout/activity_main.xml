@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/rootContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_dark"
+    tools:context=".MainActivity">
+
+    <!-- Normal Content Area -->
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <WebView
+            android:id="@+id/webView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/bg_dark" />
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Floating Server Switch Icon (Located at bottom-right thumb zone, above TabBar) -->
+    <ImageView
+        android:id="@+id/btnFloatingSettings"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginBottom="84dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_floating_btn"
+        android:src="@android:drawable/ic_menu_preferences"
+        android:padding="10dp"
+        android:alpha="0.6"
+        android:contentDescription="切换服务器地址" />
+
+    <!-- Connection Error Overlay -->
+    <LinearLayout
+        android:id="@+id/errorOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:background="@color/bg_dark"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvErrorTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="影库连接未就绪"
+            android:textColor="@color/accent_gold"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/tvErrorMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="如果是刚启动 Cloudflare 穿透，全球节点通常需要 15~30 秒完成域名注册同步。\n请稍候点击下方【重试】，或确认地址是否正确。"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:lineSpacingExtra="6dp"
+            android:gravity="center"
+            android:layout_marginBottom="28dp" />
+
+        <Button
+            android:id="@+id/btnRetry"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="立即重试连接"
+            android:textColor="@color/bg_dark"
+            android:backgroundTint="@color/accent_gold"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnSwitchAddress"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="修改服务器地址"
+            android:textColor="@color/text_primary"
+            android:backgroundTint="@color/bg_card" />
+    </LinearLayout>
+
+    <!-- Fullscreen Video Container (Shown when HTML5 video goes fullscreen) -->
+    <FrameLayout
+        android:id="@+id/fullscreenContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone" />
+
+    <!-- Setup Prompt Card (Shown if no server IP is configured) -->
+    <LinearLayout
+        android:id="@+id/setupOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:background="@color/bg_dark"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Cinema Vault"
+            android:textColor="@color/accent_gold"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="连接到电脑/NAS本地影库"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:layout_marginBottom="24dp" />
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:hint="输入局域网IP或穿透网址"
+            android:textColorHint="#6B7280"
+            android:textColor="@color/text_primary"
+            android:background="@color/bg_card"
+            android:paddingHorizontal="16dp"
+            android:singleLine="true"
+            android:inputType="textUri"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="立即连接"
+            android:textColor="@color/bg_dark"
+            android:backgroundTint="@color/accent_gold"
+            android:textStyle="bold"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="【同WiFi局域网】：http://192.168.x.x:3517\n【流量外网穿透】：https://xxx.trycloudflare.com (无需加端口)"
+            android:textColor="#6B7280"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginTop="20dp"
+            android:lineSpacingExtra="4dp" />
+    </LinearLayout>
+
+</FrameLayout>

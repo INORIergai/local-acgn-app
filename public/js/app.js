@@ -706,10 +706,16 @@ function renderMovies(movies, fromFilter = false) {
         /* ---- page1：摞卡页（胶囊行 + 每系列一张摞卡 + 非系列散卡） ---- */
         var consumed = new Set();
         var page1 = ['<div id="seriesGridBar" class="seriesGridBar">' + window.SeriesUI.capsuleRow(seriesMap, '') + '</div>'];
+        /* round113-P8：与 av-board 同一处热点 —— 原来每个条目都扫一遍全部系列
+           （seriesMap.forEach + members.indexOf），条目数与系列数都大时是平方级。
+           改成先建反查表，语义不变：归第一个命中的系列。 */
+        var memberOf = new Map();
+        seriesMap.forEach(function (members, name) {
+            members.forEach(function (x) { if (!memberOf.has(x)) memberOf.set(x, name); });
+        });
         movies.forEach(function (m) {
             if (consumed.has(m)) return;
-            var sname = null;
-            seriesMap.forEach(function (members, name) { if (!sname && members.indexOf(m) >= 0) sname = name; });
+            var sname = memberOf.get(m) || null;
             if (sname) {
                 var members = seriesMap.get(sname);
                 members.forEach(function (x) { consumed.add(x); });
@@ -3380,7 +3386,7 @@ async function showCloudSourceSelect(type = 'comic') {
         const mr = await (await fetch(`/api/cloud/quark/media-files?type=${type}&page=1&pageSize=1`)).json();
         if (mr.code === 0 && mr.data && mr.data.dir) {
             boundCards += `
-            <div class="cloud-source-card" onclick="quarkCurrentKind='${type}';loadQuarkMediaGrid()" style="cursor:pointer;padding:30px;border:2px solid var(--primary);border-radius:16px;text-align:center;min-width:200px;transition:all 0.3s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform=''">
+            <div class="cloud-source-card" onclick="quarkCurrentKind='${type}';loadQuarkMediaGrid()" style="cursor:pointer;padding:30px;border:2px solid var(--primary);border-radius:16px;text-align:center;min-width:200px;transition:all var(--mv2-d2, 0.3s) var(--mv2-snap, ease);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform=''">
                 <div style="font-size:48px;margin-bottom:12px;">📕</div>
                 <div style="font-size:18px;font-weight:600;margin-bottom:8px;">我的${typeLabel}目录</div>
                 <div style="font-size:13px;color:var(--text-muted);">${escapeHtml(String(mr.data.dir.name || ''))} · 夸克网盘直达</div>
@@ -3398,7 +3404,7 @@ async function showCloudSourceSelect(type = 'comic') {
                 const d = st.data.providers[p] || {};
                 if (d.mediaDirs && d.mediaDirs[type] && d.mediaDirs[type].fid !== undefined) {
                     oauthCards += `
-            <div class="cloud-source-card" onclick="loadOAuthMediaGrid('${p}','${type}')" style="cursor:pointer;padding:30px;border:2px solid var(--primary);border-radius:16px;text-align:center;min-width:200px;transition:all 0.3s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform=''">
+            <div class="cloud-source-card" onclick="loadOAuthMediaGrid('${p}','${type}')" style="cursor:pointer;padding:30px;border:2px solid var(--primary);border-radius:16px;text-align:center;min-width:200px;transition:all var(--mv2-d2, 0.3s) var(--mv2-snap, ease);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform=''">
                 <div style="font-size:48px;margin-bottom:12px;">📂</div>
                 <div style="font-size:18px;font-weight:600;margin-bottom:8px;">我的${typeLabel}目录</div>
                 <div style="font-size:13px;color:var(--text-muted);">${escapeHtml(String(d.mediaDirs[type].name || ''))} · ${p === 'pan123' ? '123云盘' : '百度网盘'}直达</div>
@@ -3407,7 +3413,7 @@ async function showCloudSourceSelect(type = 'comic') {
                 }
                 if (d.authorized) {
                     oauthCards += `
-            <div class="cloud-source-card" onclick="loadOAuthFiles('${p}','',true,'${type}')" style="cursor:pointer;padding:30px;border:2px solid var(--border);border-radius:16px;text-align:center;min-width:200px;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--primary)';this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
+            <div class="cloud-source-card" onclick="loadOAuthFiles('${p}','',true,'${type}')" style="cursor:pointer;padding:30px;border:2px solid var(--border);border-radius:16px;text-align:center;min-width:200px;transition:all var(--mv2-d2, 0.3s) var(--mv2-snap, ease);" onmouseover="this.style.borderColor='var(--primary)';this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
                 <div style="font-size:48px;margin-bottom:12px;">☁️</div>
                 <div style="font-size:18px;font-weight:600;margin-bottom:8px;">${p === 'pan123' ? '123云盘' : '百度网盘'}</div>
                 <div style="font-size:13px;color:var(--text-muted);">官方授权 · 浏览全部文件</div>
@@ -3423,13 +3429,13 @@ async function showCloudSourceSelect(type = 'comic') {
             ${boundCards}
             ${oauthCards}
             ${type === 'comic' ? `
-            <div class="cloud-source-card" onclick="loadKmoeComic()" style="cursor:pointer;padding:30px;border:2px solid var(--border);border-radius:16px;text-align:center;min-width:200px;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--primary)';this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
+            <div class="cloud-source-card" onclick="loadKmoeComic()" style="cursor:pointer;padding:30px;border:2px solid var(--border);border-radius:16px;text-align:center;min-width:200px;transition:all var(--mv2-d2, 0.3s) var(--mv2-snap, ease);" onmouseover="this.style.borderColor='var(--primary)';this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
                 <div style="font-size:48px;margin-bottom:12px;">📚</div>
                 <div style="font-size:18px;font-weight:600;margin-bottom:8px;">KOOB.ONE 在线漫画</div>
                 <div style="font-size:13px;color:var(--text-muted);">Kindle/epub漫画</div>
                 <button class="btn" style="margin-top:16px;">进入</button>
             </div>` : ''}
-            <div class="cloud-source-card" onclick="loadQuarkFiles('0', true, '${type}')" style="cursor:pointer;padding:30px;border:2px solid var(--border);border-radius:16px;text-align:center;min-width:200px;transition:all 0.3s;" onmouseover="this.style.borderColor='var(--primary)';this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
+            <div class="cloud-source-card" onclick="loadQuarkFiles('0', true, '${type}')" style="cursor:pointer;padding:30px;border:2px solid var(--border);border-radius:16px;text-align:center;min-width:200px;transition:all var(--mv2-d2, 0.3s) var(--mv2-snap, ease);" onmouseover="this.style.borderColor='var(--primary)';this.style.transform='translateY(-4px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform=''">
                 <div style="font-size:48px;margin-bottom:12px;">☁️</div>
                 <div style="font-size:18px;font-weight:600;margin-bottom:8px;">夸克网盘</div>
                 <div style="font-size:13px;color:var(--text-muted);">视频/漫画/小说</div>
@@ -5469,7 +5475,7 @@ function showKooboneVolumePicker({ title, volumes, library, action, url }) {
             </div>
             <div class="kb-vol-list" style="overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding-right:4px;">
                 ${volumes.map((v, i) => `
-                    <div class="kb-vol-item" data-i="${i}" style="cursor:pointer;border:1px solid var(--border);border-radius:10px;padding:10px 12px;transition:all .18s;">
+                    <div class="kb-vol-item" data-i="${i}" style="cursor:pointer;border:1px solid var(--border);border-radius:10px;padding:10px 12px;transition:all var(--mv2-d1, .18s) var(--mv2-snap, ease);">
                         <div style="font-weight:600;font-size:13.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(v.name || '')}">
                             ${escapeHtml(v.snumber || v.name || ('卷 ' + (i + 1)))}
                         </div>
@@ -7528,31 +7534,17 @@ function renderSettings(config) {
                         <div class="settings-group-title">主题风格</div>
                         <div class="theme-selector">
                             <div class="theme-card ${getV4Skin() === 'classic' ? 'active' : ''}" data-v4skin="classic" onclick="pickV4Skin('classic')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #F1EEE6 50%, #9A6A15 50%);"></div>
+                                <div class="theme-dot" style="background: linear-gradient(135deg, #F7F3EA 50%, #8A5A12 50%);"></div>
                                 <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">经典 · Aardvark</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">白底纸感 · 原味界面</div>
+                                    <div style="font-weight: 600; font-size: 14px;">纸 · Paper</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">奶油纸底 · 墨字 · 宋体页名</div>
                                 </div>
                             </div>
-                            <div class="theme-card ${getV4Skin() === 'aurora' ? 'active' : ''}" data-v4skin="aurora" onclick="pickV4Skin('aurora')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #22D3EE, #818CF8 48%, #C084FC);"></div>
+                            <div class="theme-card ${getV4Skin() === 'matinee' ? 'active' : ''}" data-v4skin="matinee" onclick="pickV4Skin('matinee')">
+                                <div class="theme-dot" style="background: linear-gradient(135deg, #14110E 50%, #D99A43 50%);"></div>
                                 <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">V4.1 · 极光 AURORA</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">深蓝紫 · 漂移极光</div>
-                                </div>
-                            </div>
-                            <div class="theme-card ${getV4Skin() === 'ambient' ? 'active' : ''}" data-v4skin="ambient" onclick="pickV4Skin('ambient')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #0F0F14 50%, #6E8BFF 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">V4.4 · 暮色 AMBIENT</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">炭黑 · 环境光溢出</div>
-                                </div>
-                            </div>
-                            <div class="theme-card" data-v4skin="matinee" onclick="pickV4Skin('matinee')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #17130F 50%, #D89A42 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">午夜放映厅 · MATINÉE</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">暖黑 · 琥珀灯 · 胶片档案</div>
+                                    <div style="font-weight: 600; font-size: 14px;">夜 · Night</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">暖黑底 · 纸白字 · 琥珀灯</div>
                                 </div>
                             </div>
                         </div>
@@ -8615,7 +8607,7 @@ function renderSettings(config) {
                             <span id="avatarScrapeStat" style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);"></span>
                         </div>
                         <div id="avatarScrapeBarWrap" style="display:none;margin-top:10px;height:6px;border-radius:6px;background:var(--bg);overflow:hidden;">
-                            <div id="avatarScrapeBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--pl-amber),var(--pl-pink));transition:width .4s ease;"></div>
+                            <div id="avatarScrapeBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--pl-amber),var(--pl-pink));transition:width var(--mv2-d3, .4s) var(--mv2-snap, ease);"></div>
                         </div>
                     </div>
 
@@ -11805,7 +11797,7 @@ async function sendAIMessage() {
                                     ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">👩 ${movie.actresses.map(a => a.name).slice(0, 2).join(', ')}</div>`
                                     : '';
                                 return `
-                                    <div class="ai-movie-card" onclick="jumpToMovieFromAI(${movie.id})" style="width:120px;cursor:pointer;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--border);transition:all 0.2s ease;">
+                                    <div class="ai-movie-card" onclick="jumpToMovieFromAI(${movie.id})" style="width:120px;cursor:pointer;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--border);transition:all var(--mv2-d2, 0.2s) var(--mv2-snap, ease);">
                                         <div style="width:100%;aspect-ratio:2/3;background:var(--bg-elevated);overflow:hidden;">
                                             ${posterUrl ? `<img src="${posterUrl}" style="width:100%;height:100%;object-fit:cover;" alt="${movie.title}">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:0.3;">🎬</div>`}
                                         </div>
@@ -12046,7 +12038,7 @@ function renderAIMovieCards(movies) {
     return movies.slice(0, 8).map(movie => {
         const posterUrl = movie.poster ? `/api/movie/poster/${movie.poster}` : '';
         return `
-            <div class="ai-movie-card" style="width:110px;cursor:pointer;border-radius:10px;overflow:hidden;background:var(--card-bg);border:1px solid var(--border);transition:all 0.2s ease;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="jumpToMovieFromAI(${movie.id})">
+            <div class="ai-movie-card" style="width:110px;cursor:pointer;border-radius:10px;overflow:hidden;background:var(--card-bg);border:1px solid var(--border);transition:all var(--mv2-d2, 0.2s) var(--mv2-snap, ease);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="jumpToMovieFromAI(${movie.id})">
                 <div style="width:100%;aspect-ratio:2/3;background:var(--bg-elevated);overflow:hidden;position:relative;">
                     ${posterUrl ? `<img src="${posterUrl}" style="width:100%;height:100%;object-fit:cover;" alt="${movie.title}" onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;\\'>🎬</div>'">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>`}
                     <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));padding:16px 6px 6px;display:flex;gap:4px;">
@@ -12342,6 +12334,12 @@ function switchView(view) {
     const profileStrip = document.getElementById('profileStrip');
     if (profileStrip) profileStrip.style.display = 'none';
     document.getElementById('sortSelect').parentElement.style.display = 'block';
+    /* ★ round113-P9：同一个下拉框，在漫画/小说库里换成书籍语义的整套选项，
+       切回影片视图时还原。不这么做的话「热度排序 / 播放次数」对 4095 本书毫无意义，
+       而且这个下拉在树路径下本来就是死的（实测四种取值顺序完全不变）。 */
+    if (window.AvBoard && window.AvBoard.syncSortSelect) {
+        window.AvBoard.syncSortSelect(view, currentSort);
+    }
     document.getElementById('pagination').style.display = 'none';
 
     /* ★ round26 修复 #8：漫画/小说库的「本地 / 网盘」切换按钮是 loadComic()/loadNovel()
@@ -13241,7 +13239,7 @@ async function showMovieDetail(id) {
                 <h4>👩 女优（${movie.actresses.length}）</h4>
                 <div class="detail-actresses">
                     ${movie.actresses.map(a => `
-                        <div class="detail-actress" data-actress-id="${a.id}">
+                        <div class="detail-actress" data-actress-id="${a.id}" data-actress-name="${escapeHtml(a.name)}">
                             <div class="detail-actress-avatar">
                                 ${a.avatar ? `<img src="${a.avatar}" alt="${escapeHtml(a.name)}" loading="lazy"
                                     onerror="this.style.display='none';this.parentElement.textContent='${(a.name || '?').charAt(0)}'">`
@@ -13322,12 +13320,25 @@ async function showMovieDetail(id) {
         </div>
     `;
     document.getElementById('detailBody').innerHTML = html;
-    // 右侧抽屉：先 .show（display:flex 就位），下一帧再加 .in 触发滑入过渡
     const dm = document.getElementById('detailModal');
+    // round109：持久滚动容器的 scrollTop 不会因 innerHTML 替换而清零——桌面抽屉/经典
+    // 弹窗的滚动容器是 .modal-content（polish r65 让它 overflow-y:auto），手机全屏详情
+    // 是 .detail-body（round20），经典弹窗内部还有 .detail-scroll。上次看完滚到中段，
+    // 再点新海报就会停在中段。
+    // ★时机：必须在 .show 之后复位——display:none 期间赋 scrollTop 是空操作，且
+    // Chromium 会在元素重新可见时按旧内容恢复一个偏移（实测残留 121~319px），
+    // 在 .show 前赋值等于没写。rAF 里再兜底一次，杜绝过渡就位时的二次偏移。
+    const resetDetailScroll = () => {
+        [dm.querySelector('.modal-content'), document.getElementById('detailBody'), dm.querySelector('.detail-scroll')]
+            .forEach(el => { if (el) el.scrollTop = 0; });
+    };
+    // 右侧抽屉：先 .show（display:flex 就位），下一帧再加 .in 触发滑入过渡
     dm.classList.add('show');
+    resetDetailScroll();
     pausePreviewVideos();   // round90：背后 30+ 预览视频停帧，弹窗不再被逐帧重合成拖垮
     requestAnimationFrame(() => requestAnimationFrame(() => {
         dm.classList.add('in');
+        resetDetailScroll();
         // r63: 触发 FLIP 共享元素海报流体飞入放大
         const detailPoster = document.querySelector('#detailBody .detail-poster');
         if (detailPoster && window.MotionFLIP) {
@@ -13368,11 +13379,35 @@ async function showMovieDetail(id) {
     document.querySelectorAll('.detail-actress').forEach(item => {
         item.addEventListener('click', async () => {
             const actressId = item.dataset.actressId;
-            closeModal();
+            const actressName = item.dataset.actressName || (item.textContent || '').trim();
             const movies = await api.getActressMovies(actressId);
-            switchView('movies');
-            renderMovies(movies);
-            updateToolbarTitle('女优作品', movies.length);
+            // round109：与女优库卡片同款范式——直接显示 movieGrid，不调用 switchView。
+            // 旧代码 switchView('movies') 会清空 currentFilter 并触发 loadMovies()（异步），
+            // 把「女优作品」列表覆盖成「全部影片」；currentFilter 空窗期里 10s 扫描刷新
+            // 定时器又会 fallback 到 loadMovies 再刷回全部。改范式 + 落 currentFilter，
+            // 让 refreshCurrentList 的 actress 分支接管后续刷新。
+            closeModal();
+            currentView = 'movies';
+            currentFilter = { kind: 'actress', id: actressId, name: actressName };
+            selectedMovies.clear();
+            updateBatchToolbar();
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            document.getElementById('movieGrid').style.display = 'grid';
+            document.getElementById('actressGrid').style.display = 'none';
+            document.getElementById('tagCloud').style.display = 'none';
+            document.getElementById('statsPanel').style.display = 'none';
+            document.getElementById('emptyTip').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'block';
+            hideGallery();
+            renderMoviesChunked(movies, `女优 - ${actressName}`);
+            if (window.Features && window.Features.renderProfile) {
+                // round109：info 从当前影片详情的女优条目里取（movie 在本作用域内）。
+                // 原来抄女优库卡片的写法引用了全局 actresses——那个变量只在
+                // renderActresses(actresses) 一类的函数参数里存在，这里直接抛
+                // ReferenceError，档案条一直不显示。
+                const info = (movie.actresses || []).find(a => String(a.id) === String(actressId)) || {};
+                window.Features.renderProfile('actress', actressName, movies, info);
+            }
         });
     });
     
@@ -13388,19 +13423,9 @@ async function showMovieDetail(id) {
     // 绑定相似影片点击
     document.querySelectorAll('.similar-card').forEach(card => {
         card.addEventListener('click', () => {
-            const similarId = card.dataset.similarId;
-            // 滚动回modal顶部，带平滑动画
-            const modalContent = document.querySelector('#detailModal .modal-content');
-            if (modalContent) {
-                modalContent.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-            }
-            // 稍微延迟一下，等滚动开始再加载新内容
-            setTimeout(() => {
-                showMovieDetail(similarId);
-            }, 150);
+            // round109：滚动复位已收归到 showMovieDetail 开头（三个候选容器统一归零），
+            // 这里不再自己做 smooth scroll + 延时——否则会和复位互相打架。
+            showMovieDetail(card.dataset.similarId);
         });
     });
 }
@@ -13432,14 +13457,21 @@ function closeModal() {
     const dm = document.getElementById('detailModal');
     if (!dm) return;
     const detailPoster = document.querySelector('#detailBody .detail-poster');
-    dm.classList.remove('in');
+    // round113-P4 顺序修正：`.in` 是抽屉的「就位」开关（摘掉＝translateX(100%)
+    // 瞬间跳到屏幕外，无过渡）。原来第一行就摘，导致两件事同时坏掉：
+    //   ① 反向 FLIP 读到的海报位置在视口外（实测 x 从 1114 跳到 1874），
+    //      封面会从屏幕右侧飞回来；
+    //   ② 弹窗退场永远是「瞬间消失」，P1 那套 260ms 渐隐没机会跑。
+    // 改成：交给 MotionFLIP 在飞行结束的回调里收尾；没有 FLIP 时退回旧时序。
     if (window.MotionFLIP && detailPoster) {
         window.MotionFLIP.exit(detailPoster, () => {
+            dm.classList.remove('in');
             dm.classList.remove('show');
             if (window.Ambilight) window.Ambilight.reset(dm);
             resumePreviewVideos();
         });
     } else {
+        dm.classList.remove('in');
         setTimeout(() => {
             dm.classList.remove('show');
             if (window.Ambilight) window.Ambilight.reset(dm);
@@ -13919,35 +13951,75 @@ function playPrevEpisode() {
 // hls.js 实例（m3u8 播放用，关播放器时要销毁）
 let hlsInstance = null;
 
+/* v4.6.0：hls.js 改为「按需加载」
+ * 起因：lib/hls.min.js 404 KB 一直同步压在首屏，但只有点播放 m3u8 时才用得上
+ *       （普通 mp4 / 局域网直链完全不需要），白白吃掉首屏 15% 的传输与解析。
+ * 现状：library.html 里的同步 <script src="lib/hls.min.js"> 已移除，首次需要时由
+ *       ensureHls() 动态注入并缓存结果；全库只有本文件的 showVideoPlayer 碰 window.Hls
+ *       （features.js / 抖音式播放都是调 showVideoPlayer 进来的），所以一个入口够用。
+ * 回滚：把 library.html 那行同步标签加回来即可，本函数会自动走 window.Hls 快路径。 */
+let _hlsLoading = null;
+function ensureHls() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    if (_hlsLoading) return _hlsLoading;      // 并发点播只注入一次
+    _hlsLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'lib/hls.min.js';
+        s.async = true;
+        s.onload = () => { _hlsLoading = null; resolve(window.Hls || null); };
+        s.onerror = () => {
+            _hlsLoading = null;               // 清掉缓存：下次点播还能重试
+            try { s.remove(); } catch (e) { /* 忽略 */ }
+            reject(new Error('hls.js 加载失败'));
+        };
+        document.head.appendChild(s);
+    });
+    return _hlsLoading;
+}
+window.ensureHls = ensureHls;
+
+// v4.6.0：hls 懒加载的竞态守卫 —— 组件加载期间用户可能已关播放器/换片，
+// 异步回来时必须确认「仍是最新那次请求」，否则会把 HLS 挂到旧片子上。
+let playerSeq = 0;
+
 /* ==========================================================================
    内置播放器键盘控制
    --------------------------------------------------------------------------
-   需求（2026-09-22）：
-     1) 「按一次左右键快进回退的太多了，短一点」
-        → 单次步长从原来的 10s 收到 5s（可在 player-seek 设置里改）
-     2) 「长按可以倍速」
-        → 按住左右键不放：右侧 2x / 3x 加速播放，左侧 0.5x 慢放，
-           松开恢复 1x，并在画面上给出 OSD 反馈
+   需求沿革：
+     1) 「按一次左右键快进回退的太多了，短一点」（2026-09-22）
+        → 单次步长从原来的 10s 收到 5s
+     2) 「长按可以倍速」（2026-09-22）
+        → 旧版：按住左右键不放，右侧 2x→4x 倍速播放、左侧 0.5x 慢放，松开恢复 1x
+     3) 「长按要跟 PotPlayer 完全一样，逐渐加快快进间隔」（2026-10-17，本版）
+        → 长按右键不放：每跳步长逐级放大 5s → 10s → 50s → 5min → 10min；
+          长按左键同理（回退方向逐级放大）；松开即停，OSD 常驻当前档位。
+          倍速控制统一收敛到 [ ] / Backspace，不再占用左右键长按。
 
    关键实现细节：
    - 浏览器 keydown 会以系统重复速率（约 30Hz）连续触发，不能直接用 e.repeat 判断长按，
      必须自己起定时器：首次 keydown 只记时，超过 LONG_PRESS_MS 才进入长按态。
-   - 单次快进/回退必须延迟到"确认不是长按"之后再执行（否则按下去就跳 5s 又立刻倍速，
+   - 单次快进/回退必须延迟到"确认不是长按"之后再执行（否则按下去就跳 5s 又立刻渐进，
      手感很怪）。所以短按在 keyup 时结算，长按则取消这次跳转。
+   - 渐进档位按「跳几次升一级」推进（TICK_MS × ESCALATE ≈ 1s 一级），到顶后保持
+     最大档继续跳；currentTime 始终做 [0, duration] 钳制，跳到片尾也不会溢出。
    - 左右键同时按住时以最后按下的方向为准。
    ========================================================================== */
 const PLAYER_SEEK_STEP = 5;        // 单次左右键步长（秒）—— 用户要求"短一点"
-const PLAYER_LONG_PRESS_MS = 380;  // 超过这个时长算长按（进入倍速）
-const PLAYER_FAST_RATE = 2.0;      // 长按右键倍速
-const PLAYER_FAST_RATE_MAX = 4.0;  // 一直按住可继续升到上限
-const PLAYER_SLOW_RATE = 0.5;      // 长按左键慢放
+const PLAYER_LONG_PRESS_MS = 380;  // 超过这个时长算长按（进入渐进快进）
+/* PotPlayer 式渐进快进（2026-10-17 用户要求）：长按方向键不放，
+ * 每跳步长按此阶梯逐级放大；右键快进、左键回退，方向对称。 */
+const PLAYER_SEEK_LADDER = [5, 10, 50, 300, 600];  // 渐进档位步长（秒）：5s→10s→50s→5min→10min
+const PLAYER_SEEK_TICK_MS = 500;   // 长按态每次跳跃的间隔（毫秒）
+const PLAYER_SEEK_ESCALATE = 2;    // 同一档位跳 2 次后升下一档（≈1s 升一级）
 
 let playerKeyState = {
     bound: false,
     dir: 0,            // -1 左 / 1 右 / 0 无
     timer: null,       // 长按判定定时器
-    speedTimer: null,  // 倍速爬升定时器
-    isLong: false,     // 已进入长按态
+    seekTimer: null,   // 渐进快进跳跃定时器
+    isLong: false,     // 已进入长按（渐进快进）态
+    seekLevel: 0,      // 当前渐进档位（PLAYER_SEEK_LADDER 下标）
+    tickCount: 0,      // 当前档位已跳次数（满 ESCALATE 升档）
     osdTimer: null,
 };
 
@@ -13957,20 +14029,50 @@ function playerOsd(text, tone) {
     el.textContent = text;
     el.className = 'player-osd show' + (tone ? ' ' + tone : '');
     clearTimeout(playerKeyState.osdTimer);
-    // 倍速提示常驻（松手才消失），普通提示 900ms 淡出
+    // 长按渐进快进提示常驻（松手才消失），普通提示 900ms 淡出
     if (tone !== 'rate') {
         playerKeyState.osdTimer = setTimeout(() => el.classList.remove('show'), 900);
     }
+}
+
+/* 清理长按判定 + 渐进快进定时器，并收起常驻 OSD（不动倍速——
+ * 倍速由 [ ] / Backspace 显式控制，不应被方向键顺带清掉） */
+function clearPlayerSeekTimers() {
+    clearTimeout(playerKeyState.timer);
+    clearInterval(playerKeyState.seekTimer);
+    clearTimeout(playerKeyState.osdTimer);
+    playerKeyState.timer = null;
+    playerKeyState.seekTimer = null;
+    playerKeyState.isLong = false;
+    playerKeyState.seekLevel = 0;
+    playerKeyState.tickCount = 0;
+    const el = document.getElementById('playerOsd');
+    if (el) el.classList.remove('show');
+}
+
+/* 渐进档位步长的显示格式：<60s 显示 Ns，否则 mm:ss（如 5:00 / 10:00） */
+function formatSeekStep(sec) {
+    if (sec < 60) return sec + 's';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+}
+
+/* 渐进快进单跳：按当前档位步长跳跃，currentTime 做 [0, duration] 钳制 */
+function playerSeekTick(dir) {
+    const video = document.getElementById('videoPlayer');
+    if (!video || !isFinite(video.duration) || video.duration <= 0) return;
+    const step = PLAYER_SEEK_LADDER[playerKeyState.seekLevel] || PLAYER_SEEK_STEP;
+    const target = Math.max(0, Math.min(video.duration, video.currentTime + dir * step));
+    video.currentTime = target;
+    playerOsd((dir > 0 ? '▶▶ 快进 ' : '◀◀ 回退 ') + formatSeekStep(step), 'rate');
 }
 
 function resetPlayerSpeed() {
     const video = document.getElementById('videoPlayer');
     if (!video) return;
     video.playbackRate = 1.0;
-    clearInterval(playerKeyState.speedTimer);
-    playerKeyState.speedTimer = null;
-    const el = document.getElementById('playerOsd');
-    if (el) el.classList.remove('show');
+    clearPlayerSeekTimers();
 }
 
 function bindPlayerShortcuts() {
@@ -14071,33 +14173,30 @@ function bindPlayerShortcuts() {
 
         const dir = e.key === 'ArrowRight' ? 1 : -1;
 
-        // 系统重复触发（已经在长按态）：忽略，交给定时器
+        // 系统重复触发（已经在长按态）：忽略，交给跳跃定时器
         if (e.repeat) return;
         // 换方向：先清理上一个方向的状态
         if (playerKeyState.dir !== dir) {
-            clearTimeout(playerKeyState.timer);
-            resetPlayerSpeed();
+            clearPlayerSeekTimers();
             playerKeyState.dir = dir;
-            playerKeyState.isLong = false;
         }
 
-        // 起长按判定
+        // 起长按判定：超过 LONG_PRESS_MS 进入 PotPlayer 式渐进快进
         playerKeyState.timer = setTimeout(() => {
             playerKeyState.isLong = true;
-            const base = dir > 0 ? PLAYER_FAST_RATE : PLAYER_SLOW_RATE;
-            video.playbackRate = base;
-            playerOsd((dir > 0 ? '▶▶ ' : '◀◀ ') + base.toFixed(1) + '×', 'rate');
-
-            // 继续按住：右键倍速逐级爬升（2x→3x→4x），左键保持慢放
-            if (dir > 0) {
-                playerKeyState.speedTimer = setInterval(() => {
-                    const next = Math.min(PLAYER_FAST_RATE_MAX, +(video.playbackRate + 0.5).toFixed(1));
-                    if (next === video.playbackRate) return;
-                    video.playbackRate = next;
-                    playerOsd('▶▶ ' + next.toFixed(1) + '×', 'rate');
-                }, 900);
-            }
-            if (video.paused) video.play().catch(() => {});
+            playerKeyState.seekLevel = 0;
+            playerKeyState.tickCount = 0;
+            playerSeekTick(dir);   // 第一跳就是基础步长（5s）
+            playerKeyState.seekTimer = setInterval(() => {
+                playerKeyState.tickCount++;
+                // 同档跳够 ESCALATE 次就升档（到顶后保持最大档）
+                if (playerKeyState.tickCount >= PLAYER_SEEK_ESCALATE &&
+                    playerKeyState.seekLevel < PLAYER_SEEK_LADDER.length - 1) {
+                    playerKeyState.tickCount = 0;
+                    playerKeyState.seekLevel++;
+                }
+                playerSeekTick(dir);
+            }, PLAYER_SEEK_TICK_MS);
         }, PLAYER_LONG_PRESS_MS);
     });
 
@@ -14110,18 +14209,16 @@ function bindPlayerShortcuts() {
         if (!video) return;
 
         const dir = e.key === 'ArrowRight' ? 1 : -1;
-        clearTimeout(playerKeyState.timer);
+        const wasLong = playerKeyState.isLong;   // 先取状态，clear 会重置它
+        clearPlayerSeekTimers();
 
-        if (playerKeyState.isLong) {
-            // 长按结束：恢复 1x
-            resetPlayerSpeed();
-            playerKeyState.isLong = false;
-        } else if (playerKeyState.dir === dir && isFinite(video.duration)) {
-            // 短按：在 keyup 结算，这样长按不会先跳一段再倍速
+        if (!wasLong && playerKeyState.dir === dir && isFinite(video.duration)) {
+            // 短按：在 keyup 结算，这样长按不会先跳一段再渐进
             const target = Math.max(0, Math.min(video.duration, video.currentTime + dir * PLAYER_SEEK_STEP));
             video.currentTime = target;
             playerOsd((dir > 0 ? '快进 ' : '回退 ') + PLAYER_SEEK_STEP + 's');
         }
+        // 长按结束：常驻 OSD 已由 clearPlayerSeekTimers 收起；倍速不动
         playerKeyState.dir = 0;
     });
 
@@ -14133,8 +14230,12 @@ function bindPlayerShortcuts() {
 }
 
 function closePlayer() {
+    if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+        window.AndroidBridge.setReaderMode(false);
+    }
     const video = document.getElementById('videoPlayer');
     const playedMovie = currentPlayerMovie;
+    playerSeq++;   // v4.6.0：作废还在路上的 hls.js 挂载回调
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
     if (window.Danmaku) window.Danmaku.stop();
     video.pause();
@@ -14152,19 +14253,38 @@ function closePlayer() {
 // 通用视频播放函数（kind='hls' 时用 hls.js 播 m3u8）
 function showVideoPlayer(videoUrl, title = '视频播放', kind = '') {
     const video = document.getElementById('videoPlayer');
+    playerSeq++;   // v4.6.0：作废上一次还在路上的 hls.js 挂载（含换片到普通 mp4 的情况）
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
 
     const isHls = kind === 'hls' || /\.m3u8(\?|$)/.test(videoUrl);
-    if (isHls && window.Hls && window.Hls.isSupported()) {
-        hlsInstance = new window.Hls({ maxBufferLength: 30 });
-        hlsInstance.loadSource(videoUrl);
-        hlsInstance.attachMedia(video);
+    if (isHls) {
+        // v4.6.0：hls.js 不再随首屏加载 —— 先按需注入，再决定挂 hls.js 还是交给内核原生播。
+        // 注意不能沿用旧写法「window.Hls 不存在就走 video.src」：Android WebView 内核不解 m3u8，
+        // 那样会把 m3u8 当普通视频塞进去，表现为点了没反应 / 黑屏。
+        const seq = playerSeq;
+        ensureHls().then(() => {
+            if (seq !== playerSeq) return;          // 已关播放器或已换片，放弃这次挂载
+            if (window.Hls && window.Hls.isSupported()) {
+                hlsInstance = new window.Hls({ maxBufferLength: 30 });
+                hlsInstance.loadSource(videoUrl);
+                hlsInstance.attachMedia(video);
+            } else {
+                video.src = videoUrl;               // 内核原生支持 HLS（iOS/Safari）
+            }
+        }).catch(() => {
+            if (seq !== playerSeq) return;
+            video.src = videoUrl;                   // 降级直连：能播就播，不能播也要有提示
+            showNotification('播放器组件加载失败', '已尝试直接播放，若黑屏请检查网络后点重试', 'warn');
+        });
     } else {
         video.src = videoUrl;
     }
     
     document.getElementById('playerTitle').textContent = title;
     document.getElementById('playerModal').classList.add('show');
+    if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+        window.AndroidBridge.setReaderMode(true);
+    }
 
     // round36：弹幕（网络流按标题匹配）
     if (window.Danmaku) window.Danmaku.start(title, video);
@@ -14282,7 +14402,10 @@ function openComicReader(movieId) {
     document.getElementById('readerView').classList.add('show');
     document.body.style.overflow = 'hidden';
     updateReaderNavButtons();
-    showNotification('已打开漫画阅读器', '点击右上角关闭按钮返回');
+    if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+        window.AndroidBridge.setReaderMode(true);
+    }
+    showNotification('已打开漫画阅读器', '点击屏幕中间可唤出控制栏');
 }
 
 // 打开小说阅读器
@@ -14298,7 +14421,10 @@ function openNovelReader(movieId) {
     document.getElementById('readerView').classList.add('show');
     document.body.style.overflow = 'hidden';
     updateReaderNavButtons();
-    showNotification('已打开小说阅读器', '点击右上角关闭按钮返回');
+    if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+        window.AndroidBridge.setReaderMode(true);
+    }
+    showNotification('已打开小说阅读器', '点击屏幕中间可唤出控制栏');
 }
 
 // 更新阅读器导航按钮状态
@@ -14328,6 +14454,9 @@ function switchReaderBook(direction) {
 
 // 关闭阅读器
 function closeReader() {
+    if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+        window.AndroidBridge.setReaderMode(false);
+    }
     document.getElementById('readerView').classList.remove('show');
     document.getElementById('readerFrame').src = '';
     document.body.style.overflow = '';
@@ -14849,6 +14978,17 @@ function isDarkMode() {
 
 // 切换深色模式
 function toggleDarkMode() {
+    /* round115：皮肤即明暗（纸=浅 / 夜=深），不再保留「第 4 种组合」。
+       原来这里只切 body.dark，会得到「纸底 + 深色组件」的混合态，也是 4 套皮肤
+       之外的第 5 种观感。现在统一走 setV4Skin，由 applyV4Skin 同步 body.dark 与按钮文案。 */
+    var toDark = !document.body.classList.contains('dark');
+    if (typeof setV4Skin === 'function') {
+        setV4Skin(toDark ? 'matinee' : 'classic');
+        if (currentView === 'settings' && typeof renderSettings === 'function') {
+            try { renderSettings(); } catch (e) { }
+        }
+        return;
+    }
     const body = document.body;
     const btn = document.getElementById('themeToggle');
     const darkBtn = document.getElementById('darkModeToggle');
@@ -14874,12 +15014,24 @@ function toggleDarkMode() {
 // 实现：给 <html> 打 data-v4skin，皮肤规则全部写在 theme-v4.css。
 
 var V4_SKIN_KEY = 'v4Skin';
-var V4_SKINS = ['classic', 'aurora', 'ambient', 'matinee'];
-var V4_SKIN_NAMES = { classic: '经典 · Aardvark', aurora: 'V4.1 · 极光 AURORA', ambient: 'V4.4 · 暮色 AMBIENT', matinee: '午夜放映厅 · MATINÉE' };
+/* round115：皮肤从 4 套收到 2 套（用户拍板）。
+   留下的两套是同一套「一纸一墨」语法的明暗两面：
+     classic = 纸 · Paper（奶油纸 + 墨 + 暖金 + 宋体页名）
+     matinee = 夜 · Night（暖黑 + 纸白 + 琥珀）
+   aurora / ambient 下线：它们是另一套语法（紫蓝极光 / 中性炭黑），
+   且组件级硬编码没跟上（统计条写死橙色、告警条写死暖橙），留 4 套等于每个组件写 4 遍。 */
+var V4_SKINS = ['classic', 'matinee'];
+var V4_SKIN_NAMES = { classic: '纸 · Paper', matinee: '夜 · Night' };
+/* 老用户的偏好平滑迁移：两套已下线的暗色皮肤都落到「夜」 */
+var V4_SKIN_ALIAS = { aurora: 'matinee', ambient: 'matinee' };
 
 function getV4Skin() {
     try {
         var v = localStorage.getItem(V4_SKIN_KEY);
+        if (V4_SKIN_ALIAS[v]) {
+            v = V4_SKIN_ALIAS[v];
+            try { localStorage.setItem(V4_SKIN_KEY, v); } catch (e2) { }
+        }
         return V4_SKINS.indexOf(v) >= 0 ? v : 'classic';
     } catch (e) {
         return 'classic';
@@ -14917,6 +15069,18 @@ function applyAmbientGlow(root) {
 function applyV4Skin(skin) {
     if (V4_SKINS.indexOf(skin) < 0) skin = 'classic';
     document.documentElement.setAttribute('data-v4skin', skin);
+
+    /* round115：皮肤与明暗绑定。
+       实测发现 matinee 默认是**浅色暖纸**（theme-matinee.css 的 body:not(.dark) 分支），
+       只有 body.dark 才是暖黑夜色 —— 所以「夜 · Night」必须同时给 body 挂 .dark，
+       否则点「夜」看到的还是浅色，用户会以为没生效。 */
+    var wantDark = (skin === 'matinee');
+    document.body.classList.toggle('dark', wantDark);
+    try { localStorage.setItem('darkMode', wantDark ? 'true' : 'false'); } catch (e) { }
+    var tb = document.getElementById('themeToggle');
+    if (tb) tb.textContent = wantDark ? '☀️' : '🌙';
+    var db = document.getElementById('darkModeToggle');
+    if (db) db.textContent = wantDark ? '☀️ 浅色' : '🌙 深色';
 
     // 同步切换器选中态
     document.querySelectorAll('.v4-skin-btn').forEach(function (btn) {
@@ -15296,6 +15460,10 @@ async function checkScanStatus() {
         const status = await api.getScanStatus(currentScanModule);
         const btn = document.getElementById('scanBtn');
         const progressBar = document.getElementById('scanProgressBar');
+        // ★ round112：漫画/小说是两阶段扫描 —— 先本地入库（秒级），再后台补封面。
+        //   第二阶段的进度也在同一个接口里（status.enrich），这里一并展示，
+        //   用户才不会以为「扫描结束了但封面怎么还在变」。
+        const enrich = status.enrich || null;
 
         if (status.running) {
             btn.textContent = '扫描中...';
@@ -15303,9 +15471,20 @@ async function checkScanStatus() {
             const percent = status.total > 0 ? (status.current / status.total * 100) : 0;
             progressBar.style.width = percent + '%';
             const stats = status.stats || {};
+            const phaseText = status.phase === 'index' ? '入库' : '扫描';
             scanState = {
                 running: true, hasResult: false, failed: stats.failed || 0,
-                text: `扫描中 ${status.current}/${status.total} · 本地:${stats.localHit || 0} 网络:${stats.webScraped || 0} 失败:${stats.failed || 0}`
+                text: `${phaseText}中 ${status.current}/${status.total} · 本地:${stats.localHit || 0} 网络:${stats.webScraped || 0} 失败:${stats.failed || 0}`
+            };
+        } else if (enrich && enrich.running) {
+            // 入库已经完成，封面在后台补（不联网，纯本地取图）
+            btn.textContent = '补封面中...';
+            btn.disabled = true;
+            const percent = enrich.total > 0 ? (enrich.done / enrich.total * 100) : 0;
+            progressBar.style.width = percent + '%';
+            scanState = {
+                running: true, hasResult: false, failed: enrich.failed || 0,
+                text: `入库已完成 · 补封面 ${enrich.done}/${enrich.total}（成功 ${enrich.ok} 失败 ${enrich.failed}）`
             };
         } else {
             btn.textContent = '开始扫描';
@@ -15411,8 +15590,11 @@ async function runWatchNow() {
         const data = await api.watchNow();
         if (data.code === 0) {
             showNotification('检查完成', data.msg);
-            if (data.data && data.data.found > 0 && typeof refreshCurrentList === 'function') {
-                refreshCurrentList();   // 有新增就顺手刷列表，免得用户还得多点一次
+            const d = data.data || {};
+            // round110：有新增、或排队中（discovered>0）都刷一下列表——
+            //   排队时媒体库扫描正在跑，列表可能已经在涨，省得用户再多点一次
+            if ((d.found > 0 || d.discovered > 0) && typeof refreshCurrentList === 'function') {
+                refreshCurrentList();
             }
         } else {
             showNotification('检查未完成', data.msg || '未知错误');
@@ -15496,6 +15678,15 @@ function bindEvents() {
     
     // 排序选择
     document.getElementById('sortSelect').addEventListener('change', (e) => {
+        /* ★ round113-P9：漫画库/小说库的排序交给 AvBoard。
+           两条理由：① 树路径（renderTreeLibrary）从来不吃 currentSort，
+           改它等于什么都没发生；② 'name:asc' 这类书籍排序键塞进
+           api.getMovies 会让影片库拿到非法 sort 参数。 */
+        if ((currentView === 'comic' || currentView === 'novel')
+            && window.AvBoard && window.AvBoard.setSort) {
+            window.AvBoard.setSort(e.target.value);
+            return;
+        }
         currentSort = e.target.value;
         refreshCurrentList();
     });
@@ -16092,11 +16283,15 @@ function maybeShowTour() {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) done(); });
 }
 
-/* ---------- round88 启动加载门 ----------
- * EXE 启动 15s 后自动预热 TTS，模型加载 ~1-2 分钟内整机 GPU/CPU 满载：
- * 旧版用户此刻已进主页 → 点朗读无声、界面卡顿，体验割裂。
- * 现在启动时用全屏加载门挡住：轮询 /api/tts/status 实时显示进度文案，
- * ready 后自动揭开（无需点击）；异常/超时有兜底（45s 出跳过按钮，120s 强制放行）。 */
+/* ---------- v4.6.0 启动门（round88 改造：从「等语音」改成「等片库」） ----------
+ * 旧版（round88）：全屏遮罩轮询 /api/tts/status 等语音引擎就绪，45s 后才出「跳过」按钮，
+ * 注释写「120s 强制放行」而代码实际是 300s。语音预热本来是后台能力，却把「要看片的人」
+ * 锁在加载页 —— 弱网 / 引擎起不来时用户面对几分钟不可操作的遮罩，且没有重试出口。
+ * 新版：启动门只等「片库首屏就绪」（#movieGrid 出现第一张卡）最多 3 秒，跳过按钮立即可用。
+ * TTS 预热转成后台任务：EXE / NAS 桌面端照旧自动预热（不预热则首次点朗读无声 + 模型加载期
+ * 整机卡顿，这是 EXE 侧必须保留的行为），只是改成在右上角挂一个轻量「🎙 语音加载中」角标，
+ * 就绪 / 失败后自己消失；安卓壳默认不预热（省电、不抢 CPU），首次点朗读才拉起引擎。
+ * 引擎异常只降级成「语音不可用」提示，绝不阻塞首屏。 */
 function initBootGate() {
     const gate = document.getElementById('bootGate');
     if (!gate) return;
@@ -16105,60 +16300,196 @@ function initBootGate() {
     const skipBtn = document.getElementById('bootGateSkip');
     let done = false;
     const t0 = Date.now();
+    const CORE_BUDGET = 3000;   // 只等片库首屏，最多 3 秒就放人（语音绝不参与这道门）
     const finish = () => {
         if (done) return;
         done = true;
         gate.classList.add('boot-gate-hide');
         setTimeout(() => { try { gate.remove(); } catch (e) { } }, 500);
+        startTtsWarmup();       // 首屏让出来后，再去后台预热语音（不阻塞任何人）
     };
     gate.style.display = 'flex';
-    if (skipBtn) skipBtn.addEventListener('click', finish);
+    if (statusEl) statusEl.textContent = '正在打开片库…';
+    if (subEl) subEl.textContent = '';
+    if (skipBtn) {
+        skipBtn.style.visibility = 'visible';   // 立即可点：不再等 45 秒
+        skipBtn.textContent = '立即进入';
+        skipBtn.addEventListener('click', finish);
+    }
+    const gridReady = () => {
+        const grid = document.getElementById('movieGrid');
+        return !!(grid && grid.querySelector('.movie-card'));
+    };
+    const check = () => {
+        if (done) return;
+        if (gridReady()) { finish(); return; }
+        if (Date.now() - t0 >= CORE_BUDGET) { finish(); return; }   // 兜底：3 秒必放行
+        setTimeout(check, 120);
+    };
+    setTimeout(check, 40);
+}
+
+/* ---------- v4.6.0 语音预热（后台任务 + 角标，不阻塞首屏） ---------- */
+const TTS_ENGINE_KEYS = ['breeze', 'indextts', 'vits', 'gptsovits'];
+const TTS_ACTIVE_STATES = { starting: 1, loading: 1, warming: 1, ready: 1 };
+let _ttsWarm = { started: false, ready: false, failed: false, engine: '' };
+let _ttsPolling = false;
+let _ttsBadgeEl = null;
+let _ttsBadgeTimer = null;
+
+/* 安卓壳判定：APK 会注入 AndroidBridge，UA 里还带 CinemaVault-Android。 */
+function isAndroidShell() {
+    try {
+        return !!window.AndroidBridge || /CinemaVault-Android/i.test(navigator.userAgent || '');
+    } catch (e) { return false; }
+}
+
+/* 轻量语音角标：内联样式（不新增 css 文件、不抢 bootGate 的 z-index、不挡点击）。 */
+function ttsBadge(text) {
+    try {
+        if (_ttsBadgeTimer) { clearTimeout(_ttsBadgeTimer); _ttsBadgeTimer = null; }   // 新文案不应被上一轮的隐藏定时器吃掉
+        if (!_ttsBadgeEl) {
+            const el = document.createElement('div');
+            el.id = 'ttsWarmBadge';
+            el.style.cssText = 'position:fixed;z-index:3900;right:12px;'
+                + 'top:calc(env(safe-area-inset-top, 0px) + 10px);'
+                + 'display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;'
+                + 'background:rgba(18,18,26,0.86);border:1px solid rgba(255,255,255,0.14);'
+                + 'color:#e9e9f2;font-size:12px;line-height:1.2;letter-spacing:.2px;'
+                + 'box-shadow:0 4px 14px rgba(0,0,0,.35);pointer-events:none;'
+                + 'transition:opacity .25s ease;opacity:0;';
+            document.body.appendChild(el);
+            _ttsBadgeEl = el;
+        }
+        _ttsBadgeEl.textContent = text;
+        _ttsBadgeEl.style.opacity = '1';
+    } catch (e) { /* 角标只是装饰，失败不影响主流程 */ }
+}
+function hideTtsBadge(delay) {
+    if (_ttsBadgeTimer) { clearTimeout(_ttsBadgeTimer); _ttsBadgeTimer = null; }
+    const drop = () => { if (_ttsBadgeEl) _ttsBadgeEl.style.opacity = '0'; };
+    if (delay > 0) _ttsBadgeTimer = setTimeout(drop, delay);
+    else drop();
+}
+
+/* 预热入口：安卓壳不预热（首次点朗读时由 ensureTtsStarted 拉起），其它端照旧后台预热。 */
+function startTtsWarmup() {
+    if (_ttsWarm.started || _ttsWarm.ready) return;
+    _ttsWarm.started = true;
+    if (isAndroidShell()) {
+        installTtsOnDemandHook();   // 安卓：只装「首次点朗读再拉起」的钩子，不烧 CPU
+        return;
+    }
     fetch('/api/tts/config').then(r => r.json()).then(j => {
         const c = (j && j.code === 0 && j.data) ? j.data : null;
-        if (!c || c.engine === 'off' || c.autoStartEngine === false) return finish();
-        const engine = c.engine;
-        const tick = async () => {
-            if (done) return;
-            const el = Math.round((Date.now() - t0) / 1000);
-            try {
-                // round88b：all=1 拿四引擎状态，轮询目标跟随「真正在预热/运行」的引擎——
-                // 写盘 engine 与运行引擎可能不一致（配置只写盘不热更），别把自己等死。
-                // 注意引擎初始 state 是 cold（不是 stopped），用白名单判 active。
-                const s = await fetch('/api/tts/status?all=1').then(r => r.json());
-                const es = (s && s.data && s.data.engines) || {};
-                const ACTIVE = { starting: 1, loading: 1, warming: 1, ready: 1 };
-                let d = es[engine] || { state: 'cold' };
-                if (!ACTIVE[d.state]) {
-                    const active = ['breeze', 'indextts', 'vits', 'gptsovits'].find(k => es[k] && ACTIVE[es[k].state]);
-                    if (active) d = es[active];
-                }
-                if (d.state === 'ready') {
-                    statusEl.textContent = '就绪';
-                    return setTimeout(finish, 350);
-                }
-                if (d.state === 'error') {
-                    statusEl.textContent = '语音引擎异常：' + (d.msg || '').slice(0, 80);
-                    subEl.textContent = '即将进入应用（可在设置 → 语音朗读里重试）';
-                    return setTimeout(finish, 2200);
-                }
-                statusEl.textContent = d.msg || '正在加载语音引擎…';
-                subEl.textContent = '已等待 ' + el + ' 秒 · 首次加载约 1~2 分钟';
-            } catch (e) {
-                subEl.textContent = '连接服务中… ' + el + 's';
-            }
-            if (el >= 45 && skipBtn) skipBtn.style.visibility = 'visible';
-            if (el >= 300) return finish();   // 兜底：最多等 5 分钟（IndexTTS 冷加载 1~3 分钟）
-            setTimeout(tick, 1000);
-        };
-        tick();
-    }).catch(() => finish());
+        if (!c || c.engine === 'off' || c.autoStartEngine === false) return;   // 未开自动预热：保持静默
+        _ttsWarm.engine = c.engine;
+        pollTtsUntilReady(c.engine);
+    }).catch(() => { /* 配置都拿不到就别预热了，首屏不受影响 */ });
 }
+
+/* 轮询引擎状态，只负责更新角标；ready / error 后自动停。 */
+function pollTtsUntilReady(engine) {
+    if (_ttsPolling) return;
+    _ttsPolling = true;
+    const t0 = Date.now();
+    const tick = async () => {
+        if (_ttsWarm.ready || _ttsWarm.failed) { _ttsPolling = false; return; }
+        const el = Math.round((Date.now() - t0) / 1000);
+        try {
+            // all=1 拿四引擎状态：写盘 engine 与真正在跑的引擎可能不一致，别把自己等死
+            // （引擎初始 state 是 cold 而不是 stopped，用白名单判 active）。
+            const s = await fetch('/api/tts/status?all=1').then(r => r.json());
+            const es = (s && s.data && s.data.engines) || {};
+            let d = es[engine] || { state: 'cold' };
+            if (!TTS_ACTIVE_STATES[d.state]) {
+                const active = TTS_ENGINE_KEYS.find(k => es[k] && TTS_ACTIVE_STATES[es[k].state]);
+                if (active) d = es[active];
+            }
+            if (d.state === 'ready') {
+                _ttsWarm.ready = true;
+                _ttsPolling = false;
+                ttsBadge('🎙 语音就绪');
+                hideTtsBadge(1200);
+                return;
+            }
+            if (d.state === 'error') {
+                _ttsWarm.failed = true;
+                _ttsPolling = false;
+                ttsBadge('🎙 语音不可用');
+                hideTtsBadge(5000);   // 静默降级：不弹窗、不挡路，只在设置里重试
+                return;
+            }
+            ttsBadge('🎙 语音加载中 ' + el + 's');
+        } catch (e) {
+            /* 网络抖动不算失败，等下一轮 */
+        }
+        setTimeout(tick, 3000);
+    };
+    tick();
+}
+
+/* 安卓壳：首次点「朗读 / 试听 / 语音开关」时再把引擎拉起来，并把等待变成可见进度。 */
+let _ttsHookInstalled = false;
+function installTtsOnDemandHook() {
+    if (_ttsHookInstalled) return;
+    _ttsHookInstalled = true;
+    document.addEventListener('click', (e) => {
+        if (_ttsWarm.ready) return;
+        const t = e.target;
+        if (!t || !t.closest) return;
+        const hit = t.closest('#homeChatVoice, #ttsStartBtn, [onclick*="ttsAct"], [onclick*="ttsPreview"]');
+        if (hit) ensureTtsStarted();
+    }, true);
+}
+
+let _ttsStarting = null;
+/* 主动拉起引擎（安卓首次朗读 / 桌面端用户手动重试都用它）。 */
+function ensureTtsStarted() {
+    if (_ttsWarm.ready) return Promise.resolve(true);
+    if (_ttsStarting) return _ttsStarting;
+    _ttsStarting = fetch('/api/tts/config').then(r => r.json()).then(j => {
+        const c = (j && j.code === 0 && j.data) ? j.data : null;
+        if (!c || c.engine === 'off') {
+            showNotification('语音未启用', '可在 设置 → AI 语音朗读 里选择引擎', 'warn');
+            return false;
+        }
+        ttsBadge('🎙 语音启动中…');
+        _ttsWarm.engine = c.engine;
+        return fetch('/api/tts/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ engine: c.engine })
+        }).then(r => r.json()).then(r2 => {
+            if (r2 && r2.needModel) {           // VITS 等需要先下模型
+                ttsBadge('🎙 语音模型下载中…');
+                hideTtsBadge(6000);
+                showNotification('语音模型未就绪', '首次使用需下载模型，完成后即可朗读', 'info');
+                return false;
+            }
+            if (r2 && r2.code === 0) {
+                _ttsWarm.failed = false;
+                _ttsPolling = false;            // 交给轮询去显示进度
+                pollTtsUntilReady(c.engine);
+                return true;
+            }
+            throw new Error((r2 && r2.msg) || '启动失败');
+        });
+    }).catch((err) => {
+        ttsBadge('🎙 语音启动失败');
+        hideTtsBadge(4000);
+        showNotification('语音启动失败', (err && err.message) || '朗读可能没有声音，可在 设置 → AI 语音朗读 里重试', 'warn');
+        return false;
+    }).then((v) => { _ttsStarting = null; return v; });
+    return _ttsStarting;
+}
+window.ensureTtsStarted = ensureTtsStarted;
 
 function init() {
     // 鉴权已由服务端会话接管（未登录访问 jav/anime 库会被重定向到 login.html），
     // 旧的前端密码弹窗流程已移除。
 
-    initBootGate();   // round88：TTS 引擎预热期间挡住主页（就绪后自动揭开，超时可跳过）
+    initBootGate();   // v4.6.0：只等片库首屏（最多 3s）；语音预热转后台 + 右上角角标，不再挡人
     refreshHomeChatVoiceIcon();   // round88：首页 AI 语音回复开关图标
     initTheme();
     applyAdultNav();
@@ -16958,7 +17289,7 @@ function renderActressPickerChips(kw) {
     container.innerHTML = list.map(a => {
         const isSel = selected.has(a.name);
         return `<span class="actress-picker-chip" onclick="togglePickActress('${escapeHtml(a.name)}')"
-                      style="cursor:pointer;padding:4px 10px;border-radius:999px;font-size:12px;user-select:none;transition:all .15s;
+                      style="cursor:pointer;padding:4px 10px;border-radius:999px;font-size:12px;user-select:none;transition:all var(--mv2-d1, .15s) var(--mv2-snap, ease);
                              background:${isSel ? 'var(--primary-soft, rgba(245,158,11,.22))' : 'var(--card-bg, #1a1a20)'};
                              color:${isSel ? 'var(--primary, #F59E0B)' : 'var(--text)'};
                              border:1px solid ${isSel ? 'var(--primary, #F59E0B)' : 'var(--border, rgba(255,255,255,.1))'};">
@@ -17018,7 +17349,7 @@ function renderTagChips() {
         const name = t.name || t;
         const isSel = selected.has(name);
         return `<span class="tag-picker-chip" onclick="togglePickTag('${escapeHtml(name)}')"
-                      style="cursor:pointer;padding:4px 10px;border-radius:999px;font-size:12px;user-select:none;transition:all .15s;
+                      style="cursor:pointer;padding:4px 10px;border-radius:999px;font-size:12px;user-select:none;transition:all var(--mv2-d1, .15s) var(--mv2-snap, ease);
                              background:${isSel ? 'var(--primary-soft, rgba(245,158,11,.22))' : 'var(--card-bg, #1a1a20)'};
                              color:${isSel ? 'var(--primary, #F59E0B)' : 'var(--text)'};
                              border:1px solid ${isSel ? 'var(--primary, #F59E0B)' : 'var(--border, rgba(255,255,255,.1))'};">

@@ -20,6 +20,113 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const cookieParser = require('cookie-parser');
 app.use(cookieParser());
 
+// ====================== round117：响应 gzip 压缩（零依赖，替代 compression） ======================
+// 为什么要自己写：node_modules 里没有 compression，而弱网/手机端首屏最缺的就是压缩。
+// 策略：拦截 write/end，攒够后一次性 zlib.gzipSync；只压文本类，绝不碰视频流与 206。
+const zlib = require('zlib');
+
+/** 可压缩类型白名单（图片/视频/APK/字体本身已压缩，不压；SSE 也不能缓冲） */
+const GZIP_TYPE_RE = /^(?:text\/(?!event-stream)|application\/(?:json|ld\+json|javascript|x-javascript|ecmascript|xml|xhtml\+xml|rss\+xml|atom\+xml)|image\/svg\+xml)/i;
+
+function appendVaryEncoding(res) {
+    const prev = res.getHeader('Vary');
+    if (!prev) { res.setHeader('Vary', 'Accept-Encoding'); return; }
+    const list = String(prev).split(',').map(s => s.trim().toLowerCase());
+    if (list.indexOf('accept-encoding') === -1) res.setHeader('Vary', String(prev) + ', Accept-Encoding');
+}
+
+function gzipMiddleware() {
+    const MIN_SIZE = 1024;                 // 小于 1KB 压了反而更慢
+    const MAX_BUFFER = 4 * 1024 * 1024;    // 超 4MB 放弃压缩、原样透传（代理大文件不撑爆内存）
+
+    function toBuf(chunk, encoding) {
+        if (chunk == null) return null;
+        if (Buffer.isBuffer(chunk)) return chunk;
+        if (typeof chunk === 'string') return Buffer.from(chunk, typeof encoding === 'string' ? encoding : 'utf8');
+        if (chunk instanceof Uint8Array) return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+        return Buffer.from(String(chunk));
+    }
+
+    return function gzip(req, res, next) {
+        if (req.method === 'HEAD') return next();
+        if (req.headers.range) return next();                          // Range 请求（视频 seek / 断点续传）一律不压
+        if (req.headers['x-no-compression']) return next();            // 客户端可显式关闭
+        if (!/\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''))) return next();
+
+        const origWrite = res.write;
+        const origEnd = res.end;
+        const chunks = [];
+        let total = 0;
+        let mode = null;    // null=未判定 / 'buffer'=缓冲中 / 'pass'=直通
+
+        function canCompress() {
+            if (res.headersSent) return false;
+            if (res.statusCode !== 200) return false;                  // 206/304/3xx/4xx 都不压
+            if (res.getHeader('Content-Encoding')) return false;        // 已经有编码（不重复压）
+            return GZIP_TYPE_RE.test(String(res.getHeader('Content-Type') || ''));
+        }
+
+        function passThrough() {
+            mode = 'pass';
+            for (let i = 0; i < chunks.length; i++) origWrite.call(res, chunks[i]);
+            chunks.length = 0;
+            total = 0;
+        }
+
+        res.write = function (chunk, encoding, callback) {
+            if (mode === 'pass') return origWrite.apply(res, arguments);
+            if (mode === null) {
+                if (!canCompress()) { mode = 'pass'; return origWrite.apply(res, arguments); }
+                mode = 'buffer';
+            }
+            const buf = toBuf(chunk, encoding);
+            if (buf && buf.length) {
+                chunks.push(buf);
+                total += buf.length;
+                if (total > MAX_BUFFER) passThrough();
+            }
+            const cb = typeof encoding === 'function' ? encoding : (typeof callback === 'function' ? callback : null);
+            if (cb) cb();                                              // 缓冲语义下视为「已接收」
+            return true;
+        };
+
+        res.end = function (chunk, encoding, callback) {
+            if (mode === 'pass') return origEnd.apply(res, arguments);
+            if (mode === null) {
+                if (!canCompress()) { mode = 'pass'; return origEnd.apply(res, arguments); }
+                mode = 'buffer';
+            }
+            const tail = toBuf(chunk, typeof encoding === 'string' ? encoding : undefined);
+            if (tail && tail.length) { chunks.push(tail); total += tail.length; }
+            const cb = typeof encoding === 'function' ? encoding : (typeof callback === 'function' ? callback : null);
+            const body = chunks.length === 0 ? Buffer.alloc(0)
+                : (chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, total));
+            chunks.length = 0;
+
+            if (total < MIN_SIZE) {                                    // 太小 → 原样发
+                appendVaryEncoding(res);
+                return origEnd.call(res, body, cb);
+            }
+            let gz = null;
+            try {
+                gz = zlib.gzipSync(body, { level: 6 });
+            } catch (e) { /* 压缩失败就原样发，绝不因此让请求失败 */ }
+            if (!gz || gz.length >= total) {                            // 压不动（已是压缩内容）
+                appendVaryEncoding(res);
+                return origEnd.call(res, body, cb);
+            }
+            res.setHeader('Content-Encoding', 'gzip');
+            res.removeHeader('Content-Length');
+            res.setHeader('Content-Length', String(gz.length));
+            appendVaryEncoding(res);
+            return origEnd.call(res, gz, cb);
+        };
+
+        next();
+    };
+}
+app.use(gzipMiddleware());
+
 const { sessionMiddleware, isAuthEnabled, validateSession, isSectionProtected, isSectionUnlocked, COOKIE_NAME } = require('./utils/auth');
 
 // 兜底：任何未捕获异常都不要杀掉服务进程。
@@ -42,7 +149,7 @@ function isPublicMovieType(type) {
     return type === 'film' || type === 'cartoon';
 }
 
-const PUBLIC_API_PREFIXES = ['/auth', '/acg', '/ai/chat', '/ai/status'];
+const PUBLIC_API_PREFIXES = ['/auth', '/acg', '/ai/chat', '/ai/status', '/app'];
 
 app.use('/api', (req, res, next) => {
     if (!isAuthEnabled()) return next();
@@ -147,6 +254,7 @@ webviewProxy.bindResolver(webviewRouter.resolveSite);
 webviewProxy.bindBrowser(webviewRouter.withBrowser);
 app.use('/', webviewProxy);
 app.use('/api/update', require('./routes/update'));   // round31：应用内更新
+app.use('/api/app', require('./routes/app-update'));     // 移动端/Android APK 更新与下载
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/cloud', require('./routes/cloud'));
 app.use('/api/cloud/oauth', require('./routes/cloud-oauth'));   // round91：123云盘/百度网盘 OAuth 官方授权
@@ -230,6 +338,17 @@ app.listen(PORT, '0.0.0.0', () => {
         const { startQuickScan, startAnimeQuickScan } = require('./utils/scanner');
         const { startComicQuickScan } = require('./utils/comic-scanner');
         const { startNovelQuickScan } = require('./utils/novel-scanner');
+        /* ★ round110 看门狗：启动扫描链万一长时间不结束（漫画/小说要爬站、网络重试，
+         * 实测能拖 1.75 小时以上），目录监控不能一直挂在「等扫描链」上不启动——
+         * 那期间 fs.watch 事件全丢、轮询也不转，用户点「检查新增」只能得到谎话
+         * （round110 实机复盘：watcher started=false/ticks=0 挂了好几天）。
+         * 超时后强行挂载：runTick 内部有 otherScanBusy 看门，扫描在跑时轮询/事件
+         * 都会自动让路，不存在两家同时处理同一个文件；链结束后下一轮自动生效。 */
+        const watchGuard = setTimeout(() => {
+            console.log('[目录监控] 启动扫描链超过 10 分钟未结束，看门狗触发：先行挂载（扫描结束后自动生效）');
+            startDirWatch();
+        }, 10 * 60 * 1000);
+        if (watchGuard.unref) watchGuard.unref();
         setTimeout(async () => {
             console.log('[启动] 正在执行快速增量扫描...');
             /* ★ round26 #4：把本次启动扫描「新增了什么」记下来，供前端展示。
@@ -278,6 +397,15 @@ app.listen(PORT, '0.0.0.0', () => {
             }
             report.end();
             console.log('[启动] 快速增量扫描全部结束');
+            /* ★ round112：补封面任务「续跑」入口。
+             *   漫画/小说的封面是扫描的第二阶段（纯本地取图，不联网），上一次如果
+             *   用户关掉应用就会中断 —— 每次启动在这里再拉一次，模块自己会查
+             *   「还缺多少张」，一个不缺就立刻返回，不会空转。 */
+            try {
+                require('./utils/enrich-covers').startEnrich({ types: ['comic', 'novel'], reason: '启动续补' });
+            } catch (e) {
+                console.log('[补封面] 续跑启动失败（不影响其他功能）:', e.message);
+            }
             // round75：扫描完成后做一次系列归类（≥80% 同名合并到系列名下，写 movies.serial）
             try {
                 const { recomputeSerials } = require('./utils/series-group');
@@ -288,6 +416,7 @@ app.listen(PORT, '0.0.0.0', () => {
                 console.log('[系列] 归类失败（不影响扫描结果）:', e.message);
             }
             startDirWatch();
+            clearTimeout(watchGuard);   // round110：链正常结束，看门狗下岗
         }, 1000);
     } else {
         console.log('[启动] 已禁用自动扫描（DISABLE_AUTO_SCAN）');

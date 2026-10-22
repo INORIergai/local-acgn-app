@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Cinema Vault</string>
+    <string name="server_config_title">影库服务器设置</string>
+    <string name="server_config_hint">例如 http://192.168.1.5:3517</string>
+    <string name="connect">连接</string>
+    <string name="cancel">取消</string>
+    <string name="change_server">更换服务器地址</string>
+    <string name="press_again_to_exit">再按一次退出 Cinema Vault</string>
+</resources>

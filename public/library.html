@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>本地影库</title>
     <link rel="stylesheet" href="css/style.css?v=27">
     <link rel="stylesheet" href="css/magic-likes.css?v=28">
@@ -18,17 +18,15 @@
     <link rel="stylesheet" href="css/round13.css?v=2">
     <link rel="stylesheet" href="css/companion.css?v=1">
     <!-- 第 14 轮覆盖层：弹窗层级修复/标签切片器/工作区填满/新作放大/高度自定义 -->
-    <link rel="stylesheet" href="css/round14.css?v=1">
+    <link rel="stylesheet" href="css/round14.css?v=3">
     <!-- 第 15 轮覆盖层：精选居中/热门铺满/博物馆做满/最近观看时间线/切片浮层放大/列表海报统一 -->
     <link rel="stylesheet" href="css/round15.css?v=1">
     <!-- 第 18 轮覆盖层：设置页数据源凭证输入框（FANZA api_id / affiliate_id） -->
     <link rel="stylesheet" href="css/round18.css?v=2">
     <!-- 第 19 轮覆盖层：设置页导航折叠对齐 + 手机端横排常显 + 在线观看站点栏 -->
     <link rel="stylesheet" href="css/round19.css?v=1">
-    <!-- 移动端适配层：必须放最后，优先级最高 -->
-    <link rel="stylesheet" href="css/mobile.css?v=1">
-    <!-- 第 20 轮覆盖层：手机端弹窗自适应 + 可下拉（必须晚于 mobile.css / detail-mode.css） -->
-    <link rel="stylesheet" href="css/round20.css?v=1">
+    <!-- 第 20 轮覆盖层：手机端弹窗自适应 + 可下拉（必须晚于 detail-mode.css） -->
+    <link rel="stylesheet" href="css/round20.css?v=2">
     <!-- 第 21 轮覆盖层：手机端详情弹窗「下滑关闭」的把手与拖拽态 -->
     <link rel="stylesheet" href="css/round21.css?v=1">
     <!-- 第 22 轮覆盖层：设置页「访问密码」可选开关 -->
@@ -74,7 +72,76 @@
     <link rel="stylesheet" href="css/perf-round89.css?v=3">
     <!-- round103：网盘卡片封面去黑罩 + 统计卡不再压住系列胶囊行 -->
     <link rel="stylesheet" href="css/round103.css?v=1">
+    <!-- round113：漫画/小说卡片封面去灰罩（.av-card.has-art::before 全幅渐变压暗 36%） -->
+    <link rel="stylesheet" href="css/round113.css?v=12">
+    <!-- round113-motion：动效令牌层（settle/snap/spring + 四档时长 + 入场错峰）
+         A/B 开关：URL 加 ?motion=off，或按 Ctrl+Alt+M 实时对比新旧 -->
+    <link rel="stylesheet" id="mv2-motion-css" href="css/round113-motion.css?v=3">
+    <!-- round113-p5：页头衬线大标题 + 滚动收放（吸顶条 + 发丝线） -->
+    <link rel="stylesheet" href="css/round113-p5.css?v=5">
+    <!-- round113-p6：书架卡片信息层（修「卡片没有书名」+ 摞卡去重复 + 体积去黑药丸） -->
+    <link rel="stylesheet" href="css/round113-p6.css?v=1">
+    <link rel="stylesheet" href="css/round113-p8.css?v=1">
+    <link rel="stylesheet" href="css/round113-p9.css?v=2">
+
+    <!-- round113-p7（离屏渲染裁剪）已评估并撤回：交替 A/B 实测 p50 -4.3%（噪声内）、
+         p90 反而 +11.6%，收益不成立。文件保留在 css/round113-p7.css 里作记录，不引用。
+         结论见 docs/reports/round113-p7-offscreen-cull-rejected.md -->
+    <script>
+        /* 动效 A/B：把这一层的 <link> 整个关掉，等于回到 P0 之前的全部旧节奏。
+           之所以能这样干净地对比，是因为本层所有改动都集中在这一个文件
+           （motion.css 侧是「读令牌 + 原值回退」，令牌消失就自动回落旧值）。 */
+        (function () {
+            var link = document.getElementById('mv2-motion-css');
+            if (!link) return;
+            if (/(?:^|[?&])motion=(?:off|0)(?:&|$)/.test(location.search)) link.disabled = true;
+
+            function badge(txt) {
+                var d = document.getElementById('mv2-ab-badge');
+                if (!d) {
+                    d = document.createElement('div');
+                    d.id = 'mv2-ab-badge';
+                    d.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:99999;' +
+                        'padding:9px 18px;border-radius:999px;font:600 13px/1.4 system-ui,sans-serif;letter-spacing:.02em;' +
+                        'background:rgba(20,18,16,.92);color:#f7f4ee;box-shadow:0 10px 30px -10px rgba(0,0,0,.55);' +
+                        'opacity:0;transition:opacity .18s ease;pointer-events:none;backdrop-filter:blur(8px);';
+                    document.body.appendChild(d);
+                }
+                d.textContent = txt;
+                d.style.opacity = '1';
+                clearTimeout(d.__t);
+                d.__t = setTimeout(function () { d.style.opacity = '0'; }, 1400);
+            }
+
+            window.mv2Toggle = function (force) {
+                var on = (typeof force === 'boolean') ? force : link.disabled;
+                link.disabled = !on;
+                badge(on ? '动效：新版（令牌层）' : '动效：旧版（原样）');
+                return on;
+            };
+            window.addEventListener('keydown', function (e) {
+                if (e.ctrlKey && e.altKey && (e.key === 'm' || e.key === 'M' || e.code === 'KeyM')) {
+                    e.preventDefault();
+                    window.mv2Toggle();
+                }
+            });
+        })();
+    </script>
     <link rel="stylesheet" href="css/theme-matinee.css?v=1">
+    <!-- round115：真正被加载的令牌层 + 字号/形状归并 + 精选推荐折叠 -->
+    <link rel="stylesheet" href="css/tokens-v5.css?v=1">
+    <link rel="stylesheet" href="css/round115-type.css?v=1">
+    <link rel="stylesheet" href="css/round115-fold.css?v=1">
+    <!-- round116：去容器 / 圆角收口 / 洋红转墨 / 详情工具区压平 -->
+    <link rel="stylesheet" href="css/round116-shape.css?v=1">
+    <!-- round118：首页 / 影片库的圆角收口 + 影片库「NEW」徽标去桃红 -->
+    <link rel="stylesheet" href="css/round118-view.css?v=1">
+    <!-- round119：详情抽屉表头改两栏（海报左、标题与主按钮右） -->
+    <link rel="stylesheet" href="css/round119-detail.css?v=1">
+    <!-- round120：三个孤立字号档位收口 -->
+    <link rel="stylesheet" href="css/round120-refine.css?v=1">
+    <!-- 移动端适配层：置于最底保证最高层叠优先级，避免被各轮补丁覆盖 -->
+    <link rel="stylesheet" href="css/mobile.css?v=2">
 </head>
 
 <body>
@@ -121,12 +188,10 @@
             <button class="theme-toggle" id="themeToggle" title="切换主题"><svg class="ic ic-moon" width="16" height="16"><use href="#ic-moon"/></svg></button>
             <!-- round41 #8：AV/里番导航显隐开关（默认隐藏，首次解锁需确认） -->
             <button class="theme-toggle" id="adultToggle" title="显示/隐藏成人内容入口（AV库、里番库、演员库等）" onclick="toggleAdultNav()"><svg class="ic ic-lock" width="16" height="16"><use href="#ic-lock"/></svg></button>
-            <!-- 风格切换：经典 / 极光 / 暮色 / 午夜放映厅 -->
+            <!-- 风格切换：纸 / 夜（round115：4 套收敛到 2 套） -->
             <div class="v4-skin-switch" id="v4SkinSwitch" role="group" aria-label="界面风格">
-                <button class="v4-skin-btn" data-skin="classic" data-label="经典 · Aardvark" onclick="setV4Skin('classic')" aria-label="经典风格"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="aurora" data-label="V4.1 · 极光 AURORA" onclick="setV4Skin('aurora')" aria-label="极光风格"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="ambient" data-label="V4.4 · 暮色 AMBIENT" onclick="setV4Skin('ambient')" aria-label="暮色风格"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="matinee" data-label="午夜放映厅 · MATINÉE" onclick="setV4Skin('matinee')" aria-label="午夜放映厅风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="classic" data-label="纸 · Paper" onclick="setV4Skin('classic')" aria-label="纸风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="matinee" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span></button>
             </div>
             <button class="theme-toggle" id="shortcutHelpBtn" title="全局快捷键指南（按 ? 或 F1 呼出）" onclick="toggleShortcutsModal()"><span style="font-weight:700;font-size:14px;font-family:var(--font-mono);line-height:1;">?</span></button>
             <button class="theme-toggle" id="aiTopBtn" title="AI助手" aria-label="AI助手"><svg class="ic ic-ai" width="16" height="16"><use href="#ic-ai"/></svg></button>
@@ -451,6 +516,18 @@
                 </div>
             </div>
 
+            <!-- 页头（round113-P5：衬线大标题 + 滚动收放）。
+                 原来排在「精选推荐」之后，页面标题在推荐位下面；提到最前＝页面标题→推荐位→网格，
+                 层级更顺，也让下面的 sticky 收放有意义（不在首屏就永远是紧凑态）。
+                 所有 JS 都按 id 取元素，不依赖 DOM 顺序。 -->
+            <div class="toolbar">
+                <div class="toolbar-title" id="toolbarTitle">
+                    全部影片
+                    <span class="toolbar-count" id="movieCount">共 0 部</span>
+                </div>
+                <div class="toolbar-right"></div>
+            </div>
+
             <!-- 画廊模式（首页轮播） -->
             <div id="gallerySection" class="gallery-section is-squeeze">
                 <div class="gallery-title"><svg class="ic ic-reel" width="18" height="18" style="vertical-align:-3px;margin-right:6px;"><use href="#ic-reel"/></svg> 精选推荐</div>
@@ -462,14 +539,6 @@
                 </div>
             </div>
 
-            <div class="toolbar">
-                <div class="toolbar-title" id="toolbarTitle">
-                    全部影片
-                    <span class="toolbar-count" id="movieCount">共 0 部</span>
-                </div>
-                <div class="toolbar-right"></div>
-            </div>
-            
             <!-- 漫画/小说文件夹面包屑 -->
             <div id="treeBreadcrumb" class="tree-breadcrumb" style="display:none;"></div>
 
@@ -540,8 +609,8 @@
                 <button class="close-btn" id="closePlayer">&times;</button>
             </div>
             <div class="player-stage">
-                <video id="videoPlayer" controls playsinline title="快捷键：空格=播放/暂停 · ←/→=±5s（长按倍速） · ↑/↓=音量 · M=静音 · F=全屏 · [ ]=倍速 · Backspace=复位 · 数字=百分比跳转"></video>
-                <!-- 长按左右键倍速 / 单次快进的屏幕反馈 -->
+                <video id="videoPlayer" controls playsinline title="快捷键：空格=播放/暂停 · ←/→=±5s（长按渐进快进 5s→10s→50s→5min→10min） · ↑/↓=音量 · M=静音 · F=全屏 · [ ]=倍速 · Backspace=复位 · 数字=百分比跳转"></video>
+                <!-- 长按渐进快进 / 单次快进的屏幕反馈 -->
                 <div class="player-osd" id="playerOsd" aria-live="polite"></div>
                 <!-- round36：弹幕层 -->
                 <div class="danmaku-layer" id="danmakuLayer"></div>
@@ -783,7 +852,7 @@
                             <span class="sc-keys"><kbd>←</kbd> <kbd>→</kbd></span>
                         </div>
                         <div class="sc-item" style="display:flex;justify-content:space-between;align-items:center;">
-                            <span style="color:var(--text-muted);">长按快进（3.0x 倍速播放）</span>
+                            <span style="color:var(--text-muted);">长按渐进快进（5s→10s→50s→5min→10min）</span>
                             <span class="sc-keys"><kbd>长按 →</kbd></span>
                         </div>
                         <div class="sc-item" style="display:flex;justify-content:space-between;align-items:center;">
@@ -946,38 +1015,52 @@
     <!-- r90：全局 ASR 语音悬浮按钮 (点击对麦克风说话，自动送达 AI 助手) -->
     <button class="global-asr-fab" id="globalAsrFab" title="点击开始语音输入 (按住说话 / F2)">🎙️</button>
 
-    <script src="lib/hls.min.js"></script>
+    <!-- v4.6.0：hls.js 不再同步阻塞首屏（404 KB，只有点播放 m3u8 时才需要）。
+         首次需要时由 app.js 的 ensureHls() 动态注入并按需缓存，普通 mp4/直链完全不加载。
+         回滚方式：在此处补回一行指向 lib/hls.min.js 的同步 script 标签即可（app.js 会自动走 window.Hls 快路径）。 -->
     <script src="js/gate.js?v=1"></script>
     <!-- round79：精选推荐挤压式轮播（必须在 app.js 之前加载，app.js 依赖 window.SqueezeCarousel） -->
     <script src="js/squeeze-carousel.js?v=5"></script>
     <script src="js/icons.js?v=2"></script>
     <script src="js/danmaku.js?v=1"></script>
-    <script src="js/app.js?v=128"></script>
+    <script src="js/app.js?v=139"></script>
     <script src="js/magic-likes.js?v=30"></script>
     <script src="js/command-palette.js?v=2"></script>
-    <script src="js/features.js?v=47"></script>
+    <script src="js/features.js?v=48"></script>
     <script src="js/home.js?v=15"></script>
 <script src="js/media-source.js?v=1"></script>
-    <script src="js/series-ui.js?v=5"></script>
-    <script src="js/av-board.js?v=15"></script>
+    <script src="js/series-ui.js?v=7"></script>
+    <script src="js/av-board.js?v=19"></script>
     <script src="js/motion.js?v=1"></script>
     <script src="js/motion-v2.js?v=7"></script>
     <script src="js/motion-flip.js?v=1"></script>
+    <!-- round113-P4：共享元素转场（接管 window.MotionFLIP；删掉这一行即回滚） -->
+    <script src="js/round113-flip.js?v=10"></script>
     <script src="js/ambilight.js?v=1"></script>
+    <!-- round113-P3b：详情弹窗墨色跟随封面（抽封面主色渲顶部柔光） -->
+    <script src="js/ink-follow.js?v=2"></script>
+    <!-- round113-P5：页头收放（滚动给 <html> 挂 .hdr-compact；删掉这一行即回滚成固定 19px 标题） -->
+    <script src="js/round113-header.js?v=1"></script>
+    <!-- round115：树形库视图把「精选推荐」折成 56px 一条（删掉这一行即回滚成 638px 轮播） -->
+    <script src="js/round115-fold.js?v=2"></script>
+    <!-- round116：详情「工具」区 14 项收成 4 + 更多（删掉这一行即回滚） -->
+    <script src="js/round116-detail.js?v=1"></script>
     <script src="js/facet-filter.js?v=3"></script>
     <!-- round72：全局任务胶囊（右上角，任何视图都能看后台任务进度） -->
     <script src="js/task-capsule.js?v=2"></script>
     <!-- round74：语音朗读设置面板 -->
-    <script src="js/tts-panel.js?v=20"></script>
-    <script src="js/companion.js?v=4"></script>
+    <script src="js/tts-panel.js?v=22"></script>
+    <script src="js/companion.js?v=5"></script>
     <script src="js/mobile-nav.js?v=3"></script>
     <!-- 第 21 轮：手机端详情弹窗「下滑关闭」手势（独立文件，删掉本行即可回滚） -->
-    <script src="js/mobile-gestures.js?v=1"></script>
+    <script src="js/mobile-gestures.js?v=2"></script>
+    <!-- 移动端应用内自动检查更新与一键升级模块 -->
+    <script src="js/mobile-updater.js?v=2"></script>
     <!-- 导航图标（Remotion 实心光体）：emoji → 动效图标，删掉本行即可回滚为 emoji -->
     <script src="js/nav-icons.js?v=5" defer></script>
     <script src="js/view-loader.js?v=7" defer></script>
     <script src="js/ui-anime-catalog.js?v=1" defer></script>
-    <script src="js/motion-extras.js?v=17" defer></script>
+    <script src="js/motion-extras.js?v=18" defer></script>
 
     <!-- 第 38 轮：应用启动动画层（点击/任意键可跳过；设置 → 个性化 → 动画 里可关闭或自定义） -->
     <div id="startupSplash" style="display:none;">

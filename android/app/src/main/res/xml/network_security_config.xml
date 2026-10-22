@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v4.6.0：继续允许明文（局域网 http://192.168.x.x:3517 是本应用的正常形态），
+  但**移除 src="user"**——信任用户安装的 CA 等于允许任何一次「装个证书」把整条链路变成可 MITM。
+  系统 CA 仍保留，以便将来把服务端切到 https 时（Cloudflare 穿透）能正常校验。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
