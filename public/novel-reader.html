@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>小说阅读器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #f5f0e6;
+            color: #333;
+            overflow: hidden;
+            height: 100vh;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+        
+        body.night-mode {
+            background: #1a1a1a;
+            color: #999;
+        }
+
+        /* round117：阅读器自己的强调色
+           ------------------------------------------------------------
+           这个文件里原来散着 10 处 #d5187d（桃红）+ #a81266。
+           主应用在 round116 已经把「洋红」换成墨 #26211A，但阅读器是独立页面、
+           自己写了一套色，于是底栏那个「下一页」还是荧光粉 —— 全屏最跳的东西。
+           这里收成两个变量：纸上是墨，夜间反过来用暖白（深底黑字等于看不见）。 */
+        :root {
+            --nr-accent: #26211A;
+            --nr-accent-hover: #3A322A;
+        }
+        body.night-mode {
+            --nr-accent: #F1E8D8;
+            --nr-accent-hover: #FFFFFF;
+        }
+        
+        .reader-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        /* 顶部工具栏 */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+        
+        body.night-mode .toolbar {
+            background: rgba(30, 30, 30, 0.9);
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .toolbar.hidden {
+            transform: translateY(-100%);
+        }
+        
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .toolbar-title {
+            font-size: 14px;
+            font-weight: 600;
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.05);
+            color: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        body.night-mode .btn {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .btn:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        
+        body.night-mode .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-primary {
+            background: var(--nr-accent);
+            color: #fff;
+        }
+        body.night-mode .btn-primary { color: #1B1510; }
+
+        .btn-primary:hover {
+            background: var(--nr-accent-hover);
+        }
+        body.night-mode .btn-primary:hover { color: #1B1510; }
+        
+        /* 阅读区域：衬线正文 + 居中阅读列（参照纸质书排印） */
+        .reader-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 80px 20% 100px;
+            line-height: 1.8;
+            font-size: 18px;
+            transition: padding 0.3s ease;
+            position: relative;          /* 翻页模式的绝对定位层以此为准 */
+        }
+        /* 翻页模式下阅读区不再滚动（翻页层自己管分页） */
+        body.read-mode-page .reader-area {
+            overflow: hidden;
+            padding: 0;
+        }
+
+        #chapterContent {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        /* 章节切换：新章淡入上浮，翻篇有"纸感"而不是硬切 */
+        #chapterContent.chapter-in {
+            animation: chapterIn .45s cubic-bezier(.32, .72, 0, 1);
+        }
+        @keyframes chapterIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #chapterContent.chapter-in { animation: none; }
+        }
+
+        .chapter-title {
+            font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif;
+            font-size: 24px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            letter-spacing: .04em;
+        }
+
+        body.night-mode .chapter-title {
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .chapter-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            text-indent: 2em;
+            font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'SimSun', 'PingFang SC', serif;
+            text-align: justify;
+            text-justify: inter-ideograph;
+        }
+
+        /* ★ round26 #7：EPUB 章节是 HTML —— 源码里为了可读性带的换行/缩进若按 pre-wrap
+         *   渲染，会变成正文中大量莫名其妙的空行与首行偏移（实测一本后记 17 个 <p> 却带 24 个换行），
+         *   看起来就是「文字错乱」。HTML 模式交给浏览器按常规折叠空白，段落间距由 <p> 的 margin 负责。
+         *   TXT 模式仍保留 pre-wrap（纯文本的换行有意义）。 */
+        .chapter-content[data-html="1"] { white-space: normal; }
+        .chapter-content[data-html="1"] p { margin-bottom: 1em; }
+
+        /* 空 <svg> 兜底：EPUB 里整页插图常写成 <svg><image/></svg>，<image> 转成 <img> 后
+         * <svg> 只剩空壳，而空 <svg> 默认尺寸 300x150，会在插图前撑出一大块空白。
+         * 后端已尽量脱壳，这里再加一道 CSS 保险。 */
+        .chapter-content svg:not(:has(path,circle,rect,polygon,polyline,text)) {
+            display: none;
+        }
+
+        .chapter-content p {
+            margin-bottom: 1em;
+        }
+
+        /* ===== 2026-09-25（round25 #2）：正文插图 =====
+           把 epub 里 <img> 提到段落级，不做首行缩进、不强制小尺寸，
+           整页彩插（含 <svg><image> 转来的 .novel-pageimg）就让它铺满阅读列。 */
+        .chapter-content img.novel-illus {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            margin: 1.2em auto;
+            border-radius: 6px;
+            text-indent: 0;
+        }
+        .chapter-content img.novel-pageimg {
+            width: 100%;
+            max-width: 100%;
+            margin: .2em auto;
+            border-radius: 0;
+        }
+        .chapter-content p:has(> img.novel-illus) {
+            text-indent: 0;
+            text-align: center;
+        }
+
+        /* ===== 2026-09-25（round25 #2）：翻页阅读模式 ===== */
+        .paged-content {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 78px 20% 92px;
+            box-sizing: border-box;
+        }
+        .paged-inner {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;              /* 只显示当前一页，多余裁掉 */
+            max-width: 700px;
+            width: 100%;
+            margin: 0 auto;
+            position: relative;
+            /* ★ round26 #7：改成 flex 列，让「标题」与「正文」明确分高。
+             *   老实现是 block + #pagedText{height:100%} —— 标题也在 .paged-inner 里占位，
+             *   于是正文容器从「标题下方」再往下撑满 100%，每页底部约 74px（3 行）被 overflow 裁掉，
+             *   用户看到的就是「翻页模式内容不全」。 */
+            display: flex;
+            flex-direction: column;
+        }
+        .paged-inner .chapter-title { flex: 0 0 auto; margin-bottom: 18px; padding-bottom: 12px; }
+        .paged-inner .chapter-content {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* ===== round79：纸张卷曲层 =====
+         * .paged-inner 被 DomCurl 改造成两层：.curl-lower（承载真实内容，
+         * **留在文档流里**，完整继承 .paged-inner 的 flex 列布局）
+         * 与 .curl-upper（旧页快照，绝对定位盖在上面，卷走时显形）。
+         * ⚠️ 两层必须区别对待：
+         *    lower 若也绝对定位 → flex:1 失效 → #pagedText 高度塌陷成 0
+         *      → 正文溢出到 .paged-hint 按钮下方被遮（实测截图确认）。 */
+        .paged-inner.curl-armed {
+            perspective: 1400px;
+            transform-style: preserve-3d;
+        }
+        /* 共用：列布局 + 3D 变换承载 */
+        .curl-layer {
+            display: flex;
+            flex-direction: column;
+            transform-origin: left center;
+            will-change: transform, filter, opacity;
+        }
+        /* 上层：绝对定位盖住 lower */
+        .curl-upper {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            display: none;
+            pointer-events: none;
+            overflow: hidden;
+            /* 纸背底色：卷起时露出的那一面必须与正文纸色一致，否则像贴了张白纸 */
+            background: var(--rd-paper-bg, #f5f0e6);
+        }
+        .curl-upper.is-curling { display: flex; }
+
+        /* 底层承载真实内容。
+   ⚠️ 这一段踩过两个坑，改动前先读 round79 的验收报告：
+     ① 不能加 flex-shrink —— pageHeight() 读 #pagedText.clientHeight，
+        收缩行为一变，分页就错乱（每页渲染出相同内容）。
+     ② 不能绝对定位 —— flex:1 失效，#pagedText 高度塌陷成 0，
+        正文溢出到 .paged-hint 按钮下方被遮住。
+   正确做法：lower 留在文档流，**完整复刻** .paged-inner 原有的 flex 列布局，
+   这样 #pagedText 的高度与卷曲前完全一致，分页与裁剪都不受影响。 */
+        .curl-lower {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+        }
+        /* 夜间：跟正文背景一起变深 */
+        body.night-mode .curl-upper { background: var(--rd-paper-bg-night, #1a1a1a); }
+        body.night-mode .curl-lower { background: #1a1a1a; }
+        /* reduced-motion：不卷曲 */
+        @media (prefers-reduced-motion: reduce) {
+            .curl-layer { transition: none !important; }
+            .curl-upper { display: none !important; }
+        }
+        /* 正文容器拿「标题之外的剩余高度」，它的 clientHeight 就是准确的一页可用高度 */
+        #pagedText {
+            flex: 1 1 auto;
+            min-height: 0;
+            height: auto;
+            overflow: hidden;
+        }
+        .paged-hint {
+            flex: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding-top: 10px;
+            font-size: 13px;
+            color: rgba(0, 0, 0, .5);
+        }
+        body.night-mode .paged-hint { color: rgba(255, 255, 255, .5); }
+        .paged-btn {
+            border: 1px solid rgba(0, 0, 0, .16);
+            background: rgba(255, 255, 255, .7);
+            color: inherit;
+            border-radius: 999px;
+            padding: 5px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background .18s ease, transform .18s ease;
+        }
+        .paged-btn:hover { background: rgba(255, 255, 255, .95); transform: translateY(-1px); }
+        body.night-mode .paged-btn {
+            border-color: rgba(255, 255, 255, .2);
+            background: rgba(255, 255, 255, .08);
+        }
+        body.night-mode .paged-btn:hover { background: rgba(255, 255, 255, .16); }
+        /* 翻页时右侧残留做一次轻微淡入，像翻过一页纸 */
+        #pagedText.page-in { animation: pageIn .22s ease; }
+        @keyframes pageIn { from { opacity: .35; } to { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) {
+            #pagedText.page-in { animation: none; }
+        }
+        @media (max-width: 860px) {
+            .reader-area {
+                padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+                font-size: 17px;
+            }
+            .paged-content {
+                padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px));
+            }
+            .catalog-sidebar, .settings-panel {
+                width: min(85vw, 320px);
+            }
+            .toolbar {
+                height: 50px !important;
+                min-height: 50px !important;
+                padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px !important;
+                flex-wrap: nowrap !important;
+                background: rgba(18, 16, 14, 0.94) !important;
+                backdrop-filter: blur(20px) !important;
+            }
+            .toolbar-title {
+                max-width: 160px;
+                font-size: 13px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .toolbar-right {
+                flex-wrap: nowrap;
+                gap: 6px;
+            }
+            .progress-bar {
+                padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+                height: auto;
+                background: rgba(18, 16, 14, 0.94) !important;
+                backdrop-filter: blur(20px) !important;
+            }
+        }
+        
+        /* 加载提示 */
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            color: rgba(0, 0, 0, 0.5);
+            padding: 100px 0;
+        }
+        
+        body.night-mode .loading {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-top-color: var(--nr-accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        body.night-mode .spinner {
+            border-color: rgba(255, 255, 255, 0.1);
+            border-top-color: var(--nr-accent);
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* 底部进度栏 */
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+        
+        body.night-mode .progress-bar {
+            background: rgba(30, 30, 30, 0.9);
+            border-top-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .progress-bar.hidden {
+            transform: translateY(100%);
+        }
+        
+        .chapter-info {
+            font-size: 13px;
+            color: rgba(0, 0, 0, 0.6);
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        body.night-mode .chapter-info {
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .progress-slider {
+            flex: 1;
+            height: 4px;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 2px;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        body.night-mode .progress-slider {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .progress-fill {
+            height: 100%;
+            /* 原来是一条 琥珀→桃红 的渐变；母题只留一个强调色，改平色 */
+            background: var(--nr-accent);
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.25s cubic-bezier(.32, .72, 0, 1);
+        }
+        
+        .reading-time {
+            font-size: 12px;
+            color: rgba(0, 0, 0, 0.5);
+            min-width: 60px;
+            text-align: right;
+        }
+        
+        body.night-mode .reading-time {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        /* 设置面板 */
+        .settings-panel {
+            position: fixed;
+            right: -320px;
+            top: 0;
+            bottom: 0;
+            width: 320px;
+            background: white;
+            box-shadow: -5px 0 20px rgba(0, 0, 0, 0.1);
+            z-index: 200;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        body.night-mode .settings-panel {
+            background: #2a2a2a;
+            box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        .settings-panel.open {
+            right: 0;
+        }
+        
+        .settings-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        
+        body.night-mode .settings-title {
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .setting-group {
+            margin-bottom: 24px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 10px;
+            color: rgba(0, 0, 0, 0.7);
+        }
+        
+        body.night-mode .setting-label {
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .setting-options {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .setting-option {
+            padding: 6px 12px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }
+        
+        body.night-mode .setting-option {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .setting-option.active {
+            background: var(--nr-accent);
+            color: #fff;
+            border-color: var(--nr-accent);
+        }
+        body.night-mode .setting-option.active { color: #1B1510; }
+        
+        .setting-option:hover {
+            border-color: var(--nr-accent);
+        }
+        
+        /* 背景色选择 */
+        .bg-colors {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .bg-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .bg-color.active {
+            border-color: var(--nr-accent);
+            transform: scale(1.1);
+        }
+        
+        /* 目录侧边栏 */
+        .catalog-sidebar {
+            position: fixed;
+            left: -300px;
+            top: 0;
+            bottom: 0;
+            width: 300px;
+            background: white;
+            box-shadow: 5px 0 20px rgba(0, 0, 0, 0.1);
+            z-index: 200;
+            transition: left 0.3s ease;
+            overflow-y: auto;
+        }
+        
+        body.night-mode .catalog-sidebar {
+            background: #2a2a2a;
+            box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        .catalog-sidebar.open {
+            left: 0;
+        }
+        
+        .catalog-header {
+            padding: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            background: white;
+        }
+        
+        body.night-mode .catalog-header {
+            background: #2a2a2a;
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .catalog-list {
+            padding: 10px 0;
+        }
+        
+        .catalog-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            border-left: 3px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .catalog-item:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        
+        body.night-mode .catalog-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .catalog-item.current {
+            /* 原来写死 rgba(213,24,125,.1)（桃红 10%），换成"当前墨色的 10%" */
+            background: color-mix(in srgb, var(--nr-accent) 10%, transparent);
+            border-left-color: var(--nr-accent);
+            color: var(--nr-accent);
+        }
+        
+        /* 遮罩层 */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 150;
+            display: none;
+        }
+        
+        .overlay.visible {
+            display: block;
+        }
+        
+        /* 左右半屏切书点击区域 */
+        .page-nav {
+            position: fixed;
+            top: 60px;
+            bottom: 60px;
+            width: 15%;
+            cursor: pointer;
+            z-index: 90;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .page-nav:hover { opacity: 1; }
+        .page-nav.prev {
+            left: 0;
+            background: linear-gradient(to right, rgba(0, 0, 0, 0.12), transparent);
+        }
+        .page-nav.next {
+            right: 0;
+            background: linear-gradient(to left, rgba(0, 0, 0, 0.12), transparent);
+        }
+        body.night-mode .page-nav.prev {
+            background: linear-gradient(to right, rgba(255, 255, 255, 0.06), transparent);
+        }
+        body.night-mode .page-nav.next {
+            background: linear-gradient(to left, rgba(255, 255, 255, 0.06), transparent);
+        }
+        .page-nav-arrow {
+            font-size: 40px;
+            color: rgba(0, 0, 0, 0.5);
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.5);
+        }
+        body.night-mode .page-nav-arrow {
+            color: rgba(255, 255, 255, 0.6);
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        /* 轻量提示 toast */
+        .reader-toast {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(0, 0, 0, 0.72);
+            color: #fff;
+            padding: 12px 22px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 300;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            white-space: nowrap;
+        }
+        body.night-mode .reader-toast {
+            background: rgba(40, 40, 40, 0.9);
+        }
+        .reader-toast.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    </style>
+    <!-- round74：小说朗读 -->
+    <link rel="stylesheet" href="css/round74-reader.css?v=1">
+    <!-- round81：阅读器设置面板（小说 / 漫画共用） -->
+    <link rel="stylesheet" href="css/reader-settings.css?v=1">
+    <!-- round117：PDF 逐页阅读（小说库里的 .pdf） -->
+    <style>
+        body.pdf-mode .reader-area { overflow: hidden; padding: 0; }
+        body.pdf-mode .page-nav { z-index: 30; }
+        /* PDF 没有可取的文字，朗读条在这一页毫无意义（点了只会读空） */
+        body.pdf-mode .nv-tts-bar { display: none !important; }
+        #pdfContent {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 14px 0 96px;
+            -webkit-overflow-scrolling: touch;
+            background: #e9e4da;
+        }
+        body.night-mode #pdfContent { background: #141414; }
+        .pdf-page {
+            width: min(94%, 1180px);
+            margin: 0 auto 14px;
+            background: #fff;
+            border-radius: 3px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, .14);
+            position: relative;
+        }
+        body.night-mode .pdf-page { background: #222; box-shadow: 0 2px 12px rgba(0, 0, 0, .6); }
+        .pdf-page > canvas { display: block; width: 100%; height: auto; }
+        .pdf-ph {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            color: #b3aa9a; font-size: 13px; letter-spacing: .04em;
+        }
+        body.night-mode .pdf-ph { color: #5b554c; }
+        .pdf-err { color: #b3261e; font-size: 13px; padding: 24px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="reader-container">
+        <!-- 顶部工具栏 -->
+        <div class="toolbar" id="toolbar">
+            <div class="toolbar-left">
+                <button class="btn" onclick="closeReader()">← 返回</button>
+                <div class="toolbar-title" id="novelTitle">加载中...</div>
+            </div>
+            <div class="toolbar-right">
+                <button class="btn" id="btnPrevBook" onclick="prevBook()" style="display:none;">◀ 上一本</button>
+                <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;">下一本 ▶</button>
+                <button class="btn" id="btnReadMode" onclick="toggleReadMode()" title="切换 滚动 / 翻页 阅读">📖 翻页</button>
+                <button class="btn" onclick="toggleCatalog()">📑 目录</button>
+                <button class="btn" onclick="toggleSettings()">⚙️ 设置</button>
+                <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
+            </div>
+        </div>
+        
+        <!-- 阅读区域 -->
+        <div class="reader-area" id="readerArea" onclick="handleReaderClick(event)">
+            <div class="page-nav prev" onclick="event.stopPropagation(); pageTurn(-1)">
+                <div class="page-nav-arrow">‹</div>
+            </div>
+            <div class="page-nav next" onclick="event.stopPropagation(); pageTurn(1)">
+                <div class="page-nav-arrow">›</div>
+            </div>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>加载中...</div>
+            </div>
+            <!-- 滚动模式（原有）：整章纵向滚动 -->
+            <div id="chapterContent" style="display:none;">
+                <h1 class="chapter-title" id="chapterTitle"></h1>
+                <div class="chapter-content" id="chapterText"></div>
+            </div>
+            <!-- 翻页模式（round25 #2）：一屏一页，左右翻 -->
+            <div id="pagedContent" class="paged-content" style="display:none;">
+                <div class="paged-inner">
+                    <h1 class="chapter-title" id="pagedTitle"></h1>
+                    <div class="chapter-content" id="pagedText"></div>
+                </div>
+                <div class="paged-hint">
+                    <span id="pagedInfo">1 / 1</span>
+                    <button class="paged-btn" onclick="event.stopPropagation(); pageTurn(-1)">‹ 上一页</button>
+                    <button class="paged-btn" onclick="event.stopPropagation(); pageTurn(1)">下一页 ›</button>
+                    <button class="paged-btn" onclick="event.stopPropagation(); pageTurn(1,true)">转下一章 »</button>
+                </div>
+            </div>
+            <!-- round117：PDF 逐页（pdf.js 渲染，滚动翻阅；沿用底部进度条当页码指示） -->
+            <div id="pdfContent" style="display:none;"></div>
+        </div>
+        
+        <!-- 目录侧边栏 -->
+        <div class="catalog-sidebar" id="catalogSidebar">
+            <div class="catalog-header">📑 目录</div>
+            <div class="catalog-list" id="catalogList">
+                <!-- 目录动态生成 -->
+            </div>
+        </div>
+        
+        <!-- round81：内部由 js/reader-settings.js 按 SCHEMA 全量渲染，
+             加 / 删 / 改名选项只动那一个文件，不用再碰这里 -->
+        <div class="settings-panel" id="settingsPanel">
+            <div id="rsNovelRoot"></div>
+        </div>
+        
+        <!-- 遮罩层 -->
+        <div class="overlay" id="overlay" onclick="closeAllPanels()"></div>
+        
+        <!-- 底部进度栏 -->
+        <div class="progress-bar" id="progressBar">
+            <button class="btn" id="btnPrevUnit" onclick="prevChapter()">‹ 上一章</button>
+            <div class="chapter-info" id="chapterInfo">0 / 0</div>
+            <div class="progress-slider" id="progressSlider" onclick="seekChapter(event)">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="reading-time" id="readingTime">00:00</div>
+            <button class="btn btn-primary" id="btnNextUnit" onclick="nextChapter()">下一章 ›</button>
+        </div>
+    </div>
+    
+    <!-- 轻量提示 -->
+    <div id="toast" class="reader-toast"></div>
+
+    <!-- round79：纸张卷曲翻页（PaperCurl，默认动效）
+         ⚠️ 必须在内联脚本之前：内联脚本在 DOMContentLoaded 时就会 initPageCurl() -->
+    <script src="js/paper-curl.js?v=3"></script>
+    <!-- round81：设置面板引擎（必须在内联脚本之前，loadSettings 会用到） -->
+    <script src="js/reader-settings.js?v=1"></script>
+
+    <script>
+        // 全局状态
+        let novelId = null;
+        let novelInfo = null;
+        let currentChapter = 0;
+        let totalChapters = 0;
+        let isNightMode = false;
+        let readingStartTime = null;
+        let totalReadingTime = 0;
+        let readingTimer = null;
+        let isToolbarVisible = true;
+        let currentFontSize = 18;
+        let currentLineHeight = 1.8;
+        let currentPadding = 20;
+        // 同级作品（上一本/下一本）
+        let siblings = [];
+        let currentBookIndex = -1;
+        let toastTimer = null;
+
+        /* round117：PDF 逐页模式
+           小说库里有 433 本 .pdf，后端 getNovelContent 对 pdf 只会返回空章节
+           ⇒ 以前一打开就是满屏「无法读取小说内容」。这里用 pdf.js 逐页画，
+           和漫画阅读器同一套（同一个 pdfjs 补丁、同一个懒渲染思路）。
+           进度沿用既有的 chapter 字段：chapter = 页码，total = 总页数。 */
+        let pdfMode = false;
+        let pdfDoc = null;
+        let pdfTotal = 0;
+        let pdfPage = 0;
+        let pdfObs = null;
+        let pdfRendering = new Set();
+        let pdfSaveTimer = null;
+
+        /* ===== 2026-09-25（round25 #2）：翻页阅读模式状态 =====
+           思路：不预先把文字切成固定块（字号/行距/窗口一变就全错），
+           而是用「累计高度二分 + 分页游标」在渲染时动态分页：
+             · pageStarts 记录本页第一个子块在第几个块上
+             · fitPage() 从该块起尽可能多塞，塞不下就到上一块为止
+           滚动模式完全不受影响（复用同一份 innerHTML）。 */
+        let readMode = 'scroll';        // 'scroll' | 'page'
+        let chapterBlocks = [];         // 当前章的块（字符串 HTML 片段）
+        let pageStarts = [];            // 每页起始块下标
+        let currentPage = 0;
+        let chapterIsHtml = false;
+        let pendingSeek = null;         // 换章后要跳到的进度位置
+        /* ★ round26 #7：分页必须基于「本章完整原文」，不能基于 #pagedText 的实时 DOM。
+         *   #pagedText 在翻页模式下会被 showPage() 覆写成「当前这一页」的内容，
+         *   而字号/行高变化触发的 repaginate 会再次 collectBlocks() ——
+         *   如果那时从 DOM 读，读到的只是上一页的残片，于是：
+         *   页数骤减、后面的内容整段消失（用户看到的「内容不全 / 文字错乱」）。 */
+        let chapterSourceHtml = '';     // 当前章（EPUB）净化后的完整 HTML
+        let chapterSourceText = '';     // 当前章（TXT）纯文本
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            novelId = urlParams.get('id');
+            
+            if (!novelId) {
+                alert('缺少小说ID');
+                return;
+            }
+            
+            // round48：大目录的 siblings 改由父页写 sessionStorage（URL 方案会 431）
+            let _sibParam = urlParams.get('siblings');
+            if (!_sibParam) {
+                try {
+                    const _st = JSON.parse(sessionStorage.getItem('readerSiblings') || 'null');
+                    if (_st && _st.list && _st.list.length) _sibParam = JSON.stringify(_st.list);
+                } catch (e) { /* noop */ }
+            }
+            parseSiblings(_sibParam);
+            
+            // 加载保存的设置
+            loadSettings();
+            
+            loadNovelInfo();
+            setupKeyboardControls();
+            setupTouchGestures();
+
+            // 移动端：默认完全隐藏工具栏与状态条，进入 100% 纯净全屏
+            if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+                isToolbarVisible = false;
+                document.getElementById('toolbar').classList.add('hidden');
+                document.getElementById('progressBar').classList.add('hidden');
+            }
+            if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+                window.AndroidBridge.setReaderMode(true);
+            }
+
+            // 翻页模式下：窗口尺寸变化 / 字号行距变化都要重新分页（否则一页内容对不上屏）
+            let rzTimer = null;
+            window.addEventListener('resize', () => {
+                if (readMode !== 'page') return;
+                clearTimeout(rzTimer);
+                rzTimer = setTimeout(async () => {
+                    const keep = currentPage;
+                    await paginate();
+                    showPage(Math.min(keep, pageStarts.length - 1));
+                }, 220);
+            });
+        });
+        
+        // 解析同级列表参数，初始化上一本/下一本
+        function parseSiblings(raw) {
+            if (!raw) return;
+            try {
+                const list = JSON.parse(raw);
+                if (Array.isArray(list) && list.length > 1) {
+                    siblings = list;
+                    currentBookIndex = siblings.findIndex(s => String(s.id) === String(novelId));
+                    document.getElementById('btnPrevBook').style.display = '';
+                    document.getElementById('btnNextBook').style.display = '';
+                }
+            } catch (e) {
+                console.log('同级列表解析失败:', e.message);
+            }
+        }
+        
+        // 轻量提示
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.add('show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+        }
+        
+        // 切到上一本/下一本
+        function prevBook() {
+            if (currentBookIndex > 0) {
+                switchBook(currentBookIndex - 1);
+            } else {
+                showToast('已是第一本');
+            }
+        }
+        
+        function nextBook() {
+            if (currentBookIndex >= 0 && currentBookIndex < siblings.length - 1) {
+                switchBook(currentBookIndex + 1);
+            } else {
+                showToast('已是最后一本');
+            }
+        }
+        
+        function switchBook(index) {
+            const target = siblings[index];
+            if (!target) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set('id', target.id);
+            url.searchParams.set('siblings', JSON.stringify(siblings));
+            window.location.href = url.toString();
+        }
+        
+        // 加载小说信息
+        async function loadNovelInfo() {
+            try {
+                const res = await fetch(`/api/novel/${novelId}/info`);
+                const data = await res.json();
+                
+                if (data.code === 0) {
+                    novelInfo = data.data;
+                    totalChapters = novelInfo.totalChapters;
+                    currentChapter = novelInfo.currentChapter || 0;
+                    
+                    document.getElementById('novelTitle').textContent = novelInfo.title;
+                    document.getElementById('chapterInfo').textContent = `${currentChapter + 1} / ${totalChapters}`;
+                    
+                    // 渲染目录
+                    renderCatalog();
+                    
+                    if (novelInfo.readKind === 'pdf') {
+                        enterPdfMode();
+                        return;
+                    }
+                    if (novelInfo.readKind === 'unsupported') {
+                        /* mobi / azw3：给一句人话 + 文件路径，别再只丢一行红字 */
+                        document.getElementById('loading').innerHTML =
+                            '<div style="max-width:560px;text-align:center;line-height:1.9;">' +
+                            '<div style="font-size:15px;color:inherit;margin-bottom:10px;">这本是 <b>' +
+                            escapeHtmlText(novelInfo.format) + '</b> 格式</div>' +
+                            '<div style="font-size:13px;opacity:.72;">在线阅读目前支持 EPUB / TXT / PDF。' +
+                            'MOBI / AZW3 需要先转成 EPUB 再导入。</div>' +
+                            '<div style="font-size:11.5px;opacity:.5;margin-top:14px;word-break:break-all;">' +
+                            escapeHtmlText(novelInfo.filePath || '') + '</div></div>';
+                        return;
+                    }
+                    if (totalChapters > 0) {
+                        loadChapter(currentChapter);
+                        startReadingTimer();
+                    } else {
+                        document.getElementById('loading').innerHTML =
+                            '<div style="max-width:560px;text-align:center;line-height:1.9;">' +
+                            '<div style="font-size:15px;margin-bottom:8px;">这本书里没有可读的章节</div>' +
+                            '<div style="font-size:12.5px;opacity:.7;">文件可能只含图片，或被识别为空。</div></div>';
+                    }
+                } else {
+                    document.getElementById('loading').innerHTML = `<div style="color:#ef4444;">加载失败: ${data.msg}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('loading').innerHTML = `<div style="color:#ef4444;">加载失败: ${e.message}</div>`;
+            }
+        }
+        
+        // 加载章节
+        async function loadChapter(chapterIndex) {
+            if (chapterIndex < 0 || chapterIndex >= totalChapters) return;
+            
+            currentChapter = chapterIndex;
+            const loading = document.getElementById('loading');
+            const chapterContent = document.getElementById('chapterContent');
+            
+            loading.style.display = 'flex';
+            chapterContent.style.display = 'none';
+            
+            try {
+                const res = await fetch(`/api/novel/${novelId}/chapter/${chapterIndex}`);
+                const data = await res.json();
+                
+                if (data.code === 0) {
+                    const title = data.data.title || '';
+                    const body = data.data.content || '';
+                    chapterIsHtml = !!data.data.isHtml;
+
+                    document.getElementById('chapterTitle').textContent = title;
+                    document.getElementById('pagedTitle').textContent = title;
+
+                    // ★ round25 #2：EPUB 走 innerHTML（保留插图），TXT 维持纯文本
+                    renderChapterBody(body);
+
+                    loading.style.display = 'none';
+                    /* ★ round26 #7：「文字错乱」的真因就在这里。
+                     *   老实现无条件 chapterContent.style.display='block'，
+                     *   而翻页层 .paged-content 是 position:absolute; inset:0 盖在同一块阅读区上
+                     *   ⇒ 滚动容器与翻页容器同时可见，同一章正文被渲染两遍、
+                     *     垂直错开约一个标题高（74px≈3 行），看起来就是「字叠在一起」。
+                     *   翻页模式下必须继续隐藏滚动容器 —— 交给 applyReadMode() 按当前模式统一决定。 */
+                    applyReadMode();
+                    // 章节入场动画（重触发）
+                    chapterContent.classList.remove('chapter-in');
+                    void chapterContent.offsetWidth;
+                    chapterContent.classList.add('chapter-in');
+
+                    // 滚动到顶部
+                    document.getElementById('readerArea').scrollTop = 0;
+
+                    // ★ 翻页模式：重新分页
+                    if (readMode === 'page') {
+                        await paginate();
+                        let to = 0;
+                        if (pendingSeek === 'last') to = pageStarts.length - 1;
+                        else if (typeof pendingSeek === 'number') to = pendingSeek;
+                        showPage(to);
+                        pendingSeek = null;
+                    }
+                    
+                    // 更新进度
+                    document.getElementById('chapterInfo').textContent = `${currentChapter + 1} / ${totalChapters}`;
+                    document.getElementById('progressFill').style.width = `${((currentChapter + 1) / totalChapters) * 100}%`;
+                    
+                    // 更新目录高亮
+                    updateCatalogHighlight();
+                    
+                    // 保存进度
+                    saveProgress();
+                } else {
+                    loading.innerHTML = `<div style="color:#ef4444;">加载失败: ${data.msg}</div>`;
+                }
+            } catch (e) {
+                loading.innerHTML = `<div style="color:#ef4444;">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        /* ============================================================
+           2026-09-25（round25 #2）富文本渲染 + 翻页分页
+           ============================================================ */
+
+        // 把整章内容写进两个容器（滚动用的和翻页用的共用同一份 HTML）
+        function renderChapterBody(body) {
+            const chat = document.getElementById('chapterText');
+            const paged = document.getElementById('pagedText');
+            if (chapterIsHtml) {
+                // 后端已做白名单过滤；这里只补一个「外部图片失败降级」
+                const safe = body || '';
+                chapterSourceHtml = safe;       // ★ round26 #7：留一份完整原文供分页使用
+                chapterSourceText = '';
+                chat.innerHTML = safe;
+                paged.innerHTML = safe;
+                // ★ round26 #7：标记为 HTML 内容 → 交给浏览器按常规折叠空白（见 CSS）
+                chat.dataset.html = '1';
+                paged.dataset.html = '1';
+                // 图片加载失败时给个占位，避免整页塌掉看不出来
+                [chat, paged].forEach(root => {
+                    root.querySelectorAll('img').forEach(img => {
+                        if (img.dataset.guard) return;
+                        img.dataset.guard = '1';
+                        img.addEventListener('error', () => {
+                            img.classList.add('img-broken');
+                            if (!img.alt) img.alt = '［图片加载失败］';
+                        });
+                    });
+                });
+            } else {
+                chapterSourceHtml = '';
+                chapterSourceText = body || '';
+                chat.textContent = body;
+                paged.textContent = body;
+                delete chat.dataset.html;
+                delete paged.dataset.html;
+            }
+        }
+
+        // 把当前章拆成「块」：EPUB 递归下钻到段落级，TXT 按段落
+        // ★ round26 #7：源永远是「本章完整原文」（chapterSourceHtml / chapterSourceText），
+        //   不再读 #pagedText 的实时 DOM —— 它已被 showPage() 覆写成「当前一页」，
+        //   从那里收集块会把整章越切越少（典型症状：改一次字号就只剩一页内容）。
+        function collectBlocks() {
+            chapterBlocks = [];
+            if (chapterIsHtml) {
+                const holder = document.createElement('div');
+                holder.innerHTML = chapterSourceHtml || '';
+                const LEAF = /^(P|H1|H2|H3|H4|H5|H6|LI|DT|DD|BLOCKQUOTE|PRE|FIGURE|IMG|TABLE|HR)$/;
+                // 递归：容器标签继续下钻，遇到叶子级标签就成一「块」
+                const walk = (node) => {
+                    for (const el of node.children) {
+                        const t = el.tagName;
+                        if (t === 'IMG' || LEAF.test(t)) {
+                            // 叶子块：保留自身 HTML（顺带把紧邻的说明文字包进来也无妨）
+                            chapterBlocks.push(el.outerHTML);
+                        } else if (el.children.length) {
+                            walk(el);
+                        } else {
+                            const txt = (el.textContent || '').trim();
+                            if (txt) chapterBlocks.push(el.outerHTML);
+                        }
+                    }
+                };
+                walk(holder);
+                // 兜底：整章没有可拆的块（比如只有一个超长 <div> 文本）
+                if (!chapterBlocks.length) {
+                    const t = (holder.textContent || '').trim();
+                    chapterBlocks = t ? [holder.innerHTML] : ['<p></p>'];
+                }
+            } else {
+                const paras = (chapterSourceText || '').split(/\n+/).filter(t => t.trim());
+                chapterBlocks = paras.map(t => `<p>${escapeHtmlText(t)}</p>`);
+            }
+            if (!chapterBlocks.length) chapterBlocks = ['<p></p>'];
+        }
+
+        function escapeHtmlText(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // 下一页 / 上一页；atEnd=true 时到章末自动去下一章
+        function pageTurn(dir, atEnd) {
+            if (pdfMode) { pdfStep(dir); return; }
+            if (readMode !== 'page') {
+                // 滚动模式：点侧边箭头仍按「上一本/下一本」处理
+                if (dir < 0) prevBook(); else nextBook();
+                return;
+            }
+            // 手动翻页要重置自动翻页倒计时，否则设置里的秒数会被半路截胡
+            if (typeof restartNovelAutoTurn === 'function') restartNovelAutoTurn();
+            const last = pageStarts.length - 1;
+            let target = currentPage + dir;
+            if (target < 0) {
+                if (currentChapter > 0) { pendingSeek = 'last'; loadChapter(currentChapter - 1); return; }
+                target = 0;
+            }
+            if (target > last) {
+                if (atEnd || currentPage === last) {
+                    if (currentChapter < totalChapters - 1) { pendingSeek = 0; loadChapter(currentChapter + 1); return; }
+                }
+                target = last;
+            }
+            if (target === currentPage) return;     // 到头了，不必卷
+
+            /* round81：翻页样式由设置决定，不再是「有 paper-curl 就必卷」
+                 curl  -> PaperCurl（WebGL / DOM 卷曲）
+                 slide -> 平移；fade -> 淡入；none -> 硬切
+               后三者走 CSS animation，body[data-turn-style] 已在 applyNovelSettings 写好 */
+            var style = (novelRS && novelRS.turnStyle) || 'curl';
+            if (style === 'curl' && pageCurl && window.PaperCurl && !window.PaperCurl.REDUCED) {
+                curlTarget = target;
+                window.PaperCurl.setSpeed(novelRS ? novelRS.turnSpeed : 'normal');
+                pageCurl.turn(dir);
+                return;
+            }
+            if (style === 'slide') {
+                document.body.classList.toggle('turn-back', dir < 0);
+                clearTimeout(window.__turnBackTimer);
+                window.__turnBackTimer = setTimeout(function () {
+                    document.body.classList.remove('turn-back');
+                }, ReaderSettings ? ReaderSettings.speedMs(novelRS && novelRS.turnSpeed) : 560);
+            }
+            showPageDirect(target);
+        }
+
+        /* round79：showPage 已并入 showPageDirect（卷曲版需要「换页」与「写内容」分离）。
+           保留 showPage 作为同义别名 —— 文件内 4 处调用点与调试桥 __readerBridge 都还在用它。 */
+        function showPage(idx) { showPageDirect(idx); }
+
+        /* round79：纸张卷曲翻页（PaperCurl，默认动效）
+         *
+         * 数据流（这一段绕了两个坑才理顺，记录下来别再改错）：
+         *   ① showPage 是**同步覆写** #pagedText.innerHTML。若直接把卷曲
+         *      套在 showPage 外面，新页会瞬间替换旧页 —— 卷曲只剩空壳。
+         *      所以把「写内容」拆成 fillPage()，动效在 pageTurn 层做。
+         *   ② 卷曲期间 currentPage 必须**保持旧值**，直到卷过半真正换页；
+         *      提前改会让「上一页/下一页」的边界判断读到新页，末页判断失效。
+         */
+        function fillPage(idx) {
+            const box = document.getElementById('pagedText');
+            const start = pageStarts[idx];
+            const end = idx + 1 < pageStarts.length ? pageStarts[idx + 1] : chapterBlocks.length;
+            box.innerHTML = chapterBlocks.slice(start, end).join('');
+            box.querySelectorAll('img').forEach(img => {
+                img.addEventListener('error', () => { img.classList.add('img-broken'); });
+            });
+            document.getElementById('pagedInfo').textContent = `${idx + 1} / ${pageStarts.length}`;
+            saveProgress();
+        }
+
+        // 不带动效的换页（首屏、换章、repaginate 复位都用它）
+        function showPageDirect(idx) {
+            if (!pageStarts.length) return;
+            currentPage = Math.max(0, Math.min(pageStarts.length - 1, idx));
+            fillPage(currentPage);
+            const box = document.getElementById('pagedText');
+            box.classList.remove('page-in');
+            void box.offsetWidth;
+            box.classList.add('page-in');
+        }
+
+        // 卷曲舞台 = .paged-inner（.paged-content 已被 CSS 占了绝对定位，见文件内 round26 说明）
+        let pageCurl = null;
+        let curlTarget = 0;          // 卷曲期间的目标页（卷过半才真正写入）
+        function initPageCurl() {
+            if (pageCurl || !window.PaperCurl) return;
+            const stage = document.querySelector('.paged-inner');
+            if (!stage) return;
+            pageCurl = window.PaperCurl.attachText({
+                stage,
+                isActive: () => readMode === 'page',
+                applyNext: () => {
+                    // 只在卷曲真正发生时换页；currentPage 在此刻才推进
+                    showPageDirect(curlTarget);
+                }
+            });
+        }
+
+        // 等两帧，让 display:flex 之后的布局真正落定（否则测到 0 高度）
+        function nextFrame() {
+            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        }
+
+        // 一页可用高度
+        // ★ round26 #7：必须取「正文容器」#pagedText 的高度，而不是 .paged-inner。
+        //   .paged-inner 里还有 h1 标题占位，用它当页高会让每页多塞 2-3 行 → 底部被裁 → 内容不全。
+        function pageHeight() {
+            const box = document.getElementById('pagedText');
+            // round79：内容可能被搬进 .curl-lower（卷曲层），兜底容器要跟着换，
+            // 否则 .paged-inner 的高度包含卷曲层，页高会算大、每页少塞内容。
+            const container = document.querySelector('.curl-lower') || document.querySelector('.paged-inner');
+            const title = document.getElementById('pagedTitle');
+            let H = box ? box.clientHeight : 0;
+            if ((!H || H < 40) && container) {
+                // 兜底：容器高 - 标题实际占高（含 margin）
+                const cs = title ? getComputedStyle(title) : null;
+                const titleH = title
+                    ? title.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)
+                    : 0;
+                H = container.clientHeight - titleH;
+            }
+            if (!H || H < 40) {
+                // 视口高 - 上下内边距(78/92) - 分页提示行(约 46) - 标题(约 74)
+                H = Math.max(200, (window.innerHeight || 800) - 78 - 92 - 46 - 74);
+            }
+            return H;
+        }
+
+        // 在离屏 probe 上按高度 H 贪心切页，结果写进 pageStarts
+        function runLayout(box, container, H) {
+            pageStarts = [0];
+            if (!H || H < 40 || !chapterBlocks.length) return;
+
+            const probe = document.createElement('div');
+            probe.className = box.className;
+            // ★ round76b：探针必须复制 box 的非 id 属性（尤其 data-html）——
+            //   EPUB 章节 #pagedText 带 data-html="1" → white-space:normal（折叠空白），
+            //   探针缺了它就按 pre-wrap 渲染，EPUB 源码的缩进换行被当正文，
+            //   每段被量成 3~4 行 → 每页只塞得下 1/3 内容，页内大片空白。
+            for (const a of box.attributes) {
+                if (a.name === 'id' || a.name === 'style') continue;
+                probe.setAttribute(a.name, a.value);
+            }
+            probe.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;'
+                + 'width:' + (box.clientWidth || (container && container.clientWidth) || 700) + 'px;'
+                + 'height:auto;overflow:visible;';
+            container.appendChild(probe);
+
+            let i = 0;
+            while (i < chapterBlocks.length) {
+                const pageStart = i;
+                let lastFit = i;      // 至少放一块，避免死循环
+                for (; i < chapterBlocks.length; i++) {
+                    probe.insertAdjacentHTML('beforeend', chapterBlocks[i]);
+                    if (probe.scrollHeight > H + 2) {
+                        // 这一块放不下：回退（把它留给下一页）
+                        if (probe.lastElementChild) probe.removeChild(probe.lastElementChild);
+                        break;
+                    }
+                    lastFit = i + 1;
+                }
+                probe.innerHTML = '';
+                if (lastFit <= pageStart) lastFit = pageStart + 1;   // 单块就超高 → 独占一页
+                i = lastFit;
+                if (i < chapterBlocks.length) pageStarts.push(i);
+                else break;
+            }
+            container.removeChild(probe);
+            if (!pageStarts.length) pageStarts = [0];
+        }
+
+        // 按「正文容器实际高度」贪心分页；最后一页允许留白
+        async function paginate() {
+            collectBlocks();
+            const box = document.getElementById('pagedText');
+            const container = document.querySelector('.paged-inner');
+            pageStarts = [0];
+            if (!chapterBlocks.length) return;
+
+            // ★ round26 #7：刚把 .paged-content 从 display:none 切到 flex 时，浏览器还没完成布局，
+            //   此刻量到的高度可能是 0 或旧值 → 等两帧再量。
+            await nextFrame();
+            const H = pageHeight();
+            runLayout(box, container, H);
+
+            /* ★ round26 #7 合理性校验：块数不少却只切出 1 页，基本可判定这次测量
+             *   拿到的容器尺寸不可信。用视口估算值重切一次，否则用户看到的是
+             *   「一页塞整章 → 溢出被 overflow:hidden 裁掉 → 内容不全」。 */
+            if (pageStarts.length <= 1 && chapterBlocks.length > 12) {
+                const H2 = Math.max(200, (window.innerHeight || 800) - 78 - 92 - 46 - 74);
+                if (Math.abs(H2 - H) > 24) runLayout(box, container, H2);
+            }
+        }
+
+        // 切换 滚动 / 翻页
+        async function toggleReadMode() {
+            readMode = readMode === 'page' ? 'scroll' : 'page';
+            applyReadMode();
+            try { localStorage.setItem('novelReadMode', readMode); } catch (e) { }
+            if (readMode === 'page') {
+                await paginate();
+                showPage(0);
+                showToast('已切换到翻页模式（← → 翻页，↑ ↓ 换章）');
+            } else {
+                document.getElementById('readerArea').scrollTop = 0;
+                showToast('已切换到滚动模式');
+            }
+        }
+
+        function applyReadMode() {
+            const paged = document.getElementById('pagedContent');
+            const chat = document.getElementById('chapterContent');
+            const btn = document.getElementById('btnReadMode');
+            // round79：进入翻页模式时惰性建立卷曲舞台（此时 DOM 已就位）
+            if (readMode === 'page') initPageCurl();
+            if (readMode === 'page') {
+                document.body.classList.add('read-mode-page');
+                paged.style.display = 'flex';
+                chat.style.display = 'none';
+                if (btn) btn.textContent = '📜 滚动';
+            } else {
+                document.body.classList.remove('read-mode-page');
+                paged.style.display = 'none';
+                chat.style.display = 'block';
+                if (btn) btn.textContent = '📖 翻页';
+            }
+        }
+
+        // 阅读区单击：两边各 28% 翻页，中间 44% 切换工具栏显隐
+        function handleReaderClick(e) {
+            if (e.target.closest('.catalog-sidebar, .settings-panel, .btn, button, #btnReadMode')) return;
+            const r = document.getElementById('readerArea').getBoundingClientRect();
+            const xRatio = (e.clientX - r.left) / r.width;
+            if (xRatio < 0.28) {
+                if (readMode === 'page') pageTurn(-1);
+                else prevChapter();
+                return;
+            }
+            if (xRatio > 0.72) {
+                if (readMode === 'page') pageTurn(1);
+                else nextChapter();
+                return;
+            }
+            toggleToolbar();
+        }
+        
+        // 上一章
+        function prevChapter() {
+            if (pdfMode) { pdfStep(-1); return; }
+            if (currentChapter > 0) {
+                loadChapter(currentChapter - 1);
+            }
+        }
+        
+        // 下一章
+        function nextChapter() {
+            if (pdfMode) { pdfStep(1); return; }
+            if (currentChapter < totalChapters - 1) {
+                loadChapter(currentChapter + 1);
+            }
+        }
+        
+        // 跳转到指定章节
+        function seekChapter(event) {
+            const slider = document.getElementById('progressSlider');
+            const rect = slider.getBoundingClientRect();
+            const percent = (event.clientX - rect.left) / rect.width;
+            if (pdfMode) {
+                pdfGoTo(Math.max(0, Math.min(pdfTotal - 1, Math.round(percent * (pdfTotal - 1)))));
+                return;
+            }
+            const targetChapter = Math.floor(percent * totalChapters);
+            loadChapter(Math.max(0, Math.min(totalChapters - 1, targetChapter)));
+        }
+        
+        // 保存阅读进度
+        async function saveProgress() {
+            try {
+                await fetch(`/api/novel/${novelId}/progress`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chapter: currentChapter, position: 0, total: totalChapters })
+                });
+            } catch (e) {
+                console.log('保存进度失败:', e.message);
+            }
+        }
+        
+        // 开始阅读计时
+        function startReadingTimer() {
+            readingStartTime = Date.now();
+            readingTimer = setInterval(() => {
+                const elapsed = Date.now() - readingStartTime + totalReadingTime;
+                const minutes = Math.floor(elapsed / 60000);
+                const seconds = Math.floor((elapsed % 60000) / 1000);
+                document.getElementById('readingTime').textContent = 
+                    `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }, 1000);
+            // 通知服务器开始阅读（服务端开始计时）
+            fetch(`/api/novel/${novelId}/start-reading`, { method: 'POST' }).catch(() => {});
+        }
+        
+        // 停止阅读计时
+        function stopReadingTimer() {
+            if (readingTimer) {
+                clearInterval(readingTimer);
+                totalReadingTime += Date.now() - readingStartTime;
+                readingTimer = null;
+                // 通知服务器结束阅读并记录本次时长
+                fetch(`/api/novel/${novelId}/stop-reading`, { method: 'POST' }).catch(() => {});
+            }
+        }
+        
+        // 渲染目录
+        function renderCatalog() {
+            const catalogList = document.getElementById('catalogList');
+            catalogList.innerHTML = '';
+            
+            novelInfo.chapters.forEach((chapter, index) => {
+                const item = document.createElement('div');
+                item.className = 'catalog-item' + (index === currentChapter ? ' current' : '');
+                item.textContent = `${index + 1}. ${chapter.title}`;
+                item.onclick = () => {
+                    loadChapter(index);
+                    toggleCatalog();
+                };
+                catalogList.appendChild(item);
+            });
+        }
+        
+        // 更新目录高亮
+        function updateCatalogHighlight() {
+            document.querySelectorAll('.catalog-item').forEach((item, index) => {
+                item.classList.toggle('current', index === currentChapter);
+            });
+        }
+        
+        // 切换目录
+        function toggleCatalog() {
+            const sidebar = document.getElementById('catalogSidebar');
+            const overlay = document.getElementById('overlay');
+            const isOpen = sidebar.classList.toggle('open');
+            overlay.classList.toggle('visible', isOpen);
+            
+            if (isOpen) {
+                document.getElementById('settingsPanel').classList.remove('open');
+            }
+        }
+        
+        // 切换设置面板
+        function toggleSettings() {
+            const panel = document.getElementById('settingsPanel');
+            const overlay = document.getElementById('overlay');
+            const isOpen = panel.classList.toggle('open');
+            overlay.classList.toggle('visible', isOpen);
+            
+            if (isOpen) {
+                document.getElementById('catalogSidebar').classList.remove('open');
+            }
+        }
+        
+        // 关闭所有面板
+        function closeAllPanels() {
+            document.getElementById('catalogSidebar').classList.remove('open');
+            document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('visible');
+        }
+        
+        /* ============================================================
+           round81：设置面板改由 js/reader-settings.js 驱动
+           ------------------------------------------------------------
+           旧实现每个选项占三段代码（一段硬编码 HTML、一个 setXxx()、
+           loadSettings 里一行白名单），加一项要改三处，而且这套取名
+           （字号/行距/页边距/背景色）跟漫画那边完全对不上 —— 用户报
+           「设置按钮都没了」的时候，小说这边是有的，漫画那边连影子都没有。
+           现在两边读同一份 SCHEMA：
+             唯一真源 = novelRS 对象
+             -> applyNovelSettings() 把它落成真实样式
+             -> ReaderSettings.render() 把它画成面板
+           加 / 删一项只动 reader-settings.js。
+           ============================================================ */
+        var novelRS = null;                 // 设置项唯一真源
+        var novelAutoTurn = null;           // 自动翻页定时器句柄
+
+        /* 旧版本（round80 及更早）用 localStorage['novelReaderSettings']，
+           迁移一次，别让用户辛辛苦苦调过的字号行距一夜回到解放前。 */
+        function migrateLegacyNovelSettings(def) {
+            try {
+                var raw = localStorage.getItem('novelReaderSettings');
+                if (!raw) return def;
+                var o = JSON.parse(raw) || {};
+                if (o.fontSize) def.fontSize = o.fontSize;
+                if (o.lineHeight) def.lineHeight = o.lineHeight;
+                if (o.padding) def.padding = o.padding;
+                if (o.nightMode) { def.night = true; def.bg = '#2a2a2a'; }
+                else if (o.bgColor) def.bg = o.bgColor;
+                localStorage.removeItem('novelReaderSettings');
+            } catch (e) { /* 读不出来就用默认 */ }
+            return def;
+        }
+
+        function rsNovelRoot() { return document.getElementById('rsNovelRoot'); }
+
+        // 把 novelRS 落成真实样式。opts.repag === false 时跳过重排（首次加载用）
+        function applyNovelSettings(opts) {
+            var s = novelRS;
+            if (!s) return;
+            var noRepag = opts && opts.repag === false;
+
+            currentFontSize = Number(s.fontSize) || 18;
+            currentLineHeight = Number(s.lineHeight) || 1.8;
+            currentPadding = Number(s.padding) || 20;
+            isNightMode = !!s.night;
+
+            var ra = document.getElementById('readerArea');
+            var pc = document.querySelector('.paged-content');
+            [ra, pc].forEach(function (el) {
+                if (!el) return;
+                el.style.fontSize = currentFontSize + 'px';
+                el.style.lineHeight = String(currentLineHeight);
+            });
+            if (ra) {
+                ra.style.paddingLeft = currentPadding + '%';
+                ra.style.paddingRight = currentPadding + '%';
+            }
+            if (pc) {
+                pc.style.paddingLeft = currentPadding + '%';
+                pc.style.paddingRight = currentPadding + '%';
+            }
+
+            // 字体：正文 .chapter-content 自带宋体栈，只能靠 body[data-rs-font] 提权
+            document.body.setAttribute('data-rs-font', s.fontFamily || 'serif');
+
+            // 背景 / 夜间：夜间交给 CSS（body.night-mode），日间才写行内背景
+            document.body.classList.toggle('night-mode', isNightMode);
+            document.body.style.background = isNightMode ? '' : (s.bg || '#f5f0e6');
+
+            // 翻页演出
+            var dur = ReaderSettings.speedMs(s.turnSpeed);
+            document.body.setAttribute('data-turn-style', s.turnStyle || 'curl');
+            document.body.style.setProperty('--rs-turn-dur', dur + 'ms');
+            document.body.style.setProperty('--rs-turn-x', '26px');
+            if (window.PaperCurl) window.PaperCurl.setSpeed(s.turnSpeed);
+
+            restartNovelAutoTurn();
+
+            ReaderSettings.save('novel', s);
+            renderNovelPanel();
+            if (!noRepag) repaginateIfNeeded();
+        }
+
+        function renderNovelPanel() {
+            var root = rsNovelRoot();
+            if (!root) return;
+            ReaderSettings.render(root, 'novel', novelRS, onNovelPick, '⚙️ 阅读设置');
+        }
+
+        // 面板点击回调
+        function onNovelPick(id, val) {
+            novelRS[id] = val;
+            if (id !== 'autoTurn') restartNovelAutoTurn();
+            applyNovelSettings({ repag: false });
+            // 排版类改动要重排（repaginateIfNeeded 自带 120ms 去抖）
+            if (id === 'fontSize' || id === 'lineHeight' || id === 'padding') repaginateIfNeeded();
+            if (id === 'turnStyle' || id === 'turnSpeed') showToast('翻页：' + turnStyleLabel() + ' / ' + (ReaderSettings.speedMs(novelRS.turnSpeed)) + 'ms');
+        }
+
+        function turnStyleLabel() {
+            var hit = null;
+            ReaderSettings.SCHEMA.common.forEach(function (g) {
+                if (g.id === 'turnStyle') {
+                    g.options.forEach(function (o) { if (o.v === novelRS.turnStyle) hit = o.label; });
+                }
+            });
+            return hit || novelRS.turnStyle;
+        }
+
+        /* ---- 自动翻页：只在「翻页模式」下有意义（滚动模式没有页的概念）---- */
+        function restartNovelAutoTurn() {
+            if (!novelAutoTurn) novelAutoTurn = ReaderSettings.autoTurn(
+                function () { return (readMode === 'page') ? Number(novelRS.autoTurn) || 0 : 0; },
+                function () { if (readMode === 'page') pageTurn(1, true); }
+            );
+            novelAutoTurn.restart();
+        }
+
+        /* 翻页模式下：排版参数变了要重排（异步静默）
+           —— 从旧的「每个 setXxx 各调一次」收敛到这里统一由 applyNovelSettings 触发 */
+        function repaginateIfNeeded() {
+            if (readMode !== 'page') return;
+            if (typeof paginate !== 'function') return;
+            clearTimeout(window.__repagTimer);
+            window.__repagTimer = setTimeout(async () => {
+                const box = document.getElementById('pagedText');
+                if (!box || !chapterBlocks.length) return;
+                const keep = currentPage;
+                await paginate();
+                showPage(Math.min(keep, pageStarts.length - 1));
+            }, 120);
+        }
+
+        // 切换夜间模式
+        function toggleNightMode() {
+            novelRS.night = !novelRS.night;
+            applyNovelSettings({ repag: false });
+        }
+
+        /* ---- 兼容层：旧函数名保留，转发到新引擎 ---- */
+        function setFontSize(size) { onNovelPick('fontSize', size); }
+        function setLineHeight(height) { onNovelPick('lineHeight', height); }
+        function setPadding(padding) { onNovelPick('padding', padding); }
+        function setBgColor(color, night) {
+            novelRS.bg = night ? '#2a2a2a' : color;
+            novelRS.night = !!night;
+            applyNovelSettings({ repag: false });
+        }
+
+        // 保存设置到localStorage
+        function saveSettings() { if (novelRS) ReaderSettings.save('novel', novelRS); }
+
+        // 加载设置
+        function loadSettings() {
+            try {
+                novelRS = migrateLegacyNovelSettings(ReaderSettings.load('novel'));
+                applyNovelSettings({ repag: false });
+                // ★ 恢复上次的阅读模式（滚动 / 翻页）
+                const m = localStorage.getItem('novelReadMode');
+                if (m === 'page' || m === 'scroll') readMode = m;
+                applyReadMode();
+            } catch (e) {
+                console.log('加载设置失败:', e.message);
+            }
+        }
+        
+        // 切换工具栏显示
+        function toggleToolbar() {
+            isToolbarVisible = !isToolbarVisible;
+            document.getElementById('toolbar').classList.toggle('hidden', !isToolbarVisible);
+            document.getElementById('progressBar').classList.toggle('hidden', !isToolbarVisible);
+        }
+        
+        // 键盘控制
+        function setupKeyboardControls() {
+            document.addEventListener('keydown', (e) => {
+                switch (e.key) {
+                    case 'ArrowLeft':
+                    case 'a':
+                        // 翻页模式：← 翻上一页（到章首再退上一章）
+                        if (readMode === 'page' && !e.shiftKey) { e.preventDefault(); pageTurn(-1); break; }
+                        if (e.shiftKey) { e.preventDefault(); prevBook(); }
+                        else prevChapter();
+                        break;
+                    case 'ArrowRight':
+                    case 'd':
+                        if (readMode === 'page' && !e.shiftKey) { e.preventDefault(); pageTurn(1); break; }
+                        if (e.shiftKey) { e.preventDefault(); nextBook(); }
+                        else nextChapter();
+                        break;
+                    case 'PageDown':
+                        if (readMode === 'page') { e.preventDefault(); pageTurn(1); }
+                        break;
+                    case 'PageUp':
+                        if (readMode === 'page') { e.preventDefault(); pageTurn(-1); }
+                        break;
+                    case ' ':
+                        e.preventDefault();
+                        // 翻页模式：空格翻下一页（章末自动续下一章），更接近阅读软件
+                        if (readMode === 'page') pageTurn(1, true);
+                        else nextChapter();
+                        break;
+                    case 'ArrowDown':
+                        if (readMode === 'page') { e.preventDefault(); nextChapter(); }
+                        break;
+                    case 'ArrowUp':
+                        if (readMode === 'page') { e.preventDefault(); prevChapter(); }
+                        break;
+                    case 'Escape':
+                        if (document.getElementById('catalogSidebar').classList.contains('open') ||
+                            document.getElementById('settingsPanel').classList.contains('open')) {
+                            closeAllPanels();
+                        } else {
+                            closeReader();
+                        }
+                        break;
+                    case 'f':
+                        toggleToolbar();
+                        break;
+                }
+            });
+        }
+
+        // 移动端触控手势（翻页模式下左右横滑翻页，滚动模式下大幅横滑切换章节）
+        function setupTouchGestures() {
+            const area = document.getElementById('readerArea');
+            if (!area) return;
+
+            let touchStartX = 0;
+            let touchStartY = 0;
+            let touchStartTime = 0;
+            let isSwiping = false;
+
+            area.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    touchStartTime = Date.now();
+                    isSwiping = false;
+                }
+            }, { passive: true });
+
+            area.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1) {
+                    const dx = e.touches[0].clientX - touchStartX;
+                    const dy = e.touches[0].clientY - touchStartY;
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 14) {
+                        isSwiping = true;
+                    }
+                }
+            }, { passive: true });
+
+            area.addEventListener('touchend', (e) => {
+                if (isSwiping && e.changedTouches.length === 1) {
+                    const dx = e.changedTouches[0].clientX - touchStartX;
+                    const dt = Date.now() - touchStartTime;
+                    if (Math.abs(dx) > 40 && dt < 650) {
+                        if (readMode === 'page') {
+                            if (dx < -40) {
+                                pageTurn(1);
+                            } else if (dx > 40) {
+                                pageTurn(-1);
+                            }
+                        } else {
+                            if (dx < -70) {
+                                nextChapter();
+                            } else if (dx > 70) {
+                                prevChapter();
+                            }
+                        }
+                    }
+                }
+                isSwiping = false;
+            }, { passive: true });
+        }
+        
+        // 关闭阅读器
+        function closeReader() {
+            if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+                window.AndroidBridge.setReaderMode(false);
+            }
+            stopReadingTimer();
+            saveProgress();
+            // 如果是在iframe中，通知父页面关闭
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'closeReader' }, '*');
+            } else {
+                window.close();
+                setTimeout(() => {
+                    if (!window.closed) {
+                        window.history.back();
+                    }
+                }, 100);
+            }
+        }
+        
+        // 页面关闭时保存进度
+        window.addEventListener('beforeunload', () => {
+            if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+                window.AndroidBridge.setReaderMode(false);
+            }
+            stopReadingTimer();
+            saveProgress();
+        });
+        /* ==================================================================
+           round117 · PDF 逐页阅读
+           ------------------------------------------------------------------
+           为什么要有这一段：小说库里有 433 本 .pdf、320 本 .mobi、118 本 .azw3。
+           后端 getNovelContent 对这三种都只会返回 `chapters: []`，
+           阅读器拿到 totalChapters=0 就直接写一行「无法读取小说内容」——
+           对 PDF 来说这是彻底打不开，不是"内容为空"。
+
+           PDF 现在这样读：
+             · /api/novel/:id/pdf 直出原文件（新增接口）
+             · pdf.js 逐页画到 canvas，IntersectionObserver 懒渲染（只画可见 ±900px）
+             · 底部进度条复用：chapter 字段存页码、total 存总页数
+               ⇒ 卡片上的「在读/读完」、书架角标、继续阅读全部自动生效，不用另造一套
+           mobi / azw3 没法在浏览器里解，改成一句能看懂的话（附文件路径）。
+           ================================================================== */
+        async function enterPdfMode() {
+            pdfMode = true;
+            document.body.classList.add('pdf-mode');
+            /* 文字向的控件在这一页没有意义：翻页模式 / 目录 */
+            const rb = document.getElementById('btnReadMode');
+            if (rb) rb.style.display = 'none';
+            const catBtn = document.querySelector('.toolbar-right button[onclick="toggleCatalog()"]');
+            if (catBtn) catBtn.style.display = 'none';
+            /* 底栏原来写的是「上一章 / 下一章」，PDF 里其实是翻页 —— 文案要跟着语义走 */
+            const pb = document.getElementById('btnPrevUnit');
+            const nb = document.getElementById('btnNextUnit');
+            if (pb) pb.textContent = '‹ 上一页';
+            if (nb) nb.textContent = '下一页 ›';
+
+            const loading = document.getElementById('loading');
+            loading.style.display = 'flex';
+            loading.innerHTML = '<div class="spinner"></div><div>正在解析 PDF...</div>';
+
+            try {
+                await initPdfDoc();
+                pdfTotal = pdfDoc.numPages;
+                totalChapters = pdfTotal;          /* 让底部进度条 / saveProgress 直接可用 */
+                await buildPdfPages();
+                loading.style.display = 'none';
+                document.getElementById('pdfContent').style.display = 'block';
+
+                const host = document.getElementById('pdfContent');
+                host.addEventListener('scroll', () => {
+                    if (pdfScrollTimer) return;
+                    pdfScrollTimer = setTimeout(() => { pdfScrollTimer = null; pdfSyncCurrent(); }, 100);
+                }, { passive: true });
+
+                /* 恢复上次读到的那一页（后端存的 chapter 就是页码） */
+                const saved = Math.max(0, Math.min(pdfTotal - 1, Number(novelInfo.currentChapter) || 0));
+                pdfPage = saved;
+                currentChapter = saved;
+                pdfUpdateBar();
+                if (saved > 0) setTimeout(() => pdfGoTo(saved), 80);
+                startReadingTimer();
+            } catch (e) {
+                loading.innerHTML = '<div style="max-width:600px;text-align:center;line-height:1.9;">' +
+                    '<div style="font-size:15px;color:#b3261e;margin-bottom:8px;">PDF 打开失败</div>' +
+                    '<div style="font-size:13px;opacity:.75;">' + escapeHtmlText(e && e.message || '未知错误') + '</div>' +
+                    '<div style="font-size:11.5px;opacity:.5;margin-top:12px;word-break:break-all;">' +
+                    escapeHtmlText((novelInfo && novelInfo.filePath) || '') + '</div></div>';
+            }
+        }
+
+        let pdfScrollTimer = null;
+
+        async function initPdfDoc() {
+            const lib = await import('/pdfjs/pdf.mjs');
+            lib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.mjs';
+            /* ★ 与 comic-reader.html 完全一致的内核补丁：
+               Electron33(Chrome130) 缺 ES2025 的 Uint8Array.toHex/fromBase64，
+               pdfjs 6.2 在 worker 里一解析就崩（hashOriginal.toHex is not a function）。
+               取 worker 源码前置 polyfill 再以 Blob 加载。别删，删了 PDF 全打不开。 */
+            try {
+                const _poly = "if(!Uint8Array.prototype.toHex){Uint8Array.prototype.toHex=function(){var s='';for(var i=0;i<this.length;i++)s+=this[i].toString(16).padStart(2,'0');return s;};}\n" +
+                    "if(!Uint8Array.fromHex){Uint8Array.fromHex=function(h){h=String(h);var a=new Uint8Array(h.length/2);for(var i=0;i<a.length;i++)a[i]=parseInt(h.substr(i*2,2),16);return a;};}\n" +
+                    "if(!Uint8Array.prototype.toBase64){Uint8Array.prototype.toBase64=function(){var s='';for(var i=0;i<this.length;i++)s+=String.fromCharCode(this[i]);return btoa(s);};}\n" +
+                    "if(!Uint8Array.fromBase64){Uint8Array.fromBase64=function(s){var bin=atob(String(s));var a=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return a;};}\n";
+                const _wcode = await (await fetch(lib.GlobalWorkerOptions.workerSrc)).text();
+                lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([_poly + _wcode], { type: 'text/javascript' }));
+            } catch (e) { /* 新内核无需补丁也能跑 */ }
+
+            const res = await fetch(`/api/novel/${novelId}/pdf`);
+            if (!res.ok) {
+                let msg = 'HTTP ' + res.status;
+                try { const j = await res.json(); if (j && j.msg) msg = j.msg; } catch (e) { /* 非 JSON */ }
+                throw new Error(msg);
+            }
+            const buf = await res.arrayBuffer();
+            if (!buf || buf.byteLength === 0) throw new Error('PDF 响应体为空（0 字节）');
+            pdfDoc = await lib.getDocument({ data: buf }).promise;
+        }
+
+        async function buildPdfPages() {
+            const host = document.getElementById('pdfContent');
+            host.innerHTML = '';
+            let ratio = 0.707;    /* 默认 A4 竖版，取不到第 1 页再兜底 */
+            try {
+                const p1 = await pdfDoc.getPage(1);
+                const vp = p1.getViewport({ scale: 1 });
+                ratio = vp.width / vp.height;
+            } catch (e) { /* 用默认值 */ }
+
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < pdfTotal; i++) {
+                const d = document.createElement('div');
+                d.className = 'pdf-page';
+                d.dataset.page = String(i);
+                d.style.aspectRatio = String(ratio);
+                d.innerHTML = '<div class="pdf-ph">第 ' + (i + 1) + ' 页</div>';
+                frag.appendChild(d);
+            }
+            host.appendChild(frag);
+
+            if (pdfObs) pdfObs.disconnect();
+            pdfObs = new IntersectionObserver((entries) => {
+                entries.forEach(en => {
+                    if (en.isIntersecting) renderPdfPage(Number(en.target.dataset.page));
+                });
+            }, { root: host, rootMargin: '900px 0px' });
+            host.querySelectorAll('.pdf-page').forEach(el => pdfObs.observe(el));
+        }
+
+        async function renderPdfPage(i) {
+            const host = document.getElementById('pdfContent');
+            const box = host.querySelector('.pdf-page[data-page="' + i + '"]');
+            if (!box || box.dataset.done === '1' || pdfRendering.has(i)) return;
+            pdfRendering.add(i);
+            try {
+                const page = await pdfDoc.getPage(i + 1);
+                const base = page.getViewport({ scale: 1 });
+                const availW = (host.clientWidth || 900) * 0.94;
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const scale = Math.max(0.2, Math.min((Math.min(availW, 1180) / base.width) * dpr, 4));
+                const vp = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(vp.width);
+                canvas.height = Math.round(vp.height);
+                canvas.style.width = '100%';
+                canvas.style.height = 'auto';
+                const ctx = canvas.getContext('2d', { alpha: false });
+                await page.render({ canvasContext: ctx, viewport: vp }).promise;
+                box.innerHTML = '';
+                box.style.aspectRatio = '';
+                box.appendChild(canvas);
+                box.dataset.done = '1';
+            } catch (e) {
+                box.innerHTML = '<div class="pdf-err">第 ' + (i + 1) + ' 页渲染失败：' + escapeHtmlText(e && e.message || '') + '</div>';
+                box.dataset.done = '1';
+            } finally {
+                pdfRendering.delete(i);
+            }
+        }
+
+        function pdfGoTo(i) {
+            const host = document.getElementById('pdfContent');
+            const box = host.querySelector('.pdf-page[data-page="' + i + '"]');
+            if (!box) return;
+            const top = box.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop - 8;
+            host.scrollTop = Math.max(0, top);
+        }
+
+        function pdfStep(dir) {
+            const host = document.getElementById('pdfContent');
+            const box = host.querySelector('.pdf-page[data-page="' + pdfPage + '"]');
+            const h = box ? box.getBoundingClientRect().height + 14 : host.clientHeight;
+            host.scrollTo({ top: host.scrollTop + dir * h, behavior: 'smooth' });
+        }
+
+        function pdfUpdateBar() {
+            const info = document.getElementById('chapterInfo');
+            if (info) info.textContent = (pdfPage + 1) + ' / ' + pdfTotal;
+            const fill = document.getElementById('progressFill');
+            if (fill && pdfTotal > 0) fill.style.width = (((pdfPage + 1) / pdfTotal) * 100) + '%';
+        }
+
+        function pdfSyncCurrent() {
+            const host = document.getElementById('pdfContent');
+            if (!host || !pdfTotal) return;
+            const hostTop = host.getBoundingClientRect().top;
+            const anchor = host.clientHeight * 0.3;
+            let best = pdfPage, bestD = Infinity;
+            const pages = host.querySelectorAll('.pdf-page');
+            for (let k = 0; k < pages.length; k++) {
+                const r = pages[k].getBoundingClientRect();
+                const d = Math.abs((r.top - hostTop) - anchor);
+                if (d < bestD) { bestD = d; best = k; }
+            }
+            if (best !== pdfPage) {
+                pdfPage = best;
+                currentChapter = best;       /* 复用既有进度语义 */
+                totalChapters = pdfTotal;
+                pdfUpdateBar();
+                if (pdfSaveTimer) clearTimeout(pdfSaveTimer);
+                pdfSaveTimer = setTimeout(() => { saveProgress(); }, 1200);
+            }
+        }
+
+        /* ============================================================
+           round76 · 朗读器导航接口
+           currentChapter / pageStarts / currentPage 都是 let 顶层变量，不挂 window ——
+           novel-tts.js 之前读 window.currentChapter 永远 undefined，
+           「自动下一章」实际固定 loadChapter(1)。这里统一暴露只读快照 + 受控操作。
+           ============================================================ */
+        window.NovelNav = {
+            mode: () => readMode,
+            info: () => ({ mode: readMode, chapter: currentChapter, total: totalChapters, page: currentPage, pages: pageStarts.length }),
+            turn: (dir, atEnd) => pageTurn(dir, atEnd),
+            go: (i) => loadChapter(i),
+        };
+    </script>
+    <script src="js/novel-tts.js?v=9"></script>
+</body>
+</html>

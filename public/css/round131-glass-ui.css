@@ -1,0 +1,481 @@
+/* ============================================================
+ * round131-glass-ui.css —— 毛玻璃 UI 层（AI 工作台 + 详情弹窗 + 全局弹窗）
+ * ------------------------------------------------------------
+ * 背景（round131）：
+ *   用户要求「AI 助手背景 30% 毛玻璃 + 整体 UI 进化」「详情弹窗做成类 iOS
+ *   毛玻璃，透明度约 30%，且可在设置里调整」。
+ *
+ * 设计纪律：
+ *   1) 玻璃强度由 CSS 变量控制，唯一入口：
+ *        --cv-glass-alpha   面板底透明度（默认 0.30，设置页可调 0.10~0.85）
+ *        --cv-glass-blur    背景模糊半径（默认 30px）
+ *      JS 只改 html 上的内联变量，样式规则不变 —— 拖动滑块即时生效。
+ *   2) ★ 30% 底的对比度陷阱：文字若直接压在半透明底上，遇到亮海报会低于
+ *      4.5:1。所以采用「三层结构」：
+ *        外层 glass（alpha 可调） → 内容带 scrim（固定 0.42 暖/暗底）
+ *        → 文字。视觉上仍是透的（背景能看见轮廓与色块），但文字层实测可读。
+ *   3) 色一律走皮肤变量：classic=纸（暖白玻璃）/ matinee=夜（暗色玻璃），
+ *      禁止写死 rgba 白或黑作为底 —— round125 踩过纸皮肤 1.05:1 的坑。
+ *   4) 只覆盖不改 DOM；删除本文件 + library.html 里的 <link> 即完全回滚。
+ *   5) 性能：backdrop-filter 只在两个弹窗根节点各一处，不给每个气泡加，
+ *      避免扫描/滚动时整页重绘（round89 perf 层的教训）。
+ * ============================================================ */
+
+/* ---------- 0. 令牌：玻璃参数（唯一可调入口） ---------- */
+html {
+    --cv-glass-alpha: 0.30;            /* 面板底透明度 —— 设置页滑块写入 */
+    --cv-glass-blur: 30px;             /* 背景模糊半径 */
+    --cv-glass-sat: 175%;              /* 饱和度回吐，玻璃才有"厚度" */
+    --cv-glass-scrim: 0.52;            /* 内容层补底（保证文字对比度） */
+
+    /* 纸：暖白玻璃 */
+    --cv-glass-rgb: 252, 249, 243;
+    --cv-glass-edge: rgba(255, 255, 255, 0.62);
+    --cv-glass-edge-2: rgba(160, 140, 110, 0.20);
+    --cv-glass-shadow: 0 28px 70px -18px rgba(60, 48, 32, 0.34),
+                       0 2px 10px rgba(60, 48, 32, 0.08);
+    --cv-glass-spec: linear-gradient(160deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 44%);
+
+    /* 内容补底（scrim）颜色 */
+    --cv-scrim-rgb: 250, 247, 241;
+    --cv-scrim-strong-rgb: 253, 251, 247;
+}
+
+/* 夜：暗色玻璃（matinee 必须同时挂 body.dark，见 round115 皮肤纪律） */
+html[data-v4skin="matinee"],
+body.dark {
+    --cv-glass-rgb: 26, 23, 20;
+    --cv-glass-edge: rgba(255, 255, 255, 0.13);
+    --cv-glass-edge-2: rgba(0, 0, 0, 0.45);
+    --cv-glass-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.78),
+                       0 2px 12px rgba(0, 0, 0, 0.35);
+    --cv-glass-spec: linear-gradient(160deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0) 46%);
+    --cv-scrim-rgb: 24, 21, 19;
+    --cv-scrim-strong-rgb: 30, 27, 24;
+}
+
+/* 降级：不支持 backdrop-filter 时把底料加厚，绝不出现"纯透明看不清字" */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    html {
+        --cv-glass-alpha: 0.92;
+        --cv-scrim: 0.30;
+    }
+}
+
+
+/* ============================================================
+ * 1. AI 工作台（#aiModal）—— 30% 毛玻璃 + 结构进化
+ * ============================================================ */
+
+/* 1.1 遮罩：从"一块灰布"改成"磨砂景深"，让玻璃有东西可以透 */
+#aiModal.modal {
+    background: radial-gradient(120% 90% at 50% 0%,
+                rgba(40, 30, 16, 0.18) 0%,
+                rgba(24, 18, 10, 0.42) 60%,
+                rgba(16, 12, 8, 0.55) 100%) !important;
+    -webkit-backdrop-filter: blur(calc(var(--cv-glass-blur) * 0.4)) saturate(115%) !important;
+    backdrop-filter: blur(calc(var(--cv-glass-blur) * 0.4)) saturate(115%) !important;
+}
+html[data-v4skin="matinee"] #aiModal.modal,
+body.dark #aiModal.modal {
+    background: radial-gradient(120% 90% at 50% 0%,
+                rgba(0, 0, 0, 0.42) 0%,
+                rgba(0, 0, 0, 0.62) 60%,
+                rgba(0, 0, 0, 0.72) 100%) !important;
+}
+
+/* 1.2 主卡片：玻璃本体 */
+#aiModal .modal-content.ai-modal-card {
+    position: relative;
+    isolation: isolate;
+    border-radius: 22px !important;
+    background:
+        var(--cv-glass-spec),
+        rgba(var(--cv-glass-rgb), var(--cv-glass-alpha)) !important;
+    -webkit-backdrop-filter: blur(var(--cv-glass-blur)) saturate(var(--cv-glass-sat)) !important;
+    backdrop-filter: blur(var(--cv-glass-blur)) saturate(var(--cv-glass-sat)) !important;
+    border: 1px solid var(--cv-glass-edge) !important;
+    box-shadow: var(--cv-glass-shadow), inset 0 1px 0 var(--cv-glass-edge) !important;
+    overflow: hidden !important;
+}
+/* 外圈发丝：玻璃边缘的第二道反射，避免"贴纸感" */
+#aiModal .modal-content.ai-modal-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--cv-glass-edge-2);
+    z-index: 9;
+}
+
+/* 1.3 左栏：略深一档（玻璃内的"凹陷区"），不再用纯黑 35% */
+#aiModal .dsn-sidebar {
+    background: rgba(var(--cv-scrim-rgb), calc(var(--cv-glass-scrim) * 0.62)) !important;
+    border-right: 1px solid var(--cv-glass-edge-2) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    backdrop-filter: blur(6px) !important;
+}
+
+/* 1.4 顶栏：粘性玻璃条（滚动消息时内容从它下面穿过） */
+#aiModal .dsn-topbar {
+    background: rgba(var(--cv-scrim-rgb), calc(var(--cv-glass-scrim) * 0.55)) !important;
+    border-bottom: 1px solid var(--cv-glass-edge-2) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
+    backdrop-filter: blur(14px) saturate(140%) !important;
+}
+
+/* 1.5 消息区：透明，让卡片玻璃透出来；气泡自身用"薄玻璃"而不是实心块 */
+#aiModal .dsn-messages {
+    background: transparent !important;
+}
+
+#aiModal .ai-msg .bubble,
+#aiModal .ai-msg.ai .bubble {
+    border-radius: 14px !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.72) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    backdrop-filter: blur(10px) !important;
+    box-shadow: 0 1px 2px rgba(40, 30, 16, 0.06);
+    line-height: 1.72;
+    padding: 12px 15px !important;
+}
+/* AI 侧气泡：左侧一条极细的琥珀引导线，取代整块描边 */
+#aiModal .ai-msg.ai .bubble {
+    border-left: 2px solid color-mix(in srgb, var(--primary, #9A6A15) 42%, transparent) !important;
+}
+/* 用户侧气泡：琥珀染色的玻璃，与 AI 侧形成方向差 */
+#aiModal .ai-msg.user .bubble {
+    background: color-mix(in srgb, var(--primary, #9A6A15) 14%, rgba(var(--cv-scrim-strong-rgb), 0.78)) !important;
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 26%, transparent) !important;
+}
+
+/* 1.6 输入区：悬浮玻璃胶囊 + 发送键收口（原来是实心琥珀大块） */
+#aiModal .dsn-input-shell {
+    background: transparent !important;
+    border-top: 1px solid var(--cv-glass-edge-2) !important;
+    padding: 12px 16px 10px !important;
+}
+#aiModal .dsn-input-box {
+    border-radius: 999px !important;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.80) !important;
+    border: 1px solid var(--cv-glass-edge) !important;
+    box-shadow: 0 8px 24px -14px rgba(40, 30, 16, 0.45),
+                inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+    backdrop-filter: blur(16px) saturate(150%) !important;
+    transition: border-color 160ms var(--mv-ease, cubic-bezier(.16,1,.3,1)),
+                box-shadow 160ms var(--mv-ease, cubic-bezier(.16,1,.3,1));
+}
+#aiModal .dsn-input-box:focus-within {
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 55%, transparent) !important;
+    box-shadow: 0 10px 30px -12px rgba(40, 30, 16, 0.5),
+                0 0 0 3px var(--primary-soft, rgba(154, 106, 21, 0.12)) !important;
+}
+#aiModal .dsn-textarea {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+#aiModal .dsn-send-btn {
+    border-radius: 999px !important;
+    font-weight: 650 !important;
+    letter-spacing: 0.02em;
+}
+
+/* 1.7 顶栏胶囊按钮：从"描边标签"进化成"发丝键"，激活态才染琥珀 */
+#aiModal .dsn-pill-btn {
+    border-radius: 999px !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.55) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(8px) !important;
+    transition: background 150ms var(--mv-ease, cubic-bezier(.16,1,.3,1)),
+                border-color 150ms var(--mv-ease, cubic-bezier(.16,1,.3,1)),
+                color 150ms var(--mv-ease, cubic-bezier(.16,1,.3,1));
+}
+#aiModal .dsn-pill-btn:hover {
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 42%, transparent) !important;
+    background: color-mix(in srgb, var(--primary, #9A6A15) 10%, rgba(var(--cv-scrim-strong-rgb), 0.7)) !important;
+    color: var(--primary, #9A6A15) !important;
+}
+#aiModal .dsn-pill-btn.active {
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 60%, transparent) !important;
+    background: color-mix(in srgb, var(--primary, #9A6A15) 16%, transparent) !important;
+    color: var(--primary, #9A6A15) !important;
+}
+
+/* 1.8 会话行 / 欢迎语 / 步骤链：与玻璃层统一圆角与留白节奏 */
+#aiModal .dsn-session-item { border-radius: 9px !important; }
+#aiModal .dsn-session-item.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary, #9A6A15) 22%, transparent); }
+#aiModal .dsn-popover {
+    border-radius: 14px !important;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.86) !important;
+    -webkit-backdrop-filter: blur(22px) saturate(160%) !important;
+    backdrop-filter: blur(22px) saturate(160%) !important;
+    border: 1px solid var(--cv-glass-edge) !important;
+    box-shadow: var(--cv-glass-shadow) !important;
+}
+#aiModal .ai-agent-steps {
+    border-radius: 12px !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.66) !important;
+}
+#aiModal .ai-approval-box {
+    border-radius: 14px !important;
+    -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+    backdrop-filter: blur(18px) saturate(150%) !important;
+    border: 1px solid color-mix(in srgb, var(--danger, #B23A24) 30%, transparent) !important;
+    background: color-mix(in srgb, var(--danger, #B23A24) 7%, rgba(var(--cv-scrim-strong-rgb), 0.82)) !important;
+}
+
+/* 1.9 入场上浮：玻璃"落定"的物理感（≤320ms，禁弹跳） */
+@keyframes cvGlassIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.985); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+#aiModal.in .modal-content.ai-modal-card {
+    animation: cvGlassIn 300ms var(--mv-ease, cubic-bezier(.16,1,.3,1)) both;
+}
+
+
+/* ============================================================
+ * 2. 详情弹窗（#detailModal）—— 类 iOS 毛玻璃
+ * ============================================================ */
+
+/* 2.1 遮罩加深一档并轻微模糊，弹窗"浮"在内容上而不是贴在墙上 */
+#detailModal.modal {
+    background: radial-gradient(120% 100% at 50% 0%,
+                rgba(30, 22, 12, 0.20) 0%,
+                rgba(18, 13, 8, 0.46) 100%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(120%) !important;
+    backdrop-filter: blur(14px) saturate(120%) !important;
+}
+html[data-v4skin="matinee"] #detailModal.modal,
+body.dark #detailModal.modal {
+    background: radial-gradient(120% 100% at 50% 0%,
+                rgba(0, 0, 0, 0.48) 0%,
+                rgba(0, 0, 0, 0.68) 100%) !important;
+}
+
+/* 2.2 面板玻璃 */
+#detailModal .modal-content.detail-modal {
+    isolation: isolate;
+    border-radius: 20px !important;
+    background:
+        var(--cv-glass-spec),
+        rgba(var(--cv-glass-rgb), var(--cv-glass-alpha)) !important;
+    -webkit-backdrop-filter: blur(var(--cv-glass-blur)) saturate(var(--cv-glass-sat)) !important;
+    backdrop-filter: blur(var(--cv-glass-blur)) saturate(var(--cv-glass-sat)) !important;
+    border: 1px solid var(--cv-glass-edge) !important;
+    box-shadow: var(--cv-glass-shadow), inset 0 1px 0 var(--cv-glass-edge) !important;
+}
+
+/* 2.3 内容补底层：让标题/简介/元数据压在"磨砂内衬"上，而不是直接压海报 */
+#detailModal .detail-body,
+#detailModal .detail-scroll {
+    background: linear-gradient(180deg,
+        rgba(var(--cv-scrim-rgb), calc(var(--cv-glass-scrim) * 0.74)) 0%,
+        rgba(var(--cv-scrim-rgb), calc(var(--cv-glass-scrim) * 0.92)) 40%,
+        rgba(var(--cv-scrim-rgb), calc(var(--cv-glass-scrim) * 1)) 100%);
+}
+
+/* 2.4 元数据小卡（发行日期/厂商/时长/分辨率/体积/来源 = .dm-block）：
+       原来是 --bg-elevated 实色块 + 随机歪斜，在 30% 玻璃上会"跳出画面"。
+       改成半透薄片，保留顶部糖果色条（--dc）与落下的轻微歪斜 —— 那是它的性格。 */
+#detailModal .dm-block {
+    background: rgba(var(--cv-scrim-strong-rgb), 0.70) !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    border-radius: 12px !important;
+    -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+    backdrop-filter: blur(12px) saturate(150%) !important;
+    box-shadow: 0 6px 18px -12px rgba(30, 22, 12, 0.55),
+                inset 0 1px 0 rgba(255, 255, 255, 0.30) !important;
+}
+#detailModal .detail-meta-item {
+    background: rgba(var(--cv-scrim-strong-rgb), 0.58) !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    border-radius: 10px !important;
+}
+#detailModal .detail-actress {
+    background: rgba(var(--cv-scrim-strong-rgb), 0.55) !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    border-radius: 12px !important;
+}
+#detailModal .detail-actress-avatar {
+    box-shadow: 0 0 0 1px var(--cv-glass-edge-2);
+}
+
+/* 2.5 简介/长文本块：再压一层，保证正文 4.5:1 */
+#detailModal .detail-overview,
+#detailModal .detail-section,
+#detailModal .detail-file-row {
+    background: rgba(var(--cv-scrim-strong-rgb), 0.74) !important;
+    border-radius: 12px;
+    border: 1px solid var(--cv-glass-edge-2);
+}
+
+/* 2.6 底部操作条：玻璃内衬 + 发丝分隔，主按钮保持实心（视觉焦点不丢） */
+#detailModal .detail-actions,
+#detailModal .detail-toolbar {
+    background: rgba(var(--cv-scrim-rgb), calc(var(--cv-glass-scrim) * 0.72)) !important;
+    border-top: 1px solid var(--cv-glass-edge-2) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+/* 2.7 关闭键：玻璃圆钮，永远是"可点得到"的（原来贴边容易和滚动条撞） */
+#detailModal .modal-content .close-btn,
+#detailModal .detail-close {
+    border-radius: 999px;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.72);
+    -webkit-backdrop-filter: blur(10px) !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid var(--cv-glass-edge-2);
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 12;
+}
+
+
+/* ============================================================
+ * 3. 其余通用弹窗 —— 统一成同一套玻璃语言（.modal-content 只染底，不动布局）
+ * ============================================================ */
+#uploadPosterModal .modal-content,
+#playlistPickModal .modal-content,
+#shortcutsModal .modal-content,
+#webviewSiteModal .modal-content {
+    border-radius: 16px !important;
+    background:
+        var(--cv-glass-spec),
+        rgba(var(--cv-glass-rgb), calc(var(--cv-glass-alpha) + 0.12)) !important;
+    -webkit-backdrop-filter: blur(calc(var(--cv-glass-blur) * 0.8)) saturate(var(--cv-glass-sat)) !important;
+    backdrop-filter: blur(calc(var(--cv-glass-blur) * 0.8)) saturate(var(--cv-glass-sat)) !important;
+    border: 1px solid var(--cv-glass-edge) !important;
+    box-shadow: var(--cv-glass-shadow) !important;
+}
+
+
+/* ============================================================
+ * 4. 无障碍 / 降级
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+    #aiModal.in .modal-content.ai-modal-card { animation: none; }
+}
+@media (forced-colors: active) {
+    html {
+        --cv-glass-alpha: 0.96;
+        --cv-glass-blur: 0px;
+    }
+}
+/* 软件渲染模式（GPU 崩溃后降级）：毛玻璃整层退化为实底，保帧率 */
+html[data-software-render="1"] {
+    --cv-glass-alpha: 0.94;
+    --cv-glass-blur: 6px;
+}
+/* 设置→外观的「低性能模式」（body.glass-off，round38 起的老开关）：
+   一并压制本轮新增的玻璃，避免两套开关语义打架 */
+body.glass-off {
+    --cv-glass-alpha: 0.95;
+    --cv-glass-blur: 2px;
+    --cv-glass-sat: 100%;
+}
+
+
+/* ============================================================
+ * 5. round131b · 对话气泡宽度与节奏收口
+ * ------------------------------------------------------------
+ * 实测问题：一条长回复的气泡会铺满消息区 90% 宽，整块奶油色压在上面，
+ * 看起来像"一页文档"而不是"一段对话"。这里把气泡宽度收口，靠留白制造
+ * 对话的呼吸感；同时给用户气泡一个右侧对齐的锚点。
+ * ============================================================ */
+#aiModal .ai-msg {
+    max-width: 100%;
+}
+#aiModal .ai-msg .bubble {
+    max-width: min(76ch, 84%);
+}
+#aiModal .ai-msg.user {
+    justify-content: flex-end;
+}
+#aiModal .ai-msg.user .bubble {
+    max-width: min(62ch, 72%);
+}
+/* 消息之间给足间距：玻璃面板里靠空白分层，比再加边框更"高级" */
+#aiModal .dsn-messages > .ai-msg + .ai-msg {
+    margin-top: 12px;
+}
+
+/* ============================================================
+ * 6. round131c · 亮度与细节：让 30% 玻璃不发灰
+ * ------------------------------------------------------------
+ * 实测问题：纸皮肤的玻璃底是 252,249,243 @0.30，压在一片偏暗的模糊内容上，
+ * 混合结果会变成"中灰抹布"。iOS 的观感来自**高亮磨砂**，不是灰玻璃。
+ * 解法：在色层之上再加一层极淡的白霜（dark 皮肤改为极淡的顶光），
+ * 背景照样透，但整体亮度提上来。注意这层只加在 gradient 里，
+ * backgroundColor 仍是 var(--cv-glass-alpha) —— 设置里的"30%"语义不变。
+ * ============================================================ */
+#aiModal .modal-content.ai-modal-card,
+#detailModal .modal-content.detail-modal,
+#uploadPosterModal .modal-content,
+#playlistPickModal .modal-content,
+#shortcutsModal .modal-content,
+#webviewSiteModal .modal-content {
+    background:
+        var(--cv-glass-spec),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.03) 62%),
+        rgba(var(--cv-glass-rgb), var(--cv-glass-alpha)) !important;
+}
+html[data-v4skin="matinee"] #aiModal .modal-content.ai-modal-card,
+html[data-v4skin="matinee"] #detailModal .modal-content.detail-modal,
+body.dark #aiModal .modal-content.ai-modal-card,
+body.dark #detailModal .modal-content.detail-modal {
+    background:
+        var(--cv-glass-spec),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(0, 0, 0, 0.10) 64%),
+        rgba(var(--cv-glass-rgb), var(--cv-glass-alpha)) !important;
+}
+
+/* ---- AI 技能指令胶囊：从"小按钮"变成玻璃薄片 ---- */
+#aiModal .ai-skill-chip {
+    border-radius: 999px !important;
+    background: rgba(var(--cv-scrim-strong-rgb), 0.62) !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(150%) !important;
+    backdrop-filter: blur(10px) saturate(150%) !important;
+    transition: transform 140ms var(--mv-ease, cubic-bezier(.16,1,.3,1)),
+                border-color 140ms var(--mv-ease, cubic-bezier(.16,1,.3,1)),
+                background 140ms var(--mv-ease, cubic-bezier(.16,1,.3,1));
+}
+#aiModal .ai-skill-chip:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 48%, transparent) !important;
+    background: color-mix(in srgb, var(--primary, #9A6A15) 10%, rgba(var(--cv-scrim-strong-rgb), 0.7)) !important;
+}
+#aiModal .ai-skill-header,
+#aiModal .ai-skill-hint {
+    color: var(--text-muted, #6B6157);
+}
+
+/* ---- 详情：番号 / 缩放提示 做成同一套玻璃胶囊（原来是实色小块） ---- */
+#detailModal .detail-avid,
+#detailModal .poster-zoom-hint {
+    background: rgba(var(--cv-scrim-strong-rgb), 0.66) !important;
+    border: 1px solid var(--cv-glass-edge-2) !important;
+    border-radius: 999px !important;
+    -webkit-backdrop-filter: blur(8px) saturate(150%) !important;
+    backdrop-filter: blur(8px) saturate(150%) !important;
+    padding: 3px 10px;
+    font-size: 11.5px;
+}
+
+/* ---- 海报本体：玻璃面板里的"实体锚点"，给一层内阴影把它压住 ---- */
+#detailModal .detail-poster {
+    border-radius: 10px;
+    box-shadow: 0 10px 26px -14px rgba(30, 22, 12, 0.55),
+                0 0 0 1px var(--cv-glass-edge-2);
+}

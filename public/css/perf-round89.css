@@ -1,0 +1,58 @@
+/* ============================================================
+ * round89 性能防御层 v2（最后加载，全部可回滚：删掉本文件即恢复）
+ * 诊断：全站 100+ 处 backdrop-filter（毛玻璃），滚动/视图切换/悬停时
+ * 背后内容一变就整块重算模糊；aurora/ambient 的动态背景更让它变成
+ * 每帧重算（GPU 灾难），叠加 .btn 无限渐变动画主线程逐帧 paint
+ * → 页面切换/按钮点击明显卡顿。
+ * 策略：毛玻璃全皮肤降级为半透明纯色（视觉近似），仅「静止大面板」
+ * 白名单恢复；动态背景去重模糊；装饰性无限动画停用。
+ * ============================================================ */
+
+/* 1) 全皮肤：毛玻璃降级（去模糊、留透明度——视觉近似、合成开销大减） */
+*, *::before, *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* 2) 白名单恢复：静止小面积面板（设置内嵌 TTS 卡 / 毛玻璃聊天）。
+ * round90 修正：全屏弹窗（.modal / .detail-modal / #detailModal / .quarkDetailModal）
+ * 曾在本白名单里 —— 它们的 blur 铺满整个视口，背后任何一帧重绘都要全屏重算模糊；
+ * 软件渲染降级（GPU 崩溃自动降级后）下实测 144ms/帧 ≈ 7FPS，「点海报弹窗几乎无法操作」。
+ * 弹窗遮罩本身已有 rgba 暗色底，去掉 blur 视觉差异极小、代价归零。 */
+.modal,
+.modal *,
+.detail-modal,
+#detailModal,
+.quarkDetailModal {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+#ttsPanel,
+.glass-chat {
+    backdrop-filter: blur(14px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
+}
+
+/* 2b) 软件渲染兜底（main.js 降级时给 <html> 注入 data-software-render="1"）：
+ *     软渲染下任何 blur 都是每帧全屏软光栅，一个不留 */
+html[data-software-render="1"] *,
+html[data-software-render="1"] *::before,
+html[data-software-render="1"] *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* 3) aurora 全屏极光层：radial-gradient 本身就是柔边渐变（transparent 收尾），
+      90px 重模糊视觉增益≈0、代价巨大 —— 去 filter，保留 drift 位移动画（合成器友好） */
+html[data-v4skin="aurora"] body::before,
+html[data-v4skin="aurora"] body::after {
+    filter: none !important;
+}
+
+/* 4) aurora 主按钮无限渐变动画（background-position 动画 = 主线程逐帧重绘）→ 静态渐变 */
+html[data-v4skin="aurora"] .btn,
+html[data-v4skin="aurora"] .btn-primary {
+    animation: none !important;
+}
+
+/* 5) ambient 的 gallery Kenburns 是 transform 动画（合成器友好），保留不动 */

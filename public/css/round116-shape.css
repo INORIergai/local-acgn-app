@@ -1,0 +1,307 @@
+/* ============================================================
+   round116 · shape.css —— 去容器 / 圆角收口 / 洋红转墨 / 工具区压平（P12）
+   ------------------------------------------------------------
+   为什么单开一个文件：这一轮全是「减法」——删边框、删阴影、删色相、
+   删按钮。回滚 = 删 library.html 里本文件的那一行 link（+ 一个 script）。
+
+   改动前实测（1600×950 小说库，2628 卡）：
+     · 可见元素 32,168 个里 **6,922 个带边框、6,105 个带阴影**
+       —— 单张卡就贡献 2 边框 + 2 阴影，2628 卡 = 全站 76%
+     · 圆角 **14 种**同时存在（0 / 50% / 10 / 999 / 12 / 9 / 7 / 4-4-2-2 / 14 / 8 / 2 / 20…）
+     · 卡片边框色 = 纸上一道 rgb(220,213,199) 的 1px 方框，等于给每本书
+       套了个「卡片容器」；而设计母题是「发丝线 + 留白」，静态内容不该有框
+
+   设计依据（round114 方案的三条母题）：
+     1. 纸与墨 —— 全站一个强调金，外加一个砖红只给「破坏性操作」
+     2. 发丝线 —— 层级靠留白与明度，静态内容不用阴影；阴影只留给浮层
+     3. 编号与时间码 —— 数字用等宽，标题用衬线
+   ============================================================ */
+
+/* ------------------------------------------------------------------
+   0. 两个新色：墨金（强调）与砖红（危险）
+   ------------------------------------------------------------------
+   原来用的是桃红 #ff008c：在纸底 #FAF8F1 上对比度只有 **3.51:1**，不达 AA；
+   在夜里 5.04:1 但色相与暖琥珀、纸墨完全不在一个家族里。
+   换成 #8A5A12（纸上 5.56:1）/ #A33A2A（纸上 6.18:1），
+   夜皮肤用 #D99A43（7.75:1）/ #C4634F（4.70:1）。 */
+/* ★ 必须写 `:root`（或 `html:root`）——原来这套桃红是 `polish.css` 在 `:root` 上定义的，
+   `:root` 是伪类（权重 0,1,0），用 `html`（0,0,1）压不过它，改了等于没改。
+   我第一次就是这么写错的：整条「开始阅读」按钮在截图里依旧是荧光粉。 */
+html:root {
+    --ink-accent: var(--skin-accent, #8A5A12);
+    --ink-danger: #A33A2A;
+    --ink-rule: color-mix(in srgb, var(--text, #26211A) 14%, transparent);
+    /* 主操作 = 墨块。这是全站唯一的"实心大块"，
+       和书架里那个「全部 4095」黑色胶囊同一套语言。 */
+    --ink-solid: #26211A;
+
+    /* ★ 把两套遗留色板里的桃红直接改掉 —— 这是洋红的**源头**。
+       `--pl-pink` 被 `.detail-primary-actions .btn-primary`（详情主按钮
+       「开始阅读」）直接拿去做背景，只改具体选择器会漏掉它。
+       改在这里 = 一处收口，所有下游用法一起转墨。 */
+    --pl-pink: var(--ink-solid);
+    --pl-pink-deep: #3A322A;
+    --av-pink: var(--ink-solid);
+    --av-pink-deep: #3A322A;
+}
+html[data-v4skin="matinee"] {
+    --ink-accent: #D99A43;
+    --ink-danger: #C4634F;
+    --ink-solid: #F1E8D8;
+}
+
+/* ------------------------------------------------------------------
+   1. 卡片去容器 —— 本轮最大的一刀
+   ------------------------------------------------------------------
+   去掉 round73 给卡片加的那一层「1px 边框 + 1px 投影」。
+   去掉之后，每本书只剩封面和它下面的两行字，靠 18px 的网格间距与
+   封面本身的边线分界 —— 这才是「纸页」而不是「卡片组件」。
+
+   ⚠️ 选择器必须与 round73 的完全同链（它是 5 个类，靠 :is() 展开），
+      这里加 `html body` 把权重抬到 (0,5,2)，否则压不过。 */
+html body .av-view.av-workspace .av-main :is(.av-board, .av-slider, .av-stack-top) > .av-card {
+    border-width: 0;
+    box-shadow: none;
+}
+/* 未读小圆点：原来带 0 1px 3px 的投影（2628 个），换成纯发丝环 */
+html body .av-card.has-art .avp-flag {
+    box-shadow: none;
+}
+/* 悬停仍要有反馈，但用一层薄影（--e-1），不再 30×54px 的大扩散 */
+html body .av-view.av-workspace .av-main :is(.av-board, .av-slider, .av-stack-top) > .av-card:hover {
+    box-shadow: var(--e-1, 0 8px 24px -14px rgba(20, 17, 14, .30));
+}
+/* 摞卡的内层同样去掉容器感 */
+html body .av-stack .av-stack-under {
+    box-shadow: none;
+}
+
+/* ------------------------------------------------------------------
+   2. 圆角收口：14 种 → 5 种（0 / 6 / 10 / 999 / 50%）
+   ------------------------------------------------------------------
+   只改「实测确实渲染出来的那 14 种」的归属元素，不做全局替换 ——
+   全局替换会打到没测到的浮层上，那是我看不见的回归。 */
+/* ⚠️ 这里全部用 !important，原因是：`.av-stack-under` 的 12px 是
+   series-ui.js 运行时注入的 `<style id="seriesUiCss">` 写的（`.av-stack .av-stack-under`
+   = 两个类），而 `<style>` 被追加在 head 末尾 ⇒ 光靠 `html body .av-stack-under`
+   （1 个类）根本压不住 —— 元素选择器不算进 class 位。
+   其余几个（sb-fold / toggle-btn / avs-card / notification-badge）同理，
+   由更具体的组件规则或内联注入设置。形状令牌属于"统一口径"，用 !important 合理。 */
+html body .av-stack .av-stack-under { border-radius: var(--r-2, 10px) !important; }   /* 12 → 10 */
+html body .nvx-tip { border-radius: var(--r-1, 6px) !important; }                     /* 9  → 6  */
+html body .sb-fold { border-radius: var(--r-1, 6px) !important; }                     /* 7  → 6  */
+html body .notification-badge,
+html body .sb-collapse-btn,
+html body .avt-row.cur,
+html body .avt-n { border-radius: var(--r-1, 6px) !important; }                       /* 8  → 6  */
+html body .toggle-btn,
+html body aside.av-tree,
+html body .avs-card { border-radius: var(--r-2, 10px) !important; }                   /* 14 → 10 */
+html body .task-cap-track,
+html body .task-cap-fill { border-radius: var(--r-pill, 999px) !important; }          /* 2  → 胶囊 */
+html body .dsn-act-btn { border-radius: var(--r-1, 6px) !important; }                 /* 4  → 6  */
+/* 树形库整块画布是全出血的，四角不需要圆角（原来只圆了上面两角，多出两种"复合圆角"） */
+html body .av-view.av-workspace { border-radius: 0 !important; }
+html body .modal-content.ai-modal-card { border-radius: var(--r-2, 10px) !important; }
+
+/* 阅读统计的柱子：原来是 `4px 4px 2px 2px` + 橙粉渐变（round13.css:656）
+   —— 既是第 14 种圆角，又是在夜皮肤下不换色的硬编码。改成平色墨金 + 单一圆角。 */
+html body .avs-col i {
+    border-radius: var(--r-1, 6px);
+    background: var(--ink-accent);
+}
+
+/* ------------------------------------------------------------------
+   3. 洋红退场：所有 #ff008c 家族的用法逐个换掉
+   ------------------------------------------------------------------
+   不是全局替换颜色值，而是逐个「用途」重写 —— 因为每处该换成什么不一样：
+     徽标 → 实心金；进度条 → 平色金；聚焦环 → 墨；危险 → 砖红。 */
+html body .movie-badge-new {
+    background: var(--ink-accent);
+    color: #FFFCF4;
+}
+html body .av-hero:hover h2 {
+    /* 原来是一条 4 段彩虹渐变（金→桃红→紫→青），这是最典型的「AI 生成感」。
+       母题 1 只允许一个强调色，所以改成单色墨金的轻微上移。 */
+    background: none;
+    color: var(--ink-accent);
+}
+html body .hr-hotbar i {
+    background: var(--ink-accent);
+}
+html body .rw-sel {
+    background: var(--ink-accent);
+}
+html body .nr-card-dot {
+    background: var(--ink-accent);
+}
+html body .av-card.wide:focus-visible {
+    outline: 2px solid var(--ink-accent);
+    outline-offset: 3px;
+}
+html body .player-progress-fill {
+    background: var(--ink-accent) !important;
+}
+/* polish.css:1199/1495 的 hover 会把边框和文字刷成桃红 */
+html body .nr-mini-btn:hover,
+html body .nr-act.ghost.danger:hover {
+    border-color: var(--ink-danger);
+    color: var(--ink-danger);
+}
+
+/* ------------------------------------------------------------------
+   4. 详情「工具」区：48px 发光磁贴 → 一行安静的次级按钮
+   ------------------------------------------------------------------
+   原来是 7 列 × 2 行的 48×48 方块，每块带边框、投影，
+   悬停还有 `0 10px 26px rgba(245,158,11,.45)` 的橙色光晕。
+   14 个方块把详情页压成一片按钮墙，而它们其实都是低频操作。
+
+   改成：图标 17 + 文字 12.5 的横向按钮，高度 32，无阴影，
+   只在 hover 时给一条发丝边和一个极浅的底。
+   （哪些按钮显示、哪些收进「更多」由 round116-detail.js 决定） */
+html body .detail-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    border-top: 1px solid var(--ink-rule) !important;
+    padding-top: var(--s-3, 12px) !important;
+    margin-top: var(--s-3, 12px) !important;
+}
+html body .detail-actions .dbtn {
+    width: auto !important;
+    height: 34px !important;
+    min-width: 0 !important;
+    flex-direction: row !important;          /* 图标与文字并排，不再上下堆 */
+    gap: 6px !important;
+    padding: 0 10px !important;
+    border-radius: var(--r-1, 6px) !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--text-muted) !important;
+    transition: color var(--mv2-d2, .2s) var(--mv2-snap, ease),
+                border-color var(--mv2-d2, .2s) var(--mv2-snap, ease),
+                background-color var(--mv2-d2, .2s) var(--mv2-snap, ease) !important;
+}
+html body .detail-actions .dbtn-label {
+    font-size: var(--t-caption, 12.5px) !important;
+    line-height: 1 !important;
+    color: inherit !important;
+}
+html body .detail-actions .dbtn:hover {
+    transform: none !important;               /* 去掉 1.14 倍弹跳 */
+    border-color: var(--ink-rule) !important;
+    background: color-mix(in srgb, var(--text, #26211A) 4%, transparent) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+}
+html body .detail-actions .dbtn:active { transform: translateY(1px) !important; }
+/* 破坏性操作：只把文字与图标染成砖红，不再靠"粉碎"动画 */
+html body .detail-actions .dbtn.danger { color: var(--ink-danger) !important; }
+html body .detail-actions .dbtn.danger:hover {
+    border-color: color-mix(in srgb, var(--ink-danger) 40%, transparent) !important;
+    background: color-mix(in srgb, var(--ink-danger) 7%, transparent) !important;
+}
+/* 折叠：默认只留 4 个 + 「更多」 */
+html body .detail-actions .dbtn.is-extra { display: none !important; }
+html body .detail-actions.is-open .dbtn.is-extra { display: inline-flex !important; }
+/* 「更多」自己也是个 dbtn，但永远可见 */
+html body .detail-actions .dbtn-more .dbtn-label { color: inherit !important; }
+html body .detail-actions .dbtn-more .more-glyph {
+    font-family: var(--font-num, monospace);
+    font-size: 13px;
+    line-height: 1;
+    letter-spacing: .06em;
+}
+
+/* ------------------------------------------------------------------
+   3.5 AI 助手弹窗里的四个"孤立档位"
+   ------------------------------------------------------------------
+   它们的圆角是 `#aiModal` 下的 id 级规则给的（12 / 14 / 8 / 7 / 20-0-0-20），
+   选择器必须把 `#aiModal` 写进去才压得住 —— 又一次「ID 权重墙」。
+   */
+/* AI 弹窗的卡片圆角是 motion-v2.css 用 `html[data-ai-mode="drawer"] #aiModal …`（1 id + 3 类）
+   定的 20px，必须把 data-ai-mode 也写进选择器才能压过它。 */
+html[data-ai-mode="drawer"] body #aiModal .modal-content.ai-modal-card,
+html:not([data-ai-mode="modal"]) body #aiModal .modal-content.ai-modal-card,
+html[data-ai-mode="modal"] body #aiModal .modal-content.ai-modal-card {
+    border-radius: var(--r-2, 10px) !important;
+}
+html body #aiModal .dsn-new-btn { border-radius: var(--r-1, 6px) !important; }
+html body #aiModal .dsn-input-box { border-radius: var(--r-2, 10px) !important; }
+html body .avt-files-btn { border-radius: var(--r-1, 6px) !important; }
+html body #aiModal .home-chat-mic-btn { border-radius: var(--r-pill, 999px) !important; }
+
+/* ------------------------------------------------------------------
+   3.6 详情抽屉自己的三个档位（18 / 12 / 8）
+   ------------------------------------------------------------------
+   抽屉是用户最常看的界面，它原来有一整套自己的圆角：面板 18px、
+   海报 12px、路径条 8px。统一到令牌后与卡片同一套尺度。 */
+html body #detailModal .modal-content.detail-modal { border-radius: var(--r-2, 10px) !important; }
+html body #detailModal .detail-poster { border-radius: var(--r-2, 10px) !important; }
+html body #detailModal .detail-path { border-radius: var(--r-1, 6px) !important; }
+
+/* ------------------------------------------------------------------
+   [已回退] 5. 图标静息态去色 —— 用户否决，2026-10-22 23:15 移除
+   ------------------------------------------------------------------
+   round116 曾把侧栏 25 个图标和工具行图标做成「静息灰度 + 悬停回彩色」，
+   思路来自 round114 的「静息态单色矢量」提案。实测下来用户不接受：
+   图标是他们自己做的 96×96 彩色 webm 动效资产，去色等于把设计的辨识度
+   和"这一屏在放什么"的直觉一起抹掉了。
+
+   结论：**图标保持原色，任何状态下都不做 filter。**
+   下面这段只留记录，不再生效 —— 以后别再拿"降低噪音"为理由给图标去色。
+   ------------------------------------------------------------------ */
+
+html body .detail-actions .dbtn .nv-ic,
+html body .detail-actions .dbtn video,
+html body .detail-actions .dbtn img {
+    width: 24px !important;
+    height: 24px !important;
+    filter: none !important;
+}
+
+/* ------------------------------------------------------------------
+   6. 两处「看不太清」的文字/控件（实测出来的，不是凭感觉）
+   ------------------------------------------------------------------
+   · 卡片元信息（第 ? 卷 / 0.7 MB）用的是 --text-muted #7C7466，
+     在纸底 #FAF8F1 上只有 **4.35:1** —— 差一点点没到 AA 的 4.5。
+     这不是"审美偏好"，是硬指标；换成 #6B6157（5.69:1），夜里 #A2937E（6.28:1）。
+   · 详情里的空星标 #C4BBA8 只有 **1.79:1**。星标是**可点控件**，
+     按 WCAG 非文本对比度要求至少要 3:1，否则等于看不见点了也没反馈。
+     换成 #8E8169（3.60:1），夜里 #7C705F（3.89:1）。 */
+html:root {
+    --ink-muted: #6B6157;
+    --ink-star: #8E8169;
+}
+html[data-v4skin="matinee"] {
+    --ink-muted: #A2937E;
+    --ink-star: #7C705F;
+}
+html body #movieGrid .av-sub,
+html body #movieGrid .av-sub b,
+html body #movieGrid .av-sub span {
+    color: var(--ink-muted) !important;
+}
+html body #detailModal .stars .star {
+    color: var(--ink-star) !important;
+}
+html body #detailModal .detail-path {
+    color: var(--ink-muted) !important;
+}
+
+/* ------------------------------------------------------------------
+   7. 顶栏搜索框统一到 36（P13 遗留项，2026-10-23）
+   ------------------------------------------------------------------
+   round115 把顶栏控件收到 4 档后，搜索框还留着 40px（`round42.css` 给的
+   `.search-box #searchInput { height: 40px }` 与同组 select），比旁边的按钮高一头。
+   这里只动这一处，并顺手把它的 12px 圆角收到 --r-1，免得圆角档位又长回去。 */
+html body .search-box #searchInput,
+html body .search-box .search-sort-select {
+    height: var(--h-md, 36px) !important;
+}
+html body .search-box {
+    border-radius: var(--r-1, 6px) !important;
+}

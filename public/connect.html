@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>移动端连接 · CinemaVault</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #08090C; color: #F9FAFB;
+    font-family: "Microsoft YaHei", system-ui, sans-serif; padding: 32px 16px;
+  }
+  .card {
+    width: 100%; max-width: 420px; text-align: center;
+    background: #141720; border: 1px solid rgba(255,255,255,.08);
+    border-radius: 20px; padding: 36px 28px;
+  }
+  .logo { width: 54px; height: 54px; border-radius: 50%; border: 3px solid #E5A93C;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 24px; }
+  h1 { font-size: 20px; margin: 14px 0 6px; }
+  .sub { font-size: 13px; color: #94A3B8; margin-bottom: 22px; }
+  .qr { width: 260px; height: 260px; border-radius: 14px; background: #fff; padding: 10px;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+  .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
+  .tip { font-size: 12px; color: #94A3B8; margin-top: 18px; line-height: 1.8; }
+  .addr { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .addr span {
+    font-family: Consolas, monospace; font-size: 13px; color: #E5A93C;
+    background: #08090C; border: 1px solid rgba(255,255,255,.08);
+    border-radius: 8px; padding: 7px 10px; cursor: pointer;
+  }
+  .addr span:hover { border-color: #E5A93C; }
+  .ok { color: #E5A93C !important; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🎬</div>
+  <h1>CinemaVault 移动端连接</h1>
+  <p class="sub">用 午夜场 App 里的「扫码连接」扫下方二维码</p>
+  <div class="qr"><img id="qr" alt="连接二维码"></div>
+  <p class="tip">手机与电脑需在同一网络（或手机连电脑热点）<br>点击任一地址可复制 · 若二维码对应地址不通，换一个重新生成</p>
+  <div class="addr" id="addr"></div>
+</div>
+<script>
+(async () => {
+  const qr = document.getElementById('qr');
+  const addr = document.getElementById('addr');
+  try {
+    const r = await fetch('/api/connect/info');
+    const j = await r.json();
+    const list = (j.data && j.data.addresses) || [];
+    if (!list.length) { addr.textContent = '未检测到局域网地址'; return; }
+    qr.src = '/api/connect/qr?text=' + encodeURIComponent(list[0]);
+    list.forEach(u => {
+      const s = document.createElement('span');
+      s.textContent = u;
+      s.onclick = async () => {
+        qr.src = '/api/connect/qr?text=' + encodeURIComponent(u);
+        try { await navigator.clipboard.writeText(u); s.classList.add('ok');
+          setTimeout(() => s.classList.remove('ok'), 900); } catch (e) {}
+      };
+      addr.appendChild(s);
+    });
+  } catch (e) {
+    addr.textContent = '加载失败：' + e.message;
+  }
+})();
+</script>
+</body>
+</html>

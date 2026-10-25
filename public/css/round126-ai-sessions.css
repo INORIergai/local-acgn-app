@@ -1,0 +1,355 @@
+/* ============================================================
+ * round126-ai-sessions.css —— AI 工作台会话侧栏重设计
+ * ------------------------------------------------------------
+ * 背景（r126）：
+ *   1) 行为修复（app.js）：删除按钮此前没有函数体、重命名用的
+ *      prompt() 在 Electron 被禁用 —— 均改为行内交互；
+ *   2) 视觉重写：旧 DSN 侧栏硬编码金色/rgba 白，与主题令牌脱节，
+ *      emoji 图标廉价。本层全部走主题变量 + MidnightIcons。
+ * 纪律：色走皮肤变量（classic / matinee 双兼容）；尺度走 tokens-v5；
+ *      动效只用统一曲线 --mv-ease，时长 ≤320ms，禁弹跳；
+ *      prefers-reduced-motion 下降级为静态。
+ * 纯覆盖层：删除本文件 + library.html 里的 <link> 即可整体回滚。
+ * ============================================================ */
+
+/* ---------- 左栏骨架：让卡片底透出来，只靠发丝线分层 ---------- */
+#aiModal .dsn-sidebar {
+    border-right: 1px solid var(--border, #DCD5C7) !important;
+}
+#aiModal .dsn-sb-head {
+    padding: 14px 12px 12px;
+}
+#aiModal .dsn-sb-foot {
+    padding: 10px 12px;
+    gap: 8px;
+    font-size: 11.5px;
+}
+
+/* ---------- 新建对话：左栏唯一主张，琥珀描边幽灵按钮 ---------- */
+#aiModal .dsn-new-btn {
+    height: 36px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 6px !important;
+    background: var(--primary-soft, rgba(154, 106, 21, 0.12)) !important;
+    border: 1px solid color-mix(in srgb, var(--primary, #9A6A15) 45%, transparent) !important;
+    color: var(--primary, #9A6A15) !important;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: background 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                border-color 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                color 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+#aiModal .dsn-new-btn:hover {
+    background: color-mix(in srgb, var(--primary, #9A6A15) 18%, transparent) !important;
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 70%, transparent) !important;
+    color: var(--primary, #9A6A15) !important;
+}
+#aiModal .dsn-new-btn:active { transform: translateY(1px); }
+#aiModal .dsn-new-btn svg { flex: 0 0 auto; }
+
+/* ---------- 会话列表：行 + 双行文本 + 悬停浮现操作 ---------- */
+#aiModal .dsn-session-list {
+    padding: 8px;
+    gap: 2px;
+}
+#aiModal .dsn-session-item {
+    --_rowbg: transparent;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 8px 14px;
+    border-radius: 6px;
+    color: var(--text-muted, #7C7466);
+    cursor: pointer;
+    transition: background 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                color 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1));
+    animation: dsnRowIn 320ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
+    animation-delay: calc(var(--row-i, 0) * 40ms);
+}
+#aiModal .dsn-session-item:hover {
+    --_rowbg: var(--card-bg-hover, #FFFFFF);
+    background: var(--_rowbg);
+    color: var(--text, #26211A) !important;
+}
+#aiModal .dsn-session-item.active {
+    --_rowbg: var(--primary-soft, rgba(154, 106, 21, 0.12));
+    background: var(--_rowbg) !important;
+    color: var(--primary, #9A6A15) !important;
+}
+#aiModal .dsn-session-item.active::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--primary, #9A6A15);
+}
+/* 删除武装态：整行转危险色，替代原生 confirm 弹窗 */
+#aiModal .dsn-session-item.confirming {
+    background: var(--danger-soft, rgba(178, 58, 36, 0.1)) !important;
+    color: var(--danger, #B23A24) !important;
+}
+#aiModal .dsn-session-item.editing { cursor: text; }
+
+@keyframes dsnRowIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    #aiModal .dsn-session-item { animation: none; }
+    #aiModal .dsn-session-actions,
+    #aiModal .dsn-act-btn { transition: none; }
+}
+
+/* 行内图标 + 双行文本 */
+#aiModal .dsn-si-ic {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: inherit;
+    opacity: 0.7;
+}
+#aiModal .dsn-si-ic svg { display: block; }
+#aiModal .dsn-session-item.active .dsn-si-ic { opacity: 1; }
+#aiModal .dsn-si-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+#aiModal .dsn-session-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#aiModal .dsn-si-meta {
+    font-size: 11.5px;
+    line-height: 1.3;
+    color: var(--text-muted, #7C7466);
+    opacity: 0.85;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#aiModal .dsn-session-item.active .dsn-si-meta { color: inherit; opacity: 0.72; }
+
+/* 操作区：悬停浮现（不再用 display 硬切，可过渡），左侧渐变遮罩压住标题尾部 */
+#aiModal .dsn-session-actions {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(3px, -50%);
+    pointer-events: none;
+    transition: opacity 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                transform 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                visibility 0s linear 140ms;
+}
+#aiModal .dsn-session-actions::before {
+    content: "";
+    position: absolute;
+    inset: -2px -4px -2px -20px;
+    background: linear-gradient(90deg, transparent, var(--_rowbg, transparent) 18px);
+    z-index: -1;
+}
+#aiModal .dsn-session-item:hover .dsn-session-actions,
+#aiModal .dsn-session-item.confirming .dsn-session-actions {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(0, -50%);
+    pointer-events: auto;
+    transition-delay: 0s;
+}
+#aiModal .dsn-session-item.editing .dsn-session-actions {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 图标操作按钮：24px 方形热区，语义色分工（重命名/归档=琥珀，删除=红） */
+#aiModal .dsn-act-set { display: inline-flex; align-items: center; gap: 2px; }
+#aiModal .dsn-act-confirm { display: none; }
+#aiModal .dsn-session-item.confirming .dsn-act-normal { display: none; }
+#aiModal .dsn-session-item.confirming .dsn-act-confirm { display: inline-flex; }
+#aiModal .dsn-session-actions .dsn-act-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px !important;
+    background: transparent;
+    color: var(--text-muted, #7C7466) !important;
+    cursor: pointer;
+    transition: background 90ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                color 90ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+#aiModal .dsn-session-actions .dsn-act-btn svg { display: block; }
+#aiModal .dsn-session-actions .dsn-act-btn:hover {
+    background: var(--primary-soft, rgba(154, 106, 21, 0.12));
+    color: var(--primary, #9A6A15) !important;
+}
+#aiModal .dsn-session-actions .dsn-act-btn.dsn-del-btn:hover {
+    background: var(--danger-soft, rgba(178, 58, 36, 0.1));
+    color: var(--danger, #B23A24) !important;
+}
+#aiModal .dsn-session-actions .dsn-act-btn.dsn-del-yes {
+    background: var(--danger-soft, rgba(178, 58, 36, 0.1));
+    color: var(--danger, #B23A24) !important;
+}
+#aiModal .dsn-del-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--danger, #B23A24);
+    padding: 0 5px 0 8px;
+    white-space: nowrap;
+}
+
+/* 行内重命名输入框 */
+#aiModal .dsn-rename-input {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    font-size: 12.5px;
+    font-family: inherit;
+    color: var(--text, #26211A);
+    background: var(--card-bg, #FAF8F1);
+    border: 1px solid var(--primary, #9A6A15);
+    border-radius: 6px;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--primary-soft, rgba(154, 106, 21, 0.12));
+}
+
+/* 空状态：成组的构图，不再是一行灰字 */
+#aiModal .dsn-list-empty {
+    text-align: center;
+    padding: 36px 12px;
+    color: var(--text-muted, #7C7466);
+    animation: dsnRowIn 320ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
+}
+#aiModal .dsn-list-empty-ic {
+    display: inline-flex;
+    opacity: 0.4;
+    margin-bottom: 10px;
+    color: var(--text-muted, #7C7466);
+}
+#aiModal .dsn-list-empty-ic svg { display: block; margin: 0 auto; }
+#aiModal .dsn-list-empty-t { font-size: 12.5px; font-weight: 600; color: var(--text, #26211A); opacity: 0.75; }
+#aiModal .dsn-list-empty-d { font-size: 11.5px; margin-top: 3px; opacity: 0.85; }
+
+/* 侧栏底部：计数 + 归档箱切换（胶囊描边小钮） */
+#aiModal .dsn-sb-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#aiModal .dsn-sb-stats svg { flex: 0 0 auto; opacity: 0.8; }
+#aiModal .dsn-sb-foot .dsn-act-btn {
+    width: auto;
+    height: 26px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border: 1px solid var(--border, #DCD5C7);
+    border-radius: 999px !important;
+    background: transparent;
+    transition: border-color 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                background 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+                color 140ms var(--mv-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+#aiModal .dsn-sb-foot .dsn-act-btn:hover {
+    background: var(--primary-soft, rgba(154, 106, 21, 0.12));
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 45%, transparent);
+    color: var(--primary, #9A6A15) !important;
+}
+
+/* ---------- 顶栏：主题图标对齐与上色 ---------- */
+#aiModal .dsn-topic > svg:first-child { flex: 0 0 auto; color: var(--primary, #9A6A15); }
+#aiModal .dsn-topic > span { overflow: hidden; text-overflow: ellipsis; }
+#aiModal .dsn-pill-btn svg { flex: 0 0 auto; opacity: 0.9; }
+#aiModal .dsn-pill-btn.active svg { opacity: 1; }
+#aiModal .dsn-pop-head > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+#aiModal .dsn-pop-head > span svg { flex: 0 0 auto; color: var(--primary, #9A6A15); }
+#aiModal .dsn-pop-head .dsn-act-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 弹层：由硬编码暗底改为随主题（浅色皮肤下不再是突兀的黑块） */
+#aiModal .dsn-popover {
+    background: color-mix(in srgb, var(--card-bg, #FAF8F1) 97%, transparent) !important;
+    border: 1px solid var(--border-strong, #C4BBA8) !important;
+    box-shadow: var(--shadow-2, 0 10px 30px -12px rgba(38, 33, 26, 0.28)) !important;
+}
+#aiModal .dsn-pop-head {
+    color: var(--text, #26211A) !important;
+    border-bottom: 1px solid var(--border, #DCD5C7) !important;
+}
+
+/* ---------- 输入区与欢迎语 ---------- */
+#aiModal .home-chat-mic-btn { display: inline-flex; align-items: center; justify-content: center; }
+#aiModal .home-chat-mic-btn svg { display: block; }
+#aiModal #aiCtxBar { display: inline-flex; align-items: center; }
+#aiModal #aiCtxBar svg { color: var(--primary, #9A6A15); }
+#aiModal .ai-greet-ic {
+    display: inline-flex;
+    margin-bottom: 10px;
+    color: var(--primary, #9A6A15);
+    opacity: 0.9;
+}
+#aiModal .ai-greet-ic svg { display: block; margin: 0 auto; }
+
+/* 发送按钮：主底上的字色随皮肤走（浅色琥珀深、暗色琥珀浅） */
+#aiModal .dsn-send-btn { color: #FBF7EE !important; }
+html[data-v4skin="matinee"] #aiModal .dsn-send-btn,
+body.dark #aiModal .dsn-send-btn { color: #1A1208 !important; }
+
+/* ============================================================
+ * r126b · 顶栏隐私总开关（🔒）状态可视化
+ * 解锁采用两段式行内确认：第一击点亮按钮 = 武装态；解锁后常亮琥珀 + 开锁图标。
+ * ============================================================ */
+#adultToggle svg { display: block; }
+#adultToggle.adult-arm {
+    color: var(--primary, #9A6A15) !important;
+    background: var(--primary-soft, rgba(154, 106, 21, 0.12)) !important;
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 60%, transparent) !important;
+}
+#adultToggle.adult-unlocked {
+    color: var(--primary, #9A6A15) !important;
+    border-color: color-mix(in srgb, var(--primary, #9A6A15) 45%, transparent) !important;
+    background: var(--primary-soft, rgba(154, 106, 21, 0.12)) !important;
+}

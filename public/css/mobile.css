@@ -1,0 +1,978 @@
+/* ============================================================
+   移动端适配层 · mobile.css
+   ------------------------------------------------------------
+   加载顺序：最后一个（在 theme-v4.css 之后），优先级最高。
+   作用域：@media (max-width: 860px)（与 style.css 主断点一致）
+   原则：只做覆盖，绝不改 style.css 本体。
+
+   本机实测的根因（不要"优化"掉这几条）：
+   1) .nav-right 在 style.css 里是 flex-shrink:0，拒绝收缩 →
+      在 390px 设备上把布局视口撑到 500px，页面比屏幕宽 110px
+   2) @media 860px 里 .sidebar-section { min-width: max-content } →
+      .stats-row 右边缘顶到 574px
+   3) .v4-skin-switch 在窄屏是多余的（风格切换属于设置）
+   ============================================================ */
+
+/* ============================================================
+   桌面端（≥861px）：移动端专属元素一律隐藏
+   这些元素在 library.html 里始终存在，靠这里在桌面端藏掉
+   注意：所有「桌面隐藏」的基础规则必须写在下面那个 @media 之前，
+   否则同优先级时后写的 display:none 会把移动端的 display:flex 覆盖掉
+   ============================================================ */
+.m-drawer-btn,
+.m-nav-mask,
+.mobile-only-actions { display: none; }
+
+/* ---------- 底部标签栏（基础定义，移动端由媒体查询打开 display） ---------- */
+.m-tabbar {
+    display: none;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: calc(var(--m-tab-h, 58px) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    z-index: 190;
+}
+.m-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    background: none; border: none; padding: 0;
+    color: var(--text-muted);
+    font-family: inherit; font-size: 10.5px;
+    cursor: pointer;
+    transition: color var(--mv2-d1, .18s) var(--mv2-snap, ease);
+    position: relative;
+}
+.m-tab-glyph { font-size: 19px; line-height: 1; transition: transform var(--mv2-d2, .22s) cubic-bezier(.32,.72,0,1); }
+.m-tab-label { font-size: 10.5px; line-height: 1; letter-spacing: .01em; }
+.m-tab.active { color: var(--primary); }
+.m-tab.active .m-tab-glyph { transform: translateY(-2px) scale(1.06); }
+.m-tab.active::before {
+    content: '';
+    position: absolute; left: 50%; top: 0;
+    width: 26px; height: 2.5px; border-radius: 0 0 3px 3px;
+    background: var(--primary, #9A6A15);
+    transform: translateX(-50%);
+}
+.m-tab:active { background: var(--primary-soft); }
+
+@media (max-width: 860px) {
+
+    :root {
+        --nav-h: 56px;              /* 导航栏单行高度 */
+        --m-tab-h: 58px;            /* 底部标签栏高度（不含安全区） */
+        --m-pad: 14px;              /* 内容左右留白 */
+        --m-tap: 44px;              /* 最小点击目标 */
+    }
+
+    /* ---------- 0. 全局 ---------- */
+    html { -webkit-text-size-adjust: 100%; }
+    body { overscroll-behavior-y: none; }
+
+    /* 去掉移动端默认的点击高亮块 */
+    * { -webkit-tap-highlight-color: transparent; }
+
+    /* iOS 聚焦输入框时若字号 <16px 会自动放大页面 → 统一 16px 阻止 */
+    input, select, textarea { font-size: 16px !important; }
+
+    /* 内容区给底部标签栏留出空间 */
+    .content {
+        padding: 14px var(--m-pad) calc(var(--m-tab-h) + 28px + env(safe-area-inset-bottom));
+        overflow-x: clip;
+    }
+    .main-container { min-width: 0; overflow-x: clip; }
+
+    /* ============================================================
+       1. 移动端极简单行顶栏（黄金 52px 沉浸排版）
+       左侧 = 汉堡菜单 + Logo；中间 = 胶囊搜索框；右侧 = 通知按钮
+       彻底抹除 PC 端多余的排序下拉、锁、问号、主题、AI等桌面按钮
+       ============================================================ */
+    .navbar {
+        flex-wrap: nowrap !important;
+        height: calc(52px + env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(52px + env(safe-area-inset-top, 0px)) !important;
+        padding: calc(6px + env(safe-area-inset-top, 0px)) 12px 6px !important;
+        gap: 10px !important;
+        align-items: center !important;
+    }
+    .nav-left {
+        flex: 0 0 auto !important;
+        min-width: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+    }
+    .logo {
+        font-size: 17px !important;
+        font-weight: 800 !important;
+        color: var(--primary, #E5A93C) !important;
+        letter-spacing: -0.01em !important;
+        white-space: nowrap !important;
+    }
+
+    /* 汉堡按钮：打开侧边抽屉 */
+    .m-drawer-btn {
+        flex: 0 0 auto;
+        width: 38px !important;
+        height: 38px !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 18px;
+        line-height: 1;
+        color: var(--text);
+        cursor: pointer;
+    }
+    .m-drawer-btn:active { background: var(--primary-soft); }
+
+    /* 抽屉顶部：从导航栏搬过来的风格切换 / 扫描 */
+    .mobile-only-actions {
+        display: block;
+        padding-bottom: 16px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid var(--border);
+    }
+    .mobile-only-actions .v4-skin-switch {
+        display: flex;             /* 桌面端被隐藏，抽屉里要放出来 */
+        justify-content: flex-start;
+        margin: 0 0 12px;
+    }
+    .mobile-only-actions #scanBtn,
+    .mobile-only-actions .btn { display: inline-flex; }
+    .mobile-only-actions .scan-status { display: block; font-size: 12px; margin-top: 8px; }
+
+    /* 极简居中胶囊搜索栏 */
+    .nav-center {
+        order: 2 !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+    }
+    .search-box {
+        width: 100% !important;
+        height: 36px !important;
+        background: rgba(255, 255, 255, 0.07) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 999px !important;
+        padding: 0 12px !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+    }
+    .search-box input {
+        width: 100% !important;
+        font-size: 13.5px !important;
+        background: transparent !important;
+        border: none !important;
+        color: var(--text) !important;
+        padding: 0 !important;
+    }
+    .search-sort-select {
+        display: none !important; /* 电脑端杂乱下拉框在手机顶栏彻底隐藏 */
+    }
+
+    /* 右侧只保留通知按钮，其余一律隐藏或收归抽屉 */
+    .nav-right {
+        order: 3 !important;
+        flex: 0 0 auto !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+    }
+    .nav-right #notificationBtn {
+        width: 38px !important;
+        height: 38px !important;
+        font-size: 16px;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .nav-right #themeToggle,
+    .nav-right #adultToggle,
+    .nav-right #shortcutHelpBtn,
+    .nav-right #aiTopBtn,
+    .nav-right #watchNowBtn,
+    .nav-right #watchToggleBtn,
+    .nav-right #scanBtn,
+    .nav-right #scanStatusWrap,
+    .nav-right .v4-skin-switch {
+        display: none !important;
+    }
+    .scan-status { display: none; }
+    #scanProgressBar { border-radius: 0; }
+    #netWarnBanner { display: none !important; }
+
+    /* ============================================================
+       2. 侧边栏 → 左侧滑出抽屉
+       复用原有 .sidebar 元素（nav-item 的事件绑定保持不变）
+       ============================================================ */
+    .m-nav-mask {
+        display: block;            /* 桌面端被隐藏，移动端放出来 */
+        position: fixed; inset: 0;
+        background: rgba(20, 16, 12, .45);
+        -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+        opacity: 0; visibility: hidden;
+        transition: opacity var(--mv2-d2, .26s) var(--mv2-snap, ease), visibility var(--mv2-d2, .26s) var(--mv2-snap, ease);
+        z-index: 210;
+    }
+    .m-nav-mask.open { opacity: 1; visibility: visible; }
+
+    .sidebar {
+        position: fixed;
+        left: 0; top: 0; bottom: 0;
+        width: min(84vw, 320px);
+        height: 100vh; height: 100dvh;
+        /* display:flex / overflow-x:auto / min-width:max-content 都来自
+           style.css 的 860 断点，必须全部覆盖 */
+        display: block;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 20px 14px calc(28px + env(safe-area-inset-bottom));
+        background: var(--bg-elevated);
+        border-right: 1px solid var(--border);
+        border-bottom: none;
+        box-shadow: none;
+        transform: translateX(-102%);
+        transition: transform var(--mv2-d2, .3s) cubic-bezier(.32, .72, 0, 1), box-shadow var(--mv2-d2, .3s) var(--mv2-snap, ease);
+        z-index: 220;
+    }
+    .sidebar.open {
+        transform: translateX(0);
+        box-shadow: 0 0 60px rgba(20, 16, 12, .3);
+    }
+    .sidebar-section { min-width: 0; margin-bottom: 20px; }
+    .sidebar-section h3 { font-size: 11px; }
+
+    /* 抽屉里的 nav-item：44px 高度，便于点按 */
+    .nav-item {
+        min-height: var(--m-tap);
+        padding: 10px 12px;
+        font-size: 14px;
+    }
+    /* 统计卡在抽屉里完整铺开（原来 160px 撑到 574px） */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stats-row + .stats-row { margin-top: 8px !important; }
+    .stat-card { min-width: 0; }
+
+    /* ============================================================
+       3. 底部标签栏
+       ============================================================ */
+    .m-tabbar { display: flex; }
+
+    /* 批量操作栏是 fixed，会被标签栏压住 → 抬高到标签栏之上。
+       ⚠️ 只改 bottom 不够：原来的隐藏态 translateY(80px) 是按 bottom:24px 算的，
+       抬高后按钮会探进视口拦截标签栏点击。这里改成按自身高度推出屏幕 + visibility:hidden，
+       既保证完全出画，也不参与命中测试。 */
+    .batch-toolbar {
+        bottom: calc(var(--m-tab-h) + 12px + env(safe-area-inset-bottom));
+        transform: translateX(-50%) translateY(calc(100% + 90px));
+        visibility: hidden;
+        max-width: calc(100vw - 24px);
+        flex-wrap: wrap;
+        justify-content: center;
+        row-gap: 6px;
+        transition: transform var(--mv2-d2, .28s) cubic-bezier(.32, .72, 0, 1), visibility 0s var(--mv2-d2, .28s) var(--mv2-snap, ease);
+    }
+    .batch-toolbar.show {
+        transform: translateX(-50%) translateY(0);
+        visibility: visible;
+        transition: transform var(--mv2-d2, .28s) cubic-bezier(.32, .72, 0, 1), visibility 0s 0s var(--mv2-snap, ease);
+    }
+
+    /* 通知面板 / 命令面板：窄屏用满宽 */
+    .notification-panel {
+        position: fixed;
+        left: 8px; right: 8px; top: calc(var(--nav-h) + 52px);
+        width: auto;
+        max-height: 62vh;
+        overflow-y: auto;
+    }
+    .cp-overlay .cp-panel { width: calc(100vw - 20px); max-width: none; }
+
+    /* ============================================================
+       4. 移动端按钮错位根治与超高对比度色彩重构体系（彻底解决对不齐与看不清）
+       ============================================================ */
+
+    /* ── 4.1 几何与对齐根治（强制消除错位与纵向歪斜） ── */
+    button, .btn, .btn-sm, .f-pill, .page-btn, .theme-toggle, .m-drawer-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        vertical-align: middle !important;
+        line-height: 1 !important;           /* 铁律：line-height: 1 杜绝中文字体上下沉底错位 */
+        box-sizing: border-box !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+    }
+
+    /* 内部 SVG 图标与文本垂直居中锁死，彻底清除 vertical-align 导致的高低错位 */
+    button svg, .btn svg, .f-pill svg, .theme-toggle svg, .m-drawer-btn svg {
+        vertical-align: 0 !important;
+        margin: 0 !important;
+        flex-shrink: 0 !important;
+        display: inline-block !important;
+    }
+    button svg + *, .btn svg + *, button * + svg, .btn * + svg {
+        margin-left: 6px !important;
+    }
+
+    /* 按钮基础尺寸 */
+    .btn:not(.btn-sm) {
+        height: 44px !important;
+        min-height: 44px !important;
+        padding: 0 18px !important;
+        border-radius: 12px !important;
+        font-size: 14px !important;
+    }
+    .btn-sm {
+        height: 38px !important;
+        min-height: 38px !important;
+        padding: 0 14px !important;
+        border-radius: 10px !important;
+        font-size: 13px !important;
+    }
+
+    /* ── 4.2 超高对比度色彩重塑（WCAG AAA 级，一眼看清，绝不发暗发灰） ── */
+    /* 1) 主按钮 / 确认按钮：明艳琥珀金底 + 纯深黑字，对比度 8.5:1 */
+    .btn:not(.btn-secondary):not(.btn-danger),
+    .btn-primary,
+    .btn-main,
+    #btnPlayMovie {
+        background: #E5A93C !important;
+        border: 1px solid #D99A43 !important;
+        color: #0B0E14 !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(229, 169, 60, 0.3) !important;
+    }
+
+    /* 2) 次要按钮 / 功能按钮：高级深灰底 + 纯白高光字，对比度 11:1 */
+    .btn-secondary,
+    .btn-sm.btn-secondary,
+    .panel-section .btn,
+    .modal .btn:not(.btn-primary):not(#btnPlayMovie) {
+        background: #1F2430 !important;
+        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+
+    /* 3) 危险/删除/重置按钮 */
+    .btn-danger, .facet-reset-btn {
+        background: rgba(239, 68, 68, 0.16) !important;
+        border: 1px solid rgba(239, 68, 68, 0.45) !important;
+        color: #FF6B6B !important;
+        font-weight: 600 !important;
+    }
+
+    /* 4) 切片器胶囊（彻底干掉 motion-v2.css 和 polish.css 注入的隐形浅灰字） */
+    .facet-group .f-pill, .f-pill, .filter-chip, .slice-pill {
+        min-height: 32px !important;
+        height: 32px !important;
+        padding: 0 12px !important;
+        border-radius: 999px !important;
+        font-size: 12px !important;
+        line-height: 1 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .facet-group .f-pill:not(.active), .f-pill:not(.active) {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(255, 255, 255, 0.16) !important;
+        color: #E2E8F0 !important;  /* 醒目银白字，绝非 #cbd5e1 浅灰 */
+        font-weight: 600 !important;
+    }
+    .facet-group .f-pill.active, .f-pill.active {
+        background: #E5A93C !important;
+        border: 1px solid #D99A43 !important;
+        color: #0B0E14 !important;
+        font-weight: 800 !important;
+        box-shadow: 0 2px 8px rgba(229, 169, 60, 0.35) !important;
+    }
+
+    /* 5) 分页按钮：清晰深灰底 + 纯白高光字 / 激活项金底黑字 */
+    .pagination { flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .page-btn {
+        min-width: 40px !important;
+        height: 40px !important;
+        padding: 0 12px !important;
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+        border-radius: 10px !important;
+        background: #1F2430 !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        color: #FFFFFF !important;
+    }
+    .page-btn.active {
+        background: #E5A93C !important;
+        border-color: #D99A43 !important;
+        color: #0B0E14 !important;
+        font-weight: 800 !important;
+    }
+
+    /* 6) 热度榜等行内行动按钮（如 ▶️ 去观看） */
+    .home-rank-item button, .rank-row button, [data-action="watch"] {
+        min-height: 36px !important;
+        height: 36px !important;
+        padding: 0 14px !important;
+        font-size: 12.5px !important;
+        font-weight: 700 !important;
+        border-radius: 999px !important;
+        background: rgba(229, 169, 60, 0.18) !important;
+        border: 1px solid rgba(229, 169, 60, 0.5) !important;
+        color: #E5A93C !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        line-height: 1 !important;
+        gap: 4px !important;
+    }
+
+    /* 选择器 36px → 44px */
+    .select-input { height: var(--m-tap); font-size: 16px; }
+
+    /* 开关：视觉保持小巧，但把可点区域扩到 44px（::before 未被占用） */
+    .toggle-btn { position: relative; }
+    .toggle-btn::before {
+        content: '';
+        position: absolute; left: -10px; right: -10px; top: -11px; bottom: -11px;
+    }
+
+    /* 新作监视卡片操作按钮 */
+    .nr-act { min-height: 40px; padding: 0 12px; font-size: 13px; }
+    .nr-card-actions { gap: 8px; }
+    .nr-day-items { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }
+    .nr-tab { min-height: 40px; padding: 10px 16px; font-size: 13px; }
+
+    /* 女优卡上的单刮按钮 */
+    .actress-avatar-scrape { width: 40px; height: 40px; right: 0; bottom: 0; font-size: 16px; }
+
+    /* 猜你喜欢的胶囊筛选 34px → 40px */
+    .av-chip { padding: 10px 16px; min-height: 40px; }
+
+    /* ============================================================
+       5. 逐视图修正
+       ============================================================ */
+
+    /* 猜你喜欢板块：桌面端靠 margin:0 -24px 做全出血，配合 26px 内边距。
+       移动端内边距只有 14px，照抄会每侧多出 10px → 改成跟随移动端内边距 */
+    .av-view,
+    .av-hero {
+        margin-left: calc(-1 * var(--m-pad));
+        margin-right: calc(-1 * var(--m-pad));
+        overflow-x: clip;
+    }
+
+    /* 在线观看：面板内 4px 溢出（负外边距导致） */
+    .panel-section.watch-full { margin-left: 0; margin-right: 0; }
+    .watch-bar, .watch-tabs { padding-left: 0; padding-right: 0; }
+
+    /* 多维聚合切片筛选器：移动端转为单行横向丝滑滑块，告别电脑端三行臃肿遮挡 */
+    .facet-filter-bar {
+        padding: 6px var(--m-pad) 8px !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+    }
+    .facet-filter-bar::-webkit-scrollbar { display: none !important; }
+    .facet-wrap {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        width: max-content !important;
+        align-items: center !important;
+    }
+    .facet-group {
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+        background: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 999px !important;
+        padding: 2px 6px !important;
+        flex-shrink: 0 !important;
+    }
+    .facet-label {
+        font-size: 11px !important;
+        color: var(--text-muted) !important;
+        padding: 0 4px !important;
+    }
+    .f-pill {
+        min-height: 32px !important;
+        height: 32px !important;
+        padding: 0 12px !important;
+        border-radius: 999px !important;
+        font-size: 12px !important;
+        white-space: nowrap !important;
+    }
+
+    /* ============================================================
+       首页视线流净化与触控重构（v5.0 专项）
+       ============================================================ */
+    #homeView {
+        padding: 4px 0 16px !important;
+    }
+    .home-backdrop {
+        display: none !important;
+    }
+    /* AI 首页聊天框：在手机端不再霸占 800px 巨幅空间，收缩为轻量提示条 */
+    .home-chat {
+        margin: 0 0 16px !important;
+        padding: 0 !important;
+    }
+    .home-chat-dock {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+    .home-mascot {
+        display: none !important; /* 手机端隐藏占用空间的巨大立绘 */
+    }
+    .home-chat-card {
+        padding: 6px 12px !important;
+        border-radius: 999px !important;
+        background: rgba(229, 169, 60, 0.08) !important;
+        border: 1px solid rgba(229, 169, 60, 0.25) !important;
+    }
+    .home-chat-messages {
+        display: none !important; /* 默认隐藏占地巨大的空白历史气泡 */
+    }
+    .home-chat-input {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 0 !important;
+    }
+    .home-chat-input textarea {
+        height: 38px !important;
+        min-height: 38px !important;
+        font-size: 13.5px !important;
+        padding: 8px 6px !important;
+        background: transparent !important;
+        border: none !important;
+    }
+    .home-chat-mic-btn, .btn-send {
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+    }
+
+    /* 热度情报与本周放送：符合单手操作的大卡片流 */
+    .home-rank, .home-calendar {
+        margin-bottom: 20px !important;
+        background: #141720 !important;
+        border-radius: 14px !important;
+        padding: 14px 12px !important;
+        border: 1px solid var(--border) !important;
+    }
+    .home-rank-head {
+        margin-bottom: 12px !important;
+    }
+    .home-rank-title {
+        font-size: 16px !important;
+        font-weight: 700 !important;
+    }
+    .home-rank-list {
+        gap: 10px !important;
+    }
+    .home-rank-item, .rank-row {
+        padding: 10px 8px !important;
+        min-height: 48px !important;
+        border-radius: 10px !important;
+        font-size: 13.5px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    .home-rank-item button, .rank-row button {
+        min-height: 36px !important;
+        padding: 0 12px !important;
+        font-size: 12px !important;
+        border-radius: 8px !important;
+    }
+
+    /* 移动端海报流：彻底统一为两列大卡片 (2-Column Grid)，海报更大、标题更清晰、手指盲点都不误触 */
+    .movie-grid, .comic-grid, .novel-grid, .media-grid, .library-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 14px !important;
+        padding: 4px 0 !important;
+    }
+    .movie-card, .comic-card, .novel-card {
+        border-radius: 14px !important;
+        overflow: hidden !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+        min-height: 240px !important;
+        cursor: pointer !important;
+    }
+    .movie-poster, .comic-poster, .poster-container {
+        aspect-ratio: 2 / 3 !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        object-fit: cover !important;
+    }
+    .movie-title, .comic-title, .novel-title {
+        font-size: 14px !important;
+        line-height: 1.4 !important;
+        padding: 8px 10px 4px !important;
+        font-weight: 600 !important;
+        -webkit-line-clamp: 2 !important;
+    }
+    .movie-meta, .comic-meta {
+        padding: 0 10px 10px !important;
+        font-size: 12px !important;
+    }
+
+    /* 首页大减法：隐藏占用过多空间的 PC 管理看板 */
+    .stats-container, .dashboard-stats, .overview-stats, #statTotal, .stats-row, .overview-cards {
+        display: none !important;
+    }
+
+    /* 首页精选轮播：桌面参数在手机上直接把字幕撑爆
+       （overlay padding 26px / 标题最小 18px / meta 限宽 70% → 番号和体积被挤断行） */
+    .gallery-overlay { padding: 12px 14px 14px; }
+    .gallery-slide-title {
+        font-size: 14px;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;          /* 长日文标题最多两行 */
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .gallery-slide-meta {
+        max-width: 100%;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+    }
+    .gallery-slide-meta span { font-size: 11px; }
+    /* 手机上 16:9 太扁，字幕只剩一条；略高一点让两行标题有呼吸空间 */
+    .gallery-track { aspect-ratio: 16 / 10; }
+
+    /* 工具栏标题在窄屏会换行挤在一起 */
+    .toolbar { gap: 6px; align-items: flex-start; }
+    .toolbar-title { font-size: 16px; line-height: 1.35; }
+    .toolbar-count { font-size: 12px; }
+
+    /* 详情弹窗：自底向上滑出的原生 Bottom Sheet 抽屉 */
+    #detailModal {
+        display: flex !important;
+        align-items: flex-end !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        background: rgba(0, 0, 0, 0.65) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+        backdrop-filter: blur(8px) !important;
+    }
+    #detailModal .modal-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: 85vh !important;
+        max-height: 85dvh !important;
+        border-radius: 22px 22px 0 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #141720 !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        border-bottom: none !important;
+        box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.75) !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+    /* 顶部拖拽下拉指示条 */
+    #detailModal .modal-content::before {
+        content: '' !important;
+        display: block !important;
+        width: 42px !important;
+        height: 5px !important;
+        background: rgba(255, 255, 255, 0.3) !important;
+        border-radius: 3px !important;
+        margin: 10px auto 4px !important;
+        flex-shrink: 0 !important;
+    }
+    .detail-head {
+        flex-direction: column !important;
+        align-items: center !important;
+        padding: 12px 16px 8px !important;
+        gap: 12px !important;
+    }
+    .detail-poster {
+        max-height: 26vh !important;
+        width: auto !important;
+        border-radius: 10px !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+    }
+    .detail-scroll {
+        padding: 10px 16px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+        overflow-y: auto !important;
+    }
+    /* 详情页主操作按钮超大拇指触控化 */
+    .detail-actions {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        margin: 14px 0 !important;
+    }
+    .detail-actions button,
+    .detail-actions .btn {
+        width: 100% !important;
+        min-height: 48px !important;
+        font-size: 15.5px !important;
+        font-weight: 700 !important;
+        border-radius: 12px !important;
+    }
+    .detail-actions .btn-play-primary,
+    .detail-actions .btn-primary,
+    #btnPlayMovie {
+        min-height: 52px !important;
+        font-size: 16.5px !important;
+        background: var(--primary, #E5A93C) !important;
+        color: #0B0E14 !important;
+        box-shadow: 0 4px 16px rgba(229, 169, 60, 0.4) !important;
+    }
+    #posterModal .modal-content,
+    #uploadPosterModal .modal-content { border-radius: 0; }
+
+    /* 播放器：满屏 + 底部控件换行 */
+    .player-modal .modal-content { border-radius: 0; }
+    .player-head { padding: 10px 12px; }
+    .ph-title { font-size: 14px; }
+    .player-stage { aspect-ratio: auto; height: auto; }
+    #videoPlayer { max-height: 52vh; }
+    .player-foot { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+    .player-progress { flex: 1 1 100%; order: 3; }
+    #openPotPlayer { display: none !important; }
+
+    /* 设置页：左侧导航变顶部横向滚动 */
+    .settings-shell { gap: 14px; }
+    .settings-nav {
+        display: flex; gap: 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 6px;
+        scrollbar-width: none;
+    }
+    .settings-nav::-webkit-scrollbar { display: none; }
+    .settings-nav > * { flex: 0 0 auto; white-space: nowrap; min-height: 40px; }
+
+    /* 阅读器：内嵌在主库时隐藏外层冗余 header，将 100% 垂直空间留给阅读画面 */
+    .reader-header {
+        display: none !important;
+    }
+    .reader-view {
+        padding: 0 !important;
+    }
+    .reader-frame {
+        width: 100% !important;
+        height: 100% !important;
+        border: none !important;
+    }
+
+    /* 女优库 / 标签云：窄屏多一列 */
+    .actress-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+    .tag-cloud { gap: 8px; }
+
+    /* 年度报告 / 刮削失败等长文本行：允许截断但别撑宽 */
+    .fail-title, .annual .name, .report-row { min-width: 0; }
+
+    /* ============================================================
+       6. 去掉「悬停才出现」的交互
+       手机上永远没有 hover —— 这些元素原本对手机用户是隐形甚至不可用的
+       （已逐个核对源码确认它们承载真实功能）
+       ============================================================ */
+
+    /* 影片卡的番号角标：原来 hover 才显示，手机上等于没有 */
+    .movie-avid-overlay { opacity: 1; }
+
+    /* 女优卡右下角的「刮削头像」按钮：默认 opacity:0 + scale(.8)，
+       只有当鼠标悬停整张卡时才现形 —— 手机上 428 个按钮全是隐形的 */
+    .actress-avatar-scrape { opacity: 1; transform: scale(1); }
+
+    /* 猜你喜欢卡片底部的行动按钮：原来 hover 才滑出 */
+    .av-card .av-cta { opacity: 1; transform: translateY(0); }
+
+    /* 猜你喜欢「魔术卡片」中央播放按钮 */
+    .magic-card .mc-play { opacity: 1; transform: scale(1); }
+
+    /* 工具栏标题在窄屏是白占的垂直空间：这 4 个视图自己已经渲染了同名标题
+       （由 mobile-nav.js 把当前视图写到 body[data-mview] 上驱动） */
+    body[data-mview="guess"] .toolbar,
+    body[data-mview="comic"] .toolbar,
+    body[data-mview="novel"] .toolbar,
+    body[data-mview="new-releases"] .toolbar { display: none; }
+
+    /* ---------- 7. 补齐仍偏小的点击目标（实测复测后的剩余项） ---------- */
+    .btn-sm { min-height: 40px; }              /* 38 → 40 */
+    .v4-skin-btn { width: 40px; height: 40px; }/* 32 → 40（在抽屉里） */
+    .nr-chip { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+    .nr-btn { min-height: 40px; }
+
+    /* ---------- 8. 移动端安全区与伴侣悬浮窗自适应重构（v4.5.4 专项） ---------- */
+    /* 侧边栏平滑过渡强约束：防止被 round42 等补丁的 width 过渡干扰覆盖 */
+    .sidebar {
+        transition: transform var(--mv2-d2, .28s) cubic-bezier(0.16, 1, 0.3, 1) !important;
+        will-change: transform;
+    }
+
+    /* 底部安全区保护，防止全面屏/刘海屏指示条遮挡主内容 */
+    .main-content {
+        padding-bottom: calc(var(--m-tab-h, 58px) + 28px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+    .m-tabbar {
+        height: calc(var(--m-tab-h, 58px) + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    }
+
+    /* 桌面/移动端 Live2D 伴侣尺寸等比缩小，防止覆盖 45% 屏幕 */
+    #companionStage {
+        width: 110px !important;
+        height: 155px !important;
+        right: 6px !important;
+        bottom: calc(var(--m-tab-h, 58px) + 16px + env(safe-area-inset-bottom, 0px)) !important;
+        z-index: 180 !important;
+    }
+    .companion-bubble {
+        max-width: 130px !important;
+        font-size: 11px !important;
+        right: 118px !important;
+    }
+
+    /* 切片器与标签胶囊扩大触控热区（至少 38px 触控高度） */
+    .facet-pill, .filter-chip, .slice-pill, .genre-chip {
+        min-height: 38px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        padding: 0 14px !important;
+        font-size: 13px !important;
+    }
+
+    /* 移动端卡片触控微反馈：轻微按压弹性，提升操作确认感 */
+    .movie-card:active, .comic-card:active, .novel-card:active, .actress-card:active {
+        transform: scale(0.976);
+        transition: transform var(--mv2-d1, 0.12s) cubic-bezier(0.2, 0.8, 0.4, 1);
+    }
+    .m-tab:active {
+        transform: scale(0.92);
+        transition: transform var(--mv2-dpress, 0.1s) var(--mv2-snap, ease);
+    }
+
+    /* ============================================================
+       全量按钮几何防错位锁死 + 超高对比度 WCAG AAA 色彩重塑（最终铁律层）
+       ============================================================ */
+
+    /* 1. 彻底解决按钮字体错位：强制 display/align-items/line-height/vertical-align 对齐 */
+    button, .btn, .btn-sm, .f-pill, .page-btn, .theme-toggle, .m-drawer-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        vertical-align: middle !important;
+        line-height: 1 !important;
+        box-sizing: border-box !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+    }
+    button svg, .btn svg, .f-pill svg, .theme-toggle svg, .m-drawer-btn svg {
+        vertical-align: 0 !important;
+        margin: 0 !important;
+        flex-shrink: 0 !important;
+        display: inline-block !important;
+    }
+    button svg + *, .btn svg + *, button * + svg, .btn * + svg {
+        margin-left: 6px !important;
+    }
+
+    /* 2. 彻底解决对比度弱看不清：高纯度高反差色彩 */
+    /* 主按钮（金底深黑字，对比度 8.5:1） */
+    .btn:not(.btn-secondary):not(.btn-danger),
+    .btn-primary,
+    .btn-main,
+    #btnPlayMovie {
+        background: #E5A93C !important;
+        border: 1px solid #D99A43 !important;
+        color: #0B0E14 !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(229, 169, 60, 0.35) !important;
+    }
+
+    /* 次要按钮（深钛灰底 + 纯白高光字，对比度 11:1） */
+    .btn-secondary,
+    .btn-sm.btn-secondary,
+    .panel-section .btn,
+    .modal .btn:not(.btn-primary):not(#btnPlayMovie) {
+        background: #1F2430 !important;
+        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+
+    /* 切片胶囊未选中态：暗底 + 醒目银白字（拒绝浅灰/土褐） */
+    .facet-group .f-pill:not(.active),
+    .f-pill:not(.active),
+    .slice-pill:not(.active) {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(255, 255, 255, 0.16) !important;
+        color: #E2E8F0 !important;
+        font-weight: 600 !important;
+    }
+
+    /* 切片胶囊激活态：金底深黑字，极度突出 */
+    .facet-group .f-pill.active,
+    .f-pill.active,
+    .slice-pill.active {
+        background: #E5A93C !important;
+        border: 1px solid #D99A43 !important;
+        color: #0B0E14 !important;
+        font-weight: 800 !important;
+        box-shadow: 0 2px 8px rgba(229, 169, 60, 0.35) !important;
+    }
+
+    /* 行内行动按钮（如 ▶️ 去观看） */
+    .home-rank-item button, .rank-row button, [data-action="watch"] {
+        background: rgba(229, 169, 60, 0.18) !important;
+        border: 1px solid rgba(229, 169, 60, 0.55) !important;
+        color: #E5A93C !important;
+        font-weight: 700 !important;
+    }
+
+    /* 底部导航栏：高反差质感 */
+    .m-tabbar {
+        background: rgba(20, 24, 33, 0.96) !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+    }
+    .m-tab {
+        color: #94A3B8 !important; /* 醒目银灰，告别发暗 */
+    }
+    .m-tab.active {
+        color: #E5A93C !important;
+        font-weight: 700 !important;
+    }
+}
+
+/* 横屏或小高度设备（例如手机横屏看目录/列表）专属紧凑布局 */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 540px) {
+    :root {
+        --nav-h: 46px;
+        --m-tab-h: 46px;
+    }
+    .navbar { min-height: 46px; padding: 4px 12px; }
+    .m-tabbar { height: 46px !important; }
+    .m-tab-glyph { font-size: 16px; }
+    .m-tab-label { font-size: 9px; }
+    .main-content { padding-bottom: 54px !important; }
+    #companionStage { display: none !important; } /* 横屏紧凑视口下隐匿桌宠，完全让位给内容 */
+}
+
+/* 底部标签栏的基础样式统一放在媒体查询之前定义（见文件开头第 2 节），
+   这里只保留 reduced-motion 覆盖，避免同优先级下把 display:flex 覆盖掉 */
+@media (prefers-reduced-motion: reduce) {
+    .sidebar { transition: none; }
+    .m-tab-glyph, .m-tab { transition: none; }
+}

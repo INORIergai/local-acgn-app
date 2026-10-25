@@ -1,0 +1,99 @@
+/* ============================================================
+   round113-P9 · 漫画库 / 小说库的「排序」芯片
+   ------------------------------------------------------------
+   为什么单开一个文件：本轮只加了一个控件，视觉与动效一个字没碰。
+   回滚 = 删掉 library.html 里本文件那一行 link（芯片会退化成无样式原生 select，
+   功能仍然可用）。
+
+   为什么还要这个控件：排序功能修好之后，入口原来只在侧边栏最底部的「排序方式」，
+   离卡片区太远，等于没人知道。这里把它摆到筛选芯片同一行 ——
+   但**不填色**：筛选芯片是黑色胶囊（主操作），排序是弱操作 ⇒ 发丝描边 + 常规字色，
+   视觉上主动退到次要层。深浅两套皮肤都靠 currentColor / var(--text) 自适应，
+   不写死任何底色。
+   ============================================================ */
+
+html body .av-chiprow { align-items: center; }
+
+html body .av-sortchip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 33px;                     /* 与 .av-chip 同高，行内对齐 */
+    padding: 0 2px 0 13px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text, #26211A) 30%, transparent);
+    color: var(--text, #26211A);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    opacity: .74;
+    transition: opacity var(--mv2-d2, .2s) var(--mv2-snap, ease),
+                box-shadow var(--mv2-d2, .2s) var(--mv2-snap, ease);
+}
+
+html body .av-sortchip:hover,
+html body .av-sortchip:focus-within {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text, #26211A) 62%, transparent);
+}
+
+html body .av-sortchip .lbl {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: .5;
+    transform: translateY(-.5px);
+}
+
+/* 「排序」与当前值之间一道发丝竖线，替代原来那个含糊的 ↕ 图标 */
+html body .av-sortchip .lbl::after {
+    content: "";
+    display: inline-block;
+    width: 1px;
+    height: 10px;
+    margin: 0 7px 0 6px;
+    background: currentColor;
+    opacity: .35;
+    vertical-align: -1px;
+    transform: translateY(-.5px);
+}
+
+/* 原生 select 只留文字：边框、底色、箭头全部自己画 */
+html body .av-sortchip select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    background: transparent;
+    outline: 0;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0 20px 0 0;
+    max-width: 9.8em;                 /* 窄屏别把整行顶开 */
+    text-overflow: ellipsis;
+}
+
+/* 自绘下拉箭头（发丝级，跟标题的分隔线同一套语言） */
+html body .av-sortchip::after {
+    content: "";
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin-top: -4.5px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+    opacity: .5;
+    pointer-events: none;
+}
+
+html body .av-sortchip select:focus-visible { outline: 0; }   /* 焦点由 label 的描边表达 */
+
+@media (max-width: 860px) {
+    html body .av-sortchip { height: 30px; font-size: 12px; }
+    html body .av-sortchip select { padding-right: 18px; max-width: 8.4em; }
+}

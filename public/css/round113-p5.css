@@ -1,0 +1,153 @@
+/* ============================================================
+   CinemaVault · round113-p5.css —— 页头：衬线大标题 + 滚动收放
+   ------------------------------------------------------------
+   参考 Folia：11~13px 小字 + 衬线大标题 + 1px 发丝描边。
+
+   本应用 .toolbar-title 本来就用 --font-display（Georgia / STZhongsong 衬线），
+   问题是 19px 太小、和正文挤在一起，读不出「这是一个页面的标题」。
+
+   做法：
+     · 首屏 34px / line-height 1.06 / letter-spacing -0.015em（大字必须收字距）
+     · 页头吸顶后（js 给 <html> 挂 .hdr-compact）收到 20px，并补一条两端渐隐的发丝线
+     · 吸顶位置 top: var(--nav-h)，正好贴在 60px 高的 sticky navbar 下面（navbar z-index 100，本层 30）
+
+   ★为什么选择器写 `html body .content > .toolbar`：
+     theme-v4.css / theme-matinee.css 给 .toolbar 写了
+         html[data-v4skin="aurora"] .toolbar { border-bottom: ... }   ← 权重 (0,2,1)
+     裸写 `.content > .toolbar` 是 (0,2,0)，会输给它。
+     加两个元素补到 (0,2,3) 稳赢，而且**不依赖 data-v4skin 是否存在**——
+     若拿 `[data-v4skin]` 当前缀，一旦某条路径没挂皮肤属性，整条规则静默失效（本项目踩过）。
+
+   回滚：删 library.html 里 round113-p5.css 这一行 + round113-header.js 那一行。
+   ============================================================ */
+
+html body .content > .toolbar {
+    position: sticky;
+    top: var(--nav-h, 60px);
+    z-index: 30;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0 13px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+/* 收起态的「发丝线」：两端渐隐，比整条实线轻 */
+html body .content > .toolbar::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--border-strong, var(--border)) 14%,
+        var(--border-strong, var(--border)) 86%,
+        transparent 100%);
+}
+
+/* ★★选择器里必须带 #toolbarTitle：
+   round-motion-extras.css 给标题写的是 `#toolbarTitle { ... }` / `#toolbarTitle i { ... }`，
+   含 ID 的规则权重 a=1，**任何只堆 class 的选择器（a=0）都赢不了它**——
+   这一轮实测就中招：`.content > .toolbar .toolbar-title i` 叠到 (0,3,3)，
+   仍然输给 `#toolbarTitle i` 的 (1,0,1)，对比度修补静默失效（还是 1.24:1）。
+   所以这里统一写 `#toolbarTitle`，把 a 也拉到 1，再靠 b/c 取胜。 */
+html body .content > .toolbar #toolbarTitle {
+    font-family: var(--font-display);
+    font-size: 40px;
+    line-height: 1.06;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+/* ---------- 大字必须压墨 ----------
+   「每页辨识色」原来是给 19px 小标题配的，整套色（#FCD34D / #FACC15 / #FFE08A…）
+   都是按深底挑的亮色。放到 34px 大字上、底色是日场纸 #F1EEE6 时，
+   实测影片页是 #FCD34D 对纸色 **1.24:1**（按 WCAG 大字门槛 3:1 算，等于没有字）。
+   这里把辨识色与墨色按 46/54 混一次：Hue 还在（能分出页面），对比度回到 ~4:1。
+   辨识色本身在 round-motion-extras.css 里已经改成 `--tb-c` 令牌，
+   所以这里只调「混多少」，不动那张色表。 */
+html body .content > .toolbar #toolbarTitle i {
+    color: color-mix(in srgb, var(--tb-c, currentColor) 46%, var(--text) 54%);
+}
+
+/* 暗底例外：那里 --text 是米白，混进去会把色相洗成一片奶白 ⇒ 直接用原色，
+   亮色本来就是给深底挑的，实测 13.35:1，够。 */
+body.dark .content > .toolbar #toolbarTitle i,
+html[data-v4skin="aurora"] body .content > .toolbar #toolbarTitle i,
+html[data-v4skin="ambient"] body .content > .toolbar #toolbarTitle i,
+html[data-v4skin="matinee"] body.dark .content > .toolbar #toolbarTitle i {
+    color: var(--tb-c, currentColor);
+}
+
+html body .content > .toolbar #movieCount,
+html body .content > .toolbar .toolbar-count {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-left: 12px;
+    vertical-align: 3px;
+}
+
+/* ---------------- 漫画库 / 小说库：页头不进大字 ---------------- */
+/* 这两个视图的卡片板自己就带一块 .av-hero 大标题（SHELF · COMIC / 漫画库 / 共 N 正片），
+   页头再撑到 40px 就是两个大标题叠着，实测很难看。
+   所以这里固定走紧凑尺寸，页头只保留「吸顶 + 发丝线」的定位价值。 */
+body[data-view="comic"] .content > .toolbar,
+body[data-view="novel"] .content > .toolbar {
+    padding: 8px 0 12px;
+}
+body[data-view="comic"] .content > .toolbar #toolbarTitle,
+body[data-view="novel"] .content > .toolbar #toolbarTitle {
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: 0.005em;
+}
+
+/* ---------------- 收起态（滚动后吸顶） ---------------- */
+
+html.hdr-compact body .content > .toolbar {
+    padding: 8px 0 12px;
+    margin-bottom: 0;
+}
+
+html.hdr-compact body .content > .toolbar::after { opacity: 1; }
+
+html.hdr-compact body .content > .toolbar #toolbarTitle {
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: 0.005em;
+}
+
+html.hdr-compact body .content > .toolbar .toolbar-count {
+    font-size: 12px;
+    vertical-align: 2px;
+}
+
+/* 手机上 .toolbar 在部分视图本来就被隐藏，且没有 sticky navbar 空间，别掺和。
+   ★这里也必须写 #toolbarTitle：mobile.css 的 `.toolbar-title{font-size:16px}` 是 a=0，
+   压不过上面那条 a=1 的 34px，手机端会变成大字。 */
+@media (max-width: 860px) {
+    html body .content > .toolbar {
+        position: static;
+        background: none;
+    }
+    html body .content > .toolbar #toolbarTitle { font-size: 20px; letter-spacing: 0; }
+    html body .content > .toolbar::after { display: none; }
+}
+
+/* 动画全关时不要过渡（transition 本体在 round113-motion.css，这里只兜底） */
+@media (prefers-reduced-motion: reduce) {
+    html body .content > .toolbar,
+    html body .content > .toolbar::after,
+    html body .content > .toolbar #toolbarTitle,
+    html body .content > .toolbar .toolbar-count {
+        transition: none;
+    }
+}

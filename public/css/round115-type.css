@@ -1,0 +1,244 @@
+/* ============================================================
+   round115 · 字号与形状归并（P10 / P11）
+   ------------------------------------------------------------
+   目标：实际渲染 21 档字号 → tokens-v5 的 6 档；动作按钮 胶囊 → 6px 矩形；
+        详情抽屉 18px → 10px。
+
+   ★★为什么选择器要写得这么长（血泪）：
+     round73.css 用的是 **`font:` 简写**：
+         .av-view.av-workspace .av-main .av-card > .av-cap .av-title {
+             font: 500 13px/1.35 var(--font-sans, ...);
+         }
+     它同时设了 font-size / line-height / family / weight。
+     ⇒ 只写 `font-size` 且权重不足 ⇒ 完全不生效（第一次就是这么白改的）。
+     ⇒ 而且 CDP 按 `font-size` 过滤根本看不到它（属性名是 `font`），排查时容易被骗。
+     这里用**同一条选择器链 + 本文件更晚加载**（同权重后写者胜），并且把
+     line-height / family / weight 一并写回，避免简写残留的 1.35 行高错位。
+
+   ★不动 #toolbarTitle：P5 的吸顶两态选择器带 id，权重更高，硬压会打坏收放。
+   ============================================================ */
+
+html body {
+    font-size: var(--t-body);
+}
+
+/* ---------------- 侧栏 ---------------- */
+/* 原规则：.sidebar .nav-item { font-size: 15px } (0,2,0) */
+html body .sidebar .nav-item,
+html body .sidebar .nav-item > span {
+    font-size: var(--t-body);
+}
+html body .sb-sec-name,
+html body .nav-section-title,
+html body .nav-group-title {
+    font-size: var(--t-micro);
+    letter-spacing: .14em;
+}
+html body .sidebar .nav-item .num {
+    font-family: var(--font-num);
+    font-size: var(--t-micro);
+}
+
+/* ---------------- 顶栏 ---------------- */
+html body .logo {
+    font-size: var(--t-head);
+}
+html body .theme-toggle {
+    font-size: var(--t-caption);
+}
+html body .btn {
+    font-size: var(--t-caption);
+}
+html body .btn-sm,
+html body .btn.btn-sm {
+    font-size: var(--t-caption);
+}
+html body .nvx-tip {
+    font-size: var(--t-caption);
+}
+
+/* ---------------- 统计标签（总影片 / 总大小 / 已观看） ---------------- */
+html body label {
+    font-size: var(--t-micro);
+}
+
+/* ---------------- 书架：卡片标题区 ---------------- */
+/* 与 round73.css 同链 + 更晚，压过那里的 `font:` 简写 */
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-title {
+    font-size: var(--t-body);
+    line-height: 1.42;
+    font-family: var(--font-ui);
+    font-weight: 500;
+    min-height: 2.84em;   /* 2 行 × 1.42 */
+}
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-sub {
+    font-size: var(--t-caption);
+    line-height: 1.3;
+    font-family: var(--font-ui);
+    font-weight: 400;
+}
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-sub b {
+    font-size: var(--t-micro);
+    font-weight: 500;
+}
+
+/* ---------------- 书架：页头 ---------------- */
+/* 原规则：.av-view.av-workspace .av-main .av-hero h2 { font-size: clamp(24px,2.4vw,40px) } (0,4,1) */
+html body .av-view.av-workspace .av-main .av-hero h2,
+html body .av-hero h2 {
+    font-size: var(--t-display);
+    line-height: 1.1;
+}
+html body .av-hero .av-kicker {
+    font-size: var(--t-micro);
+    letter-spacing: .16em;
+}
+html body .av-hero .av-sub {
+    font-size: var(--t-caption);
+}
+html body .av-chip,
+html body .av-sortchip {
+    font-size: var(--t-caption);
+}
+html body .avt-head {
+    font-size: var(--t-body);
+}
+html body .avt-files-btn {
+    font-size: var(--t-micro);
+}
+html body .av-hand {
+    font-size: var(--t-caption);
+}
+
+/* 阅读统计卡：大数字用 mono，标签降一档 */
+html body .avs-nums b {
+    font-family: var(--font-num);
+    font-size: var(--t-title);
+}
+html body .avs-nums span,
+html body .avs-head span {
+    font-size: var(--t-micro);
+}
+
+/* ---------------- 精选推荐标题：去 32px 白光 ---------------- */
+/* motion-v2.css 给的是 32px / #fff / 橙色 text-shadow —— 在日场纸上几乎看不见。 */
+html body .gallery-title {
+    font-size: var(--t-title);
+    font-weight: 600;
+    color: var(--text);
+    text-shadow: none;
+    letter-spacing: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+}
+html body .gallery-title .ic {
+    width: 16px;
+    height: 16px;
+}
+
+/* ---------------- 首页栏目 ---------------- */
+html body .home-rank-title {
+    font-size: var(--t-title);
+}
+
+/* ---------------- 形状 ---------------- */
+html body .btn,
+html body .btn-sm,
+html body .btn.btn-sm {
+    border-radius: var(--r-1);
+}
+html body .modal-content {
+    border-radius: var(--r-2);
+}
+html body .theme-card {
+    border-radius: var(--r-2);
+}
+
+/* ---------------- 顶栏控件统一到 36（原 32/30/29/36/40 五种） ---------------- */
+html body .v4-skin-btn {
+    width: var(--h-md);
+    height: var(--h-md);
+}
+html body .btn.btn-sm {
+    height: var(--h-sm);
+    min-height: var(--h-sm);
+    padding-top: 0;
+    padding-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+}
+html body .navbar input[type="text"],
+html body .navbar input[type="search"],
+html body .navbar select,
+html body #searchInput,
+html body .search-box input,
+html body .search-sort-select {
+    height: var(--h-md);
+}
+
+/* ---------------- 收尾：装饰数字 / 卡片 CTA / 小工具（P10 收口径） ---------------- */
+/* 幽灵编号 54px（round73.css:284）—— 纯装饰水印，降到 display 档 */
+html body .av-card .av-num {
+    font-size: var(--t-display);
+}
+/* 卡片内「打开这一卷 →」的 CTA：12 → caption */
+html body .av-card .av-cta,
+html body .av-card .av-cta .arr {
+    font-size: var(--t-caption);
+}
+/* 阅读进度小旗 10.5 → micro */
+html body .avp-flag {
+    font-size: var(--t-micro);
+}
+/* 侧栏折叠箭头 / 收起按钮 / 面包屑 / 面板关闭 */
+html body .sidebar .sb-fold-ico {
+    font-size: var(--t-micro);
+}
+html body .sb-collapse-btn,
+html body .ssb-close,
+html body .tree-crumb {
+    font-size: var(--t-caption);
+}
+/* 统计条 label（原 11px，被 .stats label 之类的更高权重压着） */
+html body .content label,
+html body .av-hero label {
+    font-size: var(--t-micro);
+}
+
+/* ---------------- 用 #movieGrid 收口（项目自己的权重解法） ----------------
+   round73.css 的规则链是
+       .av-view.av-workspace .av-main .av-card > .av-num { font-size: 54px }
+   6 个类 + 1 元素，靠叠类是压不过的。项目里既有的解法就是把 id 写进选择器
+   （见 MEMORY「ID 权重墙」那条）——#movieGrid 是卡片区的容器，用它收口最稳。 */
+html body #movieGrid .av-num {
+    font-size: var(--t-display);
+}
+html body #movieGrid .av-cta,
+html body #movieGrid .av-cta .arr {
+    font-size: var(--t-caption);
+}
+html body #movieGrid .av-sub span {
+    font-size: var(--t-caption);
+}
+html body #movieGrid .av-sub b {
+    font-size: var(--t-micro);
+}
+
+/* ---------------- 暗色下的书架页头墨色 ----------------
+   av-board.css 把 .av-hero h2 / .av-kicker / .av-sub 的 color 写成了 #000，
+   在「夜」皮肤（body.dark）里等于深底黑字。原来 matinee 默认是浅色分支，
+   所以这个洞没被踩到；round115 把皮肤和明暗绑定后就暴露了。
+   选择器 (0,2,1) 压过原来的 (0,1,1)。 */
+body.dark .av-hero h2,
+body.dark .av-hero .av-sub,
+body.dark .av-hero .av-kicker {
+    color: var(--text);
+}
+body.dark .av-hero .av-hand {
+    color: var(--text-muted);
+}
+body.dark .av-hero .av-flat-note,
+body.dark .avt-head {
+    color: var(--text);
+}

@@ -1,0 +1,80 @@
+# ===== 依赖 =====
+node_modules/
+
+# ===== 运行时数据（体积大 / 机器相关，不入库）=====
+cache/
+db/
+posters/
+backups/
+host/
+logs/
+*.log
+
+# ===== 自动更新下载的安装包（单个 100MB+，绝不入库）=====
+# utils/updater.js 的 updateDir() = <DATA_ROOT>/updates（exe 里在 %APPDATA%\CinemaVault\updates）
+updates/
+
+# ===== 浏览器 profile（含 cookie / CF 通行证，敏感且巨大）=====
+.playwright-profile/
+.user-browser-data/
+.quark-login-profile/
+browser-profile/
+
+# ===== 敏感配置：含登录口令与 API Key，绝不入库 =====
+config.docker.json
+config.json
+.env
+.env.*
+!.env.example
+
+# ===== 夸克网盘登录态 =====
+quark-cookie.json
+*cookie*.json
+
+# ===== 系统 / 编辑器 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+.zcode/
+*.swp
+*~
+
+# ===== 临时产物 =====
+*.tmp
+*.bak
+*.tar.gz
+npm-debug.log*
+yarn-error.log*
+
+# ===== 验收/调试临时产物（_ 前缀 = 用完即删；长期复用工具放 packaging/ 并显式命名）=====
+/_*
+
+# ===== 分门别类整理出的三块区域（详见项目根《项目说明书.md》）=====
+#   git/     发布工作副本：内容由 packaging/make-public.js 重建，本身是独立仓库
+#   exe/     自用区：成品安装包 + 本地敏感数据快照（含明文密钥）
+#   archive/ 归档：历史调试脚本 / 日志 / 临时产物
+git/
+exe/
+archive/
+
+# round77：VITS 工作区（代码+479MB权重，按需下载，不入库）
+vits-runtime/
+
+# ===== Android 构建产物与签名（密钥绝不入库）=====
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/keystore.properties
+android/keystore/
+*.jks
+*.keystore
+
+# 构建产物与工具运行态（不入库）
+android/.mimosa/
+android/last-build.json
+
+# 工具运行态（DSH hook/ledger 等，不入库）
+.mimosa/
