@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
+TAG = 'v5.0.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -224,10 +225,15 @@ if s not in (200, 201):
 tree_sha = res['sha']
 print('  tree = %s' % tree_sha)
 
-# ---------------------------------------------------------------- 建孤儿 commit
-print('\n创建 commit（无父提交 → 旧提交从分支不可达）...')
-s, res = api('POST', '/repos/%s/%s/git/commits' % (OWNER, REPO),
-             {'message': COMMIT_MSG, 'tree': tree_sha}, timeout=120)
+# ---------------------------------------------------------------- 建 commit
+# ★round152：原来是「无父提交的孤儿 commit」，当初是为了把含 config.json 的旧提交
+# 从 main 上彻底抹掉（一次性清理）。现在历史已经干净了，再砍父提交等于每次发布都把
+# main 的历史清零 —— 改成「接在远端 main 后面」，保留完整提交历史。
+print('\n创建 commit（父提交 = 远端 main %s）...' % (old_sha or '(无)'))
+_commit_body = {'message': COMMIT_MSG, 'tree': tree_sha}
+if old_sha:
+    _commit_body['parents'] = [old_sha]
+s, res = api('POST', '/repos/%s/%s/git/commits' % (OWNER, REPO), _commit_body, timeout=120)
 if s not in (200, 201):
     print('✗ 建 commit 失败：%s %s' % (s, res))
     sys.exit(1)
@@ -243,8 +249,23 @@ if s not in (200, 201):
     sys.exit(1)
 print('  ✅ %s 已指向 %s' % (BRANCH, res.get('object', {}).get('sha', new_sha)))
 
+# ---------------------------------------------------------------- 打 tag
+print('\n创建 tag %s ...' % TAG)
+s, res = api('GET', '/repos/%s/%s/git/ref/tags/%s' % (OWNER, REPO, TAG))
+if s == 200:
+    print('  tag 已存在，改为指向新 commit ...')
+    s, res = api('PATCH', '/repos/%s/%s/git/refs/tags/%s' % (OWNER, REPO, TAG),
+                 {'sha': new_sha, 'force': True}, timeout=60)
+else:
+    s, res = api('POST', '/repos/%s/%s/git/refs' % (OWNER, REPO),
+                 {'ref': 'refs/tags/' + TAG, 'sha': new_sha}, timeout=60)
+if s in (200, 201):
+    print('  ✅ tag %s -> %s' % (TAG, new_sha))
+else:
+    print('  ! tag 创建失败：%s %s' % (s, res))
+
 print('\n' + '=' * 66)
 print('✅ 仓库内容推送完成')
 print('   https://github.com/%s/%s' % (OWNER, REPO))
-print('   旧提交 %s 已不在 %s 分支上' % (old_sha or '?', BRANCH))
+print('   上一条 main: %s' % (old_sha or '?'))
 print('=' * 66)
