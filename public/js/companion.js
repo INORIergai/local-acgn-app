@@ -110,11 +110,67 @@
         return S.app;
     }
 
+    /* r137b：量画布里「实际绘制内容」的包围盒（readPixels，隔行采样）。
+     * 桌宠工程来源的模型 moc 布局非常规，moc 框中心 ≠ 画作中心（实测差 290px+），
+     * getBounds 也不可靠 ⇒ 一切以像素为准。坐标系：readPixels 左下原点。 */
+    function contentBBox() {
+        try {
+            const gl = S.canvas.getContext('webgl2') || S.canvas.getContext('webgl') || S.canvas.getContext('experimental-webgl');
+            if (!gl || !gl.drawingBufferWidth) return null;
+            const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
+            const buf = new Uint8Array(W * H * 4);
+            gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+            let minX = W, minY = H, maxX = -1, maxY = -1;
+            for (let y = 0; y < H; y += 2) {
+                for (let x = 0; x < W; x += 2) {
+                    if (buf[(y * W + x) * 4 + 3] > 8) {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+            if (maxX < 0) return null;
+            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        } catch (e) { return null; }
+    }
+
     function fitModel() {
         if (!S.model) return;
         const w = S.stageEl.clientWidth || 240, h = S.stageEl.clientHeight || 320;
         if (S.app && (S.app.renderer.width !== w || S.app.renderer.height !== h)) {
             S.app.renderer.resize(w, h);
+        }
+        /* r137b：嵌入首页展示面板 = 正中 + 填满整个面板（用户点名）。
+         * ★像素反馈校准：初始用 moc 框估个 cover 缩放，然后「渲染→readPixels 量
+         * 实际绘制内容 bbox→缩放补差→平移对中」迭代收敛。任何 moc 布局都成立，
+         * 不依赖 origin/anchor/getBounds 语义。设置里的模型缩放仅作用于浮层。 */
+        if (S.stageEl.classList.contains('embedded')) {
+            const mw = S.model.width / (S.model.scale.x || 1);
+            const mh = S.model.height / (S.model.scale.y || 1);
+            if (mw > 0 && mh > 0 && S.app) {
+                S.model.scale.set(Math.max(w / mw, h / mh) * (S.scale || 1));
+                S.model.position.set(w / 2, h / 2);
+                for (let i = 0; i < 3; i++) {
+                    try { S.app.render(); } catch (e) { break; }
+                    const bb = contentBBox();
+                    if (!bb || bb.w <= 0 || bb.h <= 0) break;
+                    const k = Math.max(w / bb.w, h / bb.h);
+                    if (k > 1.02 || k < 0.98) S.model.scale.set(S.model.scale.x * k);
+                    try { S.app.render(); } catch (e) { break; }
+                    const bb2 = contentBBox();
+                    if (!bb2 || bb2.w <= 0) break;
+                    // 世界位移 = 本地位移（无旋转、stage 无缩放）。
+                    // ★x 同向（都向右）；y 反向——readPixels 自下而上、pixi 自上而下
+                    S.model.position.set(
+                        S.model.position.x + (w / 2 - (bb2.x + bb2.w / 2)),
+                        S.model.position.y + ((bb2.y + bb2.h / 2) - h / 2)
+                    );
+                }
+                try { S.app.render(); } catch (e) { }
+                return;
+            }
         }
         // 真实像素高 = 当前高/当前缩放（originalHeight 是 moc 逻辑画布高，不是像素高，
         // 拿它当基准会把模型放大 ~3 倍只剩一张脸——实测踩过）
@@ -649,6 +705,10 @@
         S.modelId = cfg.model || 'dafeng_2';
         S.scale = cfg.scale || 1;
         ensureDom();
+        /* r137：stage 一建好就通知主页（app.js 的 onCVCompanionReady → applyHomePaneMode），
+         * 「Live2D 形象」模式下先把 stage 搬进首页面板，模型随后直接加载进嵌入尺寸的画布；
+         * 非该模式或首页不活跃时钩子内部自会跳过（stage 留在 body 原位）。 */
+        try { if (typeof window.onCVCompanionReady === 'function') window.onCVCompanionReady(); } catch (e) { }
         if (S.libsReady !== true) {
             try { await ensureLibs(); } catch (e) { console.log('[CVCompanion]', e.message); hideDom(); return; }
         }
@@ -657,13 +717,24 @@
         await warmupCore(modelUrl(S.modelId, file, urlBase));
         let ok = await loadModel(S.modelId);
         if (ok) {
-            await new Promise(r => setTimeout(r, 700));
-            if (!canvasHasPixels()) {
-                console.log('[CVCompanion] 首次渲染空白，重载一次模型');
+            /* r137：首帧等待改轮询（最长 ~5s）。旧逻辑固定 700ms×2 就判「空白」，
+             * 外置大贴图模型（实测 xukufu_3）第一帧还没画出来就被冤杀——探针实测
+             * hideDom 之后画布其实有 168KB 正常内容。轮询期间被 shutdown/换模则直接放行。 */
+            const waitPixels = async (times, gap) => {
+                for (let i = 0; i < times; i++) {
+                    await new Promise(r => setTimeout(r, gap));
+                    if (!S.model || !S.enabled) return true;
+                    if (canvasHasPixels()) return true;
+                }
+                return canvasHasPixels();
+            };
+            const firstOk = await waitPixels(10, 500);
+            if (!firstOk) {
+                console.log('[CVCompanion] 等待 5s 仍无像素，重载一次模型');
                 ok = await loadModel(S.modelId);
-                await new Promise(r => setTimeout(r, 700));
-                if (!canvasHasPixels()) {
-                    console.log('[CVCompanion] 二次渲染仍空白，隐藏浮层');
+                const secondOk = ok && await waitPixels(6, 500);
+                if (!secondOk) {
+                    console.log('[CVCompanion] 重载后仍无像素，隐藏浮层');
                     hideDom();
                     return;
                 }
@@ -673,6 +744,8 @@
         bindInteractions();
         // fsm 初始即 idle，不在这里重置——避免覆盖 boot 尾声期间外部已注入的状态
         console.log('[CVCompanion] Live2D 伴侣已就位：', S.modelId);
+        /* r137：模型真正就位后再通知一次（主页嵌入态按面板实际尺寸 refit） */
+        try { if (typeof window.onCVCompanionReady === 'function') window.onCVCompanionReady(); } catch (e) { }
     }
 
     function shutdown() {
@@ -713,6 +786,16 @@
         boot, applyConfig, aiEvent, shutdown, playAudioWithLipSync,
         get state() { return S.fsm; },
         get loaded() { return !!(S.model && S.app); },
+        get enabled() { return !!S.enabled; },
+        /** r137：按 stage 当前 clientWidth/Height 重算画布与模型布局
+         * （stage 被搬进/搬出首页展示面板后必须调一次；只走 renderer.resize 纪律不变）。
+         * ★ resize 后立即同步 render 一帧：页面不可见时 rAF 停摆，光 resize 不画
+         *   会留下「尺寸对了但 buffer 还是旧帧」的空窗（实测冻结帧 11362 字节）。
+         *   fitModel 与 render 分开兜错——前者炸了也要把现有画面画出来。 */
+        refit() {
+            try { fitModel(); } catch (e) { }
+            try { if (S.app && S.model) S.app.render(); } catch (e) { }
+        },
         get debug() {
             if (!S.model || !S.app) return { hasModel: false };
             const m = S.model;
@@ -724,7 +807,8 @@
                 visible: m.visible, alpha: m.alpha, worldAlpha: m.worldAlpha,
                 rendererSize: [S.app.renderer.width, S.app.renderer.height],
                 children: S.app.stage.children.length,
-                motion: m.internalModel && m.internalModel.motionManager && m.internalModel.motionManager.state ? m.internalModel.motionManager.state.currentGroup : 'n/a'
+                motion: m.internalModel && m.internalModel.motionManager && m.internalModel.motionManager.state ? m.internalModel.motionManager.state.currentGroup : 'n/a',
+                bounds: (function () { try { const b = m.getBounds(); return [b.x, b.y, Math.round(b.width), Math.round(b.height)]; } catch (e) { return null; } })()
             };
         }
     };

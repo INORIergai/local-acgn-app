@@ -45,9 +45,23 @@ router.get('/', (req, res) => {
 });
 
 // 头像刮削进度（前端轮询）
+// round141：一并返回「搭车队列」状态（编辑/换海报时后台自动补的那种）
 router.get('/avatar-stats', (req, res) => {
     try {
-        res.json({ code: 0, data: { ...getActressAvatarStats(), running: avatarJob.running, progress: avatarJob } });
+        let queue = null;
+        try { queue = require('../utils/actress-avatar-queue').status(); } catch (e) { queue = null; }
+        res.json({ code: 0, data: { ...getActressAvatarStats(), running: avatarJob.running, progress: avatarJob, queue } });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// round141：手动为某部影片的女优补头像（编辑/换海报会自动做，这里是兜底入口）
+router.post('/queue-for-movie/:id', (req, res) => {
+    try {
+        const { queueForMovie } = require('../utils/actress-avatar-queue');
+        const n = queueForMovie(req.params.id, { source: 'manual' });
+        res.json({ code: 0, msg: n ? `已排队 ${n} 位女优` : '这部片的女优都有头像了', data: { queued: n } });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }
@@ -127,6 +141,88 @@ router.post('/:id/scrape-avatar', async (req, res) => {
                         height: prof.height || 0
                     });
         res.json({ code: 0, data: { ...getActressById.get(req.params.id) } });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 辅助函数：保存女优头像
+async function applyActressAvatar(item, { avatarBase64, avatarUrl, avatarPath }) {
+    if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+    const fileName = avatarFileName(item.name);
+    const savePath = path.join(AVATAR_DIR, fileName);
+
+    if (avatarBase64) {
+        const m = String(avatarBase64).match(/^data:image\/[a-zA-Z0-9+.-]+;base64,(.+)$/);
+        const b64Data = m ? m[1] : avatarBase64;
+        const buf = Buffer.from(b64Data, 'base64');
+        fs.writeFileSync(savePath, buf);
+    } else if (avatarUrl) {
+        const { downloadImage } = require('../utils/crawler/base');
+        await downloadImage(avatarUrl, savePath, { referer: 'https://www.javbus.com' });
+    } else if (avatarPath && fs.existsSync(avatarPath)) {
+        fs.copyFileSync(avatarPath, savePath);
+    } else {
+        throw new Error('未提供有效的头像数据 (avatarBase64 / avatarUrl / avatarPath)');
+    }
+
+    const relAvatar = `/avatars/${fileName}?t=${Date.now()}`;
+    db.prepare('UPDATE actresses SET avatar = ? WHERE id = ?').run(relAvatar, item.id);
+    return getActressById.get(item.id);
+}
+
+// 手动设置女优头像（按 ID：支持 base64 上传、网络图片 URL、或本地已有图片）
+router.post('/:id/set-avatar', async (req, res) => {
+    try {
+        const item = getActressById.get(req.params.id);
+        if (!item) return res.json({ code: -1, msg: '女优不存在' });
+        const updated = await applyActressAvatar(item, req.body || {});
+        res.json({ code: 0, data: updated, msg: '头像更新成功' });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 按名字刮削女优头像
+router.post('/by-name/:name/scrape-avatar', async (req, res) => {
+    try {
+        const name = decodeURIComponent(req.params.name).trim();
+        let item = db.prepare('SELECT * FROM actresses WHERE name = ?').get(name);
+        if (!item) {
+            db.prepare('INSERT OR IGNORE INTO actresses (name, originalName) VALUES (?, ?)').run(name, name);
+            item = db.prepare('SELECT * FROM actresses WHERE name = ?').get(name);
+        }
+        if (!item) return res.json({ code: -1, msg: '女优不存在且无法创建' });
+
+        const prof = await fetchActressProfile(name);
+        if (!prof) return res.json({ code: -1, msg: `未在网络找到女优「${name}」的资料` });
+
+        updateActressProfile.run({
+            name: name,
+            avatar: prof.avatarFile || '',
+            birthday: prof.birthday || '',
+            height: prof.height || 0
+        });
+        const fresh = db.prepare('SELECT * FROM actresses WHERE id = ?').get(item.id);
+        res.json({ code: 0, data: fresh, msg: '女优头像刮削成功' });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 按名字手动设置女优头像
+router.post('/by-name/:name/set-avatar', async (req, res) => {
+    try {
+        const name = decodeURIComponent(req.params.name).trim();
+        let item = db.prepare('SELECT * FROM actresses WHERE name = ?').get(name);
+        if (!item) {
+            db.prepare('INSERT OR IGNORE INTO actresses (name, originalName) VALUES (?, ?)').run(name, name);
+            item = db.prepare('SELECT * FROM actresses WHERE name = ?').get(name);
+        }
+        if (!item) return res.json({ code: -1, msg: '女优不存在且无法创建' });
+
+        const updated = await applyActressAvatar(item, req.body || {});
+        res.json({ code: 0, data: updated, msg: '女优头像设置成功' });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

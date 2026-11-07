@@ -44,14 +44,19 @@ const TOOL_DEFINITIONS = [
         );
       }
       const capped = Math.min(Math.max(1, Number(limit) || 8), 20);
+      // round140：把渲染播放卡片要用的字段一次给全（海报 / 番号 / 类型），
+      // 前端不再靠二次请求补图；posterLocal 只有文件名，供 /api/movie/poster 直读。 */
       return movies.slice(0, capped).map(m => ({
         id: m.id,
+        movieId: m.id,
         title: m.title || m.fileName,
         avid: m.avid || '',
         type: m.type || 'jav',
         score: m.score || 0,
         releaseDate: m.releaseDate || '',
-        poster: m.posterPath || ''
+        poster: m.posterPath || '',
+        posterPath: m.posterPath || '',
+        localPosterPath: m.localPosterPath || ''
       }));
     }
   },
@@ -119,9 +124,14 @@ const TOOL_DEFINITIONS = [
       }
       return movies.slice(0, Number(limit) || 6).map(m => ({
         id: m.id,
+        movieId: m.id,
         title: m.title || m.fileName,
         avid: m.avid || '',
-        type: m.type || 'jav'
+        type: m.type || 'jav',
+        /* round140：推荐卡片也要有海报，否则对话框里全是灰色占位块 */
+        poster: m.posterPath || '',
+        posterPath: m.posterPath || '',
+        localPosterPath: m.localPosterPath || ''
       }));
     }
   },
@@ -174,11 +184,19 @@ const TOOL_DEFINITIONS = [
       const mid = Number(args.movie_id);
       const movie = db.getMovieById.get(mid);
       if (!movie) return { error: `影片 ${mid} 不存在` };
+      /* round140：原来只回 title —— 前端拿不到海报就只能干巴巴念一个名字。
+       * 现在把海报/番号/类型一起交出去，界面可以直接画出一张「点一下就播」的卡片。 */
       return {
         uiAction: 'play_movie',
         movieId: mid,
         title: movie.title || movie.fileName,
-        message: `已向界面发送指令，正在为你拉起《${movie.title || movie.fileName}》的播放...`
+        avid: movie.avid || '',
+        type: movie.type || 'jav',
+        poster: movie.posterPath || '',
+        posterPath: movie.posterPath || '',
+        localPosterPath: movie.localPosterPath || '',
+        duration: movie.duration || 0,
+        message: `已向界面发送播放卡片：《${movie.title || movie.fileName}》`
       };
     }
   },
@@ -404,10 +422,15 @@ const TOOL_DEFINITIONS = [
       } catch (e) { rows = []; }
       return rows.map(r => ({
         movieId: r.movieId,
+        id: r.movieId,
         title: r.title || r.fileName,
         avid: r.avid || '',
+        type: r.type || 'jav',
         percent: r.duration > 0 ? Math.round((r.position / r.duration) * 100) + '%' : '已看部分',
-        positionSeconds: Math.round(r.position)
+        positionSeconds: Math.round(r.position),
+        /* round140：续播卡片同样要海报 */
+        poster: r.posterPath || '',
+        posterPath: r.posterPath || ''
       }));
     }
   },

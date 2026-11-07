@@ -1,0 +1,89 @@
+/* ==========================================================================
+   round137-home-l2d.css —— 主页左栏 Live2D 形象展示区（r137）
+   --------------------------------------------------------------------------
+   用户需求：主页 AI 对话框区域可切换为 Live2D 形象展示区，尺寸与右侧
+   「热度情报」栏齐平；设置 → 外观 → 首页展示 里二选一。
+
+   结构：.home-chat（grid-area: chat，round42 两栏布局）里新增
+   .home-l2d-pane 兄弟块；模式生效时 .home-chat 加 .home-l2d-mode：
+     - padding-top 212px → 2px（与右栏 .home-rank 同一条顶线）
+     - 隐藏 .home-chat-dock（立绘 + 对话卡）
+     - .home-l2d-pane 撑满整列（flex:1），CVCompanion 的 stage 以
+       #companionStage.embedded 绝对定位填满面板。
+   纯覆盖层：删除本文件 + library.html 里的 <link> 即可回滚。
+   ========================================================================== */
+
+/* ---------- 1. 模式开关（app.js applyHomePaneMode 控制） ---------- */
+.home-chat.home-l2d-mode {
+    padding-top: 2px;                     /* 与 .home-rank 的 padding-top:2px 同一条顶线 */
+}
+.home-chat.home-l2d-mode .home-chat-dock {
+    display: none !important;             /* 立绘三态 + 对话卡整体让位 */
+}
+
+/* ---------- 2. 展示面板卡片（镜像 round75 对话卡的玻璃语言） ---------- */
+.home-l2d-pane {
+    position: relative;
+    flex: 1 1 auto;                       /* 撑满 .home-chat 列 → 顶线/底线与右栏齐平 */
+    min-height: 420px;
+    overflow: hidden;
+    border-radius: var(--r-2, 10px);
+    background: rgba(255, 252, 244, 0.42);
+    -webkit-backdrop-filter: blur(28px) saturate(165%);
+    backdrop-filter: blur(28px) saturate(165%);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow:
+        0 24px 70px -28px rgba(60, 38, 8, 0.42),
+        inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    user-select: none;
+}
+
+/* 夜皮肤（matinee）：对齐 theme-matinee.css 对 .home-chat-card 的处理 */
+html[data-v4skin="matinee"] .home-l2d-pane,
+body.dark .home-l2d-pane {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-top: 2px solid var(--primary);
+    border-radius: 8px;
+    box-shadow: inset 0 1px rgba(255, 239, 210, .035), var(--shadow-1);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+/* ---------- 3. CVCompanion stage 嵌入态 ----------
+ * companion.css 的 #companionStage 是 body 级 fixed 260×340 浮层；
+ * 嵌入时改为 absolute 填满面板（canvas 本身 100%×100% 跟随 stage，
+ * 尺寸变化一律走 CVCompanion.refit() → renderer.resize，禁外改 buffer）。 */
+#companionStage.embedded {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;                 /* 与原浮层同策略：容器穿透，canvas 自己接手势 */
+    filter: none;                         /* 面板自带投影，去掉浮层的 drop-shadow 防双影 */
+}
+/* 嵌入态隐藏「×」：关掉会让面板空一块，要关去设置 → AI → 伴侣看板 */
+#companionStage.embedded .companion-close {
+    display: none;
+}
+/* 气泡改为面板内顶部居中（原浮层从角色左侧冒出，嵌入后会被 overflow:hidden 裁掉；
+ * 用 left/right:0 + margin auto 居中，不碰 transform —— 保留原 show/hide 滑入动画） */
+#companionStage.embedded .companion-bubble {
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    max-width: 260px;
+}
+
+/* ---------- 4. 中窄屏 / 移动端 ---------- */
+@media (max-width: 1400px) and (min-width: 861px) {
+    .home-l2d-pane { min-height: 480px; }
+}
+@media (max-width: 860px) {
+    .home-chat.home-l2d-mode { padding-top: 2px; }
+    .home-l2d-pane { min-height: 300px; flex-basis: 300px; }
+}

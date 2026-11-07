@@ -7,9 +7,9 @@
     <title>本地影库</title>
     <link rel="stylesheet" href="css/style.css?v=27">
     <link rel="stylesheet" href="css/magic-likes.css?v=28">
-    <link rel="stylesheet" href="css/av-board.css?v=5">
+    <link rel="stylesheet" href="css/av-board.css?v=6">
     <link rel="stylesheet" href="css/motion.css?v=1">
-    <link rel="stylesheet" href="css/polish.css?v=13">
+    <link rel="stylesheet" href="css/polish.css?v=14">
     <link rel="stylesheet" href="css/detail-mode.css?v=1">
     <link rel="stylesheet" href="css/theme-v4.css?v=3">
     <!-- 在线观看：macOS 窗口皮（放在 theme-v4 之后，皮肤令牌才能继承下来） -->
@@ -153,8 +153,12 @@
     <link rel="stylesheet" href="css/round131-glass-ui.css?v=1">
     <link rel="stylesheet" href="css/round135-agent.css?v=1">
     <link rel="stylesheet" href="css/round136-agent-jobs.css?v=1">
+<link rel="stylesheet" href="css/round140-ai-play-cards.css?v=1">
+    <link rel="stylesheet" href="css/round137-home-l2d.css?v=1">
     <!-- 移动端适配层：置于最底保证最高层叠优先级，避免被各轮补丁覆盖 -->
     <link rel="stylesheet" href="css/mobile.css?v=4">
+    <!-- round151：V5.0「午夜场 · 典藏放映室」大版本焕新与双皮肤对比度根治层 -->
+    <link rel="stylesheet" href="css/round151-v5-edition.css?v=1">
 </head>
 
 <body>
@@ -203,8 +207,8 @@
             <button class="theme-toggle" id="adultToggle" title="显示/隐藏成人内容入口（AV库、里番库、演员库等）" onclick="toggleAdultNav()"><svg class="ic ic-lock" width="16" height="16"><use href="#ic-lock"/></svg></button>
             <!-- 风格切换：纸 / 夜（round115：4 套收敛到 2 套） -->
             <div class="v4-skin-switch" id="v4SkinSwitch" role="group" aria-label="界面风格">
-                <button class="v4-skin-btn" data-skin="classic" data-label="纸 · Paper" onclick="setV4Skin('classic')" aria-label="纸风格"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="matinee" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="classic" data-short="纸" data-label="纸 · Paper" onclick="setV4Skin('classic')" aria-label="纸风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="matinee" data-short="夜" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span></button>
             </div>
             <button class="theme-toggle" id="shortcutHelpBtn" title="全局快捷键指南（按 ? 或 F1 呼出）" onclick="toggleShortcutsModal()"><span style="font-weight:700;font-size:14px;font-family:var(--font-mono);line-height:1;">?</span></button>
             <button class="theme-toggle" id="aiTopBtn" title="AI助手" aria-label="AI助手"><svg class="ic ic-ai" width="16" height="16"><use href="#ic-ai"/></svg></button>
@@ -235,9 +239,9 @@
                 <div class="nav-item" data-view="home">
                     <span>🏠 首页</span>
                 </div>
-                <div class="nav-item" data-view="guess">
-                    <span>✨ 猜你喜欢</span>
-                </div>
+                <!-- round141：「猜你喜欢」只保留一条，固定归在「媒体库」组（见 app.js 的一次性迁移）。
+                     这里原来还有一条重复的 data-view="guess"，同 key 导致侧栏恢复布局时
+                     把媒体库那条搬进推荐组 ⇒ 用户报「媒体库列表里没有猜你喜欢」。 -->
                 <div class="nav-item" data-view="hot">
                     <span>🔥 热门排行</span>
                 </div>
@@ -286,6 +290,9 @@
                 </div>
                 <div class="nav-item" data-view="recent">
                     <span>🕐 最近观看</span>
+                </div>
+                <div class="nav-item" data-view="guess">
+                    <span>✨ 猜你喜欢</span>
                 </div>
             </div>
 
@@ -428,6 +435,8 @@
             <!-- 首页视图（round33） -->
             <div id="homeView">
                 <div class="home-backdrop"><img src="img/app-icon.png" alt=""></div>
+                <!-- round151 V5：今夜主映 · 典藏放映台 -->
+                <section class="home-curated-stage" id="homeCuratedStage" aria-label="今夜主映典藏放映台"></section>
                 <div class="home-chat">
                     <!-- round42：dock 包住 mascot+卡片，mascot 锚定卡片顶沿（左栏五五开布局） -->
                     <div class="home-chat-dock">
@@ -436,11 +445,24 @@
                         <img class="home-mascot home-mascot-anim" id="homeMascotIdle" src="" alt="" style="display:none;">
                         <img class="home-mascot home-mascot-anim" id="homeMascotTyping" src="" alt="" style="display:none;">
                         <div class="home-chat-card">
+                            <div class="home-chat-head">
+                                <div class="hch-badge">
+                                    <span class="hch-dot"></span>
+                                    <span class="hch-title">AI 典藏策展人</span>
+                                </div>
+                                <span class="hch-sub">CURATOR SALON · 选片 / 找书 / 导读</span>
+                            </div>
                             <div class="home-chat-messages" id="homeChatMessages">
                                 <div class="home-chat-empty">
                                     👋 你好，我是你的影库 AI 助手<br>
                                     <span class="hc-sub">可以问我：推荐几部好看的、找有 XX 标签的影片、翻译片名…</span>
                                 </div>
+                            </div>
+                            <div class="home-quick-prompts" id="homeQuickPrompts">
+                                <button type="button" class="hqp-pill" onclick="window.Home && window.Home.askPreset('从我的馆藏里挑 3 部适合深夜静心阅读或观看的佳作，附上简短理由')">🌙 深夜私享单</button>
+                                <button type="button" class="hqp-pill" onclick="window.Home && window.Home.askPreset('帮我盘点馆藏里评分最高或最值得一读的科幻与悬疑小说')">📚 科幻悬疑经典</button>
+                                <button type="button" class="hqp-pill" onclick="window.Home && window.Home.askPreset('推荐几部画风惊艳、剧情完结的馆藏漫画')">✒️ 完结漫画精选</button>
+                                <button type="button" class="hqp-pill" onclick="window.Home && window.Home.askPreset('随机盲盒：帮我抽一部从没看过但口碑极佳的藏品')">🎲 馆藏盲盒</button>
                             </div>
                             <div class="home-chat-input">
                                 <textarea id="homeChatInput" rows="1" placeholder="输入你的问题，Enter 发送，Shift+Enter 换行" data-ph-wide="输入你的问题，Enter 发送，Shift+Enter 换行" data-ph-narrow="问点什么…"></textarea>
@@ -451,6 +473,9 @@
                             <div class="home-chat-status" id="homeChatStatus"></div>
                         </div>
                     </div>
+                    <!-- r137：Live2D 形象展示区（设置 → 外观 → 首页展示 可切换 AI 对话框 / Live2D 形象；
+                         伴侣 stage 由 app.js applyHomePaneMode 动态搬进来，未启用伴侣时自动回落 AI 对话框） -->
+                    <div class="home-l2d-pane" id="homeL2dPane" style="display:none;"></div>
                 </div>
                 <div class="home-rank">
                     <div class="home-rank-head">
@@ -1074,16 +1099,19 @@
     <script src="js/squeeze-carousel.js?v=6"></script>
     <script src="js/icons.js?v=2"></script>
     <script src="js/danmaku.js?v=1"></script>
-    <script src="js/app.js?v=152"></script>
+    <!-- round144：标题显示层清洗（剥掉标题里重复的番号前缀）。必须在 app.js 之前加载，
+         app.js 的 prefTitle() 依赖 window.cvDisplayTitle。 -->
+    <script src="js/aipc-title-clean.js?v=1"></script>
+    <script src="js/app.js?v=155"></script>
     <script src="js/magic-likes.js?v=30"></script>
     <script src="js/command-palette.js?v=2"></script>
     <script src="js/features.js?v=48"></script>
-    <script src="js/home.js?v=16"></script>
+    <script src="js/home.js?v=17"></script>
 <script src="js/media-source.js?v=1"></script>
     <script src="js/series-ui.js?v=7"></script>
-    <script src="js/av-board.js?v=19"></script>
+    <script src="js/av-board.js?v=23"></script>
     <script src="js/motion.js?v=1"></script>
-    <script src="js/motion-v2.js?v=8"></script>
+    <script src="js/motion-v2.js?v=9"></script>
     <script src="js/motion-flip.js?v=1"></script>
     <!-- round113-P4：共享元素转场（接管 window.MotionFLIP；删掉这一行即回滚） -->
     <script src="js/round113-flip.js?v=12"></script>
@@ -1106,8 +1134,8 @@
     <!-- round72：全局任务胶囊（右上角，任何视图都能看后台任务进度） -->
     <script src="js/task-capsule.js?v=2"></script>
     <!-- round74：语音朗读设置面板 -->
-    <script src="js/tts-panel.js?v=22"></script>
-    <script src="js/companion.js?v=5"></script>
+    <script src="js/tts-panel.js?v=24"></script>
+    <script src="js/companion.js?v=12"></script>
     <script src="js/mobile-nav.js?v=3"></script>
     <!-- 第 21 轮：手机端详情弹窗「下滑关闭」手势（独立文件，删掉本行即可回滚） -->
     <script src="js/mobile-gestures.js?v=2"></script>

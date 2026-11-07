@@ -587,4 +587,103 @@ router.post('/ui-layout', (req, res) => {
     }
 });
 
+/* ============================================================================
+ * round142：Cloudflare 验证辅助 + 浏览器环境自检
+ * ----------------------------------------------------------------------------
+ * 为什么需要：hanime / 91动漫 被 Cloudflare 保护，**无头浏览器一律被拦**，
+ * 必须用真实浏览器过一次验证。此前用户只知道「刮削失败」，不知道要做什么。
+ *
+ * /browser-status  检测本机有没有可用的真实浏览器（ego-lite / Chrome / Edge）
+ * /hanime-verify   拉起有头浏览器打开 hanime，让用户手动过 CF 并登录（登录态持久化）
+ * ========================================================================== */
+
+/** 检测本机可用的真实浏览器（含 ego-lite 与 Playwright 自带 Chromium） */
+router.get('/browser-status', async (req, res) => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const cfg = readConfig();
+        const cdp = (cfg.network && cfg.network.cdp) || {};
+
+        const candidates = [
+            { name: 'ego-lite', paths: [
+                'C:\\Program Files\\Citro Labs\\ego lite\\Application\\ego lite.exe',
+                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'ego lite', 'ego lite.exe')
+            ] },
+            { name: 'Chrome', paths: [
+                'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+                'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+            ] },
+            { name: 'Edge', paths: [
+                'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+                'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+            ] }
+        ];
+        const found = [];
+        for (const c of candidates) {
+            const hit = c.paths.find(p => { try { return fs.existsSync(p); } catch (e) { return false; } });
+            if (hit) found.push({ name: c.name, path: hit });
+        }
+
+        /* 9222 调试端口是否已在监听（说明已有可复用的浏览器实例） */
+        const port = Number(cdp.port) || 9222;
+        const listening = await new Promise((resolve) => {
+            const net = require('net');
+            const sock = net.connect({ port, host: '127.0.0.1' });
+            sock.setTimeout(800);
+            sock.once('connect', () => { sock.destroy(); resolve(true); });
+            sock.once('error', () => { sock.destroy(); resolve(false); });
+            sock.once('timeout', () => { sock.destroy(); resolve(false); });
+        });
+
+        res.json({
+            code: 0,
+            data: {
+                browsers: found,
+                hasRealBrowser: found.length > 0,
+                debugPort: port,
+                debugPortListening: listening,
+                headless: cdp.headless !== false,
+                // 一句话结论，前端直接显示
+                advice: found.length
+                    ? (cdp.headless !== false
+                        ? '检测到真实浏览器，但当前配置为「无头」模式 —— 无头会被 Cloudflare 拦，建议改成有头并过一次验证'
+                        : '检测到真实浏览器且为「有头」模式，可以直接过 Cloudflare')
+                    : '未检测到真实浏览器。请安装 ego-lite 或 Chrome/Edge（其一即可），否则 hanime 源会被自动跳过'
+            }
+        });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+/** 拉起有头浏览器打开 hanime，让用户手动过 CF + 登录（登录态写入持久化 userDataDir） */
+router.post('/hanime-verify', async (req, res) => {
+    try {
+        const userBrowser = require('../utils/crawler/user-browser');
+        const browser = await userBrowser.ensureBrowser();
+        const contexts = browser.contexts();
+        const ctx = contexts.length ? contexts[0] : await browser.newContext();
+
+        // 复用已有 hanime 标签页，没有就开一个
+        let page = ctx.pages().find(p => /hanime/i.test(p.url() || ''));
+        if (!page) page = await ctx.newPage();
+        await page.goto('https://hanime1.me/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
+
+        // 尽力把窗口提到前台（CDP 模式下无法保证，失败不影响功能）
+        try { await page.bringToFront(); } catch (e) { }
+
+        res.json({
+            code: 0,
+            msg: '已打开浏览器。请在弹出的窗口里完成 Cloudflare 验证并登录 hanime，之后保持该浏览器运行即可',
+            data: { url: page.url(), headless: false }
+        });
+    } catch (e) {
+        res.json({
+            code: -1,
+            msg: '启动浏览器失败：' + e.message + '（请确认已安装 Chrome/Edge 或 ego-lite，且没有被安全软件拦截）'
+        });
+    }
+});
+
 module.exports = router;

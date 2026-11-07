@@ -12,6 +12,7 @@
     type: 'all',
     minScore: 0,
     watchStatus: 'all', // all | unwatched | watched | favorite
+    cardLayout: localStorage.getItem('cvBookLayoutMode') || 'auto', // auto | portrait | placard | stage
     currentView: 'movies',
     activeCount: 0
   };
@@ -112,6 +113,15 @@
           <button class="f-pill ${state.watchStatus === 'favorite' ? 'active' : ''}" data-val="favorite">⭐ 收藏</button>
         </div>
 
+        ${!isAdultView ? `
+        <div class="facet-group" data-dim="layout" title="切换书籍与综合卡片的美化展示版式">
+          <span class="facet-label">版式</span>
+          <button class="f-pill ${(state.cardLayout === 'auto' || state.cardLayout === 'portrait') ? 'active' : ''}" data-val="portrait" title="3:4 满幅精装立书架（封面 100% 撑满 + 拟真书脊折痕）">📚 竖版书架</button>
+          <button class="f-pill ${state.cardLayout === 'placard' ? 'active' : ''}" data-val="placard" title="左书右笺 · 博物馆典藏展签横卡（左侧 3:4 立体书封 + 右侧作者/书名/规格展签）">🎫 左书右笺</button>
+          <button class="f-pill ${state.cardLayout === 'stage' ? 'active' : ''}" data-val="stage" title="16:9 宽幅毛玻璃景深舞台">🎬 宽幅舞台</button>
+        </div>
+        ` : ''}
+
         ${isFiltered ? `
           <button type="button" class="facet-reset-btn" id="facetResetBtn" title="清空全部筛选条件">
             ✕ 清除切片
@@ -181,6 +191,14 @@
           if (dim === 'type') state.type = val;
           if (dim === 'score') state.minScore = parseFloat(val);
           if (dim === 'watch') state.watchStatus = val;
+          if (dim === 'layout') {
+            state.cardLayout = val;
+            try { localStorage.setItem('cvBookLayoutMode', val); } catch (e) {}
+            if (typeof window.cvApplyBookLayoutMode === 'function') {
+              window.cvApplyBookLayoutMode(val);
+            }
+            return;
+          }
 
           updateResetBtnVisibility();
           applyFilter();

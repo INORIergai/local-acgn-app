@@ -34,14 +34,36 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v4.7.0：Agent 可审计执行（批量作业 + 单步审批 + 真流式）+ 侧栏布局服务端持久化
+COMMIT_MSG = """v5.0.0：V5「典藏放映室」大改版 + 首页今夜主映放映台 + 双皮肤对比度全达标 + 猜你喜欢提速约 40 倍
 
-- 新增后台作业层：起作业 → 拿 jobId → 后台串行跑 → 面板轮询；「批量换海报」这类小时级任务不再被 90 秒沙箱熔断；条间取消不留半个文件
-- Agent 工具新增 batch_repair_posters（dryRun 默认 true，不显式要求真跑就只出清单不写盘）/ get_job_status / cancel_job
-- 运行时三基建：只读工具自动重试（网络/429/5xx，写操作绝不自动重试）、token 预算（默认 6 万/轮，超支即停但不吞已有回答）、重复失败护栏（同调用连续失败第 3 次直接拒执行）
-- 新增「最近任务」界面入口：顶栏胶囊 + 运行中角标 + 玻璃面板（进度条/当前条目/取消），纸 / 夜双皮肤
-- Agent 链路重构：真 SSE 流式（长任务界面不再假死）、高危操作单步审批卡（批准后同一条流继续、不重发消息）、每步参数/耗时/结果 JSONL 落盘可回放
-- 侧栏自定义布局改为服务端为准（config.json），localStorage 降级为缓存；清缓存、换配置目录、异常退出都不再丢布局"""
+【V5 视觉与信息架构】round150 量化评审 -> round151 改版
+- 首页新增「今夜主映 · Curated Screening Stage」：35mm 胶片齿孔饰边 + 环境光模糊 + 3D 立书/海报主视觉，支持立即翻阅/放映、藏品档案、换一部、AI 导读
+- 右侧新增 Archive Pulse 馆藏脉搏四格计数器与 Curated Reel 今夜候选胶片条；AI 升级为「典藏策展人」，配 4 枚一键策展胶囊
+- 竖版书封不再被 16:9 裁切：3D 书脊立书 + 同色系高斯模糊景深底衬，无图藏品自动生成布面典藏扉页
+- 漫画/小说库改亚麻布面藏书函套（纸=亚麻米 / 夜=深焙胡桃），解析文件夹命名拆成作者铭牌 + 正题 + 完结徽章 + 藏书章；全库 0 处「第 ? 卷」，清洗 Z-Library 尾缀
+- 新增单文件收束层 public/css/round151-v5-edition.css
+
+【对比度根治】round150 实锤的两处 P0
+- 纸皮肤快捷键面板 1.43:1 -> 7.04:1：背景与前景成对锁死，不再只锁 color 不锁 background
+- 夜皮肤首页 AI 卡 1.01:1 -> 7.07:1；纸 7.30:1 / 夜 7.07:1，双皮肤 88/88 项达标 WCAG AA/AAA
+- AI 回复改 mdLite() 富文本渲染，0 裸露 ** 与 ##
+
+【性能】
+- 猜你喜欢首屏 9391ms -> 153~279ms：移除每次请求 18618 次同步 SQLite 查询与 9 秒同步 AI 阻塞，改后台异步预热 + 观看历史亲和度/有封面优先召回
+- utils/media-tree.js 复用 Intl.Collator，树构建排序 ~1.5s -> <10ms
+
+【交互人体工学】
+- 详情弹窗自动收起首次引导遮罩，消除双层模态遮挡
+- 移除常驻断网黄条；通知 toast 移右上、扫描胶囊移左下，不再压搜索框
+- 顶栏纸/夜切换显式带文字标签；桌面端设置页左栏常驻展开；移动端语音球/扫描胶囊抬高到 Tab 栏之上
+
+【v4.8 开发线上尚未单独发布的功能，并入本版】
+- AI 对话内可点击播放卡片：utils/agent/cards.js 归一化工具返回并下发带海报卡片，点一下才播，同轮同片只画一张
+- Fish Audio 云端 TTS：utils/tts/fishaudio-engine.js，音色 ID / 模型档位 / 独立代理；保存配置只回脱敏串（不回吐 apiKey）
+- 里番竖版海报优先：AniList -> FANZA -> 91动漫 -> hanime；hanime 搜索参数 ?q= -> ?query= 等三处真 bug
+- 首页左栏可选 AI 对话框 / Live2D 形象；修复隐私六项强制归组覆盖用户拖动排序
+- 女优头像串行补齐队列 utils/actress-avatar-queue.js
+- 前端缓存版本号修正：motion-v2 ?v=9、tts-panel ?v=23"""
 
 
 def get_token():

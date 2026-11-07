@@ -520,10 +520,15 @@ async function searchMovie(cleanName, fileName, type, filePath) {
     if (config.sources?.anilist?.enabled !== false) {
       const alResult = gate(await searchAniListByName(animeKey), 'AniList');
       if (alResult) {
-        console.log('[AniList]命中:', alResult.title);
-        return normalizeResult(alResult, 'anilist', null);
+        console.log('[AniList]命中（官方竖版海报）:', alResult.title);
+        const norm = normalizeResult(alResult, 'anilist', null);
+        /* round142：AniList 的 coverImage 是官方竖版海报（实测 460×651 / ratio≈0.71），
+           与库里已有的 42 条竖版样式一致。显式标记，让上层知道「这张是对的素材类型」。 */
+        norm.posterAspect = 'portrait';
+        norm._extra = Object.assign({}, norm._extra, { posterAspect: 'portrait' });
+        return norm;
       }
-      console.log('[AniList]未检索到结果，换 91动漫');
+      console.log('[AniList]未检索到结果，继续下一源');
     }
 
     // ===== 第二源：FANZA 官方 API（里番动画的官方封面源）=====
@@ -549,13 +554,30 @@ async function searchMovie(cleanName, fileName, type, filePath) {
       console.log('[91动漫]未检索到结果，换 hanime');
     }
 
-    // ===== 第四源：hanime1.me（中文索引站；容器 IP 被 Cloudflare 拦，只能靠宿主机中转）=====
+    // ===== 第四源：hanime1.me（最后兜底）=====
+    /* round142：派单重排。用户要的是**竖版官方海报**（460×651，AniList 那种），
+     * 而 hanime 只能给 640×360 的**横版视频截图** —— 两者是不同素材，混用会让
+     * 同一个库里一半竖版一半横版，观感很差。所以：
+     *   · AniList / FANZA / 91动漫 都失败后才轮到 hanime；
+     *   · 命中的结果显式标记 posterAspect='landscape'、source='hanime'，
+     *     由上层决定「宁缺勿错」（默认就不写库，见 ingest-ensure 的竖版校验）。
+     * 另外 hanime 依赖真实浏览器过 Cloudflare，见下方提示文案。 */
     if (config.sources?.hanime?.enabled) {
       const hanimeResult = gate(await searchHanimeByName(animeKey), 'hanime');
       if (hanimeResult) {
-        return normalizeResult(hanimeResult, 'hanime', null);
+        console.log('[hanime]命中（横版截图，非官方竖版海报）:', hanimeResult.title);
+        const norm = normalizeResult(hanimeResult, 'hanime', null);
+        // 标记素材形态，供上层「只收竖版」策略判断
+        norm.posterAspect = 'landscape';
+        norm._extra = Object.assign({}, norm._extra, {
+          posterAspect: 'landscape',
+          note: 'hanime 只提供 640×360 视频截图；竖版海报请优先用 AniList'
+        });
+        return norm;
       }
-      console.log('[hanime爬虫]未检索到结果');
+      console.log('[hanime]未检索到结果');
+      console.log('[hanime]⚠️ 该源需要真实浏览器（ego-lite 或有头 Chrome）才能过 Cloudflare；'
+        + '无头模式会被拦，且不会自动降级出图');
     }
     return null;
   }
@@ -973,6 +995,10 @@ async function downloadPoster(posterUrl, savePath) {
   if (posterUrl.includes('javten')) referer = config.sources?.fc2?.mirror || 'shturl.cc/ZZjh4V78';
   if (posterUrl.includes('avsox')) referer = config.sources?.avsox?.mirror || 'https://avsox.click';
   if (posterUrl.includes('hanime')) referer = config.sources?.hanime?.baseUrl || 'shturl.cc/ERyRKemx';
+  /* round141：hanime 的封面实际托管在 vdownload.hembed.com（签名 URL），
+     域名里根本没有 "hanime" 字样 —— 上一行的规则命中不了，referer 会落空。
+     实测该图片 CDN 不校验 referer，但带上站点根更稳（部分镜像会查）。 */
+  if (posterUrl.includes('hembed.com')) referer = withSlash(config.sources?.hanime?.baseUrl || 'https://hanime1.me');
   if (posterUrl.includes('anilist')) referer = 'https://anilist.co/';
   if (posterUrl.includes('tuafjz.cn') || posterUrl.includes('iffuglfyc')) referer = withSlash(config.sources?.dongman?.baseUrl || 'https://91dongman.net');
   if (posterUrl.includes('moex.ink') || posterUrl.includes('kmimg')) referer = config.sources?.kmoe?.baseUrl || 'https://kzo.moe';

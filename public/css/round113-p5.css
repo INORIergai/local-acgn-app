@@ -95,19 +95,41 @@ html body .content > .toolbar .toolbar-count {
     vertical-align: 3px;
 }
 
-/* ---------------- 漫画库 / 小说库：页头不进大字 ---------------- */
-/* 这两个视图的卡片板自己就带一块 .av-hero 大标题（SHELF · COMIC / 漫画库 / 共 N 正片），
+/* ---------------- 漫画库 / 小说库 / 设置页：页头不进大字 ---------------- */
+/* 漫画/小说视图的卡片板自己就带一块 .av-hero 大标题（SHELF · COMIC / 漫画库 / 共 N 正片），
    页头再撑到 40px 就是两个大标题叠着，实测很难看。
-   所以这里固定走紧凑尺寸，页头只保留「吸顶 + 发丝线」的定位价值。 */
+
+   ★ round143：设置页也必须固定走紧凑尺寸。
+   设置页是纯配置面板，40px 大字标题没有任何信息价值；更致命的是
+   它参与「首屏 40px → 吸顶 20px」的收放后，一旦用户把设置页拉到最底部：
+     收起 → 工具条矮约 40px → 页面 scrollHeight 少约 40px →
+     浏览器把 scrollY 向上 clamp → 工具条 rect.top 立刻增大 >40px（远超 3px 滞回）→
+     判定「离开吸顶」→ 展开回 40px → 页面又够长 → 再次满足吸顶 → 收起 …
+   形成 60fps 的「变大变小」死循环闪烁（用户 m01872 反馈的 bug）。
+   这里让设置页的工具条高度恒定（20px 标题 + 紧凑内距），
+   无论 compact 与否高度都不变，clamp 就再也不会触发振荡。 */
 body[data-view="comic"] .content > .toolbar,
-body[data-view="novel"] .content > .toolbar {
+body[data-view="novel"] .content > .toolbar,
+body[data-view="settings"] .content > .toolbar {
     padding: 8px 0 12px;
 }
 body[data-view="comic"] .content > .toolbar #toolbarTitle,
-body[data-view="novel"] .content > .toolbar #toolbarTitle {
+body[data-view="novel"] .content > .toolbar #toolbarTitle,
+body[data-view="settings"] .content > .toolbar #toolbarTitle {
     font-size: 20px;
     line-height: 1.2;
     letter-spacing: 0.005em;
+}
+
+/* 设置页收起态高度与常态完全一致（只补发丝线，不再改 padding/margin/字号），
+   保证 .hdr-compact 的挂/摘不改变任何布局尺寸 —— 这才是真正止血的地方。 */
+html.hdr-compact body[data-view="settings"] .content > .toolbar {
+    padding: 8px 0 12px;
+    margin-bottom: 16px;
+}
+html.hdr-compact body[data-view="settings"] .content > .toolbar #toolbarTitle {
+    font-size: 20px;
+    line-height: 1.2;
 }
 
 /* ---------------- 收起态（滚动后吸顶） ---------------- */

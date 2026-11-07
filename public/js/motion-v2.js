@@ -197,28 +197,167 @@
     };
 
     /* ---------- 9. AI Agent 前端动作执行器 (UI Actions) ---------- */
+    /* round140：播放意图不再「自动偷偷拉起播放器」，改成弹一张可点击的播放卡片。
+       用户点卡片才真的播放 —— 这既符合「要卡片」的诉求，也避免误播/误切视图。
+       任何 UI 动作都返回 true 表示已处理，便于上层去重。 */
     window.executeAIUiActions = function (actions) {
-        if (!Array.isArray(actions) || !actions.length) return;
+        if (!Array.isArray(actions) || !actions.length) return false;
+        let handled = false;
         actions.forEach(function (act) {
             if (!act || !act.type) return;
             console.log('[AI Agent Action]', act.type, act.payload);
             const p = act.payload || {};
-            if (act.type === 'play_movie' && p.movieId) {
-                setTimeout(function () {
-                    if (typeof window.playMovieInline === 'function') window.playMovieInline(p.movieId);
-                    else if (typeof window.showMovieDetail === 'function') window.showMovieDetail(p.movieId);
-                }, 500);
+            if (act.type === 'play_movie') {
+                /* 优先画卡片。注意：卡片渲染器存在时，**绝不**回退到「自动播放」——
+                   用户要的是「点一下才播」，自动拉开播放器正好违背这个诉求。
+                   仅当卡片渲染器完全不可用（老版本前端/脚本加载失败）才走老行为。 */
+                var hasRenderer = !!(window.renderAIPlayCards && window.insertAIPlayCards);
+                if (hasRenderer) {
+                    var exists = document.querySelector('.aipc[data-movie-id="' + (p.movieId || p.id) + '"]');
+                    if (!exists) window.insertAIPlayCards([p], 'play');
+                    handled = true;   // 已有同片卡片时也算处理过（去重，不重复画）
+                } else if (typeof window.playMovieInline === 'function' && p.movieId) {
+                    setTimeout(function () { window.playMovieInline(p.movieId); }, 500);
+                    handled = true;
+                }
             } else if (act.type === 'switch_view' && p.view) {
                 setTimeout(function () {
                     if (typeof window.switchView === 'function') window.switchView(p.view);
                 }, 400);
+                handled = true;
             } else if (act.type === 'show_notification') {
                 if (typeof window.showNotification === 'function') {
                     window.showNotification(p.title || 'AI提示', p.message || '');
                 }
+                handled = true;
             }
         });
+        return handled;
     };
+
+    /* ---------- 9b. 对话内「可点击播放卡片」渲染器 (round140) ---------- */
+    /* 卡片形状由后端 utils/agent/cards.js 归一化，前端只画。
+       数据合理来源两处：SSE 的 cards 事件（工具一跑完就发）、done 事件的 cards 兜底。 */
+    function posterUrlFor(card) {
+        var remote = String(card.poster || '');
+        var local = String(card.posterLocal || '');
+        // 远程 URL 但本地有缓存副本时优先本地（代理挂了也不会破图，与 app.js getPosterUrl 同口径）
+        if (/^https?:\/\//i.test(remote)) return local ? ('/api/movie/poster/' + local) : '';
+        if (!remote && local) return '/api/movie/poster/' + local;
+        if (!remote) return '';
+        return '/api/movie/poster/' + remote;
+    }
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+
+    window.renderAIPlayCards = function (cards, opts) {
+        if (!Array.isArray(cards) || !cards.length) return '';
+        opts = opts || {};
+        var kind = opts.kind || 'movie';
+        var playMode = kind === 'play';
+        var shown = cards.slice(0, 8);
+        var title = playMode ? '▶ 点一下就播放' : ('🎬 找到 ' + cards.length + ' 部');
+
+        var items = shown.map(function (c) {
+            var poster = posterUrlFor(c);
+            var img = poster
+                ? '<img src="' + esc(poster) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+                : '<span class="aipc-ph">🎬</span>';
+            var meta = c.avid ? '<span class="aipc-avid">' + esc(c.avid) + '</span>' : '';
+            var typeTag = c.type && c.type !== 'jav'
+                ? '<span class="aipc-type">' + esc({ anime: '动漫', comic: '漫画', novel: '小说', film: '影视', cartoon: '里番' }[c.type] || c.type) + '</span>'
+                : '';
+            return '<div class="aipc" data-movie-id="' + esc(c.movieId) + '" title="' + esc(c.title) + '">' +
+                '<div class="aipc-cover">' + img +
+                (playMode ? '<span class="aipc-play" aria-hidden="true">▶</span>' : '') +
+                '</div>' +
+                '<div class="aipc-body">' +
+                '<div class="aipc-title">' + esc(c.title) + '</div>' +
+                '<div class="aipc-meta">' + meta + typeTag + '</div>' +
+                '<div class="aipc-acts">' +
+                '<button type="button" class="aipc-btn aipc-playbtn">▶ ' + (playMode ? '立即播放' : '播放') + '</button>' +
+                '<button type="button" class="aipc-btn aipc-detail">详情</button>' +
+                '</div>' +
+                '</div>' +
+                '</div>';
+        }).join('');
+
+        return '<div class="aipc-wrap' + (playMode ? ' aipc-single' : '') + '">' +
+            '<div class="aipc-head">' + esc(title) + '</div>' +
+            '<div class="aipc-grid">' + items + '</div>' +
+            '</div>';
+    };
+
+    /** 给卡片挂事件：点封面/播放按钮 = 播放；点详情 = 进详情页。不依赖内联 onclick。 */
+    function bindPlayCards(scope, opts) {
+        if (!scope) return;
+        opts = opts || {};
+        /* 播放落点优先级：
+           ① 调用方显式传入的 onPlay（远程/其它页面自定义）
+           ② app.js 注册的 window._aiCardPlay（内部直调 playMovieInline，按类型路由阅读器）
+           ③ openWithPotPlayer（外部播放器偏好）
+           ④ playMovieInline 兜底 */
+        var onPlay = function (id) {
+            if (typeof opts.onPlay === 'function') return opts.onPlay(id);
+            if (typeof window._aiCardPlay === 'function') return window._aiCardPlay(id);
+            if (typeof window.openWithPotPlayer === 'function') return window.openWithPotPlayer(id);
+            if (typeof window.playMovieInline === 'function') return window.playMovieInline(id);
+        };
+        var onDetail = function (id) {
+            if (typeof window._aiCardDetail === 'function') return window._aiCardDetail(id);
+            if (typeof window.jumpToMovieFromAI === 'function') return window.jumpToMovieFromAI(id);
+            if (typeof window.showMovieDetail === 'function') return window.showMovieDetail(id);
+        };
+        scope.querySelectorAll('.aipc[data-movie-id]').forEach(function (card) {
+            var id = Number(card.getAttribute('data-movie-id'));
+            if (!id) return;
+            var playBtn = card.querySelector('.aipc-playbtn');
+            var detailBtn = card.querySelector('.aipc-detail');
+            var cover = card.querySelector('.aipc-cover');
+            if (playBtn) playBtn.addEventListener('click', function (e) { e.stopPropagation(); onPlay(id); });
+            if (detailBtn) detailBtn.addEventListener('click', function (e) { e.stopPropagation(); onDetail(id); });
+            if (cover) cover.addEventListener('click', function (e) { e.stopPropagation(); onPlay(id); });
+        });
+    }
+
+    /** 把卡片插进指定容器；返回是否插成功（供 executeAIUiActions 决策） */
+    window.insertAIPlayCards = function (cards, kind, opts) {
+        opts = opts || {};
+        var box = opts.container || document.getElementById('homeChatMessages') || document.getElementById('aiMessages');
+        if (!box || !Array.isArray(cards) || !cards.length) return false;
+
+        /* round140 去重：同一个 movieId 在同一轮对话里只画一张卡。
+           典型场景「我想看 ABP-367」会连调 search_movies + play_movie，
+           两次都下发卡片，不拦就会看到两遍同一部片。 */
+        var seenKey = '__aiCardsSeen';
+        var seen = (window[seenKey] = window[seenKey] || new Set());
+        var fresh = cards.filter(function (c) {
+            if (!c || !c.movieId) return false;
+            if (seen.has(c.movieId)) return false;
+            seen.add(c.movieId);
+            return true;
+        });
+        if (!fresh.length) return false;
+        cards = fresh;
+
+        var empty = box.querySelector('.home-chat-empty');
+        if (empty) empty.remove();
+        var wrap = document.createElement('div');
+        wrap.className = (box.id === 'homeChatMessages' ? 'home-msg ai' : 'ai-msg ai') + ' ai-cards-msg';
+        wrap.innerHTML = window.renderAIPlayCards(cards, { kind: kind });
+        box.appendChild(wrap);
+        bindPlayCards(wrap, opts);
+        box.scrollTop = box.scrollHeight;
+        return true;
+    };
+
+    /* 新的一轮对话开始时清空去重记忆（由 home/app 的发送入口调用），
+       这样「同一个片子，上一轮说一次、这一轮再说一次」仍然会画卡。 */
+    window.resetAIPlayCardsSeen = function () { window.__aiCardsSeen = new Set(); };
 
     /* ---------- 10. AI Agent 沙箱步骤条与审批卡片模板 ---------- */
     const PRIV_LABELS = {
@@ -314,6 +453,7 @@
                     else if (json.type === 'token' && callbacks.onToken) callbacks.onToken(json.token, json);
                     else if (json.type === 'step' && callbacks.onStep) callbacks.onStep(json.step);
                     else if (json.type === 'step_patch' && callbacks.onStepPatch) callbacks.onStepPatch(json);
+                    else if (json.type === 'cards' && callbacks.onCards) callbacks.onCards(json);
                     else if (json.type === 'action' && callbacks.onAction) callbacks.onAction(json.action);
                     else if (json.type === 'approval' && callbacks.onApproval) callbacks.onApproval(json.approval);
                     else if (json.type === 'done' && callbacks.onDone) callbacks.onDone(json);

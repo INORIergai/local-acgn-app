@@ -155,6 +155,49 @@ function fuzzySearchList(q) {
     return hits.map(r => getMovieById.get(r.id)).filter(Boolean);
 }
 
+// HEVC 等设备不支持编码的实时转码降级：
+// 手机端 AVPlayer 遇到 HEVC(H.265) 源会报 VID_DEC_ERR（本机解码器不支持），
+// 客户端捕获后追加 transcode=1 重试，服务端用 ffmpeg 实时转成 H.264 fMP4 流。
+// 注意：转码流不支持 Range/拖动进度条（顺序播放），起播有数秒转码预热。
+function startTranscode(filePath, req, res) {
+    const { spawn } = require('child_process');
+    const args = [
+        // 注意：不能加 -re。转码速度远超实时（~12x），-re 会让 ffmpeg 把
+        // 编码结果无限堆积在内存缓冲（实测 1.6GB），播放器却迟迟等不到数据。
+        // 去掉 -re 后由 TCP 反压自然限速，播放器读多快转多快。
+        '-i', filePath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+        '-vf', 'scale=min(1920\\,iw):-2',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+        '-f', 'mp4',
+        'pipe:1'
+    ];
+    let child;
+    try {
+        child = spawn('ffmpeg', args, { windowsHide: true });
+    } catch (e) {
+        return res.status(500).json({ code: -1, msg: '主机缺少 ffmpeg，无法转码：' + e.message });
+    }
+    let started = false;
+    child.on('error', (e) => {
+        if (!started && !res.headersSent) {
+            res.status(500).json({ code: -1, msg: '主机缺少 ffmpeg，无法转码：' + e.message });
+        }
+    });
+    child.stderr.on('data', () => { /* 丢弃 ffmpeg 进度日志 */ });
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'none' });
+    started = true;
+    child.stdout.pipe(res);
+    req.on('close', () => {
+        try { child.kill('SIGKILL'); } catch (e) { /* 忽略 */ }
+    });
+    child.on('exit', () => {
+        if (!res.writableEnded) res.end();
+    });
+}
+
 // 视频文件流（支持 Range 请求）
 router.get('/stream', (req, res) => {
     try {
@@ -168,18 +211,55 @@ router.get('/stream', (req, res) => {
             return res.status(403).json({ code: -1, msg: '路径不在允许的媒体目录内' });
         }
 
+        if (String(req.query.transcode) === '1') {
+            return startTranscode(filePath, req, res);
+        }
+
         const stat = fs.statSync(filePath);
         const fileSize = stat.size;
         const range = req.headers.range;
 
         if (range) {
             // Range 请求，支持断点续传和拖动进度条
-            const parts = range.replace(/bytes=/, '').split('-');
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            // 必须支持三种形式：bytes=A-B、bytes=A-、bytes=-N（后缀）。
+            // 移动端 AVPlayer 读 MP4 尾部 moov atom 时常发 bytes=-N，
+            // 旧实现 parseInt('') = NaN 会直接 500，导致播一段后
+            // demux 报 IO Error（DEM_PARSE_ERR）。
+            const m = /^bytes=(\d*)-(\d*)$/.exec(String(range).replace(/\s+/g, ''));
+            if (!m || (m[1] === '' && m[2] === '')) {
+                res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+                return res.end();
+            }
+            let start;
+            let end;
+            if (m[1] === '') {
+                const suffix = parseInt(m[2], 10);
+                start = Number.isFinite(suffix) ? Math.max(0, fileSize - suffix) : 0;
+                end = fileSize - 1;
+            } else {
+                start = parseInt(m[1], 10);
+                end = m[2] === '' ? fileSize - 1 : parseInt(m[2], 10);
+            }
+            if (!Number.isFinite(start) || start < 0) start = 0;
+            if (!Number.isFinite(end) || end > fileSize - 1) end = fileSize - 1;
+            if (start > end) {
+                res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+                return res.end();
+            }
             const chunkSize = (end - start) + 1;
+            console.log(`[stream] ${req.headers.range || '(none)'} -> 206 ${start}-${end}/${fileSize}`);
 
             const file = fs.createReadStream(filePath, { start, end });
+            file.on('error', (err) => {
+                console.log(`[stream] read error: ${err.message}`);
+                if (!res.headersSent) {
+                    res.writeHead(500);
+                }
+                res.destroy();
+            });
+            res.on('close', () => {
+                console.log(`[stream] conn closed ${start}-${end} (writableFinished=${res.writableFinished})`);
+            });
             const head = {
                 'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                 'Accept-Ranges': 'bytes',
@@ -329,7 +409,12 @@ router.post('/:id/upload-poster', async (req, res) => {
             msg: '封面上传成功',
             data: {
                 posterPath: posterFileName,
-                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`
+                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`,
+                avatarQueue: (function () {
+                    // round141：换海报时搭车补女优头像（不阻塞响应）
+                    try { return require('../utils/actress-avatar-queue').queueForMovie(movie.id, { source: 'poster' }); }
+                    catch (e) { return 0; }
+                })()
             }
         });
     } catch (err) {
@@ -627,7 +712,12 @@ router.post('/:id/upload-poster-url', async (req, res) => {
             msg: '封面下载并保存成功',
             data: {
                 posterPath: posterFileName,
-                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`
+                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`,
+                avatarQueue: (function () {
+                    // round141：换海报（搜图/贴 URL）时搭车补女优头像
+                    try { return require('../utils/actress-avatar-queue').queueForMovie(movie.id, { source: 'poster' }); }
+                    catch (e) { return 0; }
+                })()
             }
         });
     } catch (err) {
@@ -1505,7 +1595,19 @@ router.post('/update/:id', async (req, res) => {
             disk = { ok: true, renamed: false, skipped: ['本次选择不改动磁盘文件'] };
         }
 
-        res.json({ code: 0, msg: '更新成功', data: { disk } });
+        /* ★ round141：女优头像「搭车」——编辑保存时把这部片子女优里**还没有头像**的
+           顺手排进后台队列（串行 700ms，只补缺，不覆盖已有头像）。
+           用户反馈「女优标签里有些没头像，只有去演员库点 ⟳ 才补得上」。
+           这里不 await：保存必须立刻返回，头像在后台慢慢抓，抓到了发一条 toast。 */
+        let avatarQueue = 0;
+        try {
+            const { queueForMovie } = require('../utils/actress-avatar-queue');
+            avatarQueue = queueForMovie(req.params.id, { source: 'edit' });
+        } catch (e) {
+            console.warn('[女优头像] 编辑搭车入队失败:', e.message);
+        }
+
+        res.json({ code: 0, msg: '更新成功', data: { disk, avatarQueue } });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

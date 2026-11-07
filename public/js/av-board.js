@@ -15,9 +15,9 @@
 
     /* ---------- 参考站实测设计常量 ---------- */
 
-    // 糖果粉彩 10 色板
-    var CANDY = ['#ffdbfd', '#FAED8F', '#DDFCFC', '#CAF7C8', '#fbb663',
-                 '#f49978', '#feb6fa', '#c2b4eb', '#997ade', '#00ecef'];
+    // 典藏书函 10 色板（取代刺眼荧光糖果色，与「纸 · Paper / 夜 · Night」同源的亚麻与墨金调）
+    var CANDY = ['#EFE7D8', '#E9DFCE', '#ECDFD2', '#E4DDD0', '#EFE4D2',
+                 '#E8DDD1', '#E5DEC9', '#ECE3D5', '#E3DAD0', '#EDE5D6'];
 
     // 散落角 / 垂直偏移（解码自参考站 .books-slider__item-cover 的 computed matrix）
     var SCATTER = [
@@ -91,7 +91,49 @@
     /* 「002：第一回 皓光当空 上-日月同错」→ { no:'002', title:'第一回 皓光当空 上' }
        树 item 没有 displayTitle，真实章节名在 title / cleanName / fileName 里 */
     function itemTitle(it) {
+        if (!it) return '';
+        if (window.cvDisplayTitle) return window.cvDisplayTitle(it);
         return it.title || it.cleanName || it.displayTitle || it.fileName || '';
+    }
+
+    /* 解析漫画/小说文件夹名，例如 "[永椎晃平][星野、闭上眼][完结]" → { author:'永椎晃平', title:'星野、闭上眼', badge:'完结', glyph:'星' } */
+    function parseFolderMeta(rawName) {
+        var raw = String(rawName || '未命名文件夹').trim();
+        var brackets = [];
+        var rest = raw;
+        var m;
+        while ((m = /^[\s]*[\[【（(]([^\]】）)]{1,24})[\]】）)]\s*/.exec(rest))) {
+            brackets.push(m[1].trim());
+            rest = rest.slice(m[0].length);
+        }
+        var tailBadges = [];
+        while ((m = /\s*[\[【（(](完结|连载中?|更新|未完|全\d+[卷册话回]|合集|短篇)[\]】）)]\s*$/i.exec(rest))) {
+            tailBadges.unshift(m[1].trim());
+            rest = rest.slice(0, rest.length - m[0].length);
+        }
+        // 去除分类排序前缀如 "F-廢淵戰鬼" / "Q-青春水球社" / "Q 全知读者视角"
+        rest = rest.replace(/^[A-Za-z][\-\s_]+(?=[\u4e00-\u9fa5A-Za-z0-9])/, '').trim();
+        var author = '';
+        var title = rest;
+        if (!title && brackets.length >= 2) {
+            author = brackets[0];
+            title = brackets[1];
+            if (brackets.length > 2) tailBadges = brackets.slice(2).concat(tailBadges);
+        } else if (!title && brackets.length === 1) {
+            title = brackets[0];
+        } else if (brackets.length >= 1) {
+            author = brackets[0];
+            if (brackets.length >= 2 && !rest) title = brackets[1];
+        }
+        title = (window.cvCleanTitle ? window.cvCleanTitle(title) : title) || raw;
+        var cleanForGlyph = title.replace(/^[\s\[\]【】()（）0-9.\-_·:：]+/, '').trim();
+        var glyph = (cleanForGlyph || title || '藏').charAt(0);
+        return {
+            author: author,
+            title: title,
+            badge: tailBadges.join(' · '),
+            glyph: glyph
+        };
     }
 
     function splitChapter(name) {
@@ -131,7 +173,11 @@
         var sc = scatter(i);
         var ch = splitChapter(itemTitle(item) || '未命名');
         var isNovel = kind === 'novel';
-        var vol = isNovel ? (ch.title.match(/\d+/) || [''])[0] : '';
+        var volLabel = window.cvExtractVolumeLabel ? window.cvExtractVolumeLabel(ch.title, isNovel) : '';
+        var subLabel = window.cvExtractBookSubLabel
+            ? window.cvExtractBookSubLabel(item, ch.title, isNovel)
+            : (isNovel ? (volLabel || '典藏长卷') : (ch.no ? 'No.' + ch.no : '单行本'));
+        var badgeNum = volLabel || (ch.no ? '#' + ch.no : '');
         var cta = isNovel ? '打开这一卷' : '继续阅读';
         /* ★ round26续：这一层原先一张 <img> 都不产出，所以漫画 / 小说的封面在树视图里
            永远看不见 —— 改没改封面都一样（用户在「换封面」里选了新图，库里也写进去了，
@@ -143,21 +189,23 @@
            形状 > 颜色 > 文案：未读=空心圈 / 在读=实心胶囊+百分比 / 读完=实心✓ / 搁置=空心胶囊。
            数据来自 media_progress（round73 新落库表）；该表没有记录时回落 item.watched。 */
         var flags = (item.favorite === 1 ? '<span class="av-flag">⭐</span>' : '') + avpBadges(item);
+        // 展示标题剥掉末尾冗长括号作者串（作者已提炼进副标 subLabel）
+        var cleanShowTitle = ch.title.replace(/\s*[\(（][^()（）]{2,24}[\)）]\s*$/, '').trim() || ch.title;
         return '<div class="av-card' + (art ? ' has-art' : '') + '" data-av-id="' + esc(item.id) + '" tabindex="0" role="button" ' +
-            'aria-label="' + esc(ch.title) + '" ' +
+            'aria-label="' + esc(cleanShowTitle) + '" ' +
             'style="--cv:' + candy(i) + ';--rot-base:' + sc[0] + 'deg;--dy-base:' + sc[1] + 'px;' +
             '--rot:' + sc[0] + 'deg;--dy:' + sc[1] + 'px;animation-delay:' + Math.min(i, 11) * 45 + 'ms" ' +
             'title="' + esc(ch.title) + '">' +
             (art ? '<img class="av-art" src="' + esc(art) + '" alt="" loading="lazy" decoding="async">' : '') +
             flags +
             avpBar(item) +
-            (vol ? '<span class="av-num">' + esc(vol) + '</span>' : '') +
+            (badgeNum ? '<span class="av-num">' + esc(badgeNum) + '</span>' : '') +
             /* ★ round73：标题从「压在封面中央的 19px Arial Black」移到封面下方。
                原来的绝对定位(top:58px)会盖住封面主体，破坏「看封面认作品」这个核心动作。
                顺手把 .av-sub 从「写死黑底药丸」改成普通文字行 —— 那个 #000 底在浅色卡上不可读。 */
             '<div class="av-cap">' +
-              '<span class="av-title">' + esc(ch.title) + '</span>' +
-              '<div class="av-sub"><b>' + esc(isNovel ? ('第 ' + (vol || '?') + ' 卷') : (ch.no ? 'No.' + ch.no : '')) + '</b>' +
+              '<span class="av-title">' + esc(cleanShowTitle) + '</span>' +
+              '<div class="av-sub"><b>' + esc(subLabel) + '</b>' +
               '<span>' + mb(item.fileSize) + '</span></div>' +
             '</div>' +
             '<div class="av-cta" data-av-open="1">' + cta + '<span class="arr">→</span></div>' +
@@ -172,19 +220,44 @@
         var sc = scatter(i);
         var poster = '';
         try { if (typeof getPosterUrl === 'function') poster = getPosterUrl(m) || ''; } catch (e) { /* 忽略 */ }
-        var title = m.title || m.fileName || '未知影片';
-        var meta = [m.avid || '', (m.playCount || 0) > 0 ? '▶ ' + m.playCount : '']
+        var title = itemTitle(m) || '未知藏品';
+        var mType = String(m.type || '').toLowerCase();
+        var isBook = (mType === 'novel' || mType === 'comic');
+        var typeBadge = mType === 'novel' ? '📖 小说' : (mType === 'comic' ? '📚 漫画' : (m.avid || '🎬 影片'));
+        var meta = [typeBadge, m.fileSize ? mb(m.fileSize) : '', (m.playCount || 0) > 0 ? '▶ ' + m.playCount : '']
             .filter(Boolean).join(' · ');
         var bunny = candy(i);
-        return '<article class="av-card wide" data-av-id="' + esc(m.id) + '" tabindex="0" role="button" ' +
+        var ctaLabel = isBook ? '📖 翻阅' : '▶ 播放';
+        var coverStyle = (isBook && poster) ? (' style="--book-cover-url:url(\'' + esc(poster).replace(/'/g, '\\\'') + '\')"') : '';
+        var cleanGlyphStr = String(title).replace(/^[\s\[\]【】()（）0-9.\-_·:：]+/, '').trim();
+        var glyph = (cleanGlyphStr || title || '藏').charAt(0);
+        var subLabel = (window.cvExtractBookSubLabel ? window.cvExtractBookSubLabel(m, title, mType === 'novel') : typeBadge);
+        var fallbackPlate = '<div class="av-cover-typo">' +
+            '<span class="act-kicker">ARCHIVE EDITION</span>' +
+            '<span class="act-seal">' + esc(glyph) + '</span>' +
+            '<span class="act-title">' + esc(title) + '</span>' +
+            '<span class="act-sub">' + esc(subLabel) + '</span>' +
+            '</div>';
+        var bookShowcase = (isBook && poster)
+            ? ('<div class="av-book-placard">' +
+                '<div class="abp-spine-wrap"><img src="' + esc(poster) + '" alt="' + esc(title) + '" loading="lazy" draggable="false"></div>' +
+                '<div class="abp-info">' +
+                    '<span class="abp-kicker">' + esc(typeBadge) + ' · ARCHIVE</span>' +
+                    '<h4 class="abp-title">' + esc(title) + '</h4>' +
+                    '<span class="abp-author">' + esc(subLabel) + '</span>' +
+                    '<div class="abp-foot"><span>' + esc(m.fileSize ? mb(m.fileSize) : '馆藏原档') + '</span><span class="abp-go">翻阅 →</span></div>' +
+                '</div>' +
+               '</div>')
+            : '';
+        return '<article class="av-card wide' + ((isBook && poster) ? ' is-book-media' : (!poster ? ' is-typo-cover' : '')) + '" data-av-id="' + esc(m.id) + '" data-type="' + esc(mType) + '" tabindex="0" role="button" ' +
             'aria-label="' + esc(title) + '" ' +
             'style="--rot-base:' + sc[0] + 'deg;--dy-base:' + sc[1] + 'px;' +
             '--rot:' + sc[0] + 'deg;--dy:' + sc[1] + 'px;--bunny:' + bunny + ';' +
             'animation-delay:' + Math.min(i, 11) * 45 + 'ms">' +
             bunnyEars(bunny) +
-            '<div class="av-cover">' +
-            (poster ? '<img src="' + esc(poster) + '" alt="' + esc(title) + '" loading="lazy" draggable="false">' : '') +
-            '<div class="av-cta">▶ 播放<span class="arr">→</span></div>' +
+            '<div class="av-cover"' + coverStyle + '>' +
+            (bookShowcase ? bookShowcase : (poster ? '<img src="' + esc(poster) + '" alt="' + esc(title) + '" loading="lazy" draggable="false">' : fallbackPlate)) +
+            '<div class="av-cta">' + ctaLabel + '<span class="arr">→</span></div>' +
             '</div>' +
             bunnyTail(bunny) +
             '<div class="av-cap"><b>' + esc(title) + '</b>' +
@@ -202,11 +275,11 @@
        · pointermove 只负责注水 + 唤醒，interval 造的雨滴只在悬停期间存在
        · 模拟分辨率上限 420px 宽，渲染时放大 → 既柔和又省 CPU */
     function hero(opts) {
-        return '<div class="av-hero">' +
+        var showTitle = opts.showTitle !== false;
+        return '<div class="av-hero' + (showTitle ? '' : ' is-compact-bar') + '">' +
             '<canvas class="av-ripple" aria-hidden="true"></canvas>' +
-            '<div class="av-kicker">' + esc(opts.kicker) + '</div>' +
-            '<h2>' + esc(opts.title) + '</h2>' +
-            '<p class="av-sub"><span class="av-hand">' + esc(opts.hand) + '</span></p>' +
+            (showTitle ? ('<div class="av-kicker">' + esc(opts.kicker) + '</div><h2>' + esc(opts.title) + '</h2>') : '') +
+            (opts.hand ? '<p class="av-sub"><span class="av-hand">' + esc(opts.hand) + '</span></p>' : '') +
             (function () {
                 var bits = (opts.chips || []).map(function (c, i) {
                     return '<button class="av-chip' + (c[3] || '') + (i === 0 ? ' on' : '') + '" data-av-filter="' + esc(c[2]) + '">' +
@@ -467,11 +540,16 @@
     function folderCardView(child, i) {
         var count = typeof countItemsInFolder === 'function' ? countItemsInFolder(child) : 0;
         var name = child.name || '未命名文件夹';
+        var meta = parseFolderMeta(name);
         return '<div class="av-folder" data-av-path="' + esc(child.path || child.name || '') + '" tabindex="0" role="button" ' +
-            'style="--cv:' + candy(i + 2) + ';animation-delay:' + Math.min(i, 8) * 40 + 'ms">' +
-            '<span class="af-glyph">' + esc(name.slice(0, 1)) + '</span>' +
-            '<span class="af-name">' + esc(name) + '</span>' +
-            '<span class="af-count">' + count + ' 部作品 →</span></div>';
+            'style="--cv:' + candy(i + 2) + ';animation-delay:' + Math.min(i, 8) * 40 + 'ms" title="' + esc(name) + '">' +
+            '<span class="af-glyph">' + esc(meta.glyph) + '</span>' +
+            '<div class="af-meta-top">' +
+                (meta.author ? '<span class="af-author">' + esc(meta.author) + '</span>' : '<span class="af-author">典藏卷宗</span>') +
+                (meta.badge ? '<span class="af-badge">' + esc(meta.badge) + '</span>' : '') +
+            '</div>' +
+            '<span class="af-name">' + esc(meta.title) + '</span>' +
+            '<div class="af-foot"><span class="af-count">' + count + ' 部作品</span><span class="af-enter">翻阅卷宗 →</span></div></div>';
     }
 
     /**
@@ -633,9 +711,20 @@
 
     /* 返回新数组，绝不原地 sort —— chapters 还被 arcs / 系列成员顺序引用着 */
     function sortAvItems(list) {
-        /* name:asc 就是 buildTree 出来的自然序，直通：零成本，也保证默认外观不变 */
-        if (!list || list.length < 2 || avSort === 'name:asc') return list;
+        if (!list || list.length < 2) return list;
         var arr = list.slice();
+        if (avSort === 'name:asc') {
+            // 把原始文件名以特殊符号/残缺括号开头的条目排到正常书名之后，避免首屏第一排出现 "(刘慈欣)" / "...(何马)"
+            arr.sort(function (a, b) {
+                var rawA = String(a.title || a.fileName || '');
+                var rawB = String(b.title || b.fileName || '');
+                var brokenA = /^[\s_.…()（）\[\]【】\-—·]+/.test(rawA) ? 1 : 0;
+                var brokenB = /^[\s_.…()（）\[\]【】\-—·]+/.test(rawB) ? 1 : 0;
+                if (brokenA !== brokenB) return brokenA - brokenB;
+                return 0;
+            });
+            return arr;
+        }
         if (avSort === 'name:desc') {
             arr.sort(function (a, b) { return collator().compare(itemTitle(b) || '', itemTitle(a) || ''); });
         } else if (avSort === 'read:desc') {
@@ -733,6 +822,7 @@
             '<div class="av-main"><div class="av-main-top">' + hero({
                 kicker: isNovel ? 'SHELF · NOVEL' : 'SHELF · COMIC',
                 title: placeName,
+                showTitle: !!pathName, // 根层顶部已有 #toolbarTitle 大标题，不再重复印第二个「漫画库/小说库」
                 hand: handText,
                 chips: chips,
                 sortSel: true
@@ -1213,7 +1303,38 @@
        猜你喜欢：散落展台（≥10 部，后端 limit 原本支持到 60）
        ============================================================ */
 
-    var guessState = { movies: [], exclude: [], loading: false, privacy: 'exclude', seq: 0 };
+    var guessState = { movies: [], more: [], exclude: [], loading: false, privacy: 'exclude', seq: 0, stamp: 0 };
+
+    /* ★ round141：这一批「猜你喜欢」要扛住重渲与刷新。
+       用户反馈两点：①「操作某个对象后整个页面刷新一次，之前随机出来的都没了」
+       ②「过几十秒只剩上下两条长廊」。根因都在这里 —— 老代码每次 openGuess 都可能
+       重新打推荐接口（AI 要等 ~9s），期间还把整个 #movieGrid 换成「正在挑片…」，
+       于是展台被清空、只剩异步回来的长廊。
+       现在：批次落 sessionStorage，非「换一批」一律复用；换一批期间保留现有展台。 */
+    var GUESS_STORE = 'cvGuessBatchV1';
+
+    function saveGuessBatch() {
+        try {
+            sessionStorage.setItem(GUESS_STORE, JSON.stringify({
+                privacy: guessState.privacy,
+                stamp: guessState.stamp,
+                movies: guessState.movies,
+                more: guessState.more,
+                exclude: guessState.exclude.slice(-150)
+            }));
+        } catch (e) { /* 隐私模式/配额满：不落盘也能用 */ }
+    }
+
+    function loadGuessBatch(privacy) {
+        try {
+            var raw = sessionStorage.getItem(GUESS_STORE);
+            if (!raw) return null;
+            var d = JSON.parse(raw);
+            if (!d || d.privacy !== privacy) return null;
+            if (!Array.isArray(d.movies) || !d.movies.length) return null;
+            return d;
+        } catch (e) { return null; }
+    }
 
     function fetchGuess(n) {
         var excl = guessState.exclude.slice(-150).join(',');
@@ -1231,10 +1352,26 @@
     function guessChips(movies) {
         var high = movies.filter(function (m) { return (m.score || 0) >= 4; }).length;
         var seen = movies.filter(function (m) { return m.watched === 1 || (m.playCount || 0) > 0; }).length;
-        return [['全部', movies.length, 'all', ' dark'],
-                ['高分', high, 'high', ''],
-                ['看过的', seen, 'seen', ''],
-                ['还没动', movies.length - seen, 'new', ' ink']];
+        var unwatched = movies.length - seen;
+        var allChips = [
+            ['全部推荐', movies.length, 'all', ' dark'],
+            ['高分佳作', high, 'high', ''],
+            ['重温已看', seen, 'seen', ''],
+            ['未读待看', unwatched, 'new', ' ink']
+        ];
+        // 过滤掉计数为 0 的无效胶囊（保留「全部推荐」）
+        return allChips.filter(function (c) { return c[2] === 'all' || c[1] > 0; });
+    }
+
+    /* 批次指纹：用来判断「展台上画的就是当前这批数据吗」——
+       相同就不重画，避免用户点个收藏又整块闪一下（就是「操作后页面刷新一次」的手感）。 */
+    function guessSignature(movies) {
+        var list = movies || [];
+        var n = list.length;
+        if (!n) return '0';
+        var head = list.slice(0, 3).map(function (m) { return m.id + ':' + (m.title || '').length; }).join(',');
+        var tail = list.slice(-2).map(function (m) { return m.id; }).join(',');
+        return n + '|' + head + '|' + tail;
     }
 
     function renderGuessBoard(filter) {
@@ -1247,10 +1384,12 @@
 
         if (!list.length) {
             board.innerHTML = '<div class="av-empty"><div class="ico">🎬</div>这个筛选下暂时没有影片</div>';
+            board.dataset.sig = 'empty';
             return;
         }
         board.innerHTML = '<div class="av-board has-bunny">' +
             list.map(function (m, i) { return posterCard(m, i); }).join('') + '</div>';
+        board.dataset.sig = filter === 'all' ? guessSignature(guessState.movies) : ('f:' + filter + ':' + list.length);
 
         board.querySelectorAll('.av-card').forEach(function (card) {
             var id = parseInt(card.getAttribute('data-av-id'), 10);
@@ -1271,6 +1410,131 @@
         });
     }
 
+    function paintGuessView(movies) {
+        var grid = document.getElementById('movieGrid');
+        if (!grid) return;
+        var adult = guessState.privacy === 'adult';
+        grid.innerHTML = '<div class="av-view">' + hero({
+            kicker: '基于你的观看记录',
+            title: '猜你喜欢',
+            showTitle: false, // 顶部已有 #toolbarTitle「猜你喜欢」，不再重复渲染巨型双标题
+            hand: '为你从私人馆藏中甄选出 ' + movies.length + ' 部契合口味的藏品',
+            chips: guessChips(movies)
+        }) +
+            '<div id="avGuessBoard"></div>' +
+            '<div class="av-tools">' +
+            '<button class="av-cta-btn" id="avGuessMore">🎲 重新抽选一批</button>' +
+            (adult ? '' :
+            '<button class="av-circ gray" id="avGuessMagic" title="切换为 3D 塔罗牌堆模式">🃏</button>' +
+            '<button class="av-circ" id="avGuessGrid" title="切换为标准网格模式">☰</button>') +
+            '</div></div>';
+        bindHeroMotion(grid);
+
+        grid.querySelectorAll('[data-av-filter]').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                grid.querySelectorAll('[data-av-filter]').forEach(function (x) { x.classList.remove('on'); });
+                chip.classList.add('on');
+                renderGuessBoard(chip.getAttribute('data-av-filter'));
+            });
+        });
+
+        var more = document.getElementById('avGuessMore');
+        if (more) more.addEventListener('click', function () {
+            // ★ round141：不清展台 —— 换来的一批到货前，用户还能继续看/点旧的
+            openGuess(guessState.privacy, true); // 换一批
+        });
+        var magic = document.getElementById('avGuessMagic');
+        if (magic) magic.addEventListener('click', function () {
+            if (typeof switchView === 'function') switchView('guess-magic');
+        });
+        var gridBtn = document.getElementById('avGuessGrid');
+        if (gridBtn) gridBtn.addEventListener('click', function () {
+            if (typeof switchView === 'function') switchView('guess-grid');
+        });
+
+        renderGuessBoard('all');
+
+        /* ★ round141：展台下方长廊不再单独打一次推荐接口。
+           老代码这里 fetchGuess(24) —— 后端每条都要排队等 AI（实测单次 ~9.3s），
+           于是「进页面 ~9s 出展台 → 再 ~9s 长廊才回来」，用户看到的就是
+           「过了几十秒，突然只剩上下两条长廊」。现在长廊直接吃同一批数据的后半段
+           （openGuess 一次要 40 条：前 24 上展台，其余进长廊），零额外等待。 */
+        renderGuessMoreRail();
+
+        // ★ 看门狗：展台被任何路径清空（重渲竞态 / 别处误写 #movieGrid）时自愈
+        armGuessWatchdog();
+    }
+
+    /* 展台下方「更多可能 · 继续逛」两条漂移长廊 */
+    function renderGuessMoreRail() {
+        var grid = document.getElementById('movieGrid');
+        if (!grid) return;
+        var tools = grid.querySelector('.av-tools');
+        if (!tools) return;
+        // 幂等：重画前先把上一次插入的长廊摘掉（否则每次重渲都多两条）
+        grid.querySelectorAll('.guess-more-title, .mv-rail').forEach(function (el) { el.remove(); });
+        var pool = (guessState.more && guessState.more.length) ? guessState.more.slice() : [];
+        if (!pool.length) return;
+        var card = function (m) {
+            return '<div class="mv-rail-card" data-mid="' + m.id + '" role="button" tabindex="0" title="' +
+                (window.escapeHtml ? window.escapeHtml(m.title || '') : '') + '">' +
+                '<div class="mrc-poster"><img src="' + window.getPosterUrl(m) + '" alt="" loading="lazy" decoding="async"></div>' +
+                '<div class="mrc-title">' + (window.escapeHtml ? window.escapeHtml(m.title || m.fileName || '') : '') + '</div></div>';
+        };
+        // 轨道＝列表×2（无缝循环）；不足 12 张就整份重复填充，免得轨道短过视口出现空白
+        var fill = function (list) {
+            var out = list.slice();
+            while (out.length && out.length < 12) out = out.concat(list);
+            return out;
+        };
+        var track = function (list) {
+            var half = fill(list).map(card).join('');
+            return '<div class="mv-rail-track">' + half + half + '</div>';
+        };
+        var half = Math.ceil(pool.length / 2);
+        var top = pool.slice(0, half);
+        var bottom = pool.slice(half);
+        var html = '<div class="guess-more-title">更多可能 · 继续逛</div>' +
+            '<div class="mv-rail">' + track(top) + '</div>' +
+            (bottom.length ? '<div class="mv-rail rev">' + track(bottom) + '</div>' : '');
+        tools.insertAdjacentHTML('afterend', html);
+        grid.querySelectorAll('.mv-rail-card').forEach(function (c) {
+            c.addEventListener('click', function () {
+                var id = parseInt(c.dataset.mid, 10);
+                if (id && typeof showMovieDetail === 'function') showMovieDetail(id);
+            });
+        });
+    }
+
+    /* 展台看门狗：只在「本该有卡片却空了」时补画一次，最多 3 次，绝不无限重画 */
+    var guessWatchTimer = null, guessWatchFixes = 0;
+    function armGuessWatchdog() {
+        if (guessWatchTimer) clearInterval(guessWatchTimer);
+        guessWatchFixes = 0;
+        guessWatchTimer = setInterval(function () {
+            try {
+                var curV = (document.body && document.body.dataset && document.body.dataset.view) || '';
+                if (curV && curV.indexOf('guess') < 0) { clearInterval(guessWatchTimer); guessWatchTimer = null; return; }
+                // 已经离开猜你喜欢视图就别管了（currentView 是 app.js 的模块级变量，拿不到 → 用 hash 判）
+                if (location.hash && location.hash.indexOf('guess') < 0) { clearInterval(guessWatchTimer); guessWatchTimer = null; return; }
+                var board = document.getElementById('avGuessBoard');
+                if (!board || !guessState.movies.length) return;
+                if (board.querySelector('.av-card')) return;
+                if (guessWatchFixes >= 3) { clearInterval(guessWatchTimer); guessWatchTimer = null; return; }
+                guessWatchFixes++;
+                console.warn('[猜你喜欢] 展台为空，自愈重画第 ' + guessWatchFixes + ' 次');
+                renderGuessBoard('all');
+            } catch (e) { /* 自愈失败不抛 */ }
+        }, 2000);
+    }
+    function setGuessBusy(busy) {
+        var btn = document.getElementById('avGuessMore');
+        if (!btn) return;
+        btn.disabled = !!busy;
+        btn.textContent = busy ? '换一批中…' : '换一批 ↻';
+        btn.style.opacity = busy ? '.6' : '';
+    }
+
     function openGuess(privacy, force) {
         var grid = document.getElementById('movieGrid');
         if (!grid) return;
@@ -1281,105 +1545,81 @@
         if (guessState.privacy !== privacy) {
             guessState.exclude = [];
             guessState.movies = [];
-            force = true;                       // 换口径必须重取
+            guessState.more = [];
+            force = true; // 换口径必须重取
         }
         guessState.privacy = privacy;
-        var adult = privacy === 'adult';
 
-        grid.innerHTML = '<div class="av-view">' + hero({
-            kicker: '基于你的观看记录',
-            title: '猜你喜欢',
-            hand: '正在照着你看过的那几部挑……',
-            chips: []
-        }) + '<div class="av-empty"><div class="ico">✨</div>正在挑片…</div></div>';
-        bindHeroMotion(grid);
+        // 若不是强制换一批，且当前已有推荐数据，优先保留当前片单，绝不打乱用户正在浏览的列表
+        if (!force && guessState.movies.length > 0) {
+            var liveBoard = document.getElementById('avGuessBoard');
+            if (liveBoard && liveBoard.querySelector('.av-card')) {
+                // ★ round141：画的还是这一批（指纹一致）就**什么都不做**。
+                // 以前这里无条件 renderGuessBoard ⇒ 点个收藏/编辑保存回来，整块展台被重建、
+                // 图片重新加载，用户看到的就是「整个页面刷新了一次，随机出来的都没了」。
+                if (liveBoard.dataset.sig === guessSignature(guessState.movies)) {
+                    armGuessWatchdog();
+                    return;
+                }
+                renderGuessBoard('all');
+                renderGuessMoreRail();
+                armGuessWatchdog();
+            } else {
+                paintGuessView(guessState.movies);
+            }
+            return;
+        }
 
-        if (guessState.loading && !force) return;   // 同口径连点防抖（换口径/换视图由 force 破防）
+        // ★ round141：整页刷新 / 再次进入时，先把上一次那一批从 sessionStorage 捞回来，
+        // 不能让「用户看过的 24 部」因为一次重渲就换一批新的。
+        if (!force && !guessState.movies.length) {
+            var saved = loadGuessBatch(privacy);
+            if (saved) {
+                guessState.movies = saved.movies;
+                guessState.more = Array.isArray(saved.more) ? saved.more : [];
+                guessState.exclude = Array.isArray(saved.exclude) ? saved.exclude.slice() : [];
+                guessState.stamp = saved.stamp || 0;
+                paintGuessView(guessState.movies);
+                return;
+            }
+        }
+
+        // ★「换一批」不清屏：老代码在这里把整个 #movieGrid 换成「正在挑片…」，
+        //   于是等 AI 的那 ~9 秒里展台是空的（用户眼里就是「散落的全没了」）。
+        //   现在只有当页面上确实还没有展台时才画占位。
+        if (!document.getElementById('avGuessBoard')) {
+            var skelCards = '';
+            for (var si = 0; si < 8; si++) skelCards += '<div class="av-skel" style="height:220px;border-radius:10px;"></div>';
+            grid.innerHTML = '<div class="av-view">' + hero({
+                kicker: '基于你的观看记录',
+                title: '猜你喜欢',
+                showTitle: false,
+                hand: '正在从馆藏档案中抽取契合你口味的作品…',
+                chips: []
+            }) + '<div class="av-board av-skel-board">' + skelCards + '</div></div>';
+            bindHeroMotion(grid);
+        }
+        setGuessBusy(true);
+
         guessState.loading = true;
-        // r44：序号令牌——openGuess 可被换口径/换视图重入，晚到的旧响应一律丢弃，
-        // 防止「隐私口径的取数渲染进公开视图」（口径互串）
         var seq = ++guessState.seq;
 
-        // 至少 10 部：直接向后端要 24（AI 不足时后端用随机池补齐，原本就有的行为）
-        fetchGuess(24).then(function (movies) {
-            if (seq !== guessState.seq) return;      // 过期响应：期间用户已换口径/换视图
+        // 一次要 40：前 24 上展台，其余进下方长廊（不额外多打一次 AI）
+        fetchGuess(40).then(function (list) {
+            if (seq !== guessState.seq) return;
             guessState.loading = false;
-            if (!movies.length) {
+            setGuessBusy(false);
+            if (!list || !list.length) {
+                if (guessState.movies.length) return;    // 换一批失败 → 留着旧的，别清空
                 grid.innerHTML = '<div class="av-view"><div class="av-empty">' +
                     '<div class="ico">🎬</div>还没有可以推荐的影片，先扫描一些影片进来吧</div></div>';
                 return;
             }
-            guessState.movies = movies;
-            grid.innerHTML = '<div class="av-view">' + hero({
-                kicker: '基于你的观看记录',
-                title: '猜你喜欢',
-                hand: '这 ' + movies.length + ' 部，是照着你最近的口味挑的',
-                chips: guessChips(movies)
-            }) +
-                '<p style="text-align:center;font-size:13px;font-weight:600;color:rgba(0,0,0,.55);margin:6px 0 0">' +
-                '每张封面按「从架上随手抽出来」的角度摆放 —— 悬停回正，点桃红药丸直接播放。</p>' +
-                '<div id="avGuessBoard"></div>' +
-                '<div class="av-tools">' +
-                '<button class="av-cta-btn" id="avGuessMore">换一批 ↻</button>' +
-                /* r44：牌堆/列表两个模式视图是公开口径的视图名（guess-magic/guess-grid），
-                 * 隐私口径下隐藏入口，防止跳过去口径错乱 */
-                (adult ? '' :
-                '<button class="av-circ gray" id="avGuessMagic" title="切换成牌堆模式">🃏</button>' +
-                '<button class="av-circ" id="avGuessGrid" title="切换成列表模式">☰</button>') +
-                '</div></div>';
-            bindHeroMotion(grid);
-
-            grid.querySelectorAll('[data-av-filter]').forEach(function (chip) {
-                chip.addEventListener('click', function () {
-                    grid.querySelectorAll('[data-av-filter]').forEach(function (x) { x.classList.remove('on'); });
-                    chip.classList.add('on');
-                    renderGuessBoard(chip.getAttribute('data-av-filter'));
-                });
-            });
-
-            var more = document.getElementById('avGuessMore');
-            if (more) more.addEventListener('click', function () {
-                guessState.movies = [];
-                openGuess(guessState.privacy);   // r44：保住当前口径
-            });
-            var magic = document.getElementById('avGuessMagic');
-            if (magic) magic.addEventListener('click', function () {
-                if (typeof switchView === 'function') switchView('guess-magic');
-            });
-            var gridBtn = document.getElementById('avGuessGrid');
-            if (gridBtn) gridBtn.addEventListener('click', function () {
-                if (typeof switchView === 'function') switchView('guess-grid');
-            });
-
-            renderGuessBoard('all');
-
-            /* ★ r84：展台下方追加「更多可能 · 漂移长廊」。
-             *   fetchGuess 的 exclude 表已记下展台这批 id，再取一批天然不重复；
-             *   双轨对向自动漂移（样式在 motion-v2.css），悬停暂停、点封面开详情。 */
-            fetchGuess(24).then(function (more) {
-                if (seq !== guessState.seq) return;
-                var tools = grid.querySelector('.av-tools');
-                if (!tools || !more || !more.length) return;
-                var card = function (m) {
-                    return '<div class="mv-rail-card" data-mid="' + m.id + '" role="button" tabindex="0" title="' +
-                        (window.escapeHtml ? window.escapeHtml(m.title || '') : '') + '">' +
-                        '<div class="mrc-poster"><img src="' + window.getPosterUrl(m) + '" alt="" loading="lazy" decoding="async"></div>' +
-                        '<div class="mrc-title">' + (window.escapeHtml ? window.escapeHtml(m.title || m.fileName || '') : '') + '</div></div>';
-                };
-                var track = function (list) {
-                    var half = list.map(card).join('');
-                    return '<div class="mv-rail-track">' + half + half + '</div>';
-                };
-                var rail = '<div class="guess-more-title">更多可能 · 继续逛</div>' +
-                    '<div class="mv-rail">' + track(more) + '</div>';
-                tools.insertAdjacentHTML('afterend', rail);
-                grid.querySelectorAll('.mv-rail-card').forEach(function (c) {
-                    c.addEventListener('click', function () {
-                        var id = parseInt(c.dataset.mid, 10);
-                        if (id && typeof showMovieDetail === 'function') showMovieDetail(id);
-                    });
-                });
-            });
+            guessState.movies = list.slice(0, 24);
+            guessState.more = list.slice(24);
+            guessState.stamp = Date.now();
+            saveGuessBatch();
+            paintGuessView(guessState.movies);
         });
     }
 

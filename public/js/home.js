@@ -29,7 +29,13 @@
         // round42：不写内联 display（内联会盖掉 CSS 的两栏 grid），交给 .active 规则
         v.style.display = '';
 
+        // r137：「Live2D 形象」模式下把伴侣 stage 搬进左栏展示区（chat 模式无感知）
+        if (typeof window.applyHomePaneMode === 'function') {
+            try { window.applyHomePaneMode(); } catch (e) { }
+        }
+
         // 若有未加载的问候，这里补一次（页面首次进入时调用）
+        loadCuratedStage(false);
         renderRankPreview();
         loadCalendar(false);
     }
@@ -39,6 +45,10 @@
         if (!v) return;
         v.classList.remove('active');
         v.style.display = 'none';
+        // r137：stage 搬回 body 右下角，其它视图恢复常驻浮层
+        if (typeof window.unmountHomePane === 'function') {
+            try { window.unmountHomePane(); } catch (e) { }
+        }
     }
 
     // ---------- AI 对话 ----------
@@ -51,12 +61,23 @@
        原样 innerHTML 会满屏星号竖线。必须在 esc() 之后跑，无 XSS 面。 */
     function mdLite(s) {
         return String(s || '')
-            .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+            .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*\*/g, '')
+            .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+            .replace(/^\s*[-*_]{3,}\s*$/gm, '<hr class="md-hr">')
+            .replace(/^\s*####\s+(.+)$/gm, '<div class="md-h4">$1</div>')
+            .replace(/^\s*###\s+(.+)$/gm, '<div class="md-h3">$1</div>')
+            .replace(/^\s*##\s+(.+)$/gm, '<div class="md-h2">$1</div>')
+            .replace(/^\s*#\s+(.+)$/gm, '<div class="md-h1">$1</div>')
+            .replace(/^\s*[-*•]\s+(.+)$/gm, '<div class="md-li"><span class="md-bullet">◆</span><span>$1</span></div>')
+            .replace(/^\s*(\d+)\.\s+(.+)$/gm, '<div class="md-li md-oli"><span class="md-num">$1.</span><span>$2</span></div>')
             .replace(/^\s*\|(.+)\|\s*$/gm, (m, row) => {
                 const cells = row.split('|').map(c => c.trim()).filter(c => c);
                 if (!cells.length || cells.every(c => /^[-: ]*$/.test(c))) return '';
-                return cells.join(' · ');
-            });
+                return '<div class="md-tr">' + cells.map(c => '<span class="md-td">' + c + '</span>').join('<span class="md-sep">·</span>') + '</div>';
+            })
+            .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
+            .replace(/\n{3,}/g, '\n\n');
     }
 
     function addMsg(role, text, opts) {
@@ -165,7 +186,7 @@
                     const d = await res.json();
                     if (d.code === 0 && d.data) {
                         if (d.data.steps) addStepsBlock(d.data.steps);
-                        if (d.data.reply) addMsg('ai', esc(d.data.reply));
+                        if (d.data.reply) addMsg('ai', mdLite(esc(d.data.reply)));
                         if (window.executeAIUiActions) window.executeAIUiActions(d.data.uiActions);
                     }
                 } catch(e) {
@@ -199,6 +220,8 @@
 
         let streamingBubble = null;
         let streamedText = '';
+        let cardSeen = false;      // round140：本轮是否已经画过卡片，done 时不再重复
+        if (window.resetAIPlayCardsSeen) window.resetAIPlayCardsSeen();   // 新的一轮，去重记忆清零
         const hist = Array.isArray(window.__aiHistory) ? window.__aiHistory : [];
         hist.push({ role: 'user', content: msg });
         window.__aiHistory = hist.slice(-12);
@@ -216,6 +239,16 @@
                 addStepsBlock([step]);
             },
             onStepPatch: () => { /* 首页只展示步骤名，不追状态 */ },
+            onCards: (ev) => {
+                /* round140：工具一跑完就画「可点击播放卡片」，用户立刻能点，
+                   不必等模型把总结写完 —— 这正是「只给名字」诉求的正解。 */
+                if (!ev || !Array.isArray(ev.cards) || !ev.cards.length) return;
+                cardSeen = true;
+                if (typing) { typing.remove(); }
+                window.insertAIPlayCards(ev.cards, ev.kind || 'movie', {
+                    container: document.getElementById('homeChatMessages')
+                });
+            },
             onRun: (ev) => {
                 if (typing) typing.textContent = '正在思考…';
                 window.__lastAgentRunId = ev.runId;
@@ -242,6 +275,14 @@
                 const formatted = mdLite(esc(reply)).replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (m, id, title) =>
                     `<span class="ai-movie-ref" data-movie-id="${id}" onclick="window.jumpToMovieFromAI && window.jumpToMovieFromAI(${id})">📎 ${title}</span>`);
                 streamingBubble.innerHTML = formatted;
+                /* round140：兜底补画。onCards 事件因网络分段/降级没收到时，
+                   用 done 里的全量卡片补一次；已画过就不再叠一层。 */
+                if (!cardSeen && Array.isArray(full.cards) && full.cards.length) {
+                    cardSeen = true;
+                    window.insertAIPlayCards(full.cards, 'movie', {
+                        container: document.getElementById('homeChatMessages')
+                    });
+                }
                 if (window.CVCompanion) window.CVCompanion.aiEvent('reply', reply);
                 btn.disabled = false;
                 if (ta) ta.focus();
@@ -809,6 +850,285 @@
     // 绑定输入框事件（在 DOMContentLoaded 后由 app.js 调用 bindHome）
     /* v3.0-c：首页聊天框与 AI 抽屉共用同一永久会话 —— 进入首页时恢复最近几条，
        与 AI 抽屉里看到的上下文一致。只补空状态，不打断已在进行的对话。 */
+    // ---------- V5 今夜主映 · 典藏放映台（round151） ----------
+    const stageState = {
+        items: [],
+        activeIndex: 0,
+        stats: { novel: 0, comic: 0, film: 0, total: 0 },
+        loaded: false,
+        loading: false
+    };
+
+    function cleanStageTitle(m) {
+        const raw = (m && (m.title || m.fileName)) || '未命名藏品';
+        return (typeof window.cvCleanTitle === 'function') ? window.cvCleanTitle(raw) : raw;
+    }
+
+    function stageTypeMeta(type) {
+        if (type === 'novel') return { badge: '📖 典藏小说', cta: '📖 立即翻阅', isBook: true };
+        if (type === 'comic') return { badge: '✒️ 典藏漫画', cta: '✒️ 立即翻阅', isBook: true };
+        if (type === 'anime' || type === 'cartoon') return { badge: '📺 馆藏动画', cta: '▶ 立即放映', isBook: false };
+        return { badge: '🎬 馆藏影片', cta: '▶ 立即放映', isBook: false };
+    }
+
+    function stageCoverUrl(m) {
+        if (!m) return '';
+        if (typeof window.getPosterUrl === 'function') {
+            try {
+                const u = window.getPosterUrl(m);
+                if (u) return u;
+            } catch (e) {}
+        }
+        if (m.posterFile) return '/api/movie/poster/' + m.posterFile;
+        if (m.posterUrl) return m.posterUrl;
+        return '';
+    }
+
+    function renderCuratedStage() {
+        const host = document.getElementById('homeCuratedStage');
+        if (!host) return;
+        const items = stageState.items || [];
+        const active = items[stageState.activeIndex] || items[0] || null;
+        const st = stageState.stats || { novel: 0, comic: 0, film: 0, total: 0 };
+
+        if (!active) {
+            host.innerHTML =
+                '<div class="hcs-shell is-empty">' +
+                    '<div class="hcs-sprocket" aria-hidden="true"></div>' +
+                    '<div class="hcs-main">' +
+                        '<div class="hcs-info">' +
+                            '<div class="hcs-kicker-row">' +
+                                '<span class="hcs-kicker">🎬 CURATED SCREENING · 今夜主映</span>' +
+                                '<span class="hcs-greeting">' + esc(greeting()) + ' · 私人典藏放映室</span>' +
+                            '</div>' +
+                            '<h2 class="hcs-title">正在从馆藏中挑出今夜主映…</h2>' +
+                            '<p class="hcs-reason">连接私人媒体库与阅读档案，稍候片刻即可开映。</p>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            return;
+        }
+
+        const title = cleanStageTitle(active);
+        const tm = stageTypeMeta(active.type);
+        const cover = stageCoverUrl(active);
+        const sub = (typeof window.cvExtractBookSubLabel === 'function' && tm.isBook)
+            ? window.cvExtractBookSubLabel(active)
+            : (active.code || (active.releaseDate ? String(active.releaseDate).slice(0, 10) : '') || '馆藏精选');
+        const score = Number(active.rating || 0) > 0 ? Number(active.rating).toFixed(1) : '';
+        const reason = active.aiReason || '馆长私享推荐 · 从你的私人典藏库中甄选';
+        const firstChar = (title.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').charAt(0) || '藏').toUpperCase();
+        const bgStyle = cover ? 'style="--stage-bg:url(\'' + esc(cover) + '\')"' : '';
+
+        const reelHtml = items.slice(0, 6).map((it, idx) => {
+            const cUrl = stageCoverUrl(it);
+            const tClean = cleanStageTitle(it);
+            const isAct = idx === stageState.activeIndex;
+            const ch = (tClean.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').charAt(0) || '藏').toUpperCase();
+            return '<button type="button" class="hcs-reel-item' + (isAct ? ' active' : '') + '" data-stage-idx="' + idx + '" title="' + esc(tClean) + '">' +
+                (cUrl
+                    ? '<img src="' + esc(cUrl) + '" alt="' + esc(tClean) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+                      '<span class="hcs-reel-fallback" style="display:none">' + esc(ch) + '</span>'
+                    : '<span class="hcs-reel-fallback">' + esc(ch) + '</span>') +
+                '<span class="hcs-reel-idx">' + String(idx + 1).padStart(2, '0') + '</span>' +
+            '</button>';
+        }).join('');
+
+        host.innerHTML =
+            '<div class="hcs-shell" ' + bgStyle + '>' +
+                '<div class="hcs-ambient" aria-hidden="true"></div>' +
+                '<div class="hcs-sprocket" aria-hidden="true"></div>' +
+                '<div class="hcs-body">' +
+                    '<div class="hcs-main">' +
+                        '<div class="hcs-cover-stage ' + (tm.isBook ? 'is-book' : 'is-film') + '" data-stage-detail="' + active.id + '" title="点击查看藏品档案">' +
+                            (cover
+                                ? '<img class="hcs-cover-img" src="' + esc(cover) + '" alt="' + esc(title) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+                                  '<div class="hcs-cover-typo" style="display:none"><span class="hcs-typo-seal">' + esc(firstChar) + '</span><span class="hcs-typo-name">' + esc(title) + '</span></div>'
+                                : '<div class="hcs-cover-typo"><span class="hcs-typo-seal">' + esc(firstChar) + '</span><span class="hcs-typo-name">' + esc(title) + '</span></div>') +
+                            '<span class="hcs-spine-sheen" aria-hidden="true"></span>' +
+                        '</div>' +
+                        '<div class="hcs-info">' +
+                            '<div class="hcs-kicker-row">' +
+                                '<span class="hcs-kicker">🎬 TONIGHT\'S FEATURE · 今夜主映</span>' +
+                                '<span class="hcs-greeting">' + esc(greeting()) + ' · 典藏放映室</span>' +
+                                '<span class="hcs-ticket-no">ARCHIVE #' + String(active.id || 1).padStart(4, '0') + '</span>' +
+                            '</div>' +
+                            '<h2 class="hcs-title" title="' + esc(title) + '">' + esc(title) + '</h2>' +
+                            '<div class="hcs-badges">' +
+                                '<span class="hcs-badge is-type">' + tm.badge + '</span>' +
+                                (sub ? '<span class="hcs-badge">' + esc(sub) + '</span>' : '') +
+                                (score ? '<span class="hcs-badge is-score">★ ' + esc(score) + '</span>' : '') +
+                                (active.playCount > 0 ? '<span class="hcs-badge">已阅 ' + active.playCount + ' 次</span>' : '<span class="hcs-badge">待启封典藏</span>') +
+                            '</div>' +
+                            '<p class="hcs-reason">✦ ' + esc(reason) + '</p>' +
+                            '<div class="hcs-actions">' +
+                                '<button type="button" class="hcs-btn hcs-btn-primary" data-stage-open="' + active.id + '" data-stage-type="' + esc(active.type || '') + '">' + tm.cta + '</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-secondary" data-stage-detail="' + active.id + '">🗂 藏品档案</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-next="1" title="切换下一部主映藏品">🎲 换一部</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-ask="' + esc(title) + '" title="让 AI 策展人介绍这部作品">💬 AI 导读</button>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="hcs-side">' +
+                        '<div class="hcs-pulse-head">' +
+                            '<span class="hcs-side-label">ARCHIVE PULSE · 馆藏脉搏</span>' +
+                            '<button type="button" class="hcs-side-link" data-stage-nav="guess">进入挑片台 →</button>' +
+                        '</div>' +
+                        '<div class="hcs-pulse-grid">' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="novel"><span class="hcs-pulse-num">' + Number(st.novel || 0).toLocaleString() + '</span><span class="hcs-pulse-name">📚 典藏小说</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="comic"><span class="hcs-pulse-num">' + Number(st.comic || 0).toLocaleString() + '</span><span class="hcs-pulse-name">✒️ 典藏漫画</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="film"><span class="hcs-pulse-num">' + Number(st.film || 0).toLocaleString() + '</span><span class="hcs-pulse-name">🎞 馆藏影视</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="guess"><span class="hcs-pulse-num">' + Number(st.total || 0).toLocaleString() + '</span><span class="hcs-pulse-name">🏛 全馆总计</span></button>' +
+                        '</div>' +
+                        '<div class="hcs-reel-head">' +
+                            '<span class="hcs-side-label">CURATED REEL · 今夜候选胶片</span>' +
+                            '<span class="hcs-reel-pos">' + (stageState.activeIndex + 1) + ' / ' + Math.min(items.length, 6) + '</span>' +
+                        '</div>' +
+                        '<div class="hcs-reel-strip">' + reelHtml + '</div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+    }
+
+    async function loadCuratedStage(force) {
+        const host = document.getElementById('homeCuratedStage');
+        if (!host) return;
+        if (stageState.loading) return;
+        if (stageState.loaded && !force && stageState.items.length) {
+            renderCuratedStage();
+            return;
+        }
+        stageState.loading = true;
+        if (!stageState.items.length) renderCuratedStage();
+        try {
+            const [guessRes, totRes, novRes, comRes, filmRes] = await Promise.all([
+                fetch('/api/recommend/guess?count=8&privacy=exclude').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview?type=novel').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview?type=comic').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview?type=film').then(r => r.json()).catch(() => null)
+            ]);
+            if (guessRes && guessRes.code === 0 && Array.isArray(guessRes.data) && guessRes.data.length) {
+                const list = guessRes.data.slice().sort((a, b) => {
+                    const ca = (a.posterFile || a.posterUrl) ? 1 : 0;
+                    const cb = (b.posterFile || b.posterUrl) ? 1 : 0;
+                    return cb - ca;
+                });
+                stageState.items = list;
+                stageState.activeIndex = 0;
+                stageState.loaded = true;
+            }
+            stageState.stats = {
+                total: (totRes && totRes.data && totRes.data.totalMovies) || 0,
+                novel: (novRes && novRes.data && novRes.data.totalMovies) || 0,
+                comic: (comRes && comRes.data && comRes.data.totalMovies) || 0,
+                film: (filmRes && filmRes.data && filmRes.data.totalMovies) || 0
+            };
+        } catch (e) {}
+        stageState.loading = false;
+        renderCuratedStage();
+    }
+
+    /* cut-the-curve §5：Rack-Focus Blur-Cut（单反拉焦切镜）
+       出画保持 100% 不透明，110ms 拉焦至峰值 blur(9px) scale(1.035)，在峰值帧换片，
+       再以 expo.out (cubic-bezier(0.16,1,0.3,1)) 收焦落定 + §6 Waterfall Entry 错峰入场 */
+    let stageSwapTimer = 0;
+    function rackFocusStageSwap(mutateFn) {
+        const host = document.getElementById('homeCuratedStage');
+        const main = host && host.querySelector('.hcs-main');
+        if (!main || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+            mutateFn();
+            return;
+        }
+        if (stageSwapTimer) { clearTimeout(stageSwapTimer); stageSwapTimer = 0; }
+        main.classList.remove('is-rack-in');
+        main.classList.add('is-rack-out');
+        stageSwapTimer = setTimeout(() => {
+            stageSwapTimer = 0;
+            mutateFn();
+            const nextMain = host.querySelector('.hcs-main');
+            if (nextMain) {
+                nextMain.classList.add('is-rack-in');
+                setTimeout(() => { nextMain.classList.remove('is-rack-in'); }, 340);
+            }
+        }, 110);
+    }
+
+    function bindCuratedStageEvents() {
+        const host = document.getElementById('homeCuratedStage');
+        if (!host || host.__stageBound) return;
+        host.__stageBound = true;
+        host.addEventListener('click', (e) => {
+            const openBtn = e.target.closest('[data-stage-open]');
+            if (openBtn) {
+                const id = parseInt(openBtn.getAttribute('data-stage-open'), 10);
+                const t = openBtn.getAttribute('data-stage-type') || '';
+                if (!id) return;
+                if (t === 'novel' && typeof window.openNovelReader === 'function') {
+                    window.openNovelReader(id);
+                } else if (t === 'comic' && typeof window.openComicReader === 'function') {
+                    window.openComicReader(id);
+                } else if ((t === 'film' || t === 'jav' || t === 'anime' || t === 'cartoon') && typeof window.playMovieInline === 'function') {
+                    window.playMovieInline(id);
+                } else if (typeof window.showMovieDetail === 'function') {
+                    window.showMovieDetail(id);
+                }
+                return;
+            }
+            const detailBtn = e.target.closest('[data-stage-detail]');
+            if (detailBtn) {
+                const id = parseInt(detailBtn.getAttribute('data-stage-detail'), 10);
+                if (id && typeof window.showMovieDetail === 'function') window.showMovieDetail(id);
+                return;
+            }
+            const nextBtn = e.target.closest('[data-stage-next]');
+            if (nextBtn) {
+                const max = Math.min(stageState.items.length, 6);
+                if (max > 1 && stageState.activeIndex + 1 < max) {
+                    rackFocusStageSwap(() => {
+                        stageState.activeIndex += 1;
+                        renderCuratedStage();
+                    });
+                } else {
+                    rackFocusStageSwap(() => {
+                        loadCuratedStage(true);
+                    });
+                }
+                return;
+            }
+            const askBtn = e.target.closest('[data-stage-ask]');
+            if (askBtn) {
+                const title = askBtn.getAttribute('data-stage-ask') || '';
+                if (title) askPreset('请帮我导读并评析馆藏作品《' + title + '》的看点、风格与适合阅读/观看的心情');
+                return;
+            }
+            const idxBtn = e.target.closest('[data-stage-idx]');
+            if (idxBtn) {
+                const idx = parseInt(idxBtn.getAttribute('data-stage-idx'), 10);
+                if (Number.isFinite(idx) && stageState.items[idx] && idx !== stageState.activeIndex) {
+                    rackFocusStageSwap(() => {
+                        stageState.activeIndex = idx;
+                        renderCuratedStage();
+                    });
+                }
+                return;
+            }
+            const navBtn = e.target.closest('[data-stage-nav]');
+            if (navBtn) {
+                const v = navBtn.getAttribute('data-stage-nav');
+                if (v && typeof window.switchView === 'function') window.switchView(v);
+            }
+        });
+    }
+
+    function askPreset(promptText) {
+        const ta = document.getElementById('homeChatInput');
+        if (!ta || !promptText) return;
+        ta.value = promptText;
+        ta.focus();
+        sendHomeMessage();
+    }
+
     let homeChatRestored = false;
     async function restoreHomeChat() {
         if (homeChatRestored) return;
@@ -821,14 +1141,18 @@
             const box = document.getElementById('homeChatMessages');
             if (!box || box.querySelector('.home-msg')) return;   // 已经聊上了就不动
             for (const m of msgs) {
-                const text = esc(m.content || '').replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (mm, id, title) =>
+                const rawEsc = esc(m.content || '');
+                const rendered = (m.role === 'assistant' ? mdLite(rawEsc) : rawEsc)
+                    .replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (mm, id, title) =>
                     `<span class="ai-movie-ref" data-movie-id="${id}" onclick="window.jumpToMovieFromAI && window.jumpToMovieFromAI(${id})">📎 ${esc(title)}</span>`);
-                addMsg(m.role === 'assistant' ? 'ai' : 'user', text);
+                addMsg(m.role === 'assistant' ? 'ai' : 'user', rendered);
             }
         } catch (e) { /* 记忆引擎未就绪时保持空态 */ }
     }
 
     function bindHome() {
+        bindCuratedStageEvents();
+        loadCuratedStage(false);
         const ta = document.getElementById('homeChatInput');
         const btn = document.getElementById('homeChatSend');
         if (ta) {
@@ -873,5 +1197,5 @@
         window.addEventListener('resize', applyPh);
     }
 
-    window.Home = { showHome, hideHome, showAcgBoard, hideAcgBoard, bindHome, openAcgDetail, closeAcgDetail, switchAcgPeriod, switchAcgCat, switchSubTab };
+    window.Home = { showHome, hideHome, showAcgBoard, hideAcgBoard, bindHome, openAcgDetail, closeAcgDetail, switchAcgPeriod, switchAcgCat, switchSubTab, askPreset, loadCuratedStage };
 })();

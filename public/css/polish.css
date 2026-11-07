@@ -333,12 +333,41 @@
     white-space: pre-wrap;
 }
 .detail-actress {
+    position: relative;
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 8px 12px;
     transition: transform var(--mv2-d2, .2s) var(--pl-ease-over), border-color var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .detail-actress:hover { transform: translateY(-2px); border-color: var(--pl-amber); }
+.detail-actress-quick-edit {
+    display: none;
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    width: 22px;
+    height: 22px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    font-size: 11px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 2;
+    transition: transform .15s ease, background .15s ease;
+}
+.detail-actress:hover .detail-actress-quick-edit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.detail-actress-quick-edit:hover {
+    transform: scale(1.15);
+    background: var(--primary);
+    color: #fff;
+}
 .detail-tag {
     background: var(--bg-elevated);
     border: 1px solid var(--border);
@@ -349,24 +378,43 @@
 }
 .detail-tag:hover { border-color: var(--danger); }
 
-/* 相似推荐：横向滑动条，节省竖向空间 */
+/* 相似推荐：换行网格（round141）
+   ------------------------------------------------------------------
+   原来这里是「横向滑动条」：.similar-grid 是 flex + overflow-x:auto，
+   .similar-card 是 flex:0 0 132px。看起来没问题，实则被 style.css
+   的 .similar-title{ white-space:nowrap } 整垮：
+     · flex 子项默认 min-width:auto ⇒ 自动最小尺寸 = 内容 min-content；
+     · 标题不换行 ⇒ min-content = 整条日文标题的宽度（实测单卡被撑到
+       414~893px，12 张卡把 scrollWidth 顶到 7298px）；
+     · 容器只有 ~690px ⇒ 用户一眼只看到 1~2 张，还以为「其他海报没出来」。
+   现在改成换行网格：卡片宽度由列宽决定（min-width:0 掐断内容撑宽），
+   12 张全部排进 3~4 行，一眼看全；标题单行省略号。 */
 .similar-grid {
-    display: flex;
-    gap: 12px;
-    overflow-x: auto;
-    padding-bottom: 8px;
-    scroll-snap-type: x proximity;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 14px 10px;
+    padding-bottom: 4px;
 }
-.similar-card { flex: 0 0 132px; scroll-snap-align: start; }
+.similar-card,
+.similar-card > img {
+    min-width: 0;               /* ★ 关键：不写这条，标题一长就把卡撑爆 */
+    max-width: 100%;
+}
 .similar-card img {
-    width: 132px;
-    aspect-ratio: 16 / 10;
+    width: 100%;
+    aspect-ratio: 3 / 4;        /* 海报多为竖版，16/10 会把脸裁掉 */
     object-fit: cover;
     border-radius: 10px;
     transition: transform var(--mv2-d2, .3s) var(--pl-ease-over);
 }
 .similar-card:hover img { transform: scale(1.05); }
-.similar-title { font-size: 11.5px; margin-top: 6px; }
+.similar-title {
+    font-size: 11.5px;
+    margin-top: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* 工具按钮行：网格化，去掉一排挤不下的 dbtn
    2026-09-22：按钮整体放大（40→56px）、字号 16→24px，并补齐悬停/按下动效。

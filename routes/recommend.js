@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  db,
   getSimilarMovies,
   getRandomMovies,
   getRandomMoviesTyped,
@@ -9,7 +10,8 @@ const {
   getFavoriteMovies,
   getMovieById,
   getMovieTags,
-  getMovieActresses
+  getMovieActresses,
+  getMoviesByActress
 } = require('../utils/db');
 
 // ---------- round43 隐私分割器 ----------
@@ -24,18 +26,106 @@ function privacyFilter(req) {
     return null;                                                              // 不过滤
 }
 
-// 相似影片推荐（基于标签）
+// 相似影片推荐（多梯队：同女优 -> 共同标签 -> 同系列/片商/导演 -> 同类型热门补齐）
 // round43：privacy=exclude 时排除 AV/里番——公开片详情页的「相似推荐」不带出隐私内容
 router.get('/similar/:movieId', (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 12;
-        let movies = getSimilarMovies.all({
-            movieId: parseInt(req.params.movieId),
-            limit: limit * 2
-        });
+        const movieId = parseInt(req.params.movieId);
+        const limit = Math.max(parseInt(req.query.limit) || 12, 12);
+        const target = getMovieById.get(movieId);
+        if (!target) return res.json({ code: 0, data: [] });
+
         const pf = privacyFilter(req);
-        if (pf) movies = movies.filter(pf).slice(0, limit);
-        res.json({ code: 0, data: movies });
+        const picked = [];
+        const seen = new Set([movieId]);
+
+        const take = (m) => {
+            if (!m || picked.length >= limit) return;
+            if (seen.has(m.id)) return;
+            if (pf && !pf(m)) return;
+            seen.add(m.id);
+            picked.push(m);
+        };
+
+        // 梯队 1：同女优作品（AV / 影视用户首选关联网）
+        try {
+            const actresses = getMovieActresses.all(movieId) || [];
+            for (const a of actresses) {
+                if (!a || !a.id) continue;
+                // 排除自动匹配出的长短脏名（如“彼女のお姉さん”）若 movieCount 过少
+                const mList = getMoviesByActress.all(a.id) || [];
+                for (const m of mList) {
+                    take(m);
+                    if (picked.length >= limit) break;
+                }
+                if (picked.length >= limit) break;
+            }
+        } catch (e1) {
+            console.warn('[相似推荐] 梯队1女优召回异常:', e1.message);
+        }
+
+        // 梯队 2：共同标签最多的作品
+        if (picked.length < limit) {
+            try {
+                const tagSimilar = getSimilarMovies.all({
+                    movieId: movieId,
+                    limit: limit * 3
+                }) || [];
+                for (const m of tagSimilar) {
+                    take(m);
+                    if (picked.length >= limit) break;
+                }
+            } catch (e2) {
+                console.warn('[相似推荐] 梯队2标签召回异常:', e2.message);
+            }
+        }
+
+        // 梯队 3：同系列 / 同制作商 / 同导演
+        if (picked.length < limit) {
+            try {
+                if (target.serial) {
+                    const serialList = db.prepare('SELECT * FROM movies WHERE serial = ? AND id != ? ORDER BY releaseDate DESC, id DESC LIMIT ?').all(target.serial, movieId, limit);
+                    for (const m of serialList) {
+                        take(m);
+                        if (picked.length >= limit) break;
+                    }
+                }
+                if (picked.length < limit && target.producer) {
+                    const prodList = db.prepare('SELECT * FROM movies WHERE producer = ? AND id != ? ORDER BY releaseDate DESC, id DESC LIMIT ?').all(target.producer, movieId, limit);
+                    for (const m of prodList) {
+                        take(m);
+                        if (picked.length >= limit) break;
+                    }
+                }
+            } catch (e3) {
+                console.warn('[相似推荐] 梯队3系列片商召回异常:', e3.message);
+            }
+        }
+
+        // 梯队 4：同类型（jav / anime / film / cartoon 等）热门或随机补齐，确保永不只显示一两个海报
+        if (picked.length < limit) {
+            try {
+                const typeLower = String(target.type || 'jav').toLowerCase();
+                const randomList = (typeLower !== 'all' && typeLower !== 'adult')
+                    ? getRandomMoviesTyped.all(typeLower, limit * 4)
+                    : getRandomMovies.all(limit * 4);
+                for (const m of randomList) {
+                    take(m);
+                    if (picked.length >= limit) break;
+                }
+            } catch (e4) {
+                console.warn('[相似推荐] 梯队4兜底补齐异常:', e4.message);
+            }
+        }
+
+        // 排序微调：优先把有海报（localPosterPath 或 posterPath 非空）的排在前列
+        picked.sort((a, b) => {
+            const hasPosterA = (a.localPosterPath || a.posterPath) ? 1 : 0;
+            const hasPosterB = (b.localPosterPath || b.posterPath) ? 1 : 0;
+            return hasPosterB - hasPosterA;
+        });
+
+        res.json({ code: 0, data: picked.slice(0, limit) });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }
@@ -99,6 +189,43 @@ router.get('/hot', (req, res) => {
 // 支持 `exclude`：逗号分隔的影片 id，「换一批」用它排除已经展示过的片子。
 // 关键：AI 结果不足时用 **随机池** 补齐，而不是原来的「固定热门榜」——
 // 热门榜每次都是同一批，换了等于没换，魔术卡片的「换一批」会立刻失去意义。
+const _aiGuessCache = { ids: [], ts: 0, warming: false };
+
+function warmAiGuessPoolAsync(historyMovies, allMovies) {
+    if (_aiGuessCache.warming) return;
+    if (Date.now() - _aiGuessCache.ts < 5 * 60 * 1000 && _aiGuessCache.ids.length > 0) return;
+    _aiGuessCache.warming = true;
+    setImmediate(async () => {
+        try {
+            const { getSearchHistory, getMovieTags, getMovieActresses } = require('../utils/db');
+            const { recommendMovies } = require('../utils/ai-service');
+            const searchKeywords = getSearchHistory.all(20).map(s => s.keyword);
+            // 只抽样 80 条候选查标签/女优，避免对全库 9000+ 条目跑 1.8 万次同步 SQL
+            const sample = allMovies
+                .filter(m => m && (m.localPosterPath || m.posterPath))
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 80)
+                .map(m => ({
+                    ...m,
+                    tags: getMovieTags.all(m.id),
+                    actresses: getMovieActresses.all(m.id)
+                }));
+            const ids = await Promise.race([
+                recommendMovies(historyMovies, sample, 48, searchKeywords),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('AI 后台预热超时')), 6000))
+            ]);
+            if (Array.isArray(ids) && ids.length) {
+                _aiGuessCache.ids = ids;
+                _aiGuessCache.ts = Date.now();
+            }
+        } catch (e) {
+            // 后台预热静默降级
+        } finally {
+            _aiGuessCache.warming = false;
+        }
+    });
+}
+
 router.get('/guess', async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit) || 12, 60);
@@ -110,7 +237,6 @@ router.get('/guess', async (req, res) => {
         );
 
         const { getAllMovies, getWatchHistory, getSearchHistory, getMovieTags, getMovieActresses } = require('../utils/db');
-        const { recommendMovies } = require('../utils/ai-service');
 
         const allMovies = getAllMovies.all();
         const byId = new Map(allMovies.map(m => [m.id, m]));
@@ -126,7 +252,7 @@ router.get('/guess', async (req, res) => {
             picked.push(movie);
         };
 
-        // 1) 有观看历史时优先用 AI 推荐（加 9 秒超时，避免本地模型卡住导致卡片迟迟不出）
+        // 1) 优先消费后台已预热的 AI 推荐池 + 历史同系列/同作者亲和召回（毫秒级响应，不阻塞首屏）
         const history = getWatchHistory.all(20, 0);
         const historyMovies = history.map(h => {
             const movie = byId.get(h.movieId);
@@ -138,26 +264,24 @@ router.get('/guess', async (req, res) => {
         }).filter(Boolean);
 
         if (historyMovies.length > 0 && picked.length < limit) {
-            try {
-                const searchKeywords = getSearchHistory.all(20).map(s => s.keyword);
-                const candidates = allMovies.map(m => {
-                    m.tags = getMovieTags.all(m.id);
-                    m.actresses = getMovieActresses.all(m.id);
-                    return m;
-                });
-                const recommendedIds = await Promise.race([
-                    recommendMovies(historyMovies, candidates, limit * 2, searchKeywords),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('AI 推荐超时')), 9000))
-                ]);
-                for (const id of recommendedIds || []) take(byId.get(id));
-            } catch (e) {
-                console.log('[AI推荐] 失败，降级为随机推荐:', e.message);
+            for (const id of _aiGuessCache.ids || []) take(byId.get(id));
+            // 基于最近观看的同系列 / 相似作品即时召回
+            for (const hm of historyMovies.slice(0, 4)) {
+                try {
+                    const sim = getSimilarMovies.all({ movieId: hm.id, limit: 6 }) || [];
+                    for (const sm of sim) take(sm);
+                } catch (e) {}
             }
+            warmAiGuessPoolAsync(historyMovies, allMovies);
         }
 
-        // 2) 不足的部分用随机池补齐（保证「换一批」每次都新鲜）
+        // 2) 不足的部分用带封面的随机池优先补齐（保证展台视觉完整且每次「换一批」都新鲜）
         if (picked.length < limit) {
-            for (const m of getRandomMovies.all(limit * 6)) take(m);
+            const randPool = getRandomMovies.all(limit * 6);
+            const withArt = randPool.filter(m => m && (m.localPosterPath || m.posterPath));
+            const noArt = randPool.filter(m => m && !(m.localPosterPath || m.posterPath));
+            for (const m of withArt) take(m);
+            for (const m of noArt) take(m);
         }
 
         // 3) 极端情况：全库 id 都被 exclude 掉了，退化为热门，保证卡片位不空

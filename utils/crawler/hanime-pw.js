@@ -197,7 +197,12 @@ class HanimePwCrawler {
         const apiList = await this.searchApi(keyword);
         if (apiList.length > 0) return apiList;
         try {
-            const searchUrl = `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}`;
+            /* round141 修复：参数名是 query，不是 q。
+               ?q= 实测返回的是「最新上传」列表（59 条无关结果，第一条是
+               「リオ寝取られ編」），而 ?query= 才返回真的匹配结果 ——
+               原来的写法等于「搜什么都是同一批无关片」，pickBestMatch 再准也没用，
+               这就是里番海报一直刮不到的根因之一。 */
+            const searchUrl = `${this.baseUrl}/search?query=${encodeURIComponent(keyword)}`;
             const { html, finalUrl } = await this.fetchPage(searchUrl);
 
             // 判断是否还在CF拦截页
@@ -510,6 +515,18 @@ function getPwInstance() {
 }
 
 // poster‑fetcher调用入口
+/* round141：封面可用性判定。
+ * hanime 的封面是 vdownload.hembed.com 上的**签名 URL**（?secure=...），
+ * 实测可直接经代理下载（200 / image/jpeg）；但纯数字形式（如 408261l.jpg）会 403。
+ * 所以「有封面」= 有 secure 签名的 URL，而不是任意 img src。 */
+function isUsableHanimeCover(url) {
+    const s = String(url || '').trim();
+    if (!/^https?:\/\//i.test(s)) return false;
+    // 站点图标/占位图不算封面
+    if (/\/image\/icon\//i.test(s) || /favicon|logo/i.test(s)) return false;
+    return /hembed\.com|hanime/i.test(s) || /secure=/i.test(s);
+}
+
 async function searchHanimeByName(keyword) {
     if (!keyword?.trim()) return null;
     const crawler = getPwInstance();
@@ -517,6 +534,37 @@ async function searchHanimeByName(keyword) {
     if (!Array.isArray(list) || list.length === 0) return null;
 
     const first = crawler.pickBestMatch(list, keyword.trim());
+    if (!first) return null;
+
+    /* round141 关键修复：搜索结果里**已经带签名封面**（vdownload.hembed.com/image/thumbnail/xxx.jpg?secure=...），
+     * 原来却无条件再进一次详情页去取 og:image —— 而实测详情页根本没有 og:image，
+     * 等于每部片都多跑一次网络、最后还是回落到封面字段为空。
+     * 现在的策略：结果自带可用封面就直接回去；没有才去详情页补。 */
+    const hasCover = isUsableHanimeCover(first.cover);
+    if (hasCover) {
+        const out = {
+            title: first.title || "",
+            originalTitle: first.title || "",
+            cover: first.cover || "",
+            releaseDate: "",
+            genres: [],
+            overview: "",
+            source: 'hanime'
+        };
+        // 详情页还能补标签/简介，但有封面已经够用；失败不影响主流程
+        try {
+            const detail = await crawler.getDetail(first.url);
+            if (detail) {
+                if (detail.tags && detail.tags.length) out.genres = detail.tags;
+                if (detail.overview) out.overview = detail.overview;
+                // 详情页封面若也可用且更完整，优先用它
+                if (isUsableHanimeCover(detail.cover)) out.cover = detail.cover;
+                if (detail.title) { out.title = detail.title; out.originalTitle = detail.title; }
+            }
+        } catch (e) { /* 详情补全失败无所谓 */ }
+        return out;
+    }
+
     const detail = await crawler.getDetail(first.url);
     if (!detail) {
         return {
@@ -525,16 +573,18 @@ async function searchHanimeByName(keyword) {
             cover: first.cover || "",
             releaseDate: "",
             genres: [],
-            overview: ""
+            overview: "",
+            source: 'hanime'
         };
     }
     return {
         title: detail.title || first.title,
         originalTitle: detail.title || first.title,
-        cover: detail.cover || first.cover,
+        cover: (isUsableHanimeCover(detail.cover) ? detail.cover : (first.cover || "")),
         releaseDate: "",
         genres: detail.tags || [],
-        overview: detail.overview || ""
+        overview: detail.overview || "",
+        source: 'hanime'
     };
 }
 

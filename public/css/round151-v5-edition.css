@@ -1,0 +1,2008 @@
+/* ==========================================================================
+   round151-v5-edition.css —— V5.0「午夜场 · 典藏放映室」大版本视觉与交互焕新
+   --------------------------------------------------------------------------
+   核心解决：
+   1. [P0] 纸皮肤（classic）快捷键面板 #shortcutsModal 暖白字压浅灰玻璃（1.43:1 → >10:1）
+   2. [P0] 夜皮肤（matinee）首页 AI 卡片与气泡白底浅字（1.01:1 → >11:1）
+   3. [V5 主视觉] 首页「今夜主映 · 典藏放映台」（#homeCuratedStage）胶片齿孔 + 3D 典藏立书/放映框 + 馆藏脉搏 + 候选胶片条
+   4. [V5 策展交互] AI 典藏策展人顶栏、快捷提问胶囊（.home-quick-prompts）与富文本 Markdown 排版（标题/列表/分割线/表格/行内代码）
+   5. [V5 媒介尊严] 竖版书籍/漫画封面 3D 立书展示（object-fit:contain + 虚化氛围底衬 + 书脊压痕），告别 16:9 腰斩裁切
+   6. [V5 典藏函套] 漫画库/小说库文件夹从刺眼荧光糖果色升级为「亚麻布面典藏函套 + 朱砂/琥珀印章」
+   7. [V5 导航与设置] 顶栏纸/夜双切显式文字标、隐藏重复主题按钮、Toast 右上角避让搜索框、设置页左栏常驻展开（176px）、手机端语音球避让底栏
+   ========================================================================== */
+
+/* ==========================================================================
+   1. P0 对比度根因修复：快捷键面板 (#shortcutsModal) & 线路健康面板
+   ========================================================================== */
+
+/* 纸皮肤（classic）：温润宣纸底 + 浓墨正文 + 琥珀金分组小标题 + 实体白键帽 */
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .modal-content,
+html[data-v4skin="classic"] body #shortcutsModal .modal-content,
+html:not([data-v4skin="matinee"]) body:not(.dark) #watchHealthModal .modal-content,
+html[data-v4skin="classic"] body #watchHealthModal .modal-content {
+    background: linear-gradient(180deg, rgba(252, 249, 242, 0.98), rgba(245, 239, 228, 0.97)) !important;
+    color: #221C15 !important;
+    --text: #221C15 !important;
+    --text-muted: #5A5044 !important;
+    --primary: #7A4E0D !important;
+    --border: rgba(34, 28, 21, 0.14) !important;
+    border: 1px solid rgba(138, 90, 18, 0.24) !important;
+    box-shadow: 0 28px 72px -18px rgba(38, 28, 14, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+    max-height: 86vh !important;
+    overflow-y: auto !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .close-btn,
+html[data-v4skin="classic"] body #shortcutsModal .close-btn,
+html:not([data-v4skin="matinee"]) body:not(.dark) #watchHealthModal .close-btn,
+html[data-v4skin="classic"] body #watchHealthModal .close-btn {
+    color: #3B3228 !important;
+    background: rgba(34, 28, 21, 0.06) !important;
+    border-radius: 999px !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .sc-group,
+html[data-v4skin="classic"] body #shortcutsModal .sc-group {
+    background: rgba(255, 253, 248, 0.88) !important;
+    border: 1px solid rgba(138, 90, 18, 0.18) !important;
+    box-shadow: 0 2px 8px rgba(38, 28, 14, 0.04) !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .sc-group > div:first-child,
+html[data-v4skin="classic"] body #shortcutsModal .sc-group > div:first-child,
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .sc-group > div:first-child span,
+html[data-v4skin="classic"] body #shortcutsModal .sc-group > div:first-child span {
+    color: #7A4E0D !important;
+    font-weight: 700 !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .sc-item > span,
+html[data-v4skin="classic"] body #shortcutsModal .sc-item > span {
+    color: #221C15 !important;
+    font-weight: 500 !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .sc-item > span em,
+html[data-v4skin="classic"] body #shortcutsModal .sc-item > span em {
+    color: #5A5044 !important;
+    font-style: normal !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) #shortcutsModal .sc-keys kbd,
+html[data-v4skin="classic"] body #shortcutsModal .sc-keys kbd {
+    background: #FFFFFF !important;
+    border: 1px solid #C4B79E !important;
+    box-shadow: 0 2px 0 #D8CCB8 !important;
+    color: #1E1812 !important;
+    font-weight: 700 !important;
+}
+
+/* 夜皮肤（matinee）：深邃黑曜石底 + 暖白字 + 鎏金键帽，同样开启滚动防底部裁切 */
+html[data-v4skin="matinee"] body #shortcutsModal .modal-content,
+body.dark #shortcutsModal .modal-content {
+    background: linear-gradient(180deg, rgba(24, 20, 17, 0.97), rgba(16, 14, 12, 0.98)) !important;
+    color: #F3ECDD !important;
+    border: 1px solid rgba(217, 154, 67, 0.28) !important;
+    max-height: 86vh !important;
+    overflow-y: auto !important;
+}
+
+
+/* ==========================================================================
+   2. P0 对比度根因修复：夜皮肤（matinee）首页 AI 卡片、气泡与输入区
+   ========================================================================== */
+
+html[data-v4skin="matinee"] body .home-chat-card,
+body.dark .home-chat-card {
+    background: linear-gradient(180deg, rgba(25, 22, 18, 0.94), rgba(18, 16, 13, 0.96)) !important;
+    border: 1px solid rgba(217, 154, 67, 0.24) !important;
+    border-top: 2px solid var(--primary, #D99A43) !important;
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 239, 210, 0.06) !important;
+    color: #F3ECDD !important;
+}
+
+html[data-v4skin="matinee"] body .home-msg.ai .bubble,
+body.dark .home-msg.ai .bubble {
+    background: rgba(36, 31, 26, 0.94) !important;
+    color: #F3ECDD !important;
+    border: 1px solid rgba(217, 154, 67, 0.22) !important;
+    border-left: 3px solid var(--primary, #D99A43) !important;
+    box-shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.75) !important;
+}
+
+html[data-v4skin="matinee"] body .home-msg.user .bubble,
+body.dark .home-msg.user .bubble {
+    background: linear-gradient(135deg, #B87B28, #966016) !important;
+    color: #FFFDF9 !important;
+    border: 1px solid rgba(255, 226, 173, 0.28) !important;
+}
+
+html[data-v4skin="matinee"] body .home-chat-input,
+body.dark .home-chat-input {
+    background: rgba(16, 14, 12, 0.78) !important;
+    border-top: 1px solid rgba(255, 239, 210, 0.09) !important;
+}
+
+html[data-v4skin="matinee"] body .home-chat-input textarea,
+body.dark .home-chat-input textarea,
+html[data-v4skin="matinee"] body #aiModal #aiInput,
+body.dark #aiModal #aiInput {
+    background: rgba(34, 29, 24, 0.92) !important;
+    color: #F3ECDD !important;
+    border: 1px solid rgba(217, 154, 67, 0.25) !important;
+}
+
+html[data-v4skin="matinee"] body .home-chat-input textarea::placeholder,
+body.dark .home-chat-input textarea::placeholder {
+    color: #9E9485 !important;
+}
+
+html[data-v4skin="matinee"] body .ai-agent-steps,
+body.dark .ai-agent-steps {
+    background: rgba(32, 28, 23, 0.92) !important;
+    color: #F3ECDD !important;
+    border: 1px dashed rgba(217, 154, 67, 0.30) !important;
+}
+
+/* 纸皮肤（classic）下首页 AI 卡片同样加实，保证宣纸质感与墨字清晰 */
+html:not([data-v4skin="matinee"]) body:not(.dark) .home-chat-card,
+html[data-v4skin="classic"] body .home-chat-card {
+    background: linear-gradient(180deg, rgba(252, 249, 242, 0.94), rgba(246, 240, 229, 0.96)) !important;
+    border: 1px solid rgba(138, 90, 18, 0.22) !important;
+    border-top: 2px solid var(--primary, #8A5A12) !important;
+    box-shadow: 0 20px 48px -22px rgba(48, 34, 14, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+    color: #241E17 !important;
+}
+
+html:not([data-v4skin="matinee"]) body:not(.dark) .home-msg.ai .bubble,
+html[data-v4skin="classic"] body .home-msg.ai .bubble {
+    background: #FFFFFF !important;
+    color: #241E17 !important;
+    border: 1px solid rgba(138, 90, 18, 0.18) !important;
+    border-left: 3px solid var(--primary, #8A5A12) !important;
+    box-shadow: 0 6px 18px -10px rgba(48, 34, 14, 0.12) !important;
+}
+
+
+/* ==========================================================================
+   3. V5 首页重构：「今夜主映 · 典藏放映台」(#homeCuratedStage) + 双栏策展工作台
+   ========================================================================== */
+
+html body #homeView.active {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.06fr) minmax(0, 0.94fr) !important;
+    grid-template-rows: auto minmax(440px, auto) auto !important;
+    grid-template-areas:
+        "stage stage"
+        "chat  rank"
+        "cal   cal" !important;
+    row-gap: 24px !important;
+    column-gap: 28px !important;
+    padding: 8px 28px 48px !important;
+    align-items: stretch !important;
+}
+
+.home-curated-stage {
+    grid-area: stage;
+    position: relative;
+    z-index: 2;
+    min-width: 0;
+}
+
+.hcs-shell {
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(138, 90, 18, 0.26);
+    background: linear-gradient(135deg, rgba(248, 243, 233, 0.96) 0%, rgba(239, 231, 215, 0.94) 100%);
+    box-shadow: 0 22px 52px -24px rgba(42, 30, 14, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    color: #241E17;
+}
+
+html[data-v4skin="matinee"] .hcs-shell,
+body.dark .hcs-shell {
+    border-color: rgba(217, 154, 67, 0.30);
+    background: linear-gradient(135deg, rgba(26, 22, 18, 0.95) 0%, rgba(17, 15, 12, 0.97) 100%);
+    box-shadow: 0 26px 64px -24px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 239, 210, 0.08);
+    color: #F3ECDD;
+}
+
+/* 氛围海报虚化底衬 */
+.hcs-ambient {
+    position: absolute;
+    inset: -24px;
+    background-image: var(--stage-bg, none);
+    background-size: cover;
+    background-position: center;
+    filter: blur(42px) saturate(135%);
+    opacity: 0.16;
+    pointer-events: none;
+    z-index: 0;
+}
+html[data-v4skin="matinee"] .hcs-ambient,
+body.dark .hcs-ambient {
+    opacity: 0.22;
+}
+
+/* 顶部 35mm 胶片齿孔装饰带 */
+.hcs-sprocket {
+    position: relative;
+    z-index: 1;
+    height: 10px;
+    background-color: rgba(138, 90, 18, 0.10);
+    border-bottom: 1px solid rgba(138, 90, 18, 0.18);
+    background-image: repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 10px,
+        rgba(138, 90, 18, 0.26) 10px,
+        rgba(138, 90, 18, 0.26) 18px,
+        transparent 18px,
+        transparent 28px
+    );
+}
+html[data-v4skin="matinee"] .hcs-sprocket,
+body.dark .hcs-sprocket {
+    background-color: rgba(217, 154, 67, 0.08);
+    border-bottom-color: rgba(217, 154, 67, 0.20);
+    background-image: repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 10px,
+        rgba(217, 154, 67, 0.30) 10px,
+        rgba(217, 154, 67, 0.30) 18px,
+        transparent 18px,
+        transparent 28px
+    );
+}
+
+.hcs-body {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.38fr) minmax(300px, 0.82fr);
+    gap: 24px;
+    padding: 20px 24px 22px;
+    align-items: center;
+}
+
+.hcs-main {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    min-width: 0;
+}
+
+/* 3D 典藏封面立架 */
+.hcs-cover-stage {
+    position: relative;
+    flex: 0 0 128px;
+    width: 128px;
+    height: 180px;
+    border-radius: 6px 10px 10px 6px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #231D16;
+    border: 1px solid rgba(138, 90, 18, 0.32);
+    box-shadow:
+        -5px 0 0 #4A3822,
+        -7px 0 0 rgba(255, 255, 255, 0.16),
+        0 16px 32px -12px rgba(0, 0, 0, 0.55);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+.hcs-cover-stage:hover {
+    transform: translateY(-3px) rotate(-1deg);
+    box-shadow:
+        -5px 0 0 #6B4E2A,
+        -7px 0 0 rgba(255, 255, 255, 0.22),
+        0 20px 38px -10px rgba(0, 0, 0, 0.65);
+}
+
+.hcs-cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.hcs-spine-sheen {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0.35) 0%,
+        rgba(255, 255, 255, 0.22) 5%,
+        rgba(0, 0, 0, 0.14) 9%,
+        transparent 20%
+    );
+}
+
+.hcs-cover-typo {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 10px;
+    text-align: center;
+    background: linear-gradient(155deg, #30261B 0%, #1C1610 100%);
+    color: #F3ECDD;
+}
+
+.hcs-typo-seal {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    border: 1px solid rgba(217, 154, 67, 0.55);
+    background: rgba(217, 154, 67, 0.15);
+    color: #E8B96F;
+    font-family: var(--font-display, "Songti SC", "Noto Serif SC", serif);
+    font-size: 20px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.hcs-typo-name {
+    font-family: var(--font-display, "Songti SC", "Noto Serif SC", serif);
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 600;
+    color: #F3ECDD;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.hcs-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hcs-kicker-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.hcs-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: rgba(138, 90, 18, 0.14);
+    color: #7A4E0D;
+    border: 1px solid rgba(138, 90, 18, 0.28);
+}
+html[data-v4skin="matinee"] .hcs-kicker,
+body.dark .hcs-kicker {
+    background: rgba(217, 154, 67, 0.16);
+    color: #E8B96F;
+    border-color: rgba(217, 154, 67, 0.34);
+}
+
+.hcs-greeting {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted, #6B6157);
+}
+html[data-v4skin="matinee"] .hcs-greeting,
+body.dark .hcs-greeting {
+    color: #B8AE9E;
+}
+
+.hcs-ticket-no {
+    margin-left: auto;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--text-muted, #6B6157);
+    opacity: 0.85;
+}
+
+.hcs-title {
+    margin: 0;
+    font-family: var(--font-display, "Songti SC", "Noto Serif SC", serif);
+    font-size: clamp(20px, 2.1vw, 26px);
+    font-weight: 700;
+    line-height: 1.28;
+    letter-spacing: 0.01em;
+    color: inherit;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.hcs-badges {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.hcs-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(34, 28, 21, 0.06);
+    color: #3D3429;
+    border: 1px solid rgba(34, 28, 21, 0.12);
+}
+html[data-v4skin="matinee"] .hcs-badge,
+body.dark .hcs-badge {
+    background: rgba(255, 248, 235, 0.07);
+    color: #DFD5C5;
+    border-color: rgba(255, 248, 235, 0.14);
+}
+
+.hcs-badge.is-type {
+    background: rgba(138, 90, 18, 0.12);
+    color: #7A4E0D;
+    border-color: rgba(138, 90, 18, 0.25);
+}
+html[data-v4skin="matinee"] .hcs-badge.is-type,
+body.dark .hcs-badge.is-type {
+    background: rgba(217, 154, 67, 0.16);
+    color: #E8B96F;
+    border-color: rgba(217, 154, 67, 0.32);
+}
+
+.hcs-badge.is-score {
+    color: #9A5B0A;
+    font-family: var(--font-mono, monospace);
+}
+html[data-v4skin="matinee"] .hcs-badge.is-score,
+body.dark .hcs-badge.is-score {
+    color: #F0BE6F;
+}
+
+.hcs-reason {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #52483C;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+html[data-v4skin="matinee"] .hcs-reason,
+body.dark .hcs-reason {
+    color: #C4B9A8;
+}
+
+.hcs-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.hcs-btn {
+    appearance: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.hcs-btn:hover {
+    transform: translateY(-1px);
+}
+
+.hcs-btn-primary {
+    background: linear-gradient(135deg, #9A6518, #7A4E0D);
+    color: #FFFDF9 !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 18px -8px rgba(122, 78, 13, 0.55);
+}
+html[data-v4skin="matinee"] .hcs-btn-primary,
+body.dark .hcs-btn-primary {
+    background: linear-gradient(135deg, #DFA24B, #B87922);
+    color: #16120D !important;
+    border-color: rgba(255, 242, 214, 0.35);
+    font-weight: 700;
+}
+
+.hcs-btn-secondary {
+    background: rgba(34, 28, 21, 0.08);
+    color: #241E17;
+    border: 1px solid rgba(34, 28, 21, 0.18);
+}
+html[data-v4skin="matinee"] .hcs-btn-secondary,
+body.dark .hcs-btn-secondary {
+    background: rgba(255, 248, 235, 0.10);
+    color: #F3ECDD;
+    border-color: rgba(255, 248, 235, 0.20);
+}
+
+.hcs-btn-ghost {
+    background: transparent;
+    color: #5A5044;
+    border: 1px dashed rgba(138, 90, 18, 0.32);
+}
+html[data-v4skin="matinee"] .hcs-btn-ghost,
+body.dark .hcs-btn-ghost {
+    color: #C9BFAEE6;
+    border-color: rgba(217, 154, 67, 0.32);
+}
+.hcs-btn-ghost:hover {
+    background: rgba(138, 90, 18, 0.08);
+    color: inherit;
+}
+
+/* 右侧：馆藏脉搏 + 候选胶片条 */
+.hcs-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-left: 22px;
+    border-left: 1px solid rgba(138, 90, 18, 0.18);
+}
+html[data-v4skin="matinee"] .hcs-side,
+body.dark .hcs-side {
+    border-left-color: rgba(217, 154, 67, 0.20);
+}
+
+.hcs-pulse-head,
+.hcs-reel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.hcs-side-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #7A4E0D;
+}
+html[data-v4skin="matinee"] .hcs-side-label,
+body.dark .hcs-side-label {
+    color: #E8B96F;
+}
+
+.hcs-side-link {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: #7A4E0D;
+    cursor: pointer;
+}
+html[data-v4skin="matinee"] .hcs-side-link,
+body.dark .hcs-side-link {
+    color: #E8B96F;
+}
+.hcs-side-link:hover {
+    text-decoration: underline;
+}
+
+.hcs-pulse-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.hcs-pulse-card {
+    appearance: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.66);
+    border: 1px solid rgba(138, 90, 18, 0.16);
+    color: #241E17;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    text-align: left;
+}
+html[data-v4skin="matinee"] .hcs-pulse-card,
+body.dark .hcs-pulse-card {
+    background: rgba(255, 248, 235, 0.055);
+    border-color: rgba(217, 154, 67, 0.18);
+    color: #F3ECDD;
+}
+.hcs-pulse-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary, #D99A43);
+}
+
+.hcs-pulse-num {
+    font-family: var(--font-mono, monospace);
+    font-size: 15px;
+    font-weight: 700;
+    color: #7A4E0D;
+}
+html[data-v4skin="matinee"] .hcs-pulse-num,
+body.dark .hcs-pulse-num {
+    color: #E8B96F;
+}
+
+.hcs-pulse-name {
+    font-size: 11.5px;
+    color: #5A5044;
+    white-space: nowrap;
+    overflow: hidden;
+text-overflow: ellipsis;
+    max-width: 100%;
+}
+html[data-v4skin="matinee"] .hcs-pulse-name,
+body.dark .hcs-pulse-name {
+    color: #B8AE9E;
+}
+
+.hcs-reel-pos {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: #6B6157;
+}
+html[data-v4skin="matinee"] .hcs-reel-pos,
+body.dark .hcs-reel-pos {
+    color: #B8AE9E;
+}
+
+.hcs-reel-strip {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.hcs-reel-item {
+    position: relative;
+    appearance: none;
+    padding: 0;
+    height: 64px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #231D16;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.hcs-reel-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.hcs-reel-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display, serif);
+    font-size: 16px;
+    font-weight: 700;
+    color: #E8B96F;
+    background: linear-gradient(145deg, #2E2419, #1A140E);
+}
+.hcs-reel-idx {
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-family: var(--font-mono, monospace);
+    font-size: 9.5px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #F3ECDD;
+}
+.hcs-reel-item.active {
+    border-color: var(--primary, #D99A43);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px -4px rgba(0, 0, 0, 0.45);
+}
+
+/* 收紧左栏 .home-chat 的 212px 空白顶距，把看板娘优雅停靠在卡片右上沿 */
+html body .home-chat {
+    padding-top: 28px !important;
+    margin-top: 0 !important;
+}
+html body .home-mascot {
+    width: 118px !important;
+    left: auto !important;
+    right: 18px !important;
+    bottom: calc(100% - 22px) !important;
+    transform: none !important;
+    z-index: 3 !important;
+    pointer-events: none !important;
+}
+html body .home-chat:hover .home-mascot {
+    transform: translateY(-3px) !important;
+}
+html body .home-rank {
+    padding-top: 28px !important;
+}
+
+
+/* ==========================================================================
+   4. AI 典藏策展人顶栏、快捷提问胶囊与 Markdown 富文本排版
+   ========================================================================== */
+
+.home-chat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 18px;
+    border-bottom: 1px solid rgba(138, 90, 18, 0.14);
+    background: rgba(138, 90, 18, 0.05);
+}
+html[data-v4skin="matinee"] .home-chat-head,
+body.dark .home-chat-head {
+    border-bottom-color: rgba(217, 154, 67, 0.16);
+    background: rgba(217, 154, 67, 0.06);
+}
+
+.hch-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.hch-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2E9B68;
+    box-shadow: 0 0 0 3px rgba(46, 155, 104, 0.18);
+}
+
+.hch-title {
+    font-family: var(--font-display, "Songti SC", serif);
+    font-size: 15px;
+    font-weight: 700;
+    color: inherit;
+}
+
+.hch-sub {
+    font-family: var(--font-mono, monospace);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: var(--text-muted, #6B6157);
+}
+html[data-v4skin="matinee"] .hch-sub,
+body.dark .hch-sub {
+    color: #A89E8E;
+}
+
+.home-quick-prompts {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    padding: 8px 16px 4px;
+    border-top: 1px dashed rgba(138, 90, 18, 0.14);
+}
+html[data-v4skin="matinee"] .home-quick-prompts,
+body.dark .home-quick-prompts {
+    border-top-color: rgba(217, 154, 67, 0.16);
+}
+
+.hqp-pill {
+    appearance: none;
+    padding: 4px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    background: rgba(138, 90, 18, 0.09);
+    color: #69430B;
+    border: 1px solid rgba(138, 90, 18, 0.22);
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+html[data-v4skin="matinee"] .hqp-pill,
+body.dark .hqp-pill {
+    background: rgba(217, 154, 67, 0.12);
+    color: #E8B96F;
+    border-color: rgba(217, 154, 67, 0.28);
+}
+.hqp-pill:hover {
+    transform: translateY(-1px);
+    background: rgba(138, 90, 18, 0.16);
+}
+html[data-v4skin="matinee"] .hqp-pill:hover,
+body.dark .hqp-pill:hover {
+    background: rgba(217, 154, 67, 0.22);
+}
+
+/* AI 气泡内 Markdown 排版样式 */
+.bubble .md-h1,
+.bubble .md-h2,
+.bubble .md-h3,
+.bubble .md-h4 {
+    font-family: var(--font-display, "Songti SC", "Noto Serif SC", serif);
+    font-weight: 700;
+    line-height: 1.38;
+    margin: 10px 0 4px;
+    color: inherit;
+}
+.bubble .md-h1 { font-size: 16.5px; border-bottom: 1px solid rgba(138, 90, 18, 0.2); padding-bottom: 4px; }
+.bubble .md-h2 { font-size: 15.5px; border-bottom: 1px solid rgba(138, 90, 18, 0.16); padding-bottom: 3px; }
+.bubble .md-h3 { font-size: 14.5px; color: var(--primary, #8A5A12); }
+html[data-v4skin="matinee"] .bubble .md-h3,
+body.dark .bubble .md-h3 { color: #E8B96F; }
+.bubble .md-h4 { font-size: 13.5px; }
+
+.bubble .md-hr {
+    border: none;
+    border-top: 1px dashed rgba(138, 90, 18, 0.25);
+    margin: 8px 0;
+}
+
+.bubble .md-li {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin: 3px 0;
+    line-height: 1.6;
+}
+.bubble .md-bullet,
+.bubble .md-num {
+    flex: none;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary, #8A5A12);
+}
+html[data-v4skin="matinee"] .bubble .md-bullet,
+html[data-v4skin="matinee"] .bubble .md-num,
+body.dark .bubble .md-bullet,
+body.dark .bubble .md-num {
+    color: #E8B96F;
+}
+
+.bubble .md-code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono, monospace);
+    font-size: 12.5px;
+    background: rgba(138, 90, 18, 0.10);
+    color: inherit;
+}
+html[data-v4skin="matinee"] .bubble .md-code,
+body.dark .bubble .md-code {
+    background: rgba(255, 248, 235, 0.10);
+}
+
+.bubble .md-tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    margin: 3px 0;
+    border-radius: 6px;
+    background: rgba(138, 90, 18, 0.06);
+    font-size: 13px;
+}
+
+
+/* ==========================================================================
+   5. V5 书籍与综合页面三态展示系统：
+      ① portrait（3:4 满幅精装立书架，默认）
+      ② placard（左书右笺 · 典藏展签横卡）
+      ③ stage（16:9 宽幅毛玻璃景深舞台）
+   ========================================================================== */
+
+/* 默认隐藏仅在 placard（左书右笺）模式下展示的扩展元信息槽 */
+.movie-card .mtb-kicker-row,
+.movie-card .mtb-placard-foot {
+    display: none;
+}
+.movie-card .mtb-main-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   模式 ①：📚 竖版书架（data-book-layout="portrait"）
+   3:4 原生黄金书封比例 + 100% 满幅封面 + 左侧拟真精装书脊折痕与高光
+   -------------------------------------------------------------------------- */
+@media (min-width: 861px) {
+    html body #movieGrid[data-book-layout="portrait"],
+    html body #movieGrid[data-book-layout="portrait"] .t-page-slide[data-layout="grid"] > .t-page {
+        grid-template-columns: repeat(auto-fill, minmax(calc(196px * var(--card-w-scale, 1)), 1fr)) !important;
+        gap: 22px 18px !important;
+    }
+}
+
+html body #movieGrid[data-book-layout="portrait"] .movie-card {
+    border-radius: 6px 12px 12px 6px !important;
+    box-shadow:
+        -4px 0 0 rgba(122, 84, 24, 0.28),
+        0 14px 28px -12px rgba(28, 20, 10, 0.26) !important;
+    transition: transform 0.22s cubic-bezier(.22, 1, .36, 1), box-shadow 0.22s ease !important;
+}
+html body #movieGrid[data-book-layout="portrait"] .movie-card:hover {
+    transform: translateY(-6px) rotate(-0.4deg) !important;
+    box-shadow:
+        -6px 2px 0 rgba(122, 84, 24, 0.42),
+        0 24px 44px -14px rgba(28, 20, 10, 0.38) !important;
+}
+
+html body #movieGrid[data-book-layout="portrait"] .movie-card .movie-poster-wrap {
+    aspect-ratio: 3 / 4.15 !important;
+    background: #231D16 !important;
+    border-radius: 5px 11px 0 0 !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+/* 左侧拟真精装书脊压槽与光泽带 */
+html body #movieGrid[data-book-layout="portrait"] .movie-card .movie-poster-wrap::after {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0.38) 0%,
+        rgba(255, 255, 255, 0.26) 3.2%,
+        rgba(0, 0, 0, 0.22) 5.8%,
+        rgba(255, 255, 255, 0.08) 7.5%,
+        transparent 14%
+    ) !important;
+    z-index: 2 !important;
+    pointer-events: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+}
+
+html body #movieGrid[data-book-layout="portrait"] .movie-card .movie-poster {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    top: 0 !important;
+    margin: 0 !important;
+    object-fit: cover !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+html body #movieGrid[data-book-layout="portrait"] .movie-card .movie-title-below {
+    padding: 9px 11px 10px !important;
+    font-size: 13px !important;
+    line-height: 1.42 !important;
+    min-height: 54px !important;
+}
+
+/* --------------------------------------------------------------------------
+   模式 ②：🎫 左书右笺 · 典藏展签横卡（data-book-layout="placard"）
+   左侧 3:4 立体书封大幅陈列，右侧博物馆展签展示类型、书名、作者与规格
+   -------------------------------------------------------------------------- */
+@media (min-width: 861px) {
+    html body #movieGrid[data-book-layout="placard"],
+    html body #movieGrid[data-book-layout="placard"] .t-page-slide[data-layout="grid"] > .t-page {
+        grid-template-columns: repeat(auto-fill, minmax(calc(340px * var(--card-w-scale, 1)), 1fr)) !important;
+        gap: 18px 20px !important;
+    }
+}
+
+html body #movieGrid[data-book-layout="placard"] .movie-card.movie-card-compact {
+    display: grid !important;
+    grid-template-columns: 126px minmax(0, 1fr) !important;
+    align-items: stretch !important;
+    min-height: 174px !important;
+    border-radius: 14px !important;
+    padding: 12px !important;
+    gap: 15px !important;
+    background: linear-gradient(145deg, rgba(255, 252, 245, 0.94), rgba(242, 235, 221, 0.92)) !important;
+    border: 1px solid rgba(138, 90, 18, 0.22) !important;
+    box-shadow: 0 12px 28px -14px rgba(34, 24, 10, 0.18) !important;
+}
+html[data-v4skin="matinee"] body #movieGrid[data-book-layout="placard"] .movie-card.movie-card-compact {
+    background: linear-gradient(145deg, #241F19, #1A1612) !important;
+    border-color: rgba(217, 154, 67, 0.24) !important;
+    box-shadow: 0 16px 34px -14px rgba(0, 0, 0, 0.65) !important;
+}
+
+html body #movieGrid[data-book-layout="placard"] .movie-card .movie-poster-wrap {
+    width: 126px !important;
+    height: 172px !important;
+    aspect-ratio: 3 / 4.1 !important;
+    border-radius: 4px 8px 8px 4px !important;
+    box-shadow:
+        -4px 0 0 #D8CEBC,
+        -6px 5px 16px rgba(0, 0, 0, 0.28) !important;
+    overflow: hidden !important;
+}
+html[data-v4skin="matinee"] body #movieGrid[data-book-layout="placard"] .movie-card .movie-poster-wrap {
+    box-shadow:
+        -4px 0 0 #5C431C,
+        -6px 6px 18px rgba(0, 0, 0, 0.65) !important;
+}
+
+html body #movieGrid[data-book-layout="placard"] .movie-card .movie-poster {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    top: 0 !important;
+    margin: 0 !important;
+    object-fit: cover !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .movie-avid-overlay,
+html body #movieGrid[data-book-layout="placard"] .movie-card .movie-badge-added,
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-meta {
+    display: none !important;
+}
+
+html body #movieGrid[data-book-layout="placard"] .movie-card .movie-title-below {
+    background: transparent !important;
+    padding: 4px 4px 4px 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    min-height: 100% !important;
+    -webkit-line-clamp: unset !important;
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-kicker-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    margin-bottom: 6px !important;
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-type-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(154, 106, 21, 0.14);
+    color: #7A4E0D;
+    border: 1px solid rgba(154, 106, 21, 0.26);
+}
+html[data-v4skin="matinee"] body #movieGrid[data-book-layout="placard"] .movie-card .mtb-type-pill {
+    background: rgba(229, 169, 60, 0.16);
+    color: #EBC374;
+    border-color: rgba(229, 169, 60, 0.32);
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-date {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: var(--text-muted, #7A6E5D);
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-main-title {
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif !important;
+    font-size: 15.5px !important;
+    font-weight: 700 !important;
+    line-height: 1.38 !important;
+    -webkit-line-clamp: 3 !important;
+    margin-bottom: auto !important;
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-placard-foot {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-top: 10px !important;
+    padding-top: 8px !important;
+    border-top: 1px dashed rgba(138, 90, 18, 0.2) !important;
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-author-chip {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #5C4F3E;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+html[data-v4skin="matinee"] body #movieGrid[data-book-layout="placard"] .movie-card .mtb-author-chip {
+    color: #C4B9A8;
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-size-chip {
+    font-family: var(--font-mono, monospace);
+    font-size: 10.5px;
+    color: var(--text-muted, #7A6E5D);
+}
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-cta-link {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #8A5A12;
+}
+html[data-v4skin="matinee"] body #movieGrid[data-book-layout="placard"] .movie-card .mtb-cta-link {
+    color: #EBC374;
+}
+
+/* --------------------------------------------------------------------------
+   模式 ③：🎬 宽幅舞台（data-book-layout="stage"）
+   保留 16:9 横向画幅，竖版书封以 3D 实体立书悬于毛玻璃背景中央
+   -------------------------------------------------------------------------- */
+html body #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-poster-wrap {
+    position: relative;
+    background: #1E1914 !important;
+    overflow: hidden;
+}
+html body #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-poster-wrap::before {
+    content: "";
+    position: absolute;
+    inset: -14px;
+    background-image: var(--book-cover-url, none);
+    background-size: cover;
+    background-position: center;
+    filter: blur(20px) saturate(135%) brightness(0.68);
+    opacity: 0.85;
+    z-index: 0;
+    pointer-events: none;
+}
+html body #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-poster {
+    position: relative;
+    z-index: 1;
+    width: auto !important;
+    max-width: 72% !important;
+    height: 92% !important;
+    margin: auto !important;
+    top: 4%;
+    object-fit: contain !important;
+    border-radius: 3px 6px 6px 3px !important;
+    box-shadow:
+        -4px 0 0 #3E2F1D,
+        -5px 0 0 rgba(255, 255, 255, 0.24),
+        0 12px 24px -6px rgba(0, 0, 0, 0.72) !important;
+}
+
+/* 5.2 猜你喜欢展台中的竖版书封样式已统一整合至第 10 节 */
+
+
+/* ==========================================================================
+   6. V5 漫画库/小说库：亚麻布面典藏函套卡片（.av-folder / .av-card.text-only）
+   ========================================================================== */
+
+html body .av-card.av-folder,
+html body .av-card.text-only {
+    border: 1px solid rgba(138, 90, 18, 0.24) !important;
+    box-shadow:
+        -4px 0 0 rgba(122, 78, 13, 0.42),
+        0 12px 28px -14px rgba(38, 28, 14, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+    color: #241E17 !important;
+}
+
+/* 夜皮肤下函套卡片切换为深色织物函套，避免刺眼亮色块 */
+html[data-v4skin="matinee"] body .av-card.av-folder,
+html[data-v4skin="matinee"] body .av-card.text-only,
+body.dark .av-card.av-folder,
+body.dark .av-card.text-only {
+    background: linear-gradient(155deg, #25201A 0%, #1B1713 100%) !important;
+    border: 1px solid rgba(217, 154, 67, 0.26) !important;
+    box-shadow:
+        -4px 0 0 #6E4B1A,
+        0 16px 34px -16px rgba(0, 0, 0, 0.78),
+        inset 0 1px 0 rgba(255, 239, 210, 0.07) !important;
+    color: #F3ECDD !important;
+}
+
+html[data-v4skin="matinee"] body .av-card.av-folder .av-title,
+html[data-v4skin="matinee"] body .av-card.text-only .av-title,
+body.dark .av-card.av-folder .av-title,
+body.dark .av-card.text-only .av-title {
+    color: #F3ECDD !important;
+}
+
+html[data-v4skin="matinee"] body .av-card.av-folder .av-sub,
+html[data-v4skin="matinee"] body .av-card.text-only .av-sub,
+body.dark .av-card.av-folder .av-sub,
+body.dark .av-card.text-only .av-sub {
+    color: #B8AE9E !important;
+}
+
+/* 印章首字：朱砂/琥珀藏书章质感 */
+html body .av-folder-seal {
+    border: 1px solid rgba(154, 52, 34, 0.35) !important;
+    background: rgba(154, 52, 34, 0.10) !important;
+    color: #8F2D1E !important;
+    font-family: var(--font-display, "Songti SC", serif) !important;
+    font-weight: 700 !important;
+}
+html[data-v4skin="matinee"] body .av-folder-seal,
+body.dark .av-folder-seal {
+    border-color: rgba(217, 154, 67, 0.42) !important;
+    background: rgba(217, 154, 67, 0.14) !important;
+    color: #E8B96F !important;
+}
+
+.av-folder-author {
+    display: inline-block;
+    margin-bottom: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    background: rgba(138, 90, 18, 0.12);
+    color: #7A4E0D;
+}
+html[data-v4skin="matinee"] .av-folder-author,
+body.dark .av-folder-author {
+    background: rgba(217, 154, 67, 0.16);
+    color: #E8B96F;
+}
+
+.av-folder-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(46, 139, 87, 0.14);
+    color: #236B43;
+}
+html[data-v4skin="matinee"] .av-folder-badge,
+body.dark .av-folder-badge {
+    background: rgba(66, 179, 116, 0.18);
+    color: #7CE0A6;
+}
+
+
+/* ==========================================================================
+   7. 顶栏净化、Toast 避让、设置页左栏常驻展开与手机端避让
+   ========================================================================== */
+
+/* 隐藏与纸/夜切换器重复的旧月亮切换钮 */
+#themeToggle {
+    display: none !important;
+}
+
+/* 纸 / 夜切换胶囊显式展示文字标签，不再是两个让人猜的小圆点 */
+.v4-skin-switch {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    padding: 3px 5px !important;
+    border-radius: 999px !important;
+}
+.v4-skin-btn {
+    width: auto !important;
+    height: 28px !important;
+    padding: 0 10px !important;
+    border-radius: 999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+}
+.v4-skin-btn::after {
+    content: attr(data-short);
+    line-height: 1;
+}
+
+/* 顶部通知 Toast 移到右上角（顶栏下方），绝不遮挡中央搜索框 */
+html body #notification {
+    left: auto !important;
+    right: 24px !important;
+    top: 68px !important;
+    transform: translateY(-12px) !important;
+}
+html body #notification.show {
+    transform: translateY(0) !important;
+}
+
+/* 设置页左侧导航栏在桌面端常驻展开（176px），不再只显示一列重复的图标 */
+@media (min-width: 861px) {
+    html body .settings-shell .settings-nav {
+        width: 176px !important;
+        min-width: 176px !important;
+        padding: 12px 10px !important;
+        align-items: stretch !important;
+    }
+    html body .settings-shell .settings-nav-item {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        padding: 9px 12px !important;
+        gap: 10px !important;
+        border-radius: 10px !important;
+    }
+    html body .settings-shell .settings-nav-label {
+        opacity: 1 !important;
+        width: auto !important;
+        max-width: none !important;
+        overflow: visible !important;
+        display: inline !important;
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+    }
+}
+
+/* 设置页滑块统一琥珀金强调色，告别 Windows 98 默认亮蓝 */
+html body input[type="range"] {
+    accent-color: var(--primary, #9A6A15) !important;
+}
+
+/* ========================================================================
+ * 10. 视觉精修补完（猜你喜欢横卡立帧、漫画卷宗作者章、设置导航常显、对比度 100% 闭环）
+ * ======================================================================== */
+
+/* 首页右上角吉祥物微调：不压住主映台底部的操作按钮 */
+html body #homeView .home-mascot {
+    width: 68px !important;
+    right: 16px !important;
+    bottom: calc(100% - 10px) !important;
+    pointer-events: none !important;
+}
+html body #homeView .home-chat,
+html body #homeView .home-rank {
+    padding-top: 38px !important;
+}
+
+/* 夜场皮肤下用户聊天气泡：深古铜金底配暖白字，确保对比度 > 7.8:1 (WCAG AAA) */
+html[data-v4skin="matinee"] body #homeView .home-msg.user .bubble {
+    background: linear-gradient(135deg, #7A4E0D 0%, #583707 100%) !important;
+    color: #FFFDF9 !important;
+    border: 1px solid rgba(229, 169, 60, 0.42) !important;
+}
+
+/* 猜你喜欢 (av-card.wide)：左书右笺（.av-book-placard）博物馆展签布局，彻底告别孤零零居中缩图 */
+html body .av-board .av-card.wide {
+    background: transparent !important;
+}
+html body .av-board .av-card.wide.is-book-media .av-cover {
+    position: relative !important;
+    background: #1C1712 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+html body .av-board .av-card.wide.is-book-media .av-cover::before {
+    content: "";
+    position: absolute;
+    inset: -14px;
+    background-image: var(--book-cover-url);
+    background-size: cover;
+    background-position: center;
+    filter: blur(22px) saturate(1.18) brightness(0.38);
+    transform: scale(1.12);
+    z-index: 0;
+    pointer-events: none;
+}
+html body .av-board .av-card.wide.is-book-media .av-book-placard {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: 142px minmax(0, 1fr);
+    gap: 18px;
+    align-items: center;
+}
+html body .av-board .av-card.wide.is-book-media .abp-spine-wrap {
+    width: 142px;
+    height: 202px;
+    border-radius: 4px 8px 8px 4px;
+    overflow: hidden;
+    box-shadow:
+        -4px 0 0 #E8DFCE,
+        -8px 8px 22px rgba(0, 0, 0, 0.65);
+    position: relative;
+}
+html body .av-board .av-card.wide.is-book-media .abp-spine-wrap img {
+    position: static !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
+}
+html body .av-board .av-card.wide.is-book-media .abp-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+    color: #F5EFE2;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+html body .av-board .av-card.wide.is-book-media .abp-kicker {
+    font-family: var(--font-mono, monospace);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #F0C475;
+    background: rgba(0, 0, 0, 0.38);
+    border: 1px solid rgba(240, 196, 117, 0.35);
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+html body .av-board .av-card.wide.is-book-media .abp-title {
+    margin: 0;
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.36;
+    color: #FFFDF9;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+html body .av-board .av-card.wide.is-book-media .abp-author {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #DFD4C2;
+}
+html body .av-board .av-card.wide.is-book-media .abp-foot {
+    width: 100%;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 248, 235, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: #C9BFAE;
+}
+html body .av-board .av-card.wide.is-book-media .abp-go {
+    font-family: var(--font-sans, sans-serif);
+    font-weight: 700;
+    color: #F0C475;
+}
+html body .av-board .av-card.wide.is-book-media > .av-cap {
+    display: none !important;
+}
+html body .av-board .av-card.wide.is-book-media .av-cover > img {
+    position: relative !important;
+    z-index: 1 !important;
+    width: auto !important;
+    max-width: 58% !important;
+    height: 90% !important;
+    margin: auto !important;
+    display: block !important;
+    object-fit: contain !important;
+    border-radius: 3px 6px 6px 3px !important;
+    box-shadow: -3px 0 0 #E8DFCE, -5px 4px 16px rgba(0, 0, 0, 0.55) !important;
+}
+html body .av-board .av-card.wide .av-cover-typo {
+    width: 100%;
+    height: 100%;
+    padding: 18px 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    background: linear-gradient(145deg, #F3EDE0 0%, #E6DEC8 100%);
+    border: 1px solid rgba(138, 90, 18, 0.24);
+    box-shadow: inset 6px 0 0 rgba(138, 90, 18, 0.32), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+    color: #241E17;
+    position: relative;
+    overflow: hidden;
+}
+html[data-v4skin="matinee"] body .av-board .av-card.wide .av-cover-typo {
+    background: linear-gradient(145deg, #27211A 0%, #1B1712 100%);
+    border-color: rgba(217, 154, 67, 0.28);
+    box-shadow: inset 6px 0 0 rgba(217, 154, 67, 0.45), inset 0 0 0 1px rgba(255, 239, 210, 0.06);
+    color: #F3ECDD;
+}
+html body .av-board .av-card.wide .av-cover-typo .act-kicker {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #8A5A12;
+}
+html[data-v4skin="matinee"] body .av-board .av-card.wide .av-cover-typo .act-kicker {
+    color: #E8B96F;
+}
+html body .av-board .av-card.wide .av-cover-typo .act-seal {
+    position: absolute;
+    right: 18px;
+    top: 14px;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    border: 1px solid rgba(154, 52, 34, 0.36);
+    background: rgba(154, 52, 34, 0.09);
+    color: #8F2D1E;
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-size: 17px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+html[data-v4skin="matinee"] body .av-board .av-card.wide .av-cover-typo .act-seal {
+    border-color: rgba(217, 154, 67, 0.4);
+    background: rgba(217, 154, 67, 0.14);
+    color: #E8B96F;
+}
+html body .av-board .av-card.wide .av-cover-typo .act-title {
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.38;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 86%;
+}
+html body .av-board .av-card.wide .av-cover-typo .act-sub {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6B5B45;
+}
+html[data-v4skin="matinee"] body .av-board .av-card.wide .av-cover-typo .act-sub {
+    color: #B8AE9E;
+}
+html body .av-board .av-card.wide .av-cap {
+    background: transparent !important;
+    padding-top: 8px !important;
+}
+html[data-v4skin="classic"] body .av-board .av-card.wide .av-cap b {
+    color: #1F1912 !important;
+}
+html[data-v4skin="classic"] body .av-board .av-card.wide .av-cap span {
+    color: #5C4F3E !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-card.wide .av-cap b {
+    color: #F3ECDD !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-card.wide .av-cap span {
+    color: #B8AE9E !important;
+}
+
+/* 漫画库卷宗卡 (.av-folder)：对齐 av-board.js 里的 .af-meta-top / .af-author / .af-badge / .af-glyph */
+html body .av-board .av-folder {
+    border: 1px solid rgba(138, 90, 18, 0.22) !important;
+    border-radius: 12px !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+}
+html body .av-board .av-folder:hover {
+    transform: translateY(-3px) !important;
+    border-color: rgba(184, 125, 36, 0.52) !important;
+    box-shadow: 0 12px 26px rgba(34, 24, 10, 0.12) !important;
+}
+html body .av-board .av-folder .af-meta-top {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-bottom: 6px !important;
+}
+html body .av-board .av-folder .af-author {
+    display: inline-flex !important;
+    align-items: center !important;
+    padding: 2px 8px !important;
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    background: rgba(154, 106, 21, 0.14) !important;
+    color: #6B470A !important;
+    border: 1px solid rgba(154, 106, 21, 0.28) !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-author {
+    background: rgba(229, 169, 60, 0.16) !important;
+    color: #EBC374 !important;
+    border-color: rgba(229, 169, 60, 0.34) !important;
+}
+html body .av-board .av-folder .af-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+    font-size: 10.5px !important;
+    font-weight: 700 !important;
+    background: rgba(45, 114, 77, 0.14) !important;
+    color: #1F593A !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-badge {
+    background: rgba(72, 168, 114, 0.18) !important;
+    color: #82D9A6 !important;
+}
+html body .av-board .av-folder .af-glyph {
+    font-family: "Songti SC", "Noto Serif SC", "Source Han Serif SC", Georgia, serif !important;
+    font-weight: 700 !important;
+}
+html body .av-board .av-folder .af-foot {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+}
+html[data-v4skin="classic"] body .av-board .av-folder .af-count {
+    color: #5C4F3E !important;
+    font-weight: 600 !important;
+}
+html[data-v4skin="classic"] body .av-board .av-folder .af-enter {
+    color: #7A4E0D !important;
+    font-weight: 700 !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder {
+    background: linear-gradient(155deg, #25201A 0%, #1B1713 100%) !important;
+    border-color: rgba(217, 154, 67, 0.26) !important;
+    color: #F3ECDD !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-name {
+    color: #F3ECDD !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-foot {
+    color: #B8AE9E !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-count {
+    color: #C4B9A8 !important;
+    font-weight: 600 !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-enter {
+    color: #EBC374 !important;
+    font-weight: 700 !important;
+}
+html[data-v4skin="matinee"] body .av-board .av-folder .af-glyph {
+    color: rgba(235, 195, 116, 0.18) !important;
+}
+
+/* 书库/漫画库右上角阅读统计卡避让：保证首排书籍绝不被绝对定位的统计卡遮挡 */
+@media (min-width: 1280px) {
+    html body .av-view.av-workspace .av-main .av-main-top {
+        min-height: 148px !important;
+    }
+}
+
+/* 彻底隐藏收起态的 #gallerySection（消除设置页上方残留的 •• 轮播圆点） */
+html body .gallery-section.is-squeeze {
+    display: none !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+}
+
+/* 设置页左侧导航栏：覆盖 round19.css 的 :not(:hover) 隐藏规则，让中文标签始终可见 */
+@media (min-width: 861px) {
+    html body .settings-nav,
+    html body .settings-nav:not(:hover):not(:focus-within) {
+        width: 178px !important;
+        min-width: 178px !important;
+        padding: 12px 10px !important;
+        align-items: stretch !important;
+    }
+    html body .settings-nav .settings-nav-item,
+    html body .settings-nav:not(:hover):not(:focus-within) .settings-nav-item {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        padding: 9px 12px !important;
+        gap: 10px !important;
+        border-radius: 10px !important;
+    }
+    html body .settings-nav .settings-nav-item > span:last-child,
+    html body .settings-nav:not(:hover):not(:focus-within) .settings-nav-item > span:last-child {
+        position: static !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        display: inline !important;
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+    }
+}
+
+/* 后台扫描胶囊移至左下角，绝不与顶栏右侧按钮或右上角通知重叠 */
+html body #startupScanBar {
+    top: auto !important;
+    right: auto !important;
+    bottom: 20px !important;
+    left: 24px !important;
+    z-index: 950 !important;
+}
+html body .task-capsule {
+    top: auto !important;
+    right: auto !important;
+    bottom: 66px !important;
+    left: 24px !important;
+    z-index: 951 !important;
+}
+
+/* ========================================================================
+ * 11. 新前端与动效插件融合升级（impeccable + taste-skill 2.5.0 + cut-the-curve + seam-craft）
+ * ======================================================================== */
+
+/* 11.1 impeccable · Browser Surfaces 原生表面全套主题化（选中高亮、光标、细滚轮、等宽数字、焦点环） */
+::selection {
+    background: rgba(184, 125, 36, 0.24);
+    color: inherit;
+}
+html[data-v4skin="matinee"] ::selection {
+    background: rgba(229, 169, 60, 0.32);
+    color: #FFFDF9;
+}
+html body input,
+html body textarea {
+    caret-color: var(--primary, #B87D24);
+}
+html body :focus-visible {
+    outline: 2px solid rgba(184, 125, 36, 0.72) !important;
+    outline-offset: 2px !important;
+}
+/* 全站计数、编号、体积、时间强制启用等宽对齐数字（tabular-nums） */
+html body .nav-count,
+html body .toolbar-count,
+html body .hcs-pulse-num,
+html body .hcs-ticket-no,
+html body .hcs-reel-pos,
+html body .hcs-reel-idx,
+html body .mtb-date,
+html body .mtb-size-chip,
+html body .af-count,
+html body .av-chip em,
+html body .avt-n {
+    font-variant-numeric: tabular-nums !important;
+}
+
+/* 11.2 impeccable · Craft-Floor 反 AI 模板感（砍掉廉价眉毛胶囊背景 + 馆藏脉搏改为无框典藏台账） */
+html body .hcs-kicker {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 10px 0 0 !important;
+    border-right: 1px solid rgba(138, 90, 18, 0.28) !important;
+    letter-spacing: 0.14em !important;
+    font-size: 10.5px !important;
+}
+html[data-v4skin="matinee"] body .hcs-kicker {
+    border-right-color: rgba(229, 169, 60, 0.32) !important;
+}
+
+/* 馆藏脉搏：从「大卡套 4 个小方盒（Nested Cards）」升维为「无框博物馆编目台账（Editorial Ledger）」 */
+html body .hcs-pulse-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    padding: 8px 0 10px !important;
+    border-top: 1px solid rgba(138, 90, 18, 0.18) !important;
+    border-bottom: 1px solid rgba(138, 90, 18, 0.18) !important;
+    background: transparent !important;
+}
+html[data-v4skin="matinee"] body .hcs-pulse-grid {
+    border-top-color: rgba(229, 169, 60, 0.20) !important;
+    border-bottom-color: rgba(229, 169, 60, 0.20) !important;
+}
+html body .hcs-pulse-card {
+    background: transparent !important;
+    border: none !important;
+    border-right: 1px solid rgba(138, 90, 18, 0.16) !important;
+    border-radius: 0 !important;
+    padding: 4px 12px !important;
+    box-shadow: none !important;
+}
+html body .hcs-pulse-card:first-child {
+    padding-left: 2px !important;
+}
+html body .hcs-pulse-card:last-child {
+    border-right: none !important;
+}
+html[data-v4skin="matinee"] body .hcs-pulse-card {
+    border-right-color: rgba(229, 169, 60, 0.16) !important;
+}
+html body .hcs-pulse-num {
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    line-height: 1.15 !important;
+    letter-spacing: -0.02em !important;
+}
+html body .hcs-pulse-card:hover {
+    transform: translateY(-1px) !important;
+}
+html body .hcs-pulse-card:hover .hcs-pulse-num {
+    color: #9A6518 !important;
+}
+html[data-v4skin="matinee"] body .hcs-pulse-card:hover .hcs-pulse-num {
+    color: #F5C97B !important;
+}
+
+/* 左书右笺展签与猜你喜欢展签：去掉俗套药丸外框，改用典藏目录字标 */
+html body #movieGrid[data-book-layout="placard"] .movie-card .mtb-type-pill {
+    background: transparent !important;
+    border: none !important;
+    border-left: 2px solid #9A6518 !important;
+    border-radius: 0 !important;
+    padding: 0 0 0 7px !important;
+    letter-spacing: 0.08em !important;
+}
+html[data-v4skin="matinee"] body #movieGrid[data-book-layout="placard"] .movie-card .mtb-type-pill {
+    border-left-color: #EBC374 !important;
+}
+html body .av-board .av-card.wide.is-book-media .abp-kicker {
+    background: transparent !important;
+    border: none !important;
+    border-left: 2px solid #F0C475 !important;
+    border-radius: 0 !important;
+    padding: 0 0 0 8px !important;
+    letter-spacing: 0.14em !important;
+}
+
+/* 11.3 cut-the-curve §5 (Rack-Focus Blur-Cut) + §6 (Waterfall Entry) */
+html body .hcs-main.is-rack-out {
+    filter: blur(9px);
+    transform: scale(1.032);
+    transition: filter 110ms cubic-bezier(0.55, 0.06, 0.68, 0.19), transform 110ms cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+@keyframes cvRackFocusIn {
+    0% {
+        filter: blur(9px);
+        transform: scale(1.032);
+    }
+    100% {
+        filter: blur(0px);
+        transform: scale(1);
+    }
+}
+@keyframes cvWaterfallUp {
+    0% {
+        transform: translateY(14px);
+    }
+    100% {
+        transform: translateY(0);
+    }
+}
+html body .hcs-main.is-rack-in {
+    animation: cvRackFocusIn 290ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+html body .hcs-main.is-rack-in .hcs-title {
+    animation: cvWaterfallUp 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+html body .hcs-main.is-rack-in .hcs-badges {
+    animation: cvWaterfallUp 220ms cubic-bezier(0.16, 1, 0.3, 1) 24ms both;
+}
+html body .hcs-main.is-rack-in .hcs-reason {
+    animation: cvWaterfallUp 200ms cubic-bezier(0.16, 1, 0.3, 1) 44ms both;
+}
+html body .hcs-main.is-rack-in .hcs-actions {
+    animation: cvWaterfallUp 180ms cubic-bezier(0.16, 1, 0.3, 1) 62ms both;
+}
+
+/* 综合网格版式切换时的光学拉焦过渡 */
+html body #movieGrid.cv-rack-burst {
+    filter: blur(7px);
+    transform: scale(1.012);
+    transition: filter 85ms cubic-bezier(0.55, 0.06, 0.68, 0.19), transform 85ms cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+html body #movieGrid.cv-rack-settle {
+    animation: cvRackFocusIn 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 11.4 taste-skill 2.5.0 Rule #5 · Quiet Micro-Interactions（2px 抬升 + 1.028 框内缩放 + 游标下划线展开） */
+html body #movieGrid .movie-card {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease !important;
+}
+html body #movieGrid .movie-card:hover {
+    transform: translateY(-2px) !important;
+}
+html body #movieGrid .movie-card .movie-poster {
+    transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+html body #movieGrid .movie-card:hover .movie-poster {
+    transform: scale(1.028) !important;
+}
+html body .mtb-cta-link,
+html body .av-folder .af-enter,
+html body .abp-go,
+html body .hcs-side-link {
+    position: relative;
+    text-decoration: none !important;
+}
+html body .mtb-cta-link::after,
+html body .av-folder .af-enter::after,
+html body .abp-go::after,
+html body .hcs-side-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 1.5px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+html body .movie-card:hover .mtb-cta-link::after,
+html body .av-folder:hover .af-enter::after,
+html body .av-card.wide:hover .abp-go::after,
+html body .hcs-side-link:hover::after {
+    transform: scaleX(1);
+}
+
+/* 响应式：中窄屏与移动端适配 */
+@media (max-width: 1180px) {
+    .hcs-body {
+        grid-template-columns: 1fr;
+    }
+    .hcs-side {
+        padding-left: 0;
+        padding-top: 14px;
+        border-left: none;
+        border-top: 1px solid rgba(138, 90, 18, 0.18);
+    }
+}
+
+@media (max-width: 860px) {
+    html body #homeView.active {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: auto auto auto auto !important;
+        grid-template-areas:
+            "stage"
+            "chat"
+            "rank"
+            "cal" !important;
+        padding: 4px 12px 32px !important;
+        row-gap: 16px !important;
+    }
+    .hcs-body {
+        padding: 14px 14px 16px;
+        gap: 14px;
+    }
+    .hcs-main {
+        align-items: flex-start;
+        gap: 14px;
+    }
+    .hcs-cover-stage {
+        flex: 0 0 92px;
+        width: 92px;
+        height: 132px;
+    }
+    .hcs-title {
+        font-size: 18px;
+    }
+    .hcs-pulse-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* 手机端右下角语音悬浮球抬高到 .m-tabbar 之上，绝不遮挡「媒体」Tab */
+    html body .global-asr-fab {
+        bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
+        right: 14px !important;
+        width: 44px !important;
+        height: 44px !important;
+    }
+    html body #startupScanBar,
+    html body .task-capsule {
+        bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 12px !important;
+    }
+    html body .search-box input {
+        padding-left: 34px !important;
+    }
+}

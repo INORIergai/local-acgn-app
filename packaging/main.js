@@ -207,6 +207,17 @@ let splashDone = true;   // true = 无动画或已结束（主窗口可直接显
 let mainWinCreated = false;  // round55：主窗口是否已创建（window-all-closed 守卫用）
 let splashWatchdog = null;   // round55：启动期看门狗（防后端卡死导致无窗僵尸进程）
 
+/* round143：后端自愈。
+ * 背景（用户 m01872 期间实测）：后端在长时间刮削（女优头像 287s / 补封面 4095 条）后
+ * 因堆上限太低 FATAL ERROR 直接死掉，主进程只在日志里记了一行，**不做任何补救** ——
+ * 于是客户端还开着，但 3517 端口没了，所有页面都变成白屏/请求失败，用户只能手动重启整个 exe。
+ * 这里补上：非主动退出（崩溃/被杀）时按 1s → 3s → 8s 退避重启，最多 5 次；
+ * 主动退出（before-quit / 换后端 / 用户点重启）走 intentionalStop 标记，不重启。 */
+let intentionalStop = false;
+let serverRestarts = 0;
+const MAX_SERVER_RESTARTS = 5;
+let serverRestartTimer = null;
+
 function findCustomStartupAnim() {
     try {
         const dir = path.join(RUNTIME, 'data', 'custom');
@@ -559,6 +570,10 @@ function ensureConfig(port) {
 /* ------------------------------------------------------------ 后端进程 */
 function startServer() {
     rotateLog();
+    /* round143：每次真正拉起后端时复位「主动停止」标记与重启计数由调用方决定；
+     * 这里只复位标记，否则 killServer()→startServer() 这条「用户点重启」路径会被
+     * exit 回调误判成主动退出而不再自愈。 */
+    intentionalStop = false;
 
     /* ★★ 这里有一个非常隐蔽、但会让整个应用「双击没反应」的坑：
      *
@@ -584,7 +599,14 @@ function startServer() {
         CONFIG_FILE,
         CINEMAVAULT_VERSION: APP_VERSION.version,                      // round31：真实版本号
         PORTABLE_EXECUTABLE_DIR: IS_PORTABLE ? (process.env.PORTABLE_EXECUTABLE_DIR || '') : '',
-        NODE_OPTIONS: '--experimental-require-module --max-old-space-size=160',
+        /* ★round143：--max-old-space-size 原来写死 160(MB)，太小了。
+         * 实测 %APPDATA%\CinemaVault\server.log 里后端在「女优头像刮削」跑了 17 分钟后
+         * 直接 FATAL ERROR: Reached heap limit（136.9 → 161.2 MB 就顶到 160 的上限），
+         * 进程整个没了 → 3517 端口不再监听 → 客户端表现就是「exe 开着但什么都打不开」。
+         * 库有 9000+ 影片、2000+ 漫画、4000+ 小说，160MB 根本不够日常爬取与图片处理。
+         * 这里放宽到 512MB（Electron 主进程那边是 384MB，两者互不影响）；
+         * 同时下面的 exit 回调里补了自动重启，即使再 OOM 也能自愈而不是静默死掉。 */
+        NODE_OPTIONS: '--experimental-require-module --max-old-space-size=512',
     });
     blog(`spawn 后端: execPath=${process.execPath}`);
     blog(`  cwd=${RUNTIME}  server.js 存在=${fs.existsSync(path.join(RUNTIME, 'server.js'))}`);
@@ -612,9 +634,41 @@ function startServer() {
         blog('落盘后端日志失败: ' + e.message);
     }
 
+    const thisProc = serverProc;
     serverProc.on('exit', (code, sig) => {
         blog(`后端进程退出 code=${code} sig=${sig}`);
         log(`后端进程退出 code=${code}`);
+        /* round143：崩溃自愈（详见文件上方 intentionalStop 注释）。
+         * ★先确认退出的是「当前」后端：killServer()→startServer() 的换后端路径里，
+         *   旧进程的 exit 可能晚于新进程的 spawn 才到达，若不比对就会把旧进程的退出
+         *   当成新进程崩溃，反复叠加重启。 */
+        if (thisProc !== serverProc) return;
+        if (intentionalStop) return;
+        if (code === 0 && !sig) return;                 // 正常退出不重启
+        if (serverRestarts >= MAX_SERVER_RESTARTS) {
+            blog(`后端已连续重启 ${serverRestarts} 次，放弃自愈`);
+            log(`后端连续崩溃 ${serverRestarts} 次，已停止自动重启。请查看 server.log`);
+            return;
+        }
+        serverRestarts++;
+        const delay = [1000, 3000, 8000, 8000, 8000][Math.min(serverRestarts - 1, 4)];
+        blog(`后端异常退出 → ${delay}ms 后第 ${serverRestarts} 次自动重启`);
+        log(`后端异常退出（code=${code} sig=${sig}），${delay}ms 后自动重启（第 ${serverRestarts}/${MAX_SERVER_RESTARTS} 次）`);
+        if (serverRestartTimer) clearTimeout(serverRestartTimer);
+        serverRestartTimer = setTimeout(async () => {
+            serverRestartTimer = null;
+            if (intentionalStop) return;
+            try {
+                startServer();
+                /* 等新后端真的能应答，再让界面重连 —— 否则页面里那些已经断掉的
+                 * SSE / fetch 会一直停在半死状态，用户看到的是「转圈不停」。 */
+                try { await waitServer(40000); } catch (e) { blog('自愈后等待后端就绪失败: ' + e.message); }
+                if (win && !win.isDestroyed()) {
+                    blog('自愈完成 → 重载界面');
+                    try { win.reload(); } catch (e) { /* 忽略 */ }
+                }
+            } catch (e) { blog('自动重启后端失败: ' + e.message); }
+        }, delay);
     });
     serverProc.on('error', (e) => {
         blog('后端进程启动失败：' + (e.stack || e.message));
@@ -623,6 +677,10 @@ function startServer() {
 }
 
 function killServer() {
+    /* round143：主动停止（退出应用 / 换后端 / 用户点重启）时打标记，
+     * 避免 exit 回调把它当成崩溃又拉起来，形成「关不掉的僵尸后端」。 */
+    intentionalStop = true;
+    if (serverRestartTimer) { clearTimeout(serverRestartTimer); serverRestartTimer = null; }
     if (!serverProc) return;
     try { serverProc.kill(); } catch (e) { /* 忽略 */ }
     serverProc = null;
@@ -946,6 +1004,7 @@ if (!app.requestSingleInstanceLock()) {
             }
             blog(`后端就绪，用时 ${Date.now() - t0}ms`);
             log(`后端就绪，用时 ${Date.now() - t0}ms`);
+            serverRestarts = 0;   /* round143：起来了就清零，避免历史崩溃次数吃掉自愈额度 */
 
             Menu.setApplicationMenu(buildMenu(() => (readJson(CONFIG_FILE) || {}).auth || {}));
             createWindow();

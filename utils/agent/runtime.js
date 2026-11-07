@@ -26,6 +26,7 @@ const trace = require('./trace');
 const approvals = require('./approvals');
 const { executeSandboxedTool, PRIVILEGE } = require('./sandbox');
 const { TOOL_MAP, getOpenAIToolsSchema } = require('./tools');
+const { extractCards } = require('./cards');
 const config = require('../config');
 
 const HARD_MAX_STEPS = 16;
@@ -84,6 +85,12 @@ function buildSystemPrompt(ctx) {
             + '参数类错误（缺字段、id 不存在、路径越界）要换方案，**同一个调用不要连续试第三次**。',
         '8. 批量任务用 batch_repair_posters 起作业，再用 get_job_status 查进度；不要逐条循环几十次。',
         '',
+        '【播放与卡片（硬性要求）】',
+        '· 用户想「看某部片 / 播放 / 打开 / 放一下」，必须先 play_movie(movie_id) —— 界面会自动弹出',
+        '  一张可点击的播放卡片，点了才会真的开始播放。**绝不允许只回一个片名或番号就完事**。',
+        '· 不确定是哪一部时，先 search_movies 拿到真实 id 再调 play_movie；不要凭番号猜 id。',
+        '· 一次最多推荐/展示 8 部；卡片由界面渲染，你不需要在正文里重复海报或链接。',
+        '',
         ctx && ctx.hint ? ('本轮上下文：' + ctx.hint) : ''
     ].filter(Boolean).join('\n');
 }
@@ -141,6 +148,9 @@ async function runAgent(opts = {}) {
 
     let step = 0, toolCallCount = 0, finalText = '', aborted = false, lastErr = '';
     let uiActions = [];
+    /* round140：对话内卡片。工具一跑完就先把卡片发给前端（用户不用等模型写完总结，
+     * 也不依赖模型是否把 [[ID|标题]] 写全），done 时再带上全量做兜底补画。 */
+    let cards = [];
     // round136：成本与自愈
     let tokensUsed = 0, tokensFromApi = 0;
     let lastFailSig = '', lastFailCount = 0;
@@ -336,6 +346,25 @@ async function runAgent(opts = {}) {
                 uiActions.push({ type: out.data.uiAction, payload: out.data });
             }
 
+            /* round140：卡片「边跑边发」。工具一结束就推给前端，
+             * 用户立刻能看到可点击的播放卡片，而不是等模型把总结写完。 */
+            if (okFlag) {
+                try {
+                    const got = extractCards(name, out.rawData != null ? out.rawData : out.data);
+                    if (got.cards.length) {
+                        const fresh = got.cards.filter(c => !cards.some(x => x.movieId === c.movieId));
+                        if (fresh.length) cards = cards.concat(fresh);
+                        emit({
+                            type: 'cards',
+                            kind: got.kind || 'movie',
+                            cards: got.cards,
+                            step: stepRec.seq,
+                            tool: name
+                        });
+                    }
+                } catch (e) { /* 卡片是锦上添花，绝不能因此中断主循环 */ }
+            }
+
             let payload = out.ok ? (out.data || {}) : { error: out.error || '执行失败' };
             if (out.requiresApproval && !needApproval) payload = { error: '该操作需要用户授权，但当前未获得' };
             let content = JSON.stringify(payload);
@@ -361,6 +390,7 @@ async function runAgent(opts = {}) {
         content: finalText,
         steps: run.steps.map(s => ({ seq: s.seq, kind: s.kind, name: s.name, label: s.label, ok: s.ok, status: s.status, costMs: s.costMs })),
         uiActions,
+        cards,
         durationMs: Date.now() - t0,
         aborted
     });

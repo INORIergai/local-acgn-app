@@ -48,7 +48,12 @@ function defaultCacheDir() {
 const DEFAULTS = {
   // 引擎：'gptsovits'（音质好，参考音频已备）| 'vits'（零配置、804 音色）| 'off'
   engine: 'gptsovits',
-  autoStartEngine: true,       // 勾上后，打开阅读器自动唤起引擎（round76 默认开：避免每次朗读都等模型冷加载）
+  /* round138：默认改成「不开机预热」。
+   * 原默认 true 是为了省掉首次朗读的冷加载等待，但代价是应用一启动就在后台
+   * 把模型灌进显存（breeze/indextts 常驻 worker，7GB 级），和用户其它重活抢 GPU。
+   * 现在默认静默：不点朗读就绝不拉起引擎；需要预热的用户仍可在语音面板里手动打开
+   * （/api/tts/config 的 autoStartEngine，写进 <userData>/tts-config.json 后长期生效）。 */
+  autoStartEngine: false,      // 应用启动后是否自动加载朗读引擎（默认关）
   autoStopOnExit: true,        // 退出应用时自动关闭本应用启动的引擎
   idleExitMinutes: 30,         // 空闲多久自动释放（round76：10 → 30，听书歇几分钟就睡、回来等 180s 太伤）
 
@@ -84,6 +89,27 @@ const DEFAULTS = {
   breezeDir: 'D:\\TTS model\\breeze-tts',
   breezeModelDir: 'D:\\TTS model\\Breeze-TTS-2',
   breezeVoice: '爱弥斯',
+
+  /* ========================================================================
+   * Fish Audio 云端 TTS（round141）
+   * --------------------------------------------------------------------
+   * 定位：本地引擎要几 GB 显存 + 几十秒冷启动，而「点一下就念」的场景等不起。
+   *   Fish Audio S2.1 是云端模型，不占本机 GPU，首音 ~0.8s，多语种自动识别。
+   * ★ 国内直连 api.fish.audio 实测 ETIMEDOUT —— 必须走代理。
+   * ★ apiKey 落盘在 <userData>/tts-config.json（本机文件，不回传给前端）。
+   * ====================================================================== */
+  fishAudio: {
+    apiKey: '',
+    referenceId: 'da6a6205c31d451fabb28c3d139adfa8',   // 默认音色：魅魔
+    voiceName: '魅魔',
+    model: 's2.1-pro-free',       // 免费档；s2.1-pro / s1 为付费档
+    format: 'mp3',                // mp3 体积小；wav 也能用（流式场景更合适）
+    temperature: 0.7,
+    chunkLength: 300,
+    speed: 1.0,
+    proxyUrl: '',                 // 留空 = 自动跟随全局 network.proxyServer
+    timeoutMs: 45000,
+  },
 };
 
 let _cache = null;
@@ -95,6 +121,9 @@ function read() {
     if (fs.existsSync(CONFIG_FILE)) user = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   } catch (e) { user = {}; }
   _cache = Object.assign({}, DEFAULTS, user);
+  /* round141：fishAudio 是嵌套对象，浅合并会让用户只改一个字段就丢掉其余默认值。
+     这里对嵌套块单独深合并一次。 */
+  _cache.fishAudio = Object.assign({}, DEFAULTS.fishAudio, (user && user.fishAudio) || {});
   // 迁移：旧默认把缓存放在 C 盘的 %APPDATA% 下，round72 起改到 exe 同级可写数据区。
   // 只在「还是旧默认值」或「没配」时改，用户手动指定过的不动。
   const oldDefault = path.join(runtimeDir(), 'tts-cache');
@@ -105,6 +134,11 @@ function read() {
 function write(patch) {
   const cur = read();
   _cache = Object.assign({}, cur, patch || {});
+  /* round141：fishAudio 是嵌套块，写回时同样要深合并 ——
+     否则前端只提交 {fishAudio:{apiKey}} 一处修改，其余字段就被抹成 undefined。 */
+  if (patch && patch.fishAudio && typeof patch.fishAudio === 'object') {
+    _cache.fishAudio = Object.assign({}, cur.fishAudio || {}, patch.fishAudio);
+  }
   try {
     fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(_cache, null, 2), 'utf8');
@@ -193,6 +227,26 @@ function publicView() {
     breezeVoice: c.breezeVoice, breezeDir: c.breezeDir, breezeModelDir: c.breezeModelDir,
     /* 同理补回 gptPythonPath / auxRefAudios（前端 ttsEditPaths/ttsApplyEmotion 会回显） */
     gptPythonPath: c.gptPythonPath, auxRefAudios: c.auxRefAudios || [],
+    /* round141：Fish Audio 云端引擎配置。
+       ★ apiKey 只回「是否已配置 + 脱敏串」，原文绝不回前端 ——
+         设置页不需要看到明文，泄露面越小越好。 */
+    fishAudio: (() => {
+      const f = Object.assign({}, DEFAULTS.fishAudio, c.fishAudio || {});
+      const key = String(f.apiKey || '');
+      return {
+        configured: !!key,
+        apiKeyMasked: key ? (key.slice(0, 6) + '…' + key.slice(-3)) : '',
+        referenceId: f.referenceId,
+        voiceName: f.voiceName,
+        model: f.model,
+        format: f.format,
+        temperature: f.temperature,
+        chunkLength: f.chunkLength,
+        speed: f.speed,
+        proxyUrl: f.proxyUrl,
+        timeoutMs: f.timeoutMs,
+      };
+    })(),
     configFile: CONFIG_FILE,
   };
 }

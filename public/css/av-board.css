@@ -124,6 +124,17 @@
 .av-chip:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 2px; }
 
 /* ---------- 散落展台（小说 / 猜你喜欢） ---------- */
+/* round141：展台副标题原来是 app 里写死的行内色 rgba(0,0,0,.55)，
+   在夜皮肤（data-v4skin="matinee"）深底上几乎看不见 —— 收成类，双皮肤各给一色。 */
+.av-guess-hint {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, .55);
+    margin: 6px 0 0;
+}
+html[data-v4skin="matinee"] body .av-guess-hint { color: rgba(255, 255, 255, .58); }
+
 .av-board {
     display: flex;
     flex-wrap: wrap;

@@ -222,4 +222,221 @@ function startPosterRepair(opts = {}) {
     return job;
 }
 
-module.exports = { create, get, list, cancel, progressOf, startPosterRepair, LOG_DIR };
+/* ============================================================================
+ * round142：批量「横版截图 → 官方竖版海报」重刮作业
+ * ----------------------------------------------------------------------------
+ * 背景（实测数据，不是猜的）：
+ *   库里 919 条有海报的里番中，**872 条是 640×360 / 420×236 的视频抽帧截图**，
+ *   只有 43 条是 AniList 那种 460×638 官方竖版海报。用户明确要求「竖版」。
+ *
+ * 为什么做成后台作业：
+ *   每条要打 AniList GraphQL（有 429 限流）+ 可能还要下载图片，
+ *   844 条同步跑必然被工具/HTTP 超时熔断，所以必须走作业模型（可取消、可看进度）。
+ *
+ * 判定「横版截图」的候选来源：
+ *   用 poster-health 已有的几何判据（isVideoMovie / healthOf），
+ *   而不是只看 posterPath 是否为空 —— 截图字段非空，但它是错素材类型。
+ * ========================================================================== */
+function startPortraitRescrape(opts = {}) {
+    const rawLimit = opts.limit !== undefined ? Number(opts.limit) : 100;
+    const limit = rawLimit === 0 ? 0 : Math.min(5000, Math.max(1, rawLimit || 100));
+    const dryRun = opts.dryRun !== false;          // 默认试跑，不写库
+    const delayMs = Math.max(200, Number(opts.delayMs) || 700);   // 防 AniList 429
+    const force = !!opts.force;                    // 连 posterLocked 也重刮
+
+    const dbm = require('../db');
+    const health = require('../poster-health');
+
+    const job = create({
+        type: 'portrait_rescrape',
+        total: 0,
+        meta: { limit, dryRun, delayMs, force }
+    });
+
+    (async () => {
+        job.status = 'running';
+        job.startedAt = Date.now();
+        append(job, { type: 'job_started' });
+
+        /* ---------- 1. 挑候选：anime 库里「海报是横版/截图」的条目 ---------- */
+        let targets = [];
+        const attemptedFile = path.join(LOG_DIR, 'rescrape-attempted.json');
+        let attempted = {};
+        if (opts.skipAttempted !== false && !force) {
+            try { attempted = JSON.parse(fs.readFileSync(attemptedFile, 'utf8')); } catch (e) { }
+        }
+        try {
+            const rows = dbm.db.prepare(
+                "SELECT * FROM movies WHERE type='anime' AND posterPath IS NOT NULL AND posterPath<>''"
+            ).all();
+            for (const m of rows) {
+                if (!force && m.posterLocked === 1) { job.skipped++; continue; }
+                if (attempted[m.id] && attempted[m.id].result === 'no-match') {
+                    // 已确认无官方条目的跳过，实现真正的秒级断点续跑
+                    job.skipped++;
+                    continue;
+                }
+                let j = null;
+                /* judgeMovie(movie) 才是正确入口：内部会 resolvePosterPath + 判断是否视频库，
+                   返回 { level, w, h, ratio, bytes }。直接调 healthOf 需要绝对路径。 */
+                try { j = health.judgeMovie(m); } catch (e) { }
+                if (!j || !j.w || !j.h) continue;
+                // 只处理「横版」形态的；已经是竖版的跳过（说明已经是官方海报）
+                if ((j.w / j.h) < 0.85) continue;
+                targets.push({ m, j });
+                if (limit > 0 && targets.length >= limit) break;
+            }
+        } catch (e) {
+            job.status = 'failed';
+            job.error = '筛选候选失败：' + e.message;
+            job.endedAt = Date.now();
+            append(job, { type: 'job_failed', error: job.error });
+            return;
+        }
+
+        job.total = targets.length;
+        append(job, { type: 'job_planned', total: job.total });
+        if (!job.total) {
+            job.status = 'done';
+            job.endedAt = Date.now();
+            append(job, { type: 'job_done', note: '没有需要重刮的横版海报' });
+            return;
+        }
+
+        const { searchAniListByName } = require('../crawler/anilist');
+        const { downloadPoster } = require('../poster-fetcher');
+
+        /* ---------- 2. 逐条：AniList 搜索 → 校验竖版 → 下载 → 写库 ---------- */
+        for (const { m, j } of targets) {
+            if (job.cancelFlag) break;
+            job.current = String(m.title || m.fileName || '#' + m.id).slice(0, 60);
+            job.processed++;
+
+            const rec = {
+                id: m.id,
+                title: String(m.title || '').slice(0, 40),
+                before: j.w && j.h ? `${j.w}x${j.h}` : '?',
+                result: '',
+                after: ''
+            };
+
+            try {
+                if (dryRun) {
+                    rec.result = 'dry-run';
+                    job.skipped++;
+                } else {
+                    let hit = null;
+                    try {
+                        hit = await searchAniListByName(String(m.title || m.fileName || ''));
+                    } catch (e) {
+                        /* 限流 ≠ 没有条目。绝不能把限流记成 no-match，
+                           否则用户看到「重刮失败 800 条」，实际只是被限速。 */
+                        if (e && e.code === 'ANILIST_RATE_LIMITED') {
+                            // 撞限流就歇久一点，尝试一次就地重试
+                            await new Promise(r => setTimeout(r, 8000));
+                            try {
+                                hit = await searchAniListByName(String(m.title || m.fileName || ''));
+                            } catch (e2) {
+                                if (e2 && e2.code === 'ANILIST_RATE_LIMITED') {
+                                    rec.result = 'rate-limited';
+                                    rec.reason = 'AniList 限流，稍后重试';
+                                    job.skipped++;
+                                    job.items.push(rec);
+                                    if (job.items.length > 200) job.items.shift();
+                                    append(job, Object.assign({ type: 'item' }, rec));
+                                    await new Promise(r => setTimeout(r, 5000));
+                                    continue;
+                                }
+                                throw e2;
+                            }
+                        } else {
+                            throw e;
+                        }
+                    }
+                    if (!hit || !hit.cover) {
+                        rec.result = 'no-match';
+                        job.failed++;
+                    } else {
+                        // 先下载到临时位置，校验确实竖版才写库
+                        const tmp = path.join(require('os').tmpdir(), `rescrape_${m.id}_${Date.now()}.img`);
+                        try {
+                            await downloadPoster(hit.cover, tmp);
+                            /* round142 修复：imageSize() 返回的是 { w, h }，
+                               之前误写成 sz.width/sz.height —— 恒为 undefined，
+                               于是「下载成功」的每一张都被判 not-portrait 全部丢弃
+                               （实测 50 条跑完 ok=0 的真正原因，不是 AniList 没图）。 */
+                            const sz = health.imageSize(tmp);
+                            const isPortrait = !!(sz && sz.w && sz.h && (sz.w / sz.h) < 0.85);
+                            rec.after = sz ? `${sz.w}x${sz.h}` : '?';
+                            if (!isPortrait) {
+                                rec.result = 'not-portrait';
+                                job.failed++;
+                                try { fs.unlinkSync(tmp); } catch (e) { }
+                            } else {
+                                const ext = path.extname(hit.cover).toLowerCase() === '.png' ? 'png' : 'jpg';
+                                const name = `anilist_${m.id}_${Date.now().toString(36)}.${ext}`;
+                                const dest = path.join(health.POSTER_DIR, name);
+                                try { fs.mkdirSync(health.POSTER_DIR, { recursive: true }); } catch (e) { }
+                                fs.copyFileSync(tmp, dest);
+                                try { fs.unlinkSync(tmp); } catch (e) { }
+                                /* ★ 两列口径不同，别写成同一个值：
+                                   · posterPath    = **纯文件名**（前端走 /api/movie/poster/{name}，
+                                     `router.get('/poster/:hash')` 的 :param 不吃路径分隔符，
+                                     带前缀必 404 → 「重刮成功但满屏破图」，实测过）；
+                                   · localPosterPath = **相对形式 cache/posters/<name>**
+                                     （routes/movie.js 删封面/修封面是 path.join('../', localPosterPath)）。 */
+                                const relPath = name;
+                                const localRel = 'cache/posters/' + name;
+                                dbm.db.prepare(
+                                    'UPDATE movies SET posterPath = ?, localPosterPath = ?, posterHealth = ?, posterHealthReason = ?, posterHealthAt = ?, posterLocked = 0 WHERE id = ?'
+                                ).run(relPath, localRel, 'ok', 'AniList 竖版海报', Date.now(), m.id);
+                                rec.result = 'replaced';
+                                rec.file = name;
+                                rec.matched = String(hit.title || '').slice(0, 30);
+                                job.ok++;
+                            }
+                        } catch (e) {
+                            rec.result = 'download-failed';
+                            rec.reason = e.message.slice(0, 80);
+                            job.failed++;
+                        }
+                    }
+                }
+            } catch (e) {
+                rec.result = 'exception';
+                rec.reason = String(e.message || e).slice(0, 80);
+                job.failed++;
+            }
+
+            job.items.push(rec);
+            if (job.items.length > 200) job.items.shift();
+            append(job, Object.assign({ type: 'item' }, rec));
+            if (!dryRun && rec.result && rec.result !== 'rate-limited') {
+                try {
+                    attempted[m.id] = { ts: Date.now(), result: rec.result, title: rec.title };
+                    fs.writeFileSync(attemptedFile, JSON.stringify(attempted, null, 2), 'utf8');
+                } catch (e) { }
+            }
+            if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+        }
+
+        job.status = job.cancelFlag ? 'cancelled' : 'done';
+        job.endedAt = Date.now();
+        job.current = '';
+        append(job, {
+            type: job.cancelFlag ? 'job_cancelled' : 'job_done',
+            processed: job.processed, ok: job.ok, failed: job.failed, skipped: job.skipped
+        });
+    })().catch(e => {
+        job.status = 'failed';
+        job.error = e.message;
+        job.endedAt = Date.now();
+        append(job, { type: 'job_failed', error: e.message });
+    });
+
+    return job;
+}
+
+module.exports = {
+    create, get, list, cancel, progressOf, startPosterRepair, startPortraitRescrape, LOG_DIR
+};

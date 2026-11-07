@@ -15,6 +15,8 @@
   let voices = null;       // 音色列表
   let busy = false;        // 防止重复点击
   let pollTimer = null;
+  /* round145：Fish Audio 在线音色搜索结果状态（翻页/重渲染时保留） */
+  let fishState = { q: '', page: 1, sortBy: 'score', total: 0, voices: [], pageSize: 12 };
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s)
@@ -91,6 +93,7 @@
     return e === 'breeze' ? 'Breeze-TTS-2（D盘新模型·30角色克隆）'
       : e === 'gptsovits' ? 'GPT-SoVITS（音质好·有情绪）'
       : e === 'vits' ? 'VITS（零配置·804 音色）'
+      : e === 'fishaudio' ? 'Fish Audio（云端·不占显存）'
       : '关闭';
   }
 
@@ -101,13 +104,14 @@
 
     el.innerHTML = `
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;line-height:1.6;">
-        漫画/小说阅读器可整章朗读。三个本地引擎任选其一，推荐使用 D 盘 Breeze-TTS-2 角色克隆（内置 30 款高品质角色音色）。
+        漫画/小说阅读器可整章朗读。本地引擎（Breeze / GPT-SoVITS / VITS）各有取舍；
+        <b>Fish Audio 是云端引擎</b> —— 不占显存、不用等模型加载，点朗读即刻出声。
       </div>
 
       <div class="settings-item">
         <label>朗读引擎</label>
         <div class="tts-engine-row" style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${['breeze', 'gptsovits', 'vits', 'off'].map(k =>
+          ${['breeze', 'gptsovits', 'vits', 'fishaudio', 'off'].map(k =>
       `<button class="btn btn-sm ${cfg.engine === k ? '' : 'btn-secondary'} tts-engine"
                  data-engine="${k}">${engineLabel(k)}</button>`).join('')}
         </div>
@@ -289,6 +293,89 @@
   function renderVoices() {
     const box = $('ttsVoiceBox');
     if (!box) return;
+
+    /* round141：Fish Audio 是云端引擎，配置项与本地引擎完全不同
+       （API Key / 音色 ID / 模型档位 / 代理），所以单独一个面板。
+       注意这里拿的是 cfg.fishAudio —— 后端 publicView 已把 apiKey 脱敏，
+       绝不回明文；用户要改就直接填新的。 */
+    if (cfg.engine === 'fishaudio') {
+      const fa = cfg.fishAudio || {};
+      const list = (voices && voices.voices) || [];
+      const curId = fa.referenceId || '';
+      box.innerHTML = `
+        <div class="settings-item" style="margin-top:10px;">
+          <label>Fish Audio 云端语音（不占显存 · 首音约 0.8 秒）</label>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:var(--text-muted);min-width:76px;">API Key</span>
+            <input class="settings-input" id="ttsFishKey" style="flex:1;" type="password"
+                   placeholder="${fa.configured ? '已配置（' + esc(fa.apiKeyMasked || '') + '），留空则不修改' : '粘贴 fish.audio 的 API Key（sk-fish- 开头）'}">
+            <button class="btn-pill btn-pill--primary" onclick="ttsSaveFishKey()">保存 Key</button>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:var(--text-muted);min-width:76px;">音色</span>
+            <select class="settings-input" id="ttsFishVoice" style="flex:1;font-weight:600;">
+              ${list.map(v => `<option value="${esc(v.id)}" ${curId === v.id ? 'selected' : ''}>${esc(v.name)}${v.group ? '（' + esc(v.group) + '）' : ''}</option>`).join('')
+        || `<option value="${esc(curId)}">${esc(fa.voiceName || '当前音色')}</option>`}
+            </select>
+            <button class="btn-pill btn-pill--primary" onclick="ttsApplyFishVoice()">🎧 设为当前音色</button>
+            <button class="btn-pill btn-pill--primary" onclick="ttsPreview()">▶ 试听</button>
+          </div>
+
+          <!-- round145：在线音色库（对齐 Alife 插件：搜全站公开音色 → 点选即热重载） -->
+          <div style="margin:10px 0 6px;">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">
+              🌐 在线音色库 <span style="opacity:.7;">（Fish Audio 全站公开音色 · 选中立即生效，不用重启）</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+              <input class="settings-input" id="ttsFishQ" style="flex:1;"
+                     placeholder="关键词：少女 / 少年 / 温柔 / 旁白 / 英文…（留空＝看热门）"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();ttsFishSearch(1);}">
+              <select class="settings-input" id="ttsFishSort" style="width:110px;">
+                <option value="score">匹配度</option>
+                <option value="task_count">使用量</option>
+                <option value="created_at">最新</option>
+              </select>
+              <button class="btn-pill btn-pill--primary" onclick="ttsFishSearch(1)">🔍 搜索</button>
+            </div>
+            <div id="ttsFishList" style="font-size:12px;">
+              <div style="opacity:.6;line-height:1.6;">点「搜索」拉取在线音色；每条都能先试听、再用它替换当前声线。</div>
+            </div>
+            <div id="ttsFishPager" style="display:none;align-items:center;gap:10px;margin-top:6px;font-size:12px;"></div>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:var(--text-muted);min-width:76px;">模型档位</span>
+            <select class="settings-input" id="ttsFishModel" style="flex:1;">
+              <option value="s2.1-pro-free" ${fa.model === 's2.1-pro-free' ? 'selected' : ''}>s2.1-pro-free（免费档 · 推荐）</option>
+              <option value="s2.1-pro" ${fa.model === 's2.1-pro' ? 'selected' : ''}>s2.1-pro（付费档 · 更稳）</option>
+              <option value="s1" ${fa.model === 's1' ? 'selected' : ''}>s1（旧版）</option>
+            </select>
+            <button class="btn-pill" onclick="ttsSaveFishModel()">应用</button>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:var(--text-muted);min-width:76px;">代理</span>
+            <input class="settings-input" id="ttsFishProxy" style="flex:1;" value="${esc(fa.proxyUrl || '')}"
+                   placeholder="留空则自动用全局代理（当前 ${esc((cfg.fishAudio && cfg.fishAudio.proxyUrl) || '未配置')}）">
+            <button class="btn-pill" onclick="ttsSaveFishProxy()">应用</button>
+          </div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            <button class="btn-pill btn-pill--primary" onclick="ttsTestFish()">🔌 测试连接并合成一句</button>
+            <button class="btn-pill" onclick="ttsSetFishId()">✏️ 手动填音色 ID</button>
+          </div>
+
+          <div id="ttsFishResult" style="margin-top:10px;font-size:12px;color:var(--text-muted);background:rgba(0,0,0,0.28);border:1px solid var(--border);border-radius:10px;padding:10px 14px;line-height:1.6;">
+            国内直连 api.fish.audio 不通，必须走代理。填好 Key 后点「测试连接」即可验证。
+          </div>
+        </div>`;
+      // 面板整体重渲染（切引擎 / 保存配置）后，把上次的搜索结果画回来
+      if (fishState.voices.length) setTimeout(renderFishList, 0);
+      return;
+    }
+
     if (!voices) { box.innerHTML = ''; return; }
 
     if (cfg.engine === 'breeze') {
@@ -651,14 +738,19 @@
       // round75c / r88：跟随音色下拉（支持 breeze 30角色 与 gpt 音色）
       const vsel = $('ttsVoiceSel2');
       const bsel = $('ttsBreezeSel');
+      const fsel = $('ttsFishVoice');
       const voice = cfg.engine === 'breeze'
         ? (bsel && bsel.value ? bsel.value : (cfg.breezeVoice || '爱弥斯'))
+        : cfg.engine === 'fishaudio'
+        ? (fsel && fsel.value ? fsel.value : (cfg.fishAudio && cfg.fishAudio.referenceId))
         : (cfg.engine === 'gptsovits' && vsel ? vsel.value : undefined);
       // play:false —— 服务端只合成不出声，播放交给前端 <audio>：
       // 用户点了「确定」就是用户手势，Electron 自动播放策略放行，且走应用自身音频设备（round74b）。
       const d = await call('/synthesize', { engine: cfg.engine, text, speakerId, voice, play: false });
       const name = String(d.path || '').split(/[\\/]/).pop();
-      if (!/^[A-Za-z0-9._-]+\.wav$/.test(name)) throw new Error('合成结果异常：' + String(d.path || '（空）').slice(0, 80));
+      /* round141：云端引擎返回 mp3，原来写死 .wav 会把合成结果判成异常。
+         改为接受 wav/mp3，并保留原有的「文件名必须干净」防注入判断。 */
+      if (!/^[A-Za-z0-9._-]+\.(wav|mp3|flac)$/i.test(name)) throw new Error('合成结果异常：' + String(d.path || '（空）').slice(0, 80));
       if (previewAudio) { try { previewAudio.pause(); } catch (e) { } }
       previewAudio = new Audio('/api/tts/audio/' + name);
       previewAudio.volume = 1.0;
@@ -823,6 +915,212 @@
     await loadCfg();
     render();
   }
+
+  /* ---------------- round141：Fish Audio 云端引擎面板动作 ---------------- */
+
+  async function ttsSaveFishKey() {
+    const inp = $('ttsFishKey');
+    const key = inp ? String(inp.value || '').trim() : '';
+    if (!key) { notify('请先粘贴 API Key（留空表示不修改）', 'error'); return; }
+    if (!/^sk-/.test(key)) { notify('这不像 Fish Audio 的 Key（应以 sk- 开头）', 'error'); return; }
+    try {
+      await call('/config', { fishAudio: { apiKey: key } });
+      if (inp) inp.value = '';
+      notify('API Key 已保存');
+      await loadCfg(); render();
+    } catch (e) { notify('保存失败：' + e.message, 'error'); }
+  }
+
+  async function ttsApplyFishVoice() {
+    const sel = $('ttsFishVoice');
+    if (!sel || !cfg) return;
+    const id = String(sel.value || '').trim();
+    if (!id) return;
+    const name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : id;
+    try {
+      await call('/config', { fishAudio: { referenceId: id, voiceName: name } });
+      notify('音色已切到「' + name + '」，点试听即可对比');
+      await loadCfg(); render();
+    } catch (e) { notify('保存失败：' + e.message, 'error'); }
+  }
+
+  async function ttsSaveFishModel() {
+    const sel = $('ttsFishModel');
+    if (!sel) return;
+    try {
+      await call('/config', { fishAudio: { model: sel.value } });
+      notify('模型档位已切到 ' + sel.value);
+      await loadCfg(); render();
+    } catch (e) { notify('保存失败：' + e.message, 'error'); }
+  }
+
+  async function ttsSaveFishProxy() {
+    const inp = $('ttsFishProxy');
+    if (!inp) return;
+    try {
+      // 留空 = 跟随全局代理（后端会自动回落）
+      await call('/config', { fishAudio: { proxyUrl: String(inp.value || '').trim() } });
+      notify('代理设置已保存');
+      await loadCfg(); render();
+    } catch (e) { notify('保存失败：' + e.message, 'error'); }
+  }
+
+  async function ttsSetFishId() {
+    const id = await ttsPrompt('粘贴 Fish Audio 音色的 reference_id（在 fish.audio 音色页可复制）：', (cfg.fishAudio && cfg.fishAudio.referenceId) || '');
+    if (id === null) return;
+    const v = String(id || '').trim();
+    if (!v) { notify('音色 ID 不能为空', 'error'); return; }
+    try {
+      await call('/config', { fishAudio: { referenceId: v, voiceName: '自定义音色' } });
+      notify('音色 ID 已保存，点试听验证');
+      await loadCfg(); render();
+    } catch (e) { notify('保存失败：' + e.message, 'error'); }
+  }
+
+  /** 测试连接：真的合成一句（短文本），既验证 key 也验证代理 */
+  async function ttsTestFish() {
+    const box = $('ttsFishResult');
+    if (box) box.innerHTML = '⏳ 正在连接 Fish Audio 并合成一句…';
+    try {
+      const d = await call('/fishaudio/test', { text: '你好呀，语音连接测试成功。' });
+      const name = String(d.path || '').split(/[\\/]/).pop();
+      if (box) {
+        box.innerHTML =
+          '<div style="color:var(--gold-primary,#f59e0b);font-weight:700;margin-bottom:4px;">✅ 连接正常</div>' +
+          '<div>合成耗时 ' + (d.costMs || 0) + 'ms，音频 ' + Math.round((d.bytes || 0) / 1024) + ' KB</div>' +
+          '<div style="opacity:.75;margin-top:4px;">试听：' + esc(d.text || '') + '</div>';
+      }
+      if (name) {
+        if (previewAudio) { try { previewAudio.pause(); } catch (e) { } }
+        previewAudio = new Audio('/api/tts/audio/' + name);
+        previewAudio.play().catch(() => { });
+      }
+      notify('Fish Audio 连接正常');
+    } catch (e) {
+      if (box) {
+        box.innerHTML =
+          '<div style="color:#ef4444;font-weight:700;margin-bottom:4px;">❌ 连接失败</div>' +
+          '<div style="line-height:1.6;">' + esc(String(e.message || e)) + '</div>';
+      }
+      notify('连接失败：' + e.message, 'error');
+    }
+  }
+
+  /* ================================================================
+   * round145 · Fish Audio 在线音色库（搜索 / 试听 / 选中即热重载）
+   * 对齐 Alife 插件 FishAudioModelUI 的能力，只是搬到了这套设置页里。
+   * 关键点：选中音色只写配置（POST /fishaudio/voice），服务端每次合成都会重读 cfg
+   * ⇒ 不需要重启、也不需要重新拉起任何进程，这就是「热重载」。
+   * ================================================================ */
+
+  function renderFishList() {
+    const box = $('ttsFishList'), pager = $('ttsFishPager');
+    if (!box) return;
+    const curId = (cfg && cfg.fishAudio && cfg.fishAudio.referenceId) || '';
+    const vs = fishState.voices || [];
+    if (!vs.length) {
+      box.innerHTML = '<div style="opacity:.75;">没有找到音色。换个关键词试试（中文/英文都支持，英文命中率更高）。</div>';
+      if (pager) pager.style.display = 'none';
+      return;
+    }
+    box.innerHTML = vs.map(v => {
+      const isCur = v.id === curId;
+      const tags = (v.tags || []).slice(0, 3)
+        .map(t => `<span style="display:inline-block;padding:0 6px;border-radius:999px;background:rgba(255,255,255,.08);margin-right:4px;">${esc(t)}</span>`)
+        .join('');
+      const uses = v.uses > 0 ? ' · ' + Number(v.uses).toLocaleString() + ' 次使用' : '';
+      return `<div style="display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;margin-bottom:6px;
+                    border:1px solid ${isCur ? 'var(--gold-primary,#f59e0b)' : 'var(--border)'};
+                    background:${isCur ? 'rgba(245,158,11,.08)' : 'transparent'};">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            ${esc(v.name)}${isCur ? ' <span style="font-size:10px;color:var(--gold-primary,#f59e0b);">使用中</span>' : ''}
+          </div>
+          ${v.desc ? `<div style="opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(v.desc)}</div>` : ''}
+          <div style="opacity:.5;margin-top:2px;">${tags}${uses}</div>
+        </div>
+        <button class="btn-pill" onclick="ttsFishPreview('${esc(v.id)}')">▶ 试听</button>
+        <button class="btn-pill btn-pill--primary" onclick="ttsFishUse('${esc(v.id)}')">${isCur ? '✓ 已使用' : '✓ 使用'}</button>
+      </div>`;
+    }).join('');
+
+    if (pager) {
+      const pages = Math.max(1, Math.ceil(fishState.total / fishState.pageSize));
+      pager.style.display = 'flex';
+      pager.innerHTML = `<span style="opacity:.6;">共 ${fishState.total} 个 · 第 ${fishState.page}/${pages} 页</span>
+        <button class="btn-pill" onclick="ttsFishSearch(${fishState.page - 1})" ${fishState.page <= 1 ? 'disabled' : ''}>← 上一页</button>
+        <button class="btn-pill" onclick="ttsFishSearch(${fishState.page + 1})" ${fishState.page >= pages ? 'disabled' : ''}>下一页 →</button>`;
+    }
+  }
+
+  async function ttsFishSearch(page) {
+    const box = $('ttsFishList');
+    const q = String(($('ttsFishQ') || {}).value || '').trim();
+    // 关键词为空时「匹配度」没有意义，按使用量给热门
+    let sortBy = ($('ttsFishSort') || {}).value || 'score';
+    if (!q && sortBy === 'score') sortBy = 'task_count';
+    const p = Math.max(1, Number(page) || 1);
+    fishState.q = q; fishState.sortBy = sortBy; fishState.page = p;
+    if (box) box.innerHTML = '<div style="opacity:.75;">⏳ 正在搜索 Fish Audio 音色（走代理，约 1~3 秒）…</div>';
+    try {
+      const d = await call('/fishaudio/search?q=' + encodeURIComponent(q)
+        + '&page=' + p + '&pageSize=' + fishState.pageSize + '&sortBy=' + encodeURIComponent(sortBy));
+      fishState.voices = d.voices || [];
+      fishState.total = d.total || 0;
+      fishState.page = d.page || p;
+      renderFishList();
+      if (fishState.voices.length) {
+        const pages = Math.max(1, Math.ceil(fishState.total / fishState.pageSize));
+        notify('共 ' + fishState.total + ' 个音色，第 ' + fishState.page + '/' + pages + ' 页');
+      }
+    } catch (e) {
+      if (box) box.innerHTML = '<div style="color:#ef4444;line-height:1.6;">搜索失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  /** 用指定 id 合成一句试听（不改配置） */
+  async function fishPreview(id, text) {
+    notify('正在合成试听…');
+    try {
+      const d = await call('/synthesize', {
+        engine: 'fishaudio', voice: id, text: text || '你好呀，这是这个音色的试听。', play: false
+      });
+      const name = String(d.path || '').split(/[\\/]/).pop();
+      if (!/^[A-Za-z0-9._-]+\.(wav|mp3|flac)$/i.test(name)) throw new Error('合成结果异常：' + String(d.path || '（空）').slice(0, 60));
+      if (previewAudio) { try { previewAudio.pause(); } catch (e) { } }
+      previewAudio = new Audio('/api/tts/audio/' + name);
+      await previewAudio.play();
+      notify(d.cached ? '命中缓存，正在播放' : '合成完成，正在播放');
+    } catch (e) {
+      notify('试听失败：' + e.message, 'error');
+    }
+  }
+
+  function ttsFishPreview(id) { return fishPreview(id); }
+
+  /** 选中音色 = 写配置 + 立刻用新音色试听一句 */
+  async function ttsFishUse(id) {
+    const v = (fishState.voices || []).find(x => x.id === id) || {};
+    try {
+      const d = await call('/fishaudio/voice', { referenceId: id, voiceName: v.name || '' });
+      notify('已切到「' + (v.name || id) + '」' + (d && d.companionSynced ? '（AI 伴侣同步）' : '') + '，正在试听…');
+      await loadCfg();
+      render();                       // 重建面板（下拉/当前音色跟着变）
+      await fishPreview(id, '你好呀，我是你刚选中的这个声音。');
+    } catch (e) {
+      notify('切换失败：' + e.message, 'error');
+    }
+  }
+
+  window.ttsSaveFishKey = ttsSaveFishKey;
+  window.ttsApplyFishVoice = ttsApplyFishVoice;
+  window.ttsSaveFishModel = ttsSaveFishModel;
+  window.ttsSaveFishProxy = ttsSaveFishProxy;
+  window.ttsSetFishId = ttsSetFishId;
+  window.ttsTestFish = ttsTestFish;
+  window.ttsFishSearch = ttsFishSearch;
+  window.ttsFishUse = ttsFishUse;
+  window.ttsFishPreview = ttsFishPreview;
 
   window.ttsMigrateCache = ttsMigrateCache;
   window.ttsAct = (k) => withBusy(acts[k], k === 'start' ? '正在唤起引擎（首次可能要一分钟左右）' : '');

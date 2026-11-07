@@ -29,26 +29,45 @@ const { VitsEngine } = require('../utils/tts/vits-engine');
 const { GptSovitsEngine } = require('../utils/tts/gptsovits-engine');
 const { BreezeEngine } = require('../utils/tts/breeze-engine');
 const { IndexTtsEngine } = require('../utils/tts/indextts-engine');
+const { FishAudioEngine } = require('../utils/tts/fishaudio-engine');
 const player = require('../utils/tts/player');
 const vitsModel = require('../utils/tts/vits-model');
 
-/* ---------- 引擎单例（支持 vits / gptsovits / breeze / indextts） ---------- */
-const engines = { vits: null, gptsovits: null, breeze: null, indextts: null };
+/* ---------- 引擎单例（vits / gptsovits / breeze / indextts / fishaudio） ---------- */
+const engines = { vits: null, gptsovits: null, breeze: null, indextts: null, fishaudio: null };
+const ENGINE_KEYS = ['vits', 'breeze', 'indextts', 'fishaudio'];
 function engineOf(name) {
   const cfg = cfgStore.read();
-  const key = ['vits', 'breeze', 'indextts'].includes(name) ? name : 'gptsovits';
+  const key = ENGINE_KEYS.includes(name) ? name : 'gptsovits';
   if (!engines[key]) {
     if (key === 'breeze') {
       engines[key] = new BreezeEngine(cfg);
     } else if (key === 'indextts') {
       engines[key] = new IndexTtsEngine(cfg);
+    } else if (key === 'fishaudio') {
+      /* round141 云端引擎：不占 GPU、无进程可启动。
+         代理优先级：tts-config 里 fishAudio.proxyUrl > 全局 config.network.proxyServer。
+         （api.fish.audio 国内直连实测 ETIMEDOUT，没代理基本必失败） */
+      const networkProxy = (() => { try { return (require('../utils/config').network || {}).proxyServer || ''; } catch (e) { return ''; } })();
+      engines[key] = new FishAudioEngine(Object.assign({}, cfg, {
+        proxyServer: (cfg.fishAudio && cfg.fishAudio.proxyUrl) || networkProxy
+      }));
     } else if (key === 'vits') {
       engines[key] = new VitsEngine({ pythonPath: cfg.pythonPath, vitsDir: cfg.vitsDir, cacheDir: cfg.cacheDir });
     } else {
       engines[key] = new GptSovitsEngine(cfg);
     }
   } else {
-    if (engines[key].cfg) Object.assign(engines[key].cfg, cfg);
+    // 每次读配置后把最新值铺进去：换音色/改 key/换代理都要即时生效，不用重启
+    if (key === 'fishaudio') {
+      const networkProxy = (() => { try { return (require('../utils/config').network || {}).proxyServer || ''; } catch (e) { return ''; } })();
+      engines[key].cfg = Object.assign({}, cfg, {
+        fishAudio: cfg.fishAudio,
+        proxyServer: (cfg.fishAudio && cfg.fishAudio.proxyUrl) || networkProxy
+      });
+    } else if (engines[key].cfg) {
+      Object.assign(engines[key].cfg, cfg);
+    }
   }
   return engines[key];
 }
@@ -72,15 +91,130 @@ router.post('/config', (req, res) => {
     for (const k of Object.keys(cfgStore.DEFAULTS)) {
       if (Object.prototype.hasOwnProperty.call(b, k)) patch[k] = b[k];
     }
-    res.json({ code: 0, data: cfgStore.publicView(), saved: Object.keys(patch), cfg: cfgStore.write(patch) });
+    /* round141 安全修复：原来这里多回了一个 `cfg: cfgStore.write(patch)`，
+       那是**整份原始配置**（含 fishAudio.apiKey / gptSovits 等明文密钥），
+       等于把密钥原样回吐给前端。现在只回脱敏后的 publicView + 本次保存的字段名。 */
+    cfgStore.write(patch);
+    /* round145：切引擎时把 AI 伴侣声线一起带过去，避免「面板切了、伴侣还是老声音」 */
+    const companion = patch.engine ? syncCompanionVoice(patch.engine) : null;
+    res.json({ code: 0, data: cfgStore.publicView(), saved: Object.keys(patch), companion });
+  } catch (e) { fail(res, e); }
+});
+
+/* round141：Fish Audio 连通性/鉴权自检 —— 设置页「测试」按钮走这里。
+ * 为什么单独一个端点：合成一次要花钱，用户只想确认 key 和代理通不通时，
+ * 用极短文本试一句最划算；同时把失败原因说成人话（代理没开 / key 过期 / 额度不足）。 */
+/* round145：把「语音朗读引擎」同步成 AI 伴侣声线（ai.tts）。
+   用户心里的模型只有一个：「我选了 fishaudio / 换了音色，就该用这个声音」。
+   旧版两套配置互不相干 —— 面板切了 fishaudio，伴侣还读着 ai.tts.engine=breeze，
+   表现就是「选的是 fishaudio，出来的还是本地那个声音」。 */
+function syncCompanionVoice(appliedEngine) {
+  const out = { synced: false, note: '' };
+  try {
+    const p = path.join(__dirname, '../config.json');
+    if (!fs.existsSync(p)) { out.note = 'config.json 不存在'; return out; }
+    const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!raw || !raw.ai || !raw.ai.tts) { out.note = '未启用 AI 伴侣语音'; return out; }
+    const c = cfgStore.read();
+    const pick = {
+      fishaudio: () => (c.fishAudio && c.fishAudio.referenceId) || '',
+      breeze: () => c.breezeVoice || '爱弥斯',
+      gptsovits: () => c.gptVoice || '',
+      vits: () => (c.vitsSpeakerId == null ? '' : String(c.vitsSpeakerId))
+    }[appliedEngine];
+    if (!pick) { out.note = '该引擎不参与伴侣同步'; return out; }
+    raw.ai.tts.engine = appliedEngine;
+    const v = pick();
+    if (v) raw.ai.tts.voice = v;      // fishaudio 下 voice 语义 = reference_id
+    fs.writeFileSync(p, JSON.stringify(raw, null, 4), 'utf8');
+    out.synced = true;
+  } catch (e) { out.note = String(e.message || e).slice(0, 120); }
+  return out;
+}
+
+router.post('/fishaudio/test', async (req, res) => {
+  try {
+    const e = engineOf('fishaudio');
+    const b = req.body || {};
+    const text = String(b.text || '你好呀，测试一下语音。').slice(0, 60);
+    const t0 = Date.now();
+    const r = await e.synthesize({
+      text,
+      voice: b.referenceId || undefined,
+      noCache: true
+    });
+    res.json({
+      code: 0,
+      msg: '连接正常，已合成一段试听音频',
+      data: {
+        ok: true,
+        engine: 'fishaudio',
+        costMs: Date.now() - t0,
+        bytes: r.bytes,
+        path: r.path,
+        text
+      }
+    });
+  } catch (e) {
+    // 失败也要 200：前端拿 msg 直接展示，不用区分 HTTP 层错误
+    res.json({ code: -1, msg: String(e && e.message || e).slice(0, 300) });
+  }
+});
+
+/* ------------------------------------------------------------------ round145
+ * Fish Audio 在线音色：搜索 + 选中即热重载。
+ * 对齐 Alife 插件（Plugins/Azuma.FishAudioTTS/FishAudioModelUI.SearchVoicesAsync）的能力：
+ *   输入关键词 → 搜全站公开音色（带试听样本）→ 点一下就换，且立刻生效。
+ * 旧版 `fetchMyVoices()` 是空的（注释写着「保守起见只返回空」），
+ * 所以 CinemaVault 里只有 1 个写死的预设 + 手填 ID，等于没有音色库。
+ */
+router.get('/fishaudio/search', async (req, res) => {
+  try {
+    const e = engineOf('fishaudio');
+    const r = await e.searchVoices({
+      q: req.query.q,
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+      sortBy: req.query.sortBy
+    });
+    res.json({ code: 0, data: r });
+  } catch (err) {
+    // 搜索失败不该是红色报错弹窗，前端只展示一行提示
+    res.json({ code: -1, msg: String((err && err.message) || err).slice(0, 300) });
+  }
+});
+
+/** 选中音色 = 立刻写配置。引擎每次合成都会重读 cfg，所以「热重载」天然成立，
+ *  连重启都不需要；顺带把 AI 伴侣的声线也指过来，避免「语音面板换了、伴侣还是老声音」。 */
+router.post('/fishaudio/voice', (req, res) => {
+  try {
+    const b = req.body || {};
+    const id = String(b.referenceId || b.id || '').trim();
+    const name = String(b.voiceName || b.name || '').trim();
+    if (!/^[0-9a-f]{32}$/i.test(id)) {
+      return res.json({ code: -1, msg: 'reference_id 格式不对（应为 32 位十六进制，例如 da6a6205c31d451fabb28c3d139adfa8）' });
+    }
+    const cfg = cfgStore.write({ fishAudio: { referenceId: id, voiceName: name || '' } });
+
+    /* 同步 AI 伴侣声线（config.json 里没有 ai.tts 就跳过，绝不凭空造一段配置） */
+    const cs = syncCompanionVoice('fishaudio');
+    const companionSynced = cs.synced, companionNote = cs.note;
+
+    res.json({
+      code: 0,
+      data: {
+        referenceId: (cfg.fishAudio && cfg.fishAudio.referenceId) || id,
+        voiceName: (cfg.fishAudio && cfg.fishAudio.voiceName) || name,
+        companionSynced, companionNote
+      }
+    });
   } catch (e) { fail(res, e); }
 });
 
 router.post('/autodiscover', (req, res) => {
   try {
     const r = cfgStore.autodiscover();
-    res.json({ code: 0, data: { cfg: cfgStore.publicView(), changed: r.changed } });
-  } catch (e) { fail(res, e); }
+    res.json({ code: 0, data: { cfg: cfgStore.publicView(), changed: r.changed } });  } catch (e) { fail(res, e); }
 });
 
 router.get('/scan', (req, res) => {
@@ -161,6 +295,12 @@ router.post('/start', async (req, res) => {
   try {
     const name = (req.body && req.body.engine) || cfgStore.read().engine;
     if (name === 'off') return res.json({ code: -1, msg: 'TTS 已在设置里关闭' });
+    /* round141：云端引擎没有「加载」这一步，直接验证配置齐不齐。 */
+    if (name === 'fishaudio') {
+      const e = engineOf('fishaudio');
+      const r = await e.start();
+      return res.json({ code: 0, data: r, engine: name });
+    }
     /* round77：VITS 权重未就位 → 后台自动下载（进度走 /model/status 轮询），
        先回 downloading，前端显示进度条，下载完再点「一键唤起」即可。 */
     const cfgDir = cfgStore.read().vitsDir;
@@ -216,6 +356,22 @@ router.post('/shutdown', async (req, res) => {
 router.get('/voices', async (req, res) => {
   try {
     const name = (req.query.engine) || cfgStore.read().engine;
+    /* round141：Fish Audio 音色 = reference_id 列表（预设 + 用户手填）。
+       与本地引擎不同，这里不需要拉起任何进程，秒回。 */
+    if (name === 'fishaudio') {
+      const vs = await engineOf('fishaudio').voices();
+      const q = String(req.query.q || '').trim();
+      const cfg = cfgStore.read();
+      return res.json({
+        code: 0,
+        data: {
+          engine: 'fishaudio',
+          total: vs.length,
+          current: (cfg.fishAudio && cfg.fishAudio.referenceId) || '',
+          voices: q ? vs.filter(v => String(v.name).includes(q)) : vs
+        }
+      });
+    }
     if (name === 'breeze') {
       const vs = await engineOf('breeze').voices();
       const q = String(req.query.q || '').trim();
@@ -262,11 +418,15 @@ router.post('/synthesize', async (req, res) => {
         : (name === 'vits' ? (Number(c.vitsSpeakerId) || 0) : undefined),
       ref: b.ref, auxRefs: b.auxRefs, lang: b.lang,
       // round75c / r88：Breeze 音色或 GPT 音色 —— 显式传 voice 优先，未传用配置默认
+      // round145：Fish Audio 的 voice 语义是 reference_id。旧版这里对 fishaudio 直接给
+      //   undefined ⇒ 面板下拉换了音色、试听仍是配置文件里存的那个，「选了不生效」。
       voice: name === 'breeze'
         ? (b.voice || c.breezeVoice || '爱弥斯')
         : (name === 'gptsovits'
             ? (b.voice !== undefined ? b.voice : (c.gptVoice || ''))
-            : undefined),
+            : (name === 'fishaudio'
+                ? (b.voice || b.referenceId || (c.fishAudio && c.fishAudio.referenceId) || undefined)
+                : undefined)),
       // round76：GPT 引擎默认 1.0 —— speed_factor 变速有损（全局 speed 曾是 1.3，
       // 同音色比 Alife 里「听着怪」的主因），语速改由前端 playbackRate 无损变速。
       // VITS 的引擎内变速质量好，维持跟随全局配置。
@@ -348,11 +508,17 @@ router.get('/audio/:name', (req, res) => {
     const cfg = cfgStore.read();
     const dir = cfg.cacheDir || path.join(process.env.APPDATA || '.', 'CinemaVault', 'tts-cache');
     const name = path.basename(String(req.params.name || ''));
-    // ★ 只允许 .wav，且必须落在缓存目录内（basename 已挡掉 ../..）
-    if (!/^[A-Za-z0-9._-]+\.wav$/i.test(name)) return res.status(400).json({ code: -1, msg: '非法文件名' });
+    /* ★ 只允许音频扩展名，且必须落在缓存目录内（basename 已挡掉 ../..）。
+       round141：原来写死 .wav，云端引擎（Fish Audio）返回的是 mp3 ——
+       那些文件会被判「非法文件名」而 400，试听/朗读直接没声音。
+       现在按扩展名给出正确的 Content-Type。 */
+    const m = name.match(/^([A-Za-z0-9._-]+)\.(wav|mp3|flac)$/i);
+    if (!m) return res.status(400).json({ code: -1, msg: '非法文件名' });
+    const ext = m[2].toLowerCase();
     const full = path.join(dir, name);
     if (!fs.existsSync(full)) return res.status(404).json({ code: -1, msg: '音频不存在' });
-    res.setHeader('Content-Type', 'audio/wav');
+    res.setHeader('Content-Type',
+      ext === 'mp3' ? 'audio/mpeg' : (ext === 'flac' ? 'audio/flac' : 'audio/wav'));
     res.setHeader('Accept-Ranges', 'bytes');
     res.sendFile(full);
   } catch (e) { fail(res, e); }
@@ -428,7 +594,9 @@ setTimeout(() => {
 setTimeout(() => {
   try {
     const c = cfgStore.read();
-    if (c.autoStartEngine === false) return;
+    /* round138：两道闸都写明。autoStartEngine 现在是默认关（用户要求「启动应用不要自动跑语音合成」），
+       engine==='off' 再单独拦一道 —— 免得有人只切引擎没动开关，模型又在后台灌进显存。 */
+    if (c.autoStartEngine === false || c.engine === 'off') return;
     if (c.engine !== 'breeze' && c.engine !== 'indextts') return;
     if (!fs.existsSync(c.breezeModelDir || 'D:\\TTS model\\Breeze-TTS-2') && c.engine === 'breeze') return;
     console.log('[TTS] 后台预热 ' + c.engine + ' 模型…');

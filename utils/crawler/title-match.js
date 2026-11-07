@@ -123,15 +123,106 @@ function simScore(candTitle, query) {
 }
 
 /**
+ * round142：里番标题清洗 —— 生成多个「渐进放宽」的查询词
+ * ----------------------------------------------------------------------------
+ * 为什么需要：库里大量标题带着字幕组/汉化组前缀与卷号，AniList 搜不到。
+ *   实测这些形态（12 条抽样只命中 5 条主因就是它们）：
+ *     [脸肿字幕组][720P][ばにぃうぉ～か～]JKビッチに搾られたい ＃1 ヤリマンJK
+ *     [FoxSub] 15美少女漂流記 OVA3 ～南の島でウハ2 どんぶりエッチ編
+ *     [なめらか動画部] 【4K神画質】聖職者 失格！祈りを捨てた背徳悦びSEX153
+ *   而 AniList 的条目名是干净的「JKビッチに搾られたい」「15美少女漂流記」。
+ *
+ * 策略：**不猜**，给出一串由严到宽的候选词，交给调用方逐个试，
+ *   每个都仍走 pickBest 的相似度门禁（宁可不出图，也不要配错封面）。
+ */
+const SUB_GROUP_RE = /\[[^\]]*(字幕|汉化|漢化|翻译|翻譯|sub|Sub|SUB|raws?|压制|壓制|组|組|社|部|アニメ|工房|動画|Team|team)[^\]]*\]/g;
+const BRACKET_ANY_RE = /\[[^\]]*\]|【[^】]*】/g;
+const RES_RE = /\b(2160p|1080p|720p|480p|4k|8k|uhd|fhd|hd|hevc|x26[45]|h\.?26[45]|av1|aac|flac|10bit|8bit)\b/gi;
+const NOISE_TAIL_RE = /(上巻|下巻|前編|後編|前篇|後篇|完成版|修正版|完全版|无修正|無修正|中文字幕|中字|字幕|全集|完結|完结)/g;
+
+/** 去掉字幕组/画质标记/方括号噪声 */
+function stripDecorations(s) {
+  let t = String(s || '');
+  t = t.replace(SUB_GROUP_RE, ' ');
+  t = t.replace(BRACKET_ANY_RE, ' ');       // 兜底：任何方括号/【】内容
+  t = t.replace(RES_RE, ' ');
+  t = t.replace(NOISE_TAIL_RE, ' ');
+  t = t.replace(/[＃♯#]\s*\d+/g, ' ');        // 「＃1」这类卷号
+  t = t.replace(/(\s*\d{1,3})\s*$/, ' ');     // 结尾裸数字（「… 2」）
+  return t.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 生成候选查询词：由严到宽，最多 5 个，去重
+ * @param {string} title 原始标题
+ * @returns {string[]}
+ */
+function buildQueries(title) {
+  const src = String(title || '').trim();
+  if (!src) return [];
+  const out = [];
+  const push = (q) => {
+    const v = String(q || '').replace(/\s+/g, ' ').trim();
+    if (v.length < 2) return;
+    if (out.some(x => x.toLowerCase() === v.toLowerCase())) return;
+    out.push(v);
+  };
+
+  push(src);                                  // ① 原样
+  push(stripDecorations(src));                // ② 去装饰
+  const cleaned = stripDecorations(src);
+
+  // ③ 再去卷号/话数（「… 第2話」「… 2」「… #1」）
+  push(cleaned.replace(/(第\s*\d+\s*[話话巻卷集])|(\d+\s*[話话巻卷集])/g, ' ')
+    .replace(/[＃♯#]\s*\d+/g, ' ')
+    .replace(/\s+\d{1,3}\s*\Z/, ' ')
+    .replace(/\s+\d{1,3}\s/g, ' '));
+
+  // ④ 只取第一个显著片段（长标题取前 12 字，日文常用做法）
+  const firstSeg = cleaned.split(/[~〜～、,，:：|\s]\s*/).filter(Boolean)[0] || '';
+  if (firstSeg && firstSeg !== cleaned) push(firstSeg);
+
+  // ⑤ 截断到前 12 个字符（AniList 对超长查询容易零结果）
+  if (cleaned.length > 12) push(cleaned.slice(0, 12));
+
+  return out.slice(0, 5);
+}
+
+/**
+ * round142：跨语种标题匹配。
+ * AniList 的条目同时有 native（日文）/ romaji（罗马音）/ english 三个名字，
+ * 而本地库标题常常是英文或中文。原来 pickBest 只拿 c.title（native）比对，
+ * 于是「Dearest Blue 2」 vs 「ディアレストブルー」相似度 = 0 → 明明是同一部却被丢弃。
+ * 这里对候选的所有名字取最高分。
+ */
+function titleVariantsOf(c) {
+  const out = [];
+  const push = (v) => {
+    const s = String(v || '').trim();
+    if (s && !out.includes(s)) out.push(s);
+  };
+  push(c.title);
+  push(c.romaji);
+  push(c.english);
+  push(c.originalTitle);
+  return out;
+}
+
+/**
  * 从候选里挑最佳匹配
- * @param {Array<{title:string}>} cands
+ * @param {Array<{title:string, romaji?:string, english?:string}>} cands
  * @param {string} query 原始查询词（内部会归一化）
  * @param {number} threshold 低于该相似度视为未命中（宁可不出图，也不要配错图）
  */
 function pickBest(cands, query, threshold = 0.6) {
   let best = null, bestScore = 0;
   for (const c of cands) {
-    const s = simScore(c.title, query);
+    const names = titleVariantsOf(c);
+    let s = 0;
+    for (const n of names) {
+      const v = simScore(n, query);
+      if (v > s) s = v;
+    }
     if (s > bestScore) { bestScore = s; best = c; }
   }
   if (!best || bestScore < threshold) return null;
@@ -139,4 +230,5 @@ function pickBest(cands, query, threshold = 0.6) {
   return best;
 }
 
-module.exports = { T2S, toSimp, norm, normForMatch, dice, simScore, pickBest, commonPrefixLen };
+module.exports = { T2S, toSimp, norm, normForMatch, dice, simScore, pickBest, commonPrefixLen,
+  stripDecorations, buildQueries };
