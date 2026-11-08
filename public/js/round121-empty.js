@@ -15,7 +15,8 @@
 (function () {
     'use strict';
 
-    var RESULT_SEL = '.movie-card, .av-card, .av-folder, .av-stack-top, .av-stack, .av-view, .gallery-section';
+    /* r153：AI 语义兜底墙也是「结果」，否则空状态会在它下面再压一层。 */
+    var RESULT_SEL = '.movie-card, .av-card, .av-folder, .av-stack-top, .av-stack, .av-view, .gallery-section, .ai-ss';
     var grid = null;
     var box = null;
     var lastKey = '';

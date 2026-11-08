@@ -226,7 +226,8 @@
         hist.push({ role: 'user', content: msg });
         window.__aiHistory = hist.slice(-12);
 
-        await window.fetchAIStream(msg, { sessionId: 'main', history: hist.slice(-12) }, {
+        const sid = (window.getAISessionId ? window.getAISessionId() : 'main');
+        await window.fetchAIStream(msg, { sessionId: sid, history: hist.slice(-12) }, {
             onStart: () => {},
             onPhase: (ev) => {
                 const el = document.querySelector('#homeChatMessages .typing');
@@ -286,6 +287,7 @@
                 if (window.CVCompanion) window.CVCompanion.aiEvent('reply', reply);
                 btn.disabled = false;
                 if (ta) ta.focus();
+                if (window.refreshHomeSessionList) window.refreshHomeSessionList();
             },
             onError: (err) => {
                 if (typing) typing.remove();
@@ -890,8 +892,25 @@
         const items = stageState.items || [];
         const active = items[stageState.activeIndex] || items[0] || null;
         const st = stageState.stats || { novel: 0, comic: 0, film: 0, total: 0 };
+        const books = Number((st.novel || 0) + (st.comic || 0));
+        const totalText = Number(st.total || 0).toLocaleString();
+        const booksText = books ? books.toLocaleString() : '—';
+        const whMovies = document.getElementById('whHeroMovies');
+        if (whMovies) whMovies.textContent = Math.max(0, Number(st.total || 0) - books).toLocaleString();
+        const whBooks = document.getElementById('whHeroBooks');
+        if (whBooks) whBooks.textContent = booksText;
+        const whTotal = document.getElementById('whHeroTotal');
+        if (whTotal) whTotal.textContent = totalText;
+        ['wh', 'pp', 'nt', 'ik'].forEach((p) => {
+            if (p === 'wh') return;
+            const total = document.getElementById(p + 'HeroMovies');
+            if (total) total.textContent = totalText;
+            const book = document.getElementById(p + 'HeroBooks');
+            if (book) book.textContent = booksText;
+        });
 
         if (!active) {
+            const loading = !!stageState.loading;
             host.innerHTML =
                 '<div class="hcs-shell is-empty">' +
                     '<div class="hcs-sprocket" aria-hidden="true"></div>' +
@@ -901,8 +920,15 @@
                                 '<span class="hcs-kicker">🎬 CURATED SCREENING · 今夜主映</span>' +
                                 '<span class="hcs-greeting">' + esc(greeting()) + ' · 私人典藏放映室</span>' +
                             '</div>' +
-                            '<h2 class="hcs-title">正在从馆藏中挑出今夜主映…</h2>' +
-                            '<p class="hcs-reason">连接私人媒体库与阅读档案，稍候片刻即可开映。</p>' +
+                            '<h2 class="hcs-title">' + (loading ? '正在从馆藏中挑出今夜主映…' : '今夜主映台暂时空着') + '</h2>' +
+                            '<p class="hcs-reason">' + (loading
+                                ? '连接私人媒体库与阅读档案，稍候片刻即可开映。'
+                                : '当前隐私口径下没有可主映的藏品。去「全部内容」挑一部，或直接随机来一部。') + '</p>' +
+                            (loading ? '' :
+                                '<div class="hcs-actions">' +
+                                    '<button type="button" class="hcs-btn hcs-btn-primary" data-stage-nav="movies-adult">🗂 全部内容</button>' +
+                                    '<button type="button" class="hcs-btn hcs-btn-secondary" data-stage-nav="random-adult">🎲 随机一部</button>' +
+                                '</div>') +
                         '</div>' +
                     '</div>' +
                 '</div>';
@@ -1002,7 +1028,9 @@
         if (!stageState.items.length) renderCuratedStage();
         try {
             const [guessRes, totRes, novRes, comRes, filmRes] = await Promise.all([
-                fetch('/api/recommend/guess?count=8&privacy=exclude').then(r => r.json()).catch(() => null),
+                fetch('/api/recommend/guess?count=8' +
+                    ((typeof isAdultNavHidden === 'function' && isAdultNavHidden()) ? '&privacy=exclude' : ''))
+                    .then(r => r.json()).catch(() => null),
                 fetch('/api/stats/overview').then(r => r.json()).catch(() => null),
                 fetch('/api/stats/overview?type=novel').then(r => r.json()).catch(() => null),
                 fetch('/api/stats/overview?type=comic').then(r => r.json()).catch(() => null),
@@ -1129,17 +1157,22 @@
         sendHomeMessage();
     }
 
-    let homeChatRestored = false;
-    async function restoreHomeChat() {
-        if (homeChatRestored) return;
-        homeChatRestored = true;
+    let homeChatRestoredFor = null;
+    async function restoreHomeChat(force) {
+        const sid = (window.getAISessionId ? window.getAISessionId() : 'main');
+        if (!force && homeChatRestoredFor === sid) return;
+        homeChatRestoredFor = sid;
         try {
-            const r = await (await fetch('/api/ai/history?sessionId=main&limit=6')).json();
+            const r = await (await fetch('/api/ai/history?sessionId=' + encodeURIComponent(sid) + '&limit=20')).json();
             if (r.code !== 0) return;
             const msgs = r.data.messages || [];
-            if (!msgs.length) return;
             const box = document.getElementById('homeChatMessages');
-            if (!box || box.querySelector('.home-msg')) return;   // 已经聊上了就不动
+            if (!box) return;
+            box.innerHTML = '';
+            if (!msgs.length) {
+                box.innerHTML = '<div class="home-chat-empty">👋 你好，我是你的影库 AI 助手<br><span class="hc-sub">可以问我：推荐几部好看的、找有 XX 标签的影片、翻译片名…</span></div>';
+                return;
+            }
             for (const m of msgs) {
                 const rawEsc = esc(m.content || '');
                 const rendered = (m.role === 'assistant' ? mdLite(rawEsc) : rawEsc)
@@ -1148,6 +1181,44 @@
                 addMsg(m.role === 'assistant' ? 'ai' : 'user', rendered);
             }
         } catch (e) { /* 记忆引擎未就绪时保持空态 */ }
+    }
+
+    /* 与右侧 AI 工作台共用 aiMemory 会话：任一端发完消息或切会话后，
+     * 另一端从服务端同一份记录重绘，保证两边永远看到同一段对话。 */
+    window.Home = window.Home || {};
+    window.Home.syncFromSession = async function (sid) {
+        if (window.setAISessionId) window.setAISessionId(sid);
+        homeChatRestoredFor = null;
+        await restoreHomeChat(true);
+        await refreshHomeSessionList();
+    };
+    window.Home.refreshSessions = function () { return refreshHomeSessionList(); };
+
+    async function refreshHomeSessionList() {
+        const sel = document.getElementById('homeSessionSelect');
+        if (!sel) return;
+        try {
+            const r = await (await fetch('/api/ai/sessions?archived=0')).json();
+            if (r.code !== 0) return;
+            const list = r.data || [];
+            const cur = window.getAISessionId ? window.getAISessionId() : 'main';
+            sel.innerHTML = list.map(s =>
+                '<option value="' + esc(s.id) + '">' + esc(s.title || '新对话') + '</option>').join('');
+            if (!list.some(s => s.id === cur)) {
+                sel.insertAdjacentHTML('afterbegin', '<option value="' + esc(cur) + '">默认对话</option>');
+            }
+            sel.value = cur;
+            syncHomeSessionBtn();
+        } catch (e) { /* 会话服务未就绪时保持默认项 */ }
+    }
+    window.refreshHomeSessionList = refreshHomeSessionList;
+
+    function syncHomeSessionBtn() {
+        const sel = document.getElementById('homeSessionSelect');
+        const btn = document.getElementById('homeSessionBtn');
+        if (!sel || !btn) return;
+        const cur = sel.options[sel.selectedIndex];
+        btn.textContent = cur ? cur.textContent : '默认对话';
     }
 
     function bindHome() {
@@ -1165,13 +1236,54 @@
             });
         }
         if (btn) btn.addEventListener('click', sendHomeMessage);
+        const sessSel = document.getElementById('homeSessionSelect');
+        if (sessSel) {
+            sessSel.addEventListener('change', async () => {
+                const sid = sessSel.value;
+                syncHomeSessionBtn();
+                if (window.setAISessionId) window.setAISessionId(sid);
+                homeChatRestoredFor = null;
+                await restoreHomeChat(true);
+                if (window.syncAIChatViews) window.syncAIChatViews(sid);
+            });
+        }
+        bindHomeSessionPicker();
+        const newBtn = document.getElementById('homeNewChatBtn');
+        if (newBtn) {
+            newBtn.addEventListener('click', async () => {
+                if (typeof window.dsnNewSession === 'function') {
+                    await window.dsnNewSession();
+                } else {
+                    try {
+                        const r = await (await fetch('/api/ai/sessions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ title: '新对话' })
+                        })).json();
+                        if (r.code === 0 && r.data) {
+                            if (window.setAISessionId) window.setAISessionId(r.data.id);
+                            homeChatRestoredFor = null;
+                            await restoreHomeChat(true);
+                            await refreshHomeSessionList();
+                        }
+                    } catch (e) { }
+                }
+            });
+        }
+        const wbBtn = document.getElementById('homeOpenWorkbenchBtn');
+        if (wbBtn) {
+            wbBtn.addEventListener('click', () => {
+                if (typeof window.showAIAssistant === 'function') window.showAIAssistant();
+            });
+        }
         const mic = document.getElementById('homeChatMic');
         if (mic) {
             mic.addEventListener('click', () => {
                 if (window.CinemaASR) window.CinemaASR.toggle(ta);
             });
         }
-        restoreHomeChat();
+        restoreHomeChat(false);
+        refreshHomeSessionList();
         document.querySelectorAll('.home-rank-tab[data-src]').forEach(t =>
             t.addEventListener('click', () => switchRankSource(t.dataset.src)));
         document.querySelectorAll('.home-rank-tab[data-lib]').forEach(t =>
@@ -1197,5 +1309,58 @@
         window.addEventListener('resize', applyPh);
     }
 
-    window.Home = { showHome, hideHome, showAcgBoard, hideAcgBoard, bindHome, openAcgDetail, closeAcgDetail, switchAcgPeriod, switchAcgCat, switchSubTab, askPreset, loadCuratedStage };
+    /* round161：原生 select 弹层在暗色皮肤下会透出背景图，文字看不清。
+       select 只做数据源，入口换成 body 级不透明菜单。 */
+    function bindHomeSessionPicker() {
+        const sel = document.getElementById('homeSessionSelect');
+        const btn = document.getElementById('homeSessionBtn');
+        if (!sel || !btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        let menu = null;
+        const close = () => { if (menu) menu.hidden = true; };
+        const open = () => {
+            if (!menu) {
+                menu = document.createElement('div');
+                menu.className = 'hsm-menu';
+                menu.addEventListener('click', (e) => {
+                    const item = e.target.closest('.hsm-item');
+                    if (!item) return;
+                    sel.value = item.dataset.sid;
+                    close();
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                document.body.appendChild(menu);
+            }
+            const rect = btn.getBoundingClientRect();
+            const width = Math.max(190, Math.min(280, Math.max(rect.width, 190)));
+            menu.style.width = width + 'px';
+            menu.innerHTML = Array.from(sel.options).map((o) =>
+                '<button type="button" class="hsm-item' + (o.selected ? ' on' : '') + '" data-sid="'
+                + esc(o.value) + '">' + esc(o.textContent) + '</button>').join('');
+            menu.hidden = false;
+            const h = Math.min(menu.scrollHeight, 320);
+            let top = rect.bottom + 6;
+            if (top + h > window.innerHeight - 12) top = Math.max(12, rect.top - 6 - h);
+            menu.style.top = top + 'px';
+            menu.style.left = Math.max(12, Math.min(rect.right - width, window.innerWidth - 12 - width)) + 'px';
+            const on = menu.querySelector('.hsm-item.on');
+            if (on) on.scrollIntoView({ block: 'nearest' });
+        };
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (menu && !menu.hidden) close(); else open();
+        });
+        document.addEventListener('click', (e) => {
+            if (menu && !menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+        window.addEventListener('resize', close);
+    }
+
+    window.Home = Object.assign(window.Home || {}, {
+        showHome, hideHome, showAcgBoard, hideAcgBoard, bindHome, openAcgDetail, closeAcgDetail,
+        switchAcgPeriod, switchAcgCat, switchSubTab, askPreset, loadCuratedStage
+    });
+    if (!window.Home.syncFromSession) window.Home.syncFromSession = async function (sid) { window.setAISessionId?.(sid); await restoreHomeChat(true); };
+    if (!window.Home.refreshSessions) window.Home.refreshSessions = refreshHomeSessionList;
 })();

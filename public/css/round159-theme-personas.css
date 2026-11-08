@@ -1,0 +1,310 @@
+/* ============================================================================
+   round159 · 纸 / 夜 主题拟人形象
+   ----------------------------------------------------------------------------
+   两张角色图复用鲸鱼娘的同一套版式：首屏 hero + 看板娘 + AI 头像。
+   皮肤层只改材质和色板，不动现有功能布局。
+   ============================================================================ */
+
+.th-hero { display: none; }
+
+html[data-v4skin="classic"] body #homeView.active,
+html[data-v4skin="matinee"] body #homeView.active {
+    grid-template-areas:
+        "hero hero"
+        "stage stage"
+        "chat rank"
+        "cal cal" !important;
+    grid-template-rows: auto auto minmax(440px, auto) auto !important;
+}
+
+.th-hero {
+    grid-area: hero;
+    position: relative;
+    min-height: 258px;
+    overflow: hidden;
+    border-radius: 14px;
+}
+.th-hero-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.015);
+}
+.th-hero-veil {
+    position: absolute;
+    inset: 0;
+}
+.th-hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    max-width: 580px;
+    padding: 34px 42px;
+}
+.th-hero-kicker {
+    margin: 0 0 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .20em;
+}
+.th-hero-greet {
+    margin: 0 0 4px;
+    font-size: 13px;
+    letter-spacing: .04em;
+}
+.th-hero-title {
+    margin: 0 0 18px;
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    line-height: 1.16;
+}
+.th-hero-stats {
+    display: flex;
+    gap: 34px;
+}
+.th-hero-stats span {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+}
+.th-hero-stats b {
+    font-family: var(--font-mono);
+    font-size: 24px;
+}
+.th-hero-stats i {
+    font-style: normal;
+    font-size: 11.5px;
+}
+.th-hero-rail {
+    position: absolute;
+    right: 26px;
+    bottom: 24px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.th-hero-rail span {
+    display: block;
+    width: 18px;
+    height: 1px;
+}
+.th-hero-rail span:nth-child(2) { width: 12px; opacity: .75; }
+.th-hero-rail span:nth-child(3) { width: 22px; opacity: .9; }
+.th-hero-rail span:nth-child(4) { width: 8px; opacity: .5; }
+.th-hero-rail span:nth-child(5) { width: 15px; opacity: .65; }
+
+/* ---------- 纸 · Paper ---------- */
+html[data-v4skin="classic"] .pp-hero {
+    display: block;
+    border: 1px solid rgba(138, 90, 18, .24);
+    background: #F6EEDC;
+    box-shadow: 0 24px 54px -30px rgba(74, 51, 20, .35);
+}
+html[data-v4skin="classic"] .pp-hero .th-hero-art { object-position: center 28%; }
+html[data-v4skin="classic"] .pp-hero .th-hero-veil {
+    background:
+        linear-gradient(90deg, rgba(249, 243, 231, .98) 0%, rgba(249, 243, 231, .90) 36%, rgba(249, 243, 231, .26) 68%, rgba(249, 243, 231, .06) 100%),
+        linear-gradient(0deg, rgba(246, 238, 220, .55), transparent 62%);
+}
+html[data-v4skin="classic"] .pp-hero .th-hero-kicker { color: #8A5A12; }
+html[data-v4skin="classic"] .pp-hero .th-hero-greet { color: #6C583C; }
+html[data-v4skin="classic"] .pp-hero .th-hero-title {
+    color: #2B2118;
+    text-shadow: 0 10px 30px rgba(250, 244, 233, .9);
+}
+html[data-v4skin="classic"] .pp-hero .th-hero-stats b { color: #2B2118; }
+html[data-v4skin="classic"] .pp-hero .th-hero-stats i { color: #7A6650; }
+html[data-v4skin="classic"] .pp-hero .th-hero-rail span { background: rgba(138, 90, 18, .55); }
+
+/* ---------- 夜 · Night ---------- */
+html[data-v4skin="matinee"] .nt-hero {
+    display: block;
+    border: 1px solid rgba(229, 169, 60, .30);
+    background: #17110B;
+    box-shadow: 0 28px 66px -30px rgba(0, 0, 0, .9);
+}
+html[data-v4skin="matinee"] .nt-hero .th-hero-art { object-position: center 26%; }
+html[data-v4skin="matinee"] .nt-hero .th-hero-veil {
+    background:
+        linear-gradient(90deg, rgba(20, 17, 14, .97) 0%, rgba(20, 17, 14, .86) 38%, rgba(20, 17, 14, .28) 70%, rgba(20, 17, 14, .18) 100%),
+        linear-gradient(0deg, rgba(20, 17, 14, .72), transparent 60%);
+}
+html[data-v4skin="matinee"] .nt-hero .th-hero-kicker { color: #E5A63C; }
+html[data-v4skin="matinee"] .nt-hero .th-hero-greet { color: #CBB48F; }
+html[data-v4skin="matinee"] .nt-hero .th-hero-title {
+    color: #F6EEDF;
+    text-shadow: 0 12px 38px rgba(0, 0, 0, .82);
+}
+html[data-v4skin="matinee"] .nt-hero .th-hero-stats b { color: #F6EEDF; }
+html[data-v4skin="matinee"] .nt-hero .th-hero-stats i { color: #B9A78D; }
+html[data-v4skin="matinee"] .nt-hero .th-hero-rail span { background: rgba(229, 169, 60, .55); }
+
+/* ---------- 看板娘 / AI 头像 ---------- */
+html[data-v4skin="classic"] .home-mascot {
+    border: 2px solid rgba(138, 90, 18, .42);
+    box-shadow: 0 0 0 4px rgba(138, 90, 18, .07), 0 18px 34px -22px rgba(74, 51, 20, .5);
+}
+html[data-v4skin="matinee"] .home-mascot {
+    border: 2px solid rgba(229, 169, 60, .40);
+    box-shadow: 0 0 0 4px rgba(229, 169, 60, .07), 0 18px 36px -20px rgba(0, 0, 0, .8);
+}
+html[data-v4skin="classic"] .ai-avatar,
+html[data-v4skin="classic"] .ai-top-avatar {
+    border: 1px solid rgba(138, 90, 18, .38);
+    background-image: url("/img/paper/closeup-v2.webp");
+    background-size: cover;
+    background-position: center 30%;
+    color: transparent;
+}
+html[data-v4skin="matinee"] .ai-avatar,
+html[data-v4skin="matinee"] .ai-top-avatar {
+    border: 1px solid rgba(229, 169, 60, .42);
+    background-image: url("/img/night/closeup-v2.webp");
+    background-size: cover;
+    background-position: center 28%;
+    color: transparent;
+}
+
+/* 主题拟人形象优先于默认小人动画；用户上传过自定义动画时不加这个 body 类 */
+body.persona-static #homeMascotIdle,
+body.persona-static #homeMascotTyping {
+    display: none !important;
+}
+body.persona-static #homeMascotStatic {
+    display: block !important;
+}
+
+/* ---------- 设置页主题卡预览 ---------- */
+html[data-v4skin="classic"] .theme-card[data-v4skin="classic"] {
+    background-image:
+        linear-gradient(90deg, rgba(249, 243, 231, .94), rgba(249, 243, 231, .24)),
+        url("/img/paper/closeup-v2.webp") !important;
+    background-size: cover !important;
+    background-position: center 25% !important;
+}
+html[data-v4skin="matinee"] .theme-card[data-v4skin="matinee"] {
+    background-image:
+        linear-gradient(90deg, rgba(20, 17, 14, .94), rgba(20, 17, 14, .22)),
+        url("/img/night/closeup-v2.webp") !important;
+    background-size: cover !important;
+    background-position: center 24% !important;
+}
+
+@media (max-width: 860px) {
+    html[data-v4skin="classic"] body #homeView.active,
+    html[data-v4skin="matinee"] body #homeView.active {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: auto auto auto auto auto !important;
+        grid-template-areas:
+            "hero"
+            "stage"
+            "chat"
+            "rank"
+            "cal" !important;
+    }
+    .th-hero { min-height: 190px; }
+    .th-hero-inner { padding: 22px 20px; }
+    .th-hero-title { font-size: 30px; margin-bottom: 12px; }
+    .th-hero-stats { gap: 20px; }
+    .th-hero-stats b { font-size: 19px; }
+    .th-hero-rail { display: none; }
+}
+
+/* ---------- 鲸鱼娘：fork 的深潜首屏，而不是只换底色 ---------- */
+html[data-v4skin="whale"] .wh-hero { min-height: 330px; }
+html[data-v4skin="whale"] .wh-hero-inner {
+    max-width: 600px;
+    padding: 30px 40px;
+}
+html[data-v4skin="whale"] .wh-hero-title {
+    margin: 0 0 10px;
+    font-size: 40px;
+    line-height: 1.2;
+}
+html[data-v4skin="whale"] .wh-hero-greet {
+    margin-bottom: 16px;
+    font-size: 12.5px;
+}
+html[data-v4skin="whale"] .wh-depth {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    max-width: 430px;
+}
+html[data-v4skin="whale"] .wh-depth-row {
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 11.5px;
+    color: #9DB6D2;
+}
+html[data-v4skin="whale"] .wh-depth-row span {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: #6F8FB2;
+}
+html[data-v4skin="whale"] .wh-depth-row b { font-weight: 600; color: #DCE9F7; }
+html[data-v4skin="whale"] .wh-depth-row i { font-style: normal; font-size: 10.5px; color: #8FA9C4; }
+html[data-v4skin="whale"] .wh-depth-row em { font-style: normal; color: #EAF4FF; font-family: var(--font-mono); }
+html[data-v4skin="whale"] .wh-depth-row s {
+    grid-column: 1 / -1;
+    display: block;
+    height: 2px;
+    margin-top: 1px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(211, 176, 116, .85), rgba(127, 182, 232, .55));
+    opacity: .8;
+}
+html[data-v4skin="whale"] .wh-dive-badge {
+    position: absolute;
+    top: 24px;
+    right: 26px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 190px;
+    padding: 12px 14px;
+    border: 1px solid rgba(211, 176, 116, .30);
+    border-radius: 10px;
+    background: rgba(5, 12, 24, .58);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+}
+html[data-v4skin="whale"] .wh-dive-badge span {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: .18em;
+    color: #D3B074;
+}
+html[data-v4skin="whale"] .wh-dive-badge b { font-size: 13px; color: #F2F7FF; }
+html[data-v4skin="whale"] .wh-dive-badge i { font-style: normal; font-size: 10.5px; color: #8FA9C4; }
+
+@media (max-width: 860px) {
+    html[data-v4skin="whale"] .wh-hero { min-height: 300px; }
+    html[data-v4skin="whale"] .wh-hero-inner { padding: 24px 20px; }
+    html[data-v4skin="whale"] .wh-hero-title { font-size: 30px; margin-bottom: 8px; }
+    html[data-v4skin="whale"] .wh-hero-greet { margin-bottom: 12px; }
+    html[data-v4skin="whale"] .wh-depth { max-width: none; }
+    html[data-v4skin="whale"] .wh-dive-badge { display: none; }
+}
+
+/* round160：空会话不能把卡片缩成「输入框孤岛」。
+   .home-chat 是 grid item，本来就被拉伸；让 dock / card / messages 依次吃掉高度，
+   新建对话前后卡片保持同一高度，只换内容。 */
+@media (min-width: 861px) {
+    html body .home-chat { min-height: 560px; }
+    html body .home-chat-dock { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    html body .home-chat-card { flex: 1; min-height: 0; }
+    html body .home-chat-messages { flex: 1; max-height: none; }
+}

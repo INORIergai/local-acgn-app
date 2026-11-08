@@ -770,6 +770,37 @@
         }
         body.night-mode .pdf-ph { color: #5b554c; }
         .pdf-err { color: #b3261e; font-size: 13px; padding: 24px; text-align: center; }
+
+        /* r153 · C2：AI 伴读侧栏 */
+        .ai-reader-panel {
+            position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 92vw);
+            background: #fdfaf3; border-left: 1px solid rgba(120, 92, 48, .2);
+            box-shadow: -18px 0 46px rgba(40, 28, 10, .18);
+            transform: translateX(102%); transition: transform .28s cubic-bezier(.32,.72,0,1);
+            z-index: 120; display: flex; flex-direction: column;
+        }
+        .ai-reader-panel.open { transform: translateX(0); }
+        body.night-mode .ai-reader-panel {
+            background: #191919; border-left-color: rgba(255, 233, 190, .14);
+            box-shadow: -18px 0 46px rgba(0, 0, 0, .55); color: #e9e2d4;
+        }
+        .acp-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 10px; }
+        .acp-head b { font-family: "Songti SC", "Noto Serif SC", serif; font-size: 16px; letter-spacing: .04em; }
+        .acp-head button { margin-left: auto; border: 0; background: transparent; font-size: 18px; cursor: pointer; color: inherit; }
+        .acp-tabs { display: flex; gap: 6px; padding: 0 18px 12px; border-bottom: 1px solid rgba(120, 92, 48, .12); }
+        body.night-mode .acp-tabs { border-bottom-color: rgba(255, 233, 190, .1); }
+        .acp-tab {
+            flex: 1; padding: 7px 8px; border-radius: 8px; cursor: pointer;
+            border: 1px solid rgba(120, 92, 48, .18); background: transparent;
+            color: #6d604e; font-size: 12.5px; font-weight: 600;
+        }
+        body.night-mode .acp-tab { border-color: rgba(255, 233, 190, .16); color: #b8ae9e; }
+        .acp-tab.on { background: #8a5a12; border-color: #8a5a12; color: #fff; }
+        .acp-body { flex: 1; overflow-y: auto; padding: 18px; font-size: 14px; line-height: 1.85; white-space: pre-wrap; }
+        .acp-body .acp-empty { color: #8a7d68; font-size: 13px; line-height: 1.7; }
+        .acp-body .acp-load { color: #8a7d68; font-size: 13px; }
+        .acp-foot { padding: 10px 18px 16px; border-top: 1px solid rgba(120, 92, 48, .12); display: flex; gap: 8px; }
+        body.night-mode .acp-foot { border-top-color: rgba(255, 233, 190, .1); }
     </style>
 </head>
 <body>
@@ -785,6 +816,7 @@
                 <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;">下一本 ▶</button>
                 <button class="btn" id="btnReadMode" onclick="toggleReadMode()" title="切换 滚动 / 翻页 阅读">📖 翻页</button>
                 <button class="btn" onclick="toggleCatalog()">📑 目录</button>
+                <button class="btn" onclick="toggleAICompanion()" title="AI 伴读：前情提要 / 人物卡 / 润色">✨ 伴读</button>
                 <button class="btn" onclick="toggleSettings()">⚙️ 设置</button>
                 <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
             </div>
@@ -836,6 +868,22 @@
              加 / 删 / 改名选项只动那一个文件，不用再碰这里 -->
         <div class="settings-panel" id="settingsPanel">
             <div id="rsNovelRoot"></div>
+        </div>
+
+        <!-- r153 · C2：AI 伴读 -->
+        <div class="ai-reader-panel" id="aiCompanionPanel">
+            <div class="acp-head"><b>✨ AI 伴读</b><button onclick="closeAllPanels()" aria-label="关闭">✕</button></div>
+            <div class="acp-tabs">
+                <button class="acp-tab on" data-acp-mode="recap">前情提要</button>
+                <button class="acp-tab" data-acp-mode="characters">人物卡</button>
+                <button class="acp-tab" data-acp-mode="polish">润色本章</button>
+            </div>
+            <div class="acp-body" id="acpBody">
+                <div class="acp-empty">读取<strong>截至当前阅读进度</strong>的原文：前情提要用 200 字补回记忆，人物卡绝不剧透后文，润色把机翻腔改成自然中文。</div>
+            </div>
+            <div class="acp-foot" id="acpFoot" style="display:none;">
+                <button class="btn" onclick="copyCompanionText()">📋 复制结果</button>
+            </div>
         </div>
         
         <!-- 遮罩层 -->
@@ -1557,6 +1605,7 @@
         function toggleCatalog() {
             const sidebar = document.getElementById('catalogSidebar');
             const overlay = document.getElementById('overlay');
+            document.getElementById('aiCompanionPanel').classList.remove('open');
             const isOpen = sidebar.classList.toggle('open');
             overlay.classList.toggle('visible', isOpen);
             
@@ -1569,6 +1618,7 @@
         function toggleSettings() {
             const panel = document.getElementById('settingsPanel');
             const overlay = document.getElementById('overlay');
+            document.getElementById('aiCompanionPanel').classList.remove('open');
             const isOpen = panel.classList.toggle('open');
             overlay.classList.toggle('visible', isOpen);
             
@@ -1581,8 +1631,69 @@
         function closeAllPanels() {
             document.getElementById('catalogSidebar').classList.remove('open');
             document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('aiCompanionPanel').classList.remove('open');
             document.getElementById('overlay').classList.remove('visible');
         }
+
+        /* ========== r153 · C2：AI 伴读 ========== */
+        let acpMode = 'recap';
+        let acpText = '';
+        let acpToken = 0;
+
+        function toggleAICompanion() {
+            const panel = document.getElementById('aiCompanionPanel');
+            const open = !panel.classList.contains('open');
+            document.getElementById('catalogSidebar').classList.remove('open');
+            document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('visible');
+            panel.classList.toggle('open', open);
+            if (open) runCompanion(acpMode);
+        }
+
+        function runCompanion(mode) {
+            acpMode = mode || 'recap';
+            document.querySelectorAll('.acp-tab').forEach((b) => b.classList.toggle('on', b.dataset.acpMode === acpMode));
+            const body = document.getElementById('acpBody');
+            const foot = document.getElementById('acpFoot');
+            foot.style.display = 'none';
+            const labels = { recap: '正在回溯前三章…', characters: '正在整理当前进度的人物关系…', polish: '正在润色当前章节（可能需要十几秒）…' };
+            body.innerHTML = '<div class="acp-load">' + labels[acpMode] + '</div>';
+            const my = ++acpToken;
+            fetch(`/api/novel/${novelId}/ai-companion`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: acpMode, chapterIndex: currentChapter })
+            }).then((r) => r.json()).then((d) => {
+                if (my !== acpToken) return;
+                if (!d || d.code !== 0) throw new Error((d && d.msg) || 'AI 暂不可用');
+                acpText = d.data.text || '';
+                body.textContent = acpText || '（AI 没有返回内容）';
+                foot.style.display = acpText ? 'flex' : 'none';
+            }).catch((e) => {
+                if (my !== acpToken) return;
+                body.innerHTML = '<div class="acp-empty">' + escapeReaderHtml(e.message || 'AI 暂不可用') +
+                    '<br><br>检查：设置 → AI 助手是否已配置可用模型。</div>';
+            });
+        }
+
+        function copyCompanionText() {
+            if (!acpText) return;
+            navigator.clipboard.writeText(acpText).then(() => {
+                const t = document.getElementById('toast');
+                t.textContent = '已复制伴读结果';
+                t.classList.add('show');
+                setTimeout(() => t.classList.remove('show'), 1400);
+            }).catch(() => {});
+        }
+
+        function escapeReaderHtml(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        document.addEventListener('click', (e) => {
+            const tab = e.target && e.target.closest && e.target.closest('[data-acp-mode]');
+            if (tab) runCompanion(tab.dataset.acpMode);
+        });
         
         /* ============================================================
            round81：设置面板改由 js/reader-settings.js 驱动

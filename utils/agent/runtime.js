@@ -127,8 +127,23 @@ async function runAgent(opts = {}) {
     const { message, sessionId = 'main', history = [], hint = '', onEvent = () => { }, signal = null } = opts;
     const cfg = agentCfg();
     const t0 = Date.now();
+
+    /* 双入口统一：首页对话框与右侧 AI 工作台共用同一个 aiMemory 会话。
+     * 进入时先读上下文再写入本轮用户消息，避免把自己重复注入 history。 */
+    const aiMemory = require('../ai-memory');
+    const sid = aiMemory.normalizeSessionId(sessionId);
+    let memCtx = null;
+    try {
+        memCtx = aiMemory.buildChatContext(sid);
+        aiMemory.appendMessage(sid, 'user', message);
+    } catch (e) {
+        memCtx = null;
+    }
+    const useMemHistory = !!(memCtx && Array.isArray(memCtx.history) && memCtx.history.length);
+    const effectiveHistory = useMemHistory ? memCtx.history : history;
+
     const run = trace.createRun({
-        sessionId,
+        sessionId: sid,
         userMessage: message,
         model: (config.ai && (config.ai.custom && config.ai.custom.model || config.ai.openai && config.ai.openai.model)) || '',
         routeName: ''
@@ -140,8 +155,15 @@ async function runAgent(opts = {}) {
 
     const { callAIAdvancedStream, getLastUsedRouteName } = require('../ai-service');
     const messages = [
-        { role: 'system', content: buildSystemPrompt({ hint }) },
-        ...normalizeHistory(history),
+        {
+            role: 'system',
+            content: [
+                buildSystemPrompt({ hint }),
+                memCtx && memCtx.summaryText ? ('\n【本会话历史摘要】\n' + memCtx.summaryText) : '',
+                memCtx && memCtx.memoryText ? ('\n【关于用户的长期记忆】\n' + memCtx.memoryText) : ''
+            ].filter(Boolean).join('\n')
+        },
+        ...normalizeHistory(effectiveHistory),
         { role: 'user', content: String(message || '') }
     ];
     const toolsSchema = getOpenAIToolsSchema();
@@ -304,7 +326,7 @@ async function runAgent(opts = {}) {
             }
 
             const out = await execWithRetry(meta, args, {
-                runId: run.id, sessionId, userApproved: approved, approvalId
+                runId: run.id, sessionId: sid, userApproved: approved, approvalId
             }, (attempt, err, wait) => {
                 // 重试也要留痕：用户能看到「第 2 次尝试（网络抖动）」
                 const note = `第 ${attempt + 1} 次尝试（上一轮：${String(err).slice(0, 60)}）`;
@@ -383,10 +405,24 @@ async function runAgent(opts = {}) {
 
     uiActions.forEach(a => emit({ type: 'action', action: a }));
 
+    if (finalText) {
+        try {
+            aiMemory.appendMessage(sid, 'assistant', finalText);
+            if (memCtx && Array.isArray(memCtx.injectedMemoryIds) && memCtx.injectedMemoryIds.length) {
+                aiMemory.recordMemoryHits(memCtx.injectedMemoryIds);
+            }
+            setImmediate(() => {
+                try { aiMemory.maybeCompress(sid).catch(() => { }); } catch (_) { }
+                try { aiMemory.maybeExtractMemories(sid).catch(() => { }); } catch (_) { }
+            });
+        } catch (e) { /* 记忆写失败不阻断已生成的回答 */ }
+    }
+
     trace.finishRun(run, { status: aborted ? 'aborted' : (lastErr ? 'error' : 'done'), reply: finalText, error: lastErr });
     emit({
         type: 'done',
         runId: run.id,
+        sessionId: sid,
         content: finalText,
         steps: run.steps.map(s => ({ seq: s.seq, kind: s.kind, name: s.name, label: s.label, ok: s.ok, status: s.status, costMs: s.costMs })),
         uiActions,

@@ -1,0 +1,139 @@
+/* ============================================================================
+   round161 · 首页 AI 卡收口
+   1) 去掉对话框上方的拟人立绘
+   2) 左右两栏固定同高，对话多了只在消息区内部滚动
+   3) 会话切换改为不透明自定义菜单（原生 select 弹层在暗色皮肤下会透底）
+   ============================================================================ */
+
+/* 1. 立绘不再占用首屏 */
+html body #homeView .home-mascot { display: none !important; }
+
+/* 2. 桌面端两栏同高：右栏热度情报 620px（宽屏双列）/ 672px（中窄屏单列） */
+@media (min-width: 861px) {
+    html[data-v4skin] body #homeView.active {
+        grid-template-rows: auto auto 620px auto !important;
+    }
+    html:not([data-v4skin]) body #homeView.active {
+        grid-template-rows: auto 620px auto !important;
+    }
+    /* 立绘没了，顶部的 28px 留白也一起收掉：卡片与右栏同顶同底 */
+    html body #homeView .home-chat,
+    html body #homeView .home-rank {
+        padding-top: 0 !important;
+    }
+    html[data-v4skin="whale"] body #homeView .home-rank {
+        padding-top: 16px !important;
+    }
+    html body #homeView .home-chat {
+        min-height: 0 !important;
+        height: 100%;
+    }
+    html body #homeView .home-chat-dock { height: 100%; }
+    html body #homeView .home-chat-card {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0 !important;
+    }
+    html body #homeView .home-chat-messages {
+        flex: 1 1 auto;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+}
+@media (min-width: 861px) and (max-width: 1400px) {
+    /* 热度榜回单列后自然高约 672px，跟它对齐 */
+    html[data-v4skin] body #homeView.active {
+        grid-template-rows: auto auto 672px auto !important;
+    }
+    html:not([data-v4skin]) body #homeView.active {
+        grid-template-rows: auto 672px auto !important;
+    }
+}
+
+/* 3. 会话切换入口 */
+.hch-session-btn {
+    max-width: 130px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border, rgba(120, 100, 70, .24));
+    background-color: var(--card-bg, #FFFDF9);
+    background-image: none !important;
+    color: var(--text);
+    font-size: 11.5px;
+    line-height: 24px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.hch-session-btn:hover { border-color: var(--gold-primary, #B87B28); }
+
+/* 菜单挂 body，固定不透明底：不再让下面的立绘/首屏图透上来 */
+.hsm-menu {
+    position: fixed;
+    z-index: 10060;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(120, 100, 70, .30);
+    background-color: #FFFDF8;
+    color: #2C2416;
+    box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .55);
+}
+.hsm-item {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.hsm-item:hover { background: rgba(184, 123, 40, .10); }
+.hsm-item.on { background: rgba(184, 123, 40, .16); color: #8A5A12; font-weight: 600; }
+
+html[data-v4skin="classic"] .hch-session-btn {
+    background-color: #FFFDF8 !important;
+    color: #2C2416 !important;
+}
+html[data-v4skin="matinee"] .hch-session-btn {
+    background-color: #17110B !important;
+    border-color: rgba(229, 169, 60, .34) !important;
+    color: #F6EEDF !important;
+}
+html[data-v4skin="matinee"] .hsm-menu {
+    background-color: #17110B;
+    border-color: rgba(229, 169, 60, .38);
+    color: #F6EEDF;
+}
+html[data-v4skin="matinee"] .hsm-item:hover { background: rgba(229, 169, 60, .12); }
+html[data-v4skin="matinee"] .hsm-item.on { background: rgba(229, 169, 60, .20); color: #FFD894; }
+
+html[data-v4skin="whale"] .hch-session-btn {
+    background-color: #0D1D33 !important;
+    border-color: rgba(127, 182, 232, .28) !important;
+    color: #DCE9F7 !important;
+}
+html[data-v4skin="whale"] .hsm-menu {
+    background-color: #0D1D33;
+    border-color: rgba(127, 182, 232, .32);
+    color: #DCE9F7;
+}
+html[data-v4skin="whale"] .hsm-item:hover { background: rgba(127, 182, 232, .12); }
+html[data-v4skin="whale"] .hsm-item.on { background: rgba(127, 182, 232, .20); color: #EAF4FF; }
+
+@media (max-width: 860px) {
+    .hch-session-btn { max-width: 84px; }
+}

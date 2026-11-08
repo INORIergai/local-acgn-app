@@ -1,0 +1,356 @@
+/* ============================================================================
+   round153-whale-theme.css —— V6「鲸鱼娘 · Deep Whale」特质化角色主题
+   ----------------------------------------------------------------------------
+   设计依据：docs/whale-theme/DESIGN-SPEC.md（REA 静态拆解 + WCAG 验算）
+   纪律：只重定义色与光，不改任何尺度；金 = 结构，蓝 = 信息，二者不同元素混用。
+   性能：环境层独立 fixed 元素，粒子 ≤ 10，切后台暂停（由 JS 控制）。
+   ============================================================================ */
+
+html[data-v4skin="whale"] {
+    --bg: #070F1E;
+    --bg-elevated: #0C1A2E;
+    --card-bg: #101F35;
+    --card-bg-hover: #16283F;
+
+    --text: #E6EEF9;
+    --text-muted: #93AAC8;
+    --text-faint: #5E7A9C;
+    --border: #1D3350;
+    --border-strong: #2A4A6E;
+
+    --primary: #7FB6E8;
+    --primary-strong: #A9D2F5;
+    --primary-soft: rgba(127, 182, 232, .14);
+    --danger: #E0785C;
+    --danger-soft: rgba(224, 120, 92, .14);
+
+    --gold-primary: #D3B074;
+    --accent: #D3B074;
+    --accent-soft: rgba(211, 176, 116, .13);
+    --accent-line: rgba(211, 176, 116, .44);
+
+    --sprocket-bg: #1A2C46;
+    --sprocket-hole: #070F1E;
+
+    --shadow-1: 0 1px 2px rgba(3, 8, 18, .55);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .78);
+
+    --font-display: "Noto Serif SC", "Songti SC", "STZhongsong", Georgia, serif;
+    --whale-glass: rgba(12, 26, 46, .62);
+    --whale-glass-strong: rgba(10, 22, 40, .86);
+    --whale-ease: cubic-bezier(.22, .78, .2, 1);
+    --whale-float: cubic-bezier(.16, 1, .3, 1);
+}
+
+html[data-v4skin="whale"] body {
+    background:
+        radial-gradient(70% 50% at 50% -10%, rgba(127, 182, 232, .13), transparent 62%),
+        radial-gradient(46% 40% at 88% 108%, rgba(78, 134, 191, .10), transparent 66%),
+        linear-gradient(180deg, #08111F 0%, #070F1E 46%, #050C18 100%);
+    background-attachment: fixed;
+    color: var(--text);
+}
+
+/* 环境层：光柱 + 鲸影 + 微粒（JS 注入 #whaleAmbience） */
+html[data-v4skin="whale"] #whaleAmbience {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    contain: strict;
+}
+#whaleAmbience .wa-shaft {
+    position: absolute;
+    top: -8%;
+    height: 132%;
+    transform-origin: top center;
+    filter: blur(26px);
+}
+#whaleAmbience .wa-shaft.s1 {
+    left: 12%;
+    width: 120px;
+    background: linear-gradient(180deg, rgba(127, 182, 232, .18), transparent 74%);
+    transform: rotate(6deg);
+}
+#whaleAmbience .wa-shaft.s2 {
+    left: 30%;
+    width: 64px;
+    background: linear-gradient(180deg, rgba(169, 210, 245, .13), transparent 66%);
+    transform: rotate(10deg);
+    opacity: .35;
+}
+#whaleAmbience .wa-shaft.s3 {
+    right: 16%;
+    width: 96px;
+    background: linear-gradient(180deg, rgba(127, 182, 232, .11), transparent 70%);
+    transform: rotate(-7deg);
+    opacity: .3;
+}
+#whaleAmbience .wa-whale {
+    position: absolute;
+    left: -4%;
+    bottom: 2%;
+    width: 760px;
+    opacity: .16;
+    filter: blur(.4px) saturate(.9);
+}
+#whaleAmbience .wa-mote {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #BFE0FF;
+    opacity: .5;
+    animation: waMote 18s linear infinite;
+}
+@keyframes waMote {
+    0%   { transform: translate3d(0, 12vh, 0) scale(.8); opacity: 0; }
+    18%  { opacity: .55; }
+    62%  { opacity: .32; }
+    100% { transform: translate3d(var(--drift, 18px), -92vh, 0) scale(1.1); opacity: 0; }
+}
+
+/* 页面骨架：环境层之上 */
+html[data-v4skin="whale"] body > .navbar,
+html[data-v4skin="whale"] body > .main-container,
+html[data-v4skin="whale"] body > .mobile-drawer,
+html[data-v4skin="whale"] #featureView,
+html[data-v4skin="whale"] #homeView {
+    position: relative;
+    z-index: 1;
+}
+
+/* 顶栏 / 侧栏 */
+html[data-v4skin="whale"] .navbar {
+    background: linear-gradient(180deg, rgba(9, 18, 33, .94), rgba(8, 16, 30, .78));
+    border-bottom: 1px solid var(--border);
+    box-shadow: none;
+}
+html[data-v4skin="whale"] .logo {
+    color: var(--text);
+    font-family: var(--font-display);
+    letter-spacing: .02em;
+}
+html[data-v4skin="whale"] .logo::before {
+    background: radial-gradient(circle at 34% 30%, rgba(169, 210, 245, .34), rgba(127, 182, 232, .06) 68%);
+    border: 1px solid var(--accent-line);
+    box-shadow: 0 0 0 3px rgba(211, 176, 116, .07), 0 0 18px rgba(127, 182, 232, .28);
+}
+html[data-v4skin="whale"] .sidebar {
+    background: linear-gradient(180deg, rgba(10, 20, 36, .55), rgba(7, 14, 26, .35));
+    border-right: 1px solid var(--border);
+}
+html[data-v4skin="whale"] .sidebar-section h3 {
+    color: #7C95B5;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-size: 10.5px;
+}
+html[data-v4skin="whale"] .nav-item {
+    color: #B7C9DE;
+    transition: background .18s var(--whale-ease), color .18s var(--whale-ease);
+}
+html[data-v4skin="whale"] .nav-item:hover {
+    background: rgba(127, 182, 232, .07);
+    color: var(--text);
+}
+html[data-v4skin="whale"] .nav-item.active {
+    background: linear-gradient(90deg, rgba(127, 182, 232, .17), rgba(127, 182, 232, .03) 82%);
+    box-shadow: inset 2px 0 0 var(--primary), inset 0 0 0 1px rgba(127, 182, 232, .10);
+    color: var(--primary-strong);
+}
+html[data-v4skin="whale"] .nav-item.active .count { color: var(--accent); }
+
+/* 搜索框 */
+html[data-v4skin="whale"] .search-box input,
+html[data-v4skin="whale"] #searchInput {
+    background: rgba(8, 17, 31, .72);
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+html[data-v4skin="whale"] #searchInput::placeholder { color: #5B7C9E; }
+html[data-v4skin="whale"] #searchInput:focus {
+    border-color: rgba(127, 182, 232, .55);
+    box-shadow: 0 0 0 3px rgba(127, 182, 232, .16);
+}
+
+/* 按钮：主按钮 = 生物光蓝 + 金环；次按钮 = 鲸腹 */
+html[data-v4skin="whale"] .btn:not(.btn-secondary):not(.btn-danger),
+html[data-v4skin="whale"] .btn-primary {
+    background: linear-gradient(180deg, #8CC0EE, #5E96CD);
+    border-color: rgba(211, 176, 116, .55);
+    color: #08131F;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .30), 0 6px 18px -8px rgba(127, 182, 232, .7);
+}
+html[data-v4skin="whale"] .btn:not(.btn-secondary):not(.btn-danger):hover,
+html[data-v4skin="whale"] .btn-primary:hover {
+    background: linear-gradient(180deg, #A9D2F5, #7FB6E8);
+    color: #06101B;
+}
+html[data-v4skin="whale"] .btn-secondary {
+    background: var(--card-bg);
+    border-color: var(--border-strong);
+    color: var(--text);
+    box-shadow: none;
+}
+html[data-v4skin="whale"] .btn-secondary:hover {
+    border-color: rgba(127, 182, 232, .5);
+    background: var(--card-bg-hover);
+}
+
+/* 卡片 / 工具栏 */
+html[data-v4skin="whale"] .toolbar { border-bottom: 1px solid var(--border); }
+html[data-v4skin="whale"] .toolbar-title { color: var(--text); }
+html[data-v4skin="whale"] .toolbar-count { color: var(--text-muted); }
+html[data-v4skin="whale"] .movie-card,
+html[data-v4skin="whale"] .movie-card-compact {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+html[data-v4skin="whale"] .movie-title-below {
+    background: transparent;
+    color: var(--text);
+}
+html[data-v4skin="whale"] .movie-title-below .mtb-meta { color: var(--text-muted); }
+html[data-v4skin="whale"] .movie-card:hover .movie-poster-wrap,
+html[data-v4skin="whale"] .movie-card-compact:hover .movie-poster-wrap {
+    outline: 1px solid rgba(127, 182, 232, .55);
+    outline-offset: -1px;
+}
+html[data-v4skin="whale"] .card-progress { background: rgba(127, 182, 232, .14); }
+html[data-v4skin="whale"] .card-progress-fill,
+html[data-v4skin="whale"] .card-progress::after {
+    background: linear-gradient(90deg, var(--accent), #E6CC98);
+    box-shadow: 0 0 7px rgba(211, 176, 116, .55);
+}
+html[data-v4skin="whale"] .movie-grid > .movie-card::before { background-color: var(--sprocket-bg); }
+html[data-v4skin="whale"] .stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    box-shadow: none;
+}
+
+/* 详情抽屉 / 弹窗：金线起笔 + 金蓝双材质 */
+html[data-v4skin="whale"] #detailModal.modal { background: rgba(3, 8, 18, .72); }
+html[data-v4skin="whale"] #detailModal .modal-content,
+html[data-v4skin="whale"] #detailModal .detail-modal {
+    background: linear-gradient(168deg, rgba(16, 32, 54, .98), rgba(7, 15, 28, .99));
+    border: 1px solid var(--border-strong);
+    border-left-color: var(--accent-line);
+    color: var(--text);
+    box-shadow: 0 24px 64px -22px rgba(0, 0, 0, .85), 0 0 0 1px rgba(211, 176, 116, .10);
+}
+html[data-v4skin="whale"] .detail-title { color: var(--text); }
+html[data-v4skin="whale"] .detail-avid {
+    background: rgba(211, 176, 116, .10);
+    color: var(--accent);
+    border: 1px solid var(--accent-line);
+}
+html[data-v4skin="whale"] .detail-section h4 { color: #A7BED8; }
+html[data-v4skin="whale"] .detail-overview { color: #D9E5F3; }
+html[data-v4skin="whale"] .detail-head-meta .hm { border-bottom-color: var(--border); }
+html[data-v4skin="whale"] .detail-head-meta .hm b { color: var(--text-muted); }
+html[data-v4skin="whale"] .detail-head-meta .hm span { color: var(--text); }
+html[data-v4skin="whale"] .detail-scroll { background: transparent; }
+html[data-v4skin="whale"] .detail-tag,
+html[data-v4skin="whale"] .detail-actress {
+    background: rgba(127, 182, 232, .10);
+    border: 1px solid rgba(127, 182, 232, .24);
+    color: #CFE0F2;
+}
+html[data-v4skin="whale"] .detail-path { background: rgba(8, 17, 31, .5); color: var(--text-muted); }
+html[data-v4skin="whale"] .detail-primary-actions .btn-primary {
+    background: linear-gradient(180deg, #8CC0EE, #5E96CD);
+    border-color: var(--accent-line);
+    color: #08131F;
+}
+
+/* AI 对话 / 输入卡 / 用户气泡（鲸尾缺口） */
+html[data-v4skin="whale"] .home-chat,
+html[data-v4skin="whale"] .home-ai,
+html[data-v4skin="whale"] #aiAssistant {
+    background: var(--whale-glass);
+    border: 1px solid var(--border);
+    box-shadow: none;
+}
+html[data-v4skin="whale"] .home-msg.ai .bubble,
+html[data-v4skin="whale"] .ai-msg.assistant .bubble {
+    background: rgba(12, 26, 46, .78);
+    border: 1px solid rgba(127, 182, 232, .20);
+    color: var(--text);
+}
+html[data-v4skin="whale"] .home-msg.user .bubble,
+html[data-v4skin="whale"] .ai-msg.user .bubble {
+    background: linear-gradient(135deg, #2F6FB8, #1E4C86);
+    border: 1px solid rgba(211, 176, 116, .38);
+    border-radius: 15px 15px 5px 15px;
+    color: #F2F8FF;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+html[data-v4skin="whale"] .home-input-wrap,
+html[data-v4skin="whale"] .ai-composer {
+    background: linear-gradient(180deg, rgba(20, 40, 66, .92), rgba(9, 19, 35, .94));
+    border: 1px solid rgba(211, 176, 116, .32);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 0 40px -20px rgba(127, 182, 232, .7);
+}
+html[data-v4skin="whale"] .home-quick-prompts .hqp,
+html[data-v4skin="whale"] .quick-prompt {
+    background: rgba(127, 182, 232, .09);
+    border: 1px solid rgba(127, 182, 232, .24);
+    color: #CFE0F2;
+}
+html[data-v4skin="whale"] .home-quick-prompts .hqp:hover,
+html[data-v4skin="whale"] .quick-prompt:hover {
+    background: rgba(127, 182, 232, .18);
+    color: #FFFFFF;
+}
+
+/* 设置页 */
+html[data-v4skin="whale"] .settings-nav-item,
+html[data-v4skin="whale"] .settings-card,
+html[data-v4skin="whale"] .settings-group {
+    background: var(--card-bg);
+    border-color: var(--border);
+}
+html[data-v4skin="whale"] .settings-nav-item.active {
+    background: rgba(127, 182, 232, .12);
+    color: var(--primary-strong);
+}
+html[data-v4skin="whale"] .theme-card {
+    background: var(--card-bg);
+    border-color: var(--border);
+}
+html[data-v4skin="whale"] .theme-card.active {
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 1px rgba(211, 176, 116, .30);
+}
+
+/* 鲸鱼娘首屏徽记 / 头像位（只在她出现的地方用金蓝同框） */
+html[data-v4skin="whale"] .home-mascot {
+    border: 2px solid var(--accent-line);
+    box-shadow: 0 0 0 4px rgba(211, 176, 116, .08), 0 0 22px rgba(127, 182, 232, .35);
+}
+html[data-v4skin="whale"] .ai-avatar,
+html[data-v4skin="whale"] .ai-top-avatar {
+    border: 1px solid var(--accent-line);
+    background-image: url("/img/whale/closeup-v2.webp");
+    background-size: cover;
+    background-position: center 32%;
+    color: transparent;
+}
+
+/* 皮肤切换点：月光金环 + 深海蓝芯 */
+.v4-skin-btn[data-skin="whale"] .v4-dot {
+    background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);
+    box-shadow: inset 0 0 0 1px rgba(211, 176, 116, .75);
+}
+
+/* 压低动效 */
+@media (prefers-reduced-motion: reduce) {
+    #whaleAmbience .wa-mote,
+    #whaleAmbience .wa-whale { animation: none !important; }
+    html[data-v4skin="whale"] * { scroll-behavior: auto !important; }
+}

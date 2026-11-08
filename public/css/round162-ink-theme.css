@@ -1,0 +1,376 @@
+/* ============================================================================
+   round162 · 墨 · Ink
+   初版黑发看板娘的专属皮肤：墨黑 + 纸灰 + 一点朱红。
+   结构语言不是换色：朱红细线、档案编号、方角卡片、宋体大标题。
+   ============================================================================ */
+
+html[data-v4skin="ink"] body,
+html[data-v4skin="ink"] body.dark {
+    --bg: #08080A;
+    --bg-elevated: #101013;
+    --card-bg: #131316;
+    --card-bg-hover: #19191D;
+    --text: #EDE9E1;
+    --text-muted: #9C978F;
+    --text-faint: #6C6862;
+    --border: #27272B;
+    --border-strong: #3A3A40;
+    --primary: #C8443C;
+    --primary-strong: #E15A50;
+    --primary-soft: rgba(200, 68, 60, .14);
+    --danger: #E15A50;
+    --danger-soft: rgba(225, 90, 80, .14);
+    --gold-primary: #C8443C;
+    --accent: #C8443C;
+    --accent-soft: rgba(200, 68, 60, .12);
+    --accent-line: rgba(200, 68, 60, .46);
+    --sprocket-bg: #111113;
+    --sprocket-hole: #08080A;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .7);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .9);
+    --cv-glass-rgb: 19, 19, 22;
+    --cv-glass-edge: rgba(237, 233, 225, .10);
+    --cv-glass-edge-2: rgba(0, 0, 0, .55);
+    --cv-glass-shadow: 0 30px 80px -24px rgba(0, 0, 0, .9);
+    --cv-glass-spec: linear-gradient(160deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 46%);
+    --cv-scrim-rgb: 8, 8, 10;
+    --cv-scrim-strong-rgb: 13, 13, 16;
+}
+
+html[data-v4skin="ink"] body {
+    background:
+        radial-gradient(52% 40% at 86% 0%, rgba(200, 68, 60, .11), transparent 66%),
+        radial-gradient(40% 34% at 8% 18%, rgba(237, 233, 225, .035), transparent 64%),
+        linear-gradient(180deg, #0B0B0D 0%, #08080A 52%, #060607 100%);
+    background-attachment: fixed;
+}
+html[data-v4skin="ink"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: .5;
+    background-image: repeating-linear-gradient(0deg, rgba(237, 233, 225, .022) 0 1px, transparent 1px 4px);
+}
+html[data-v4skin="ink"] .navbar,
+html[data-v4skin="ink"] .main-container { position: relative; z-index: 1; }
+
+html[data-v4skin="ink"] ::selection { background: rgba(200, 68, 60, .3); color: #FFF6F2; }
+html[data-v4skin="ink"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-v4skin="ink"] ::-webkit-scrollbar-track { background: #08080A; }
+html[data-v4skin="ink"] ::-webkit-scrollbar-thumb {
+    background: #333338;
+    border: 2px solid #08080A;
+    border-radius: 999px;
+}
+
+/* ---------- 顶栏 / 侧栏：黑玻璃 + 朱红细线 ---------- */
+html[data-v4skin="ink"] .navbar {
+    background: rgba(8, 8, 10, .9);
+    border-bottom: 1px solid rgba(200, 68, 60, .30);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+}
+html[data-v4skin="ink"] .logo {
+    font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+    letter-spacing: .02em;
+}
+html[data-v4skin="ink"] .logo::before { background: #C8443C; box-shadow: 0 0 12px rgba(200, 68, 60, .6); }
+html[data-v4skin="ink"] .search-box input,
+html[data-v4skin="ink"] #searchInput {
+    background: #0F0F12;
+    border-color: #2A2A2E;
+    color: var(--text);
+}
+html[data-v4skin="ink"] #searchInput:focus {
+    border-color: rgba(200, 68, 60, .55);
+    box-shadow: 0 0 0 3px rgba(200, 68, 60, .13);
+}
+html[data-v4skin="ink"] .theme-toggle {
+    background: #101013;
+    border-color: #2A2A2E;
+    color: var(--text);
+}
+html[data-v4skin="ink"] .theme-toggle:hover { border-color: #C8443C; color: #E15A50; }
+
+html[data-v4skin="ink"] .sidebar {
+    background: linear-gradient(180deg, #0B0B0D, #08080A);
+    border-right: 1px solid #222226;
+}
+html[data-v4skin="ink"] .sidebar h3,
+html[data-v4skin="ink"] .sidebar-section > h3 {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .18em;
+    color: #6C6862;
+}
+html[data-v4skin="ink"] .nav-item {
+    margin: 1px 8px;
+    border-radius: 4px;
+    color: #B9B4AC;
+}
+html[data-v4skin="ink"] .nav-item:hover { background: rgba(237, 233, 225, .045); color: #EDE9E1; }
+html[data-v4skin="ink"] .nav-item.active {
+    background: linear-gradient(90deg, rgba(200, 68, 60, .18), rgba(200, 68, 60, .02) 82%) !important;
+    box-shadow: inset 2px 0 0 #C8443C;
+    color: #FFF3EF !important;
+}
+
+/* ---------- 按钮 / 输入 ---------- */
+html[data-v4skin="ink"] .btn:not(.btn-secondary):not(.btn-danger),
+html[data-v4skin="ink"] .btn-primary {
+    background: #C8443C;
+    border-color: #C8443C;
+    color: #FFF6F2;
+}
+html[data-v4skin="ink"] .btn:not(.btn-secondary):not(.btn-danger):hover,
+html[data-v4skin="ink"] .btn-primary:hover { background: #E15A50; border-color: #E15A50; }
+html[data-v4skin="ink"] .btn-secondary {
+    background: #101013;
+    border-color: #2A2A2E;
+    color: #C9C4BB;
+}
+html[data-v4skin="ink"] .settings-input,
+html[data-v4skin="ink"] .select-input {
+    background: #0F0F12 !important;
+    border-color: #2A2A2E !important;
+    color: #EDE9E1 !important;
+}
+
+/* ---------- 首屏：墨色档案 ---------- */
+.ik-hero { display: none; }
+html[data-v4skin="ink"] body #homeView.active {
+    grid-template-areas:
+        "hero hero"
+        "stage stage"
+        "chat rank"
+        "cal cal" !important;
+}
+html[data-v4skin="ink"] .ik-hero {
+    grid-area: hero;
+    display: block;
+    position: relative;
+    min-height: 300px;
+    overflow: hidden;
+    border-radius: 6px;
+    border: 1px solid #2A2A2E;
+    background: #0B0B0D;
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-art {
+    object-position: 74% 26%;
+    filter: saturate(.82) contrast(1.04);
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-veil {
+    background:
+        linear-gradient(90deg, rgba(8, 8, 10, .98) 0%, rgba(8, 8, 10, .90) 34%, rgba(8, 8, 10, .30) 66%, rgba(8, 8, 10, .10) 100%),
+        linear-gradient(0deg, rgba(8, 8, 10, .78), transparent 60%);
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-inner {
+    max-width: 620px;
+    padding: 32px 44px;
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-kicker {
+    margin-bottom: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .22em;
+    color: #C8443C;
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-greet {
+    margin: 0 0 8px;
+    font-size: 12.5px;
+    letter-spacing: .06em;
+    color: #A9A39A;
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-title {
+    margin: 0 0 18px;
+    font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+    font-size: 52px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    color: #F2EEE6;
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-title::after {
+    content: "";
+    display: block;
+    width: 54px;
+    height: 2px;
+    margin-top: 14px;
+    background: #C8443C;
+}
+html[data-v4skin="ink"] .ik-index {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    gap: 2px 14px;
+    margin: 0 0 16px;
+    padding: 8px 12px 8px 14px;
+    border-left: 2px solid #C8443C;
+    background: rgba(237, 233, 225, .035);
+    font-family: var(--font-mono);
+}
+html[data-v4skin="ink"] .ik-index span {
+    font-size: 8.5px;
+    letter-spacing: .18em;
+    color: #7D7871;
+}
+html[data-v4skin="ink"] .ik-index b { font-size: 12px; color: #E15A50; letter-spacing: .06em; }
+html[data-v4skin="ink"] .ik-index i {
+    grid-column: 1 / -1;
+    font-style: normal;
+    font-size: 10px;
+    letter-spacing: .08em;
+    color: #A9A39A;
+}
+html[data-v4skin="ink"] .ik-hero .th-hero-stats span { color: #A9A39A; }
+html[data-v4skin="ink"] .ik-hero .th-hero-stats b { color: #F2EEE6; font-family: "Songti SC", "STSong", serif; }
+html[data-v4skin="ink"] .ik-hero .th-hero-stats i { color: #7D7871; }
+html[data-v4skin="ink"] .ik-hero .th-hero-rail span { background: rgba(200, 68, 60, .5); }
+
+/* ---------- 首页 AI 卡 / 热度榜：哑光黑 + 朱红结构线 ---------- */
+html[data-v4skin="ink"] .home-chat-card {
+    border-radius: 6px !important;
+    border: 1px solid #2A2A2E !important;
+    border-top: 2px solid rgba(200, 68, 60, .75) !important;
+    background: linear-gradient(180deg, #121215, #0E0E11) !important;
+    box-shadow: 0 26px 56px -30px rgba(0, 0, 0, .95) !important;
+}
+html[data-v4skin="ink"] .home-chat-head {
+    border-bottom-color: #26262A !important;
+    background: rgba(237, 233, 225, .025) !important;
+}
+html[data-v4skin="ink"] .hch-title { letter-spacing: .04em; }
+html[data-v4skin="ink"] .hch-sub { color: #7D7871 !important; font-family: var(--font-mono); font-size: 10px; }
+html[data-v4skin="ink"] .hch-session-btn,
+html[data-v4skin="ink"] .hch-tool-btn {
+    background-color: #0E0E11 !important;
+    border-color: #313136 !important;
+    color: #C9C4BB !important;
+}
+html[data-v4skin="ink"] .home-chat-input { border-top-color: #26262A !important; }
+html[data-v4skin="ink"] .home-quick-prompts .hqp-pill {
+    border-radius: 4px !important;
+    border-color: #313136 !important;
+    background: #101013 !important;
+    color: #B9B4AC;
+}
+html[data-v4skin="ink"] .home-quick-prompts .hqp-pill:hover {
+    border-color: rgba(200, 68, 60, .6) !important;
+    color: #F2EEE6;
+}
+html[data-v4skin="ink"] .home-chat-messages .bubble,
+html[data-v4skin="ink"] .home-msg.ai .bubble {
+    background: #101013 !important;
+    border-color: #2A2A2E !important;
+    color: #DDD8CF !important;
+}
+html[data-v4skin="ink"] .home-msg.user .bubble {
+    background: #2A1210 !important;
+    border-color: rgba(200, 68, 60, .5) !important;
+    color: #FFEDE8 !important;
+}
+html[data-v4skin="ink"] .home-rank {
+    border-radius: 6px;
+    border: 1px solid #2A2A2E;
+    background: linear-gradient(180deg, #111114, #0C0C0F);
+}
+html[data-v4skin="ink"] .home-rank-title { font-family: "Songti SC", "STSong", serif; letter-spacing: .01em; }
+html[data-v4skin="ink"] .home-rank-tab.active { background: #C8443C; border-color: #C8443C; color: #FFF6F2; }
+html[data-v4skin="ink"] .home-rank .rank-num { color: #C8443C; font-family: var(--font-mono); }
+
+/* ---------- 今夜主映 / 卡片 / 榜单 ---------- */
+html[data-v4skin="ink"] .hcs-shell {
+    border-radius: 6px !important;
+    border-color: #2E2E33 !important;
+    background:
+        linear-gradient(90deg, rgba(9, 9, 11, .97) 0%, rgba(9, 9, 11, .88) 48%, rgba(9, 9, 11, .34) 100%),
+        url("/img/ink/hero-2.webp") center 42% / cover no-repeat,
+        #0B0B0D !important;
+}
+html[data-v4skin="ink"] .hcs-sprocket {
+    background-color: #121215 !important;
+    border-bottom-color: rgba(200, 68, 60, .28) !important;
+    background-image: repeating-linear-gradient(90deg, transparent 0 10px, rgba(200, 68, 60, .30) 10px 18px, transparent 18px 28px) !important;
+}
+html[data-v4skin="ink"] .hcs-kicker { color: #E15A50 !important; border-color: rgba(200, 68, 60, .4) !important; background: rgba(8, 8, 10, .7) !important; }
+html[data-v4skin="ink"] .hcs-title { font-family: "Songti SC", "STSong", serif; }
+html[data-v4skin="ink"] .movie-card,
+html[data-v4skin="ink"] .movie-card-compact {
+    border-radius: 5px !important;
+}
+html[data-v4skin="ink"] .movie-card:hover { border-color: rgba(200, 68, 60, .55) !important; }
+html[data-v4skin="ink"] .rank-item:hover { border-color: rgba(200, 68, 60, .45) !important; }
+
+/* ---------- AI 头像 / 主题卡预览 ---------- */
+html[data-v4skin="ink"] .ai-avatar,
+html[data-v4skin="ink"] .ai-top-avatar {
+    border: 1px solid rgba(200, 68, 60, .42);
+    background-image: var(--ink-closeup, url("/img/ink/closeup-1.webp"));
+    background-size: cover;
+    background-position: center 28%;
+    color: transparent;
+}
+html body .theme-card[data-v4skin="ink"] {
+    background-image:
+        linear-gradient(90deg, rgba(8, 8, 10, .95), rgba(8, 8, 10, .30)),
+        var(--ink-closeup, url("/img/ink/closeup-1.webp")) !important;
+    background-size: cover !important;
+    background-position: center 26% !important;
+}
+html body .theme-card[data-v4skin="ink"] .theme-card-info { color: #EDE9E1; }
+html body .theme-card[data-v4skin="ink"] .theme-card-info > div:first-child { color: #F5F1E9 !important; }
+html body .theme-card[data-v4skin="ink"] .theme-card-info div:last-child { color: #A9A39A !important; }
+html[data-v4skin="ink"] .theme-card.active { border-color: rgba(200, 68, 60, .6) !important; }
+
+/* AI 工作台空态头像：用特写图，而不是一个通用图标 */
+html[data-v4skin="ink"] #aiModal .dsn-greet-mark {
+    width: 60px;
+    height: 60px;
+    margin: 0 auto 12px !important;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(200, 68, 60, .45);
+    background: var(--ink-closeup, url("/img/ink/closeup-1.webp")) center 26% / cover no-repeat;
+    box-shadow: 0 0 0 3px rgba(200, 68, 60, .08);
+    font-size: 0 !important;
+    color: transparent;
+}
+html[data-v4skin="ink"] #aiModal .ai-greet-ic {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(200, 68, 60, .45);
+    background: var(--ink-closeup, url("/img/ink/closeup-1.webp")) center 26% / cover no-repeat;
+    box-shadow: 0 0 0 3px rgba(200, 68, 60, .08);
+}
+html[data-v4skin="ink"] #aiModal .ai-greet-ic svg { display: none; }
+
+/* 顶栏风格圆点 */
+.v4-skin-btn[data-skin="ink"] .v4-dot {
+    background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);
+}
+
+/* 首屏图随机轮换时的淡入淡出 */
+.th-hero-art,
+.wh-hero-art { transition: opacity .35s ease; }
+.th-hero-art.hero-swapping,
+.wh-hero-art.hero-swapping { opacity: 0 !important; }
+
+@media (max-width: 860px) {
+    html[data-v4skin="ink"] body #homeView.active {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: auto auto auto auto auto !important;
+        grid-template-areas:
+            "hero"
+            "stage"
+            "chat"
+            "rank"
+            "cal" !important;
+    }
+    html[data-v4skin="ink"] .ik-hero { min-height: 260px; }
+    html[data-v4skin="ink"] .ik-hero .th-hero-inner { padding: 22px 20px; }
+    html[data-v4skin="ink"] .ik-hero .th-hero-title { font-size: 34px; }
+    html[data-v4skin="ink"] .ik-hero .th-hero-art { object-position: 68% 24%; }
+}

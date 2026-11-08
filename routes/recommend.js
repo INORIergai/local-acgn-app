@@ -132,6 +132,17 @@ router.get('/similar/:movieId', (req, res) => {
 });
 
 // 随机推荐
+router.get('/random-categories', (req, res) => {
+    try {
+        const rows = db.prepare("SELECT COALESCE(NULLIF(type,''),'jav') AS t, COUNT(*) AS c FROM movies GROUP BY t").all();
+        const counts = {};
+        for (const r of rows) counts[r.t] = r.c;
+        res.json({ code: 0, data: counts });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
 router.get('/random', (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 12;

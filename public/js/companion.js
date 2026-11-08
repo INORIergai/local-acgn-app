@@ -520,7 +520,7 @@
                 });
                 const d = await res.json();
                 if (d.code === 0 && d.data && (d.data.path || d.data.wavPath)) {
-                    if (d.data.cached) hideVoiceTip();
+                    hideVoiceTip();
                     playAudioWithLipSync(d.data.path || d.data.wavPath, tts.lipSync !== false);
                 } else {
                     showVoiceTip('语音生成失败：' + ((d.msg || '').slice(0, 40) || '未知错误'), 4000);

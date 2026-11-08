@@ -1,0 +1,250 @@
+/* ============================================================
+   round153 · V6：AI 出聊天框（语义搜索 / 观前导览）与在线观看原生发现页
+   只做新组件，不改任何既有布局。
+   ============================================================ */
+
+/* ---------- Ctrl+K / 字面 0 结果：AI 语义选片墙 ---------- */
+.ai-ss {
+    padding: 18px 20px 28px;
+    max-width: 1180px;
+    margin: 0 auto;
+}
+.ai-ss-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.ai-ss-kicker {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    color: #8a5a12;
+    border: 1px solid rgba(138, 90, 18, .28);
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: rgba(138, 90, 18, .07);
+}
+.ai-ss-head b { font-family: "Songti SC", "Noto Serif SC", Georgia, serif; font-size: 17px; }
+.ai-ss-hint { color: var(--text-muted, #8a7d68); font-size: 12.5px; }
+.ai-ss-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 14px;
+}
+.ai-ss-card {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(120, 92, 48, .18);
+    background: #fdfaf3;
+    cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.ai-ss-card:hover, .ai-ss-card:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(138, 90, 18, .42);
+    box-shadow: 0 12px 28px rgba(60, 42, 14, .12);
+    outline: none;
+}
+.ai-ss-poster {
+    width: 92px;
+    aspect-ratio: 3 / 4;
+    border-radius: 8px;
+    overflow: hidden;
+    background: linear-gradient(145deg, #2a2118, #161210);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .22);
+}
+.ai-ss-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ai-ss-body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ai-ss-title {
+    font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-size: 14.5px;
+    font-weight: 700;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ai-ss-meta { font-family: var(--font-mono, monospace); font-size: 10.5px; color: #8a7d68; letter-spacing: .05em; }
+.ai-ss-why {
+    font-size: 12px;
+    line-height: 1.55;
+    color: #5c4f3e;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ai-ss-go { margin-top: auto; font-size: 11.5px; font-weight: 700; color: #8a5a12; }
+.ai-ss-load {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 6px;
+    padding: 28px 4px;
+}
+.ai-ss-load i {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #8a5a12;
+    opacity: .35;
+    animation: aiDots 1s infinite ease-in-out;
+}
+.ai-ss-load i:nth-child(2) { animation-delay: .15s; }
+.ai-ss-load i:nth-child(3) { animation-delay: .3s; }
+@keyframes aiDots { 0%, 100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-5px); } }
+.ai-ss-empty {
+    grid-column: 1 / -1;
+    padding: 30px 8px;
+    color: #8a7d68;
+    font-size: 13px;
+}
+
+/* 夜场皮肤 */
+html[data-v4skin="matinee"] .ai-ss-card {
+    background: #1f1b16;
+    border-color: rgba(229, 169, 60, .18);
+}
+html[data-v4skin="matinee"] .ai-ss-card:hover { border-color: rgba(229, 169, 60, .5); box-shadow: 0 12px 28px rgba(0, 0, 0, .45); }
+html[data-v4skin="matinee"] .ai-ss-title { color: #F3ECDD; }
+html[data-v4skin="matinee"] .ai-ss-why { color: #C9BFAE; }
+html[data-v4skin="matinee"] .ai-ss-meta { color: #9c9182; }
+html[data-v4skin="matinee"] .ai-ss-go { color: #EBC374; }
+html[data-v4skin="matinee"] .ai-ss-kicker { color: #EBC374; border-color: rgba(229, 169, 60, .4); background: rgba(229, 169, 60, .1); }
+html[data-v4skin="matinee"] .ai-ss-hint, html[data-v4skin="matinee"] .ai-ss-empty { color: #9c9182; }
+
+/* 深海皮肤 */
+html[data-v4skin="whale"] .ai-ss-card {
+    background: #101F35;
+    border-color: rgba(127, 182, 232, .18);
+    color: #DCE9F7;
+}
+html[data-v4skin="whale"] .ai-ss-card:hover { border-color: rgba(127, 182, 232, .5); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); }
+html[data-v4skin="whale"] .ai-ss-title { color: #EAF4FF; }
+html[data-v4skin="whale"] .ai-ss-why { color: #A8C4DE; }
+html[data-v4skin="whale"] .ai-ss-meta { color: #6F8EB0; }
+html[data-v4skin="whale"] .ai-ss-go { color: #D3B074; }
+html[data-v4skin="whale"] .ai-ss-kicker { color: #D3B074; border-color: rgba(211, 176, 116, .38); background: rgba(211, 176, 116, .1); }
+html[data-v4skin="whale"] .ai-ss-hint, html[data-v4skin="whale"] .ai-ss-empty { color: #7E9BB8; }
+
+/* ---------- 详情抽屉：AI 观前导览签 ---------- */
+.detail-ai-guide {
+    margin: 2px 0 18px;
+    padding: 14px 16px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(138, 90, 18, .24);
+    background:
+        linear-gradient(180deg, rgba(255, 252, 244, .96), rgba(247, 240, 226, .96));
+    box-shadow: 0 6px 18px rgba(60, 42, 14, .07);
+}
+.detail-ai-guide .dag-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.detail-ai-guide .dag-kicker {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    color: #8a5a12;
+}
+.detail-ai-guide .dag-src { font-size: 10.5px; color: #9a8a71; }
+.detail-ai-guide .dag-row {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 8px;
+    padding: 6px 0;
+}
+.detail-ai-guide .dag-row + .dag-row { border-top: 1px dashed rgba(120, 92, 48, .14); }
+.detail-ai-guide .dag-ico { font-size: 14px; line-height: 1.6; }
+.detail-ai-guide .dag-row b { display: block; font-size: 11.5px; color: #7a6040; margin-bottom: 2px; }
+.detail-ai-guide .dag-row p { margin: 0; font-size: 13px; line-height: 1.65; color: #4b4033; }
+
+html[data-v4skin="matinee"] .detail-ai-guide {
+    border-color: rgba(229, 169, 60, .26);
+    background: linear-gradient(180deg, rgba(38, 32, 24, .95), rgba(27, 23, 18, .96));
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+html[data-v4skin="matinee"] .detail-ai-guide .dag-kicker { color: #EBC374; }
+html[data-v4skin="matinee"] .detail-ai-guide .dag-src { color: #9c9182; }
+html[data-v4skin="matinee"] .detail-ai-guide .dag-row b { color: #C9BFAE; }
+html[data-v4skin="matinee"] .detail-ai-guide .dag-row p { color: #E7DFD0; }
+html[data-v4skin="matinee"] .detail-ai-guide .dag-row + .dag-row { border-top-color: rgba(229, 169, 60, .16); }
+
+html[data-v4skin="whale"] .detail-ai-guide {
+    border-color: rgba(127, 182, 232, .28);
+    background: linear-gradient(180deg, rgba(18, 33, 54, .96), rgba(12, 24, 40, .96));
+}
+html[data-v4skin="whale"] .detail-ai-guide .dag-kicker { color: #D3B074; }
+html[data-v4skin="whale"] .detail-ai-guide .dag-src { color: #7E9BB8; }
+html[data-v4skin="whale"] .detail-ai-guide .dag-row b { color: #A8C4DE; }
+html[data-v4skin="whale"] .detail-ai-guide .dag-row p { color: #DCE9F7; }
+html[data-v4skin="whale"] .detail-ai-guide .dag-row + .dag-row { border-top-color: rgba(127, 182, 232, .16); }
+
+/* ---------- 在线观看：原生「发现」入口 ---------- */
+.ms-discover {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    padding: 4px 0 12px;
+}
+.ms-source-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(120, 92, 48, .18);
+    background: #fdfaf3;
+    cursor: pointer;
+    text-align: left;
+    transition: transform .15s ease, border-color .15s ease;
+}
+.ms-source-card:hover { transform: translateY(-2px); border-color: rgba(138, 90, 18, .45); }
+.ms-source-card img { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; }
+.ms-source-card b { font-size: 13.5px; color: #2B241B; }
+.ms-source-card span { display: block; font-size: 11px; color: #6D604E; }
+
+/* 夜 / 鲸：源站卡跟随深色皮肤，别在深色界面里铺一墙白卡 */
+html[data-v4skin="matinee"] .ms-source-card {
+    background: #1F1B16;
+    border-color: rgba(229, 169, 60, .22);
+    color: #F3ECDD;
+}
+html[data-v4skin="matinee"] .ms-source-card:hover { border-color: rgba(229, 169, 60, .55); }
+html[data-v4skin="matinee"] .ms-source-card b { color: #F3ECDD; }
+html[data-v4skin="matinee"] .ms-source-card span { color: #A79B88; }
+html[data-v4skin="whale"] .ms-source-card {
+    background: #101F35;
+    border-color: rgba(127, 182, 232, .24);
+    color: #EAF4FF;
+}
+html[data-v4skin="whale"] .ms-source-card:hover { border-color: rgba(127, 182, 232, .58); }
+html[data-v4skin="whale"] .ms-source-card b { color: #EAF4FF; }
+html[data-v4skin="whale"] .ms-source-card span { color: #8FA9C4; }
+
+/* 激活 tab：纸皮肤白字压深琥珀可过；夜/鲸的主色偏亮，必须换深字 */
+html[data-v4skin="matinee"] .ms-tab.on { color: #241704; }
+html[data-v4skin="whale"] .ms-tab.on { color: #06101C; }
+.ms-alt {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px dashed rgba(138, 90, 18, .32);
+    border-radius: 10px;
+    background: rgba(138, 90, 18, .05);
+}
+.ms-alt-head { font-size: 12px; font-weight: 700; color: #7a6040; margin-bottom: 8px; }
+.ms-alt-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ms-alt-item { width: auto !important; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ai-ss-card, .ms-source-card { transition: none; }
+    .ai-ss-load i { animation: none; }
+}

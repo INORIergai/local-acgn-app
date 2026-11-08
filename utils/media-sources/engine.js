@@ -59,6 +59,8 @@ async function grab(url, opts = {}) {
     if (opts.referer) headers.Referer = opts.referer;
     if (opts.cookie) headers.Cookie = opts.cookie;
     const init = { headers, redirect: 'follow', signal: AbortSignal.timeout(timeout) };
+    if (opts.method) init.method = opts.method;
+    if (opts.body !== undefined) init.body = opts.body;
 
     let lastErr = null;
     const attempts = [];
@@ -223,6 +225,27 @@ async function searchOn(source, keyword, opts = {}) {
 
     const items = parseSearchPage(r.text, source, url);
     return { items, error: items.length ? '' : '选择器没匹配到条目（站点可能改版）' };
+}
+
+/**
+ * r153 · D：源站目录/发现页。
+ * 大多数声明式源只给了 searchUrl；把 {keyword} 抹空后请求，很多站会回全站列表。
+ * 解析复用 parseSearchPage，所以站点改版只需改源定义，不用动这里。
+ */
+async function catalogOf(source, opts = {}) {
+    const sc = source.def.arguments.searchConfig || {};
+    if (source.factoryId === 'rss') return { items: [], error: 'BT 源不支持无词目录浏览' };
+    const tpl = sc.catalogUrl || sc.searchUrl || '';
+    if (!tpl) return { items: [], error: '该源没有目录地址' };
+    let url = tpl.replace('{keyword}', '').replace(/\{page\}/g, String(opts.page || 1));
+    url = url.replace(/[^\x21-\x7E]/g, (c) => encodeURIComponent(c))
+        .replace(/[\[\]{}"<>\\^`| ]/g, (c) => encodeURIComponent(c));
+    const r = await grab(url, { timeout: opts.timeout || 15000, referer: url });
+    if (!r.ok || !r.text) return { items: [], error: r.error || ('HTTP ' + r.status) };
+    let items = parseSearchPage(r.text, source, url);
+    if (!items.length) return { items: [], error: '目录页没有匹配到条目（站点可能改版或必须带关键词）' };
+    if (opts.limit) items = items.slice(0, opts.limit);
+    return { items, error: '' };
 }
 
 function parseSearchPage(html, source, pageUrl) {
@@ -598,6 +621,7 @@ module.exports = {
     loadSources,
     getSource,
     searchOn,
+    catalogOf,
     episodesOf,
     resolveVideo,
     probeSource,

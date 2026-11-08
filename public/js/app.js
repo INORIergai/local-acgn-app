@@ -236,6 +236,17 @@ const api = {
         const data = await res.json();
         return data.data || [];
     },
+
+    async semanticSearch(q, privacy) {
+        const res = await fetch('/api/ai/semantic-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q, privacy: privacy || '' })
+        });
+        const data = await res.json();
+        if (data.code !== 0) throw new Error(data.msg || 'AI 搜索失败');
+        return { items: data.data || [], source: data.source || 'recall' };
+    },
     
     async getMovieDetail(id) {
         const res = await fetch(`/api/movie/${id}`);
@@ -7814,6 +7825,20 @@ function renderSettings(config) {
                                     <div style="font-size: 12px; color: var(--text-muted);">暖黑底 · 纸白字 · 琥珀灯</div>
                                 </div>
                             </div>
+                            <div class="theme-card ${getV4Skin() === 'whale' ? 'active' : ''}" data-v4skin="whale" onclick="pickV4Skin('whale')">
+                                <div class="theme-dot" style="background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);"></div>
+                                <div class="theme-card-info">
+                                    <div style="font-weight: 600; font-size: 14px;">🐋 鲸 · Deep Whale</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">深海生物光 · 月光金 · 鲸鱼娘陪伴</div>
+                                </div>
+                            </div>
+                            <div class="theme-card ${getV4Skin() === 'ink' ? 'active' : ''}" data-v4skin="ink" onclick="pickV4Skin('ink')">
+                                <div class="theme-dot" style="background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);"></div>
+                                <div class="theme-card-info">
+                                    <div style="font-weight: 600; font-size: 14px;">墨 · Ink</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">墨黑底 · 纸灰字 · 一点朱红</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -11670,6 +11695,29 @@ let dsnCurrentSessionId = 'main';
 let dsnShowArchived = false;
 let dsnSessionsCache = [];
 
+/* 双入口共用会话：首页对话框与右侧 AI 工作台读写同一个 sessionId。
+ * 任何一处切换对话，另一处必须跟着切换，否则历史会再次分叉。 */
+window.getAISessionId = function () { return dsnCurrentSessionId || 'main'; };
+window.setAISessionId = function (sid) {
+    dsnCurrentSessionId = sid || 'main';
+    window.__aiHistory = [];
+};
+window.syncAIChatViews = function (sid) {
+    if (!sid) return;
+    if (sid !== dsnCurrentSessionId) dsnCurrentSessionId = sid;
+    if (window.Home && typeof window.Home.syncFromSession === 'function') {
+        try { window.Home.syncFromSession(sid); } catch (e) { }
+    }
+    if (window.Home && typeof window.Home.refreshSessions === 'function') {
+        try { window.Home.refreshSessions(); } catch (e) { }
+    }
+    const modal = document.getElementById('aiModal');
+    if (modal && modal.classList.contains('show')) {
+        try { loadAIHistory(sid); } catch (e) { }
+        try { loadDsnSessions(); } catch (e) { }
+    }
+};
+
 function dsnHandleInputKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -11767,7 +11815,7 @@ async function loadDsnSessions() {
 
 async function dsnSwitchSession(sid) {
     if (!sid) return;
-    dsnCurrentSessionId = sid;
+    window.setAISessionId(sid);
     const cur = dsnSessionsCache.find(s => s.id === sid);
     const topEl = document.getElementById('dsnTopicText');
     if (topEl) topEl.textContent = cur ? cur.title : (sid === 'main' ? '默认对话' : '会话 ' + sid.slice(0, 6));
@@ -11777,6 +11825,9 @@ async function dsnSwitchSession(sid) {
     });
 
     await loadAIHistory(sid);
+    if (window.Home && typeof window.Home.syncFromSession === 'function') {
+        try { window.Home.syncFromSession(sid); } catch (e) { }
+    }
 }
 
 async function dsnNewSession() {
@@ -12093,7 +12144,7 @@ function showAIAssistant() {
 
 const AI_GREETING_HTML = `
     <div style="text-align:center;color:var(--text-muted);padding:36px 20px;">
-        <div style="font-size:36px;margin-bottom:10px;">👋</div>
+        <div class="dsn-greet-mark" style="font-size:36px;margin-bottom:10px;">👋</div>
         <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px;">我是你的影库全栈智能管家</div>
         <span style="font-size:12.5px;opacity:.8;">支持自然语言搜片、直接播放、切板块、生成智能播单，或随时语音对话</span>
     </div>
@@ -12915,6 +12966,7 @@ async function sendAIMessage() {
                 streamBubble.innerHTML += cardsHtml;
             }
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            if (window.syncAIChatViews) window.syncAIChatViews(dsnCurrentSessionId);
         },
         onError: (err) => {
             document.getElementById(typingId)?.remove();
@@ -13377,9 +13429,14 @@ function switchView(view) {
     if (window.NVX_LONG && typeof window.NVX_LONG.reset === 'function') {
         window.NVX_LONG.reset();
     }
+    /* r153b：离开随机推荐时卸载无限画布，别让 56 个 tile 和 rAF 继续在隐藏视图里跑。 */
+    if (window.CVFolia && window.CVFolia.isMounted()
+        && view !== 'random' && view !== 'random-adult') {
+        window.CVFolia.destroy();
+    }
     /* round42c 隐私分割器：隐私入口在总开关隐藏时一律拦截（防止 hash 恢复等路径绕过）
      * round43：+ 隐私组同款四功能块 */
-    if (['jav', 'anime', 'movies-adult', 'recent-adult', 'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult', 'actresses', 'tags', 'watch', 'watch-hanime'].includes(view)
+    if (['jav', 'anime', 'movies-adult', 'recent-adult', 'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult', 'actresses', 'tags', 'watch', 'watch-hanime', 'watch-origin', 'watch-origin-hanime'].includes(view)
         && typeof isAdultNavHidden === 'function' && isAdultNavHidden()) {
         view = 'movies';
         showNotification('已隐藏', '该入口属于隐私内容，当前处于隐藏状态。可在 设置→隐私内容 里开启，或点顶栏 🔒 解锁');
@@ -13396,7 +13453,9 @@ function switchView(view) {
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
         if (item.dataset.view === view ||
-            ((view === 'guess-grid' || view === 'guess-magic') && item.dataset.view === 'guess')) {
+            ((view === 'guess-grid' || view === 'guess-magic') && item.dataset.view === 'guess') ||
+            (view === 'watch-origin' && item.dataset.view === 'watch') ||
+            (view === 'watch-origin-hanime' && item.dataset.view === 'watch-hanime')) {
             item.classList.add('active');
         }
     });
@@ -13679,23 +13738,67 @@ function switchView(view) {
             break;
         // ★ 四个在线观看板块（第 16 轮）：共用同一套 macOS 窗口与交互，只是站点集合不同。
         //   板块归属由 Features 里的 BOARD_OF_VIEW 决定，这里只负责把 view 名透传过去。
+        // r154：AV / 里番默认走原生流（源站只当数据库，播放用自带播放器）；
+        // 整站内嵌窗口保留为「原站排障」兜底，见下面 watch-origin 系列。
         case 'watch':
-        case 'watch-anime':
-        case 'watch-comic':
-        case 'watch-novel':
         case 'watch-hanime': {
             document.getElementById('movieGrid').style.display = 'none';
             document.getElementById('sortSelect').parentElement.style.display = 'none';
             hideGallery();
+            updateToolbarTitle(currentView === 'watch-hanime' ? '🔞 里番在线观看' : '📺 AV在线观看');
+            if (window.MediaSource && window.MediaSource.show) {
+                window.MediaSource.show('stream', { board: currentView === 'watch-hanime' ? 'hanime' : 'av' });
+            } else if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView);
+            }
+            break;
+        }
+        case 'watch-comic':
+        case 'watch-novel': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            const isNovel = currentView === 'watch-novel';
+            updateToolbarTitle(isNovel ? '📖 小说在线阅读' : '📚 漫画在线观看');
+            if (window.MediaSource && window.MediaSource.show) {
+                window.MediaSource.show('read', { adapter: isNovel ? 'esjzone' : 'dm5', kind: isNovel ? 'novel' : 'manga' });
+            } else if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView);
+            }
+            break;
+        }
+        case 'watch-origin-comic':
+        case 'watch-origin-novel': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle(currentView === 'watch-origin-novel' ? '📖 小说 · 原站排障' : '📚 漫画 · 原站排障');
+            if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView === 'watch-origin-novel' ? 'watch-novel' : 'watch-comic');
+            }
+            break;
+        }
+        case 'watch-anime': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
             const watchTitles = {
-                watch: '📺 AV在线观看',
-                'watch-anime': '🌸 动漫在线观看',
-                'watch-comic': '📚 漫画在线观看',
-                'watch-novel': '📖 小说在线阅读',
-                'watch-hanime': '🔞 里番在线观看'
+                'watch-anime': '🌸 动漫在线观看'
             };
             updateToolbarTitle(watchTitles[currentView] || '📺 在线观看');
             if (window.Features && window.Features.showWatch) window.Features.showWatch(currentView);
+            break;
+        }
+        // 原站排障：整站反代 / iframe 窗口（过 CF 盾、解析器全挂时用）
+        case 'watch-origin':
+        case 'watch-origin-hanime': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle(currentView === 'watch-origin-hanime' ? '🔞 里番 · 原站排障' : '📺 AV · 原站排障');
+            if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView === 'watch-origin-hanime' ? 'watch-hanime' : 'watch');
+            }
             break;
         }
         // round51：聚合在线搜索 —— 我们自己的结果墙（一次搜遍所有在线源，点海报直接播）。
@@ -13744,14 +13847,14 @@ function switchView(view) {
 // ========== 数据加载 ==========
 async function loadMovies(page = 1) {
     currentPage = page;
-    // round42c 隐私分割器：公开「全部影片」默认不展示 AV/里番（privacy=exclude）
-    const movies = await api.getMovies(currentSort, 'all', 'all', page, currentPageSize, 'exclude');
+    /* round42c 隐私分割器：仅当顶栏 🔒 处于「隐藏成人内容」时才排除 AV/里番。
+       r153b：之前无条件 exclude，导致 2865 条全 AV 的库在「全部影片」永远是 0。 */
+    const hasAdultVisible = typeof isAdultNavHidden === 'function' && !isAdultNavHidden();
+    const movies = await api.getMovies(currentSort, 'all', 'all', page, currentPageSize,
+        hasAdultVisible ? '' : 'exclude');
     renderMovies(movies);
     renderPagination();
     updateToolbarTitle('全部影片', currentTotal);
-    // 侧栏「全部影片」计数同步为过滤后的口径
-    const countAllEl = document.getElementById('countAll');
-    if (countAllEl) countAllEl.textContent = currentTotal;
 }
 
 async function loadJavMovies(page = 1) {
@@ -13889,11 +13992,78 @@ async function loadHot(privacy = 'exclude') {
     renderHotRanking(movies);
 }
 
-async function loadRandom(privacy = 'exclude') {
+const RANDOM_CATS = [
+    ['film', '🎬 影视'],
+    ['cartoon', '🌸 动漫'],
+    ['comic', '✒️ 漫画'],
+    ['novel', '📖 小说'],
+    ['anime', '🔞 里番'],
+    ['all', '🌐 全部混排']
+];
+let _randomCat = null;
+let _randomPrivacy = 'exclude';
+let _randomCounts = null;
+/* round153：随机推荐展示模式（无限画布 / 3D 牌堆），默认画布。 */
+let _randomMode = (function () {
+    try { return localStorage.getItem('randomMode') === 'deck' ? 'deck' : 'canvas'; }
+    catch (e) { return 'canvas'; }
+})();
+
+function setRandomMode(mode) {
+    _randomMode = mode === 'deck' ? 'deck' : 'canvas';
+    try { localStorage.setItem('randomMode', _randomMode); } catch (e) { }
+    loadRandom(_randomPrivacy, _randomCat);
+}
+
+async function ensureRandomCategories() {
+    if (_randomCounts) return _randomCounts;
+    try {
+        const r = await (await fetch('/api/recommend/random-categories')).json();
+        if (r.code === 0 && r.data) _randomCounts = r.data;
+    } catch (e) { }
+    return _randomCounts || {};
+}
+
+async function loadRandom(privacy = 'exclude', cat) {
+    _randomPrivacy = privacy;
+    const counts = await ensureRandomCategories();
+    if (cat) _randomCat = cat;
+    /* 默认落在库里真正有内容的分类，而不是永远空着的「影视」。
+       没有分类条件时按馆藏规模挑：小说 > 漫画 > 影视 > 动漫。 */
+    if (!_randomCat) {
+        const order = ['novel', 'comic', 'film', 'cartoon'];
+        _randomCat = order.find(k => (counts[k] || 0) > 0) || 'all';
+    }
+    if (privacy === 'adult' && _randomCat !== 'anime' && _randomCat !== 'all') _randomCat = 'anime';
     updateToolbarTitle(privacy === 'adult' ? ttIcon('adult-random') + ' 随机推荐' : '🎲 随机推荐');
-    let movies = await api.getRandomMovies(48, 'all', privacy);
+    const wantCount = _randomMode === 'canvas' ? 180 : 48;
+    let movies = await api.getRandomMovies(wantCount, _randomCat, privacy);
     if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
-    renderRandomDeckView(movies);
+    renderRandomDeckView(movies, _randomCat);
+}
+
+function randomToolbarHtml(cat, privacy) {
+    const counts = _randomCounts || {};
+    const cats = RANDOM_CATS.filter(([k]) => {
+        if (privacy === 'adult' && !['anime', 'jav', 'all'].includes(k)) return false;
+        if (k === 'all') return true;
+        return (counts[k] || 0) > 0;
+    });
+    return `
+        <div class="random-filter-bar" role="toolbar" aria-label="随机推荐分类">
+            <div class="rfb-pills">
+                ${cats.map(([k, label]) => `<button type="button" class="rfb-pill ${k === cat ? 'active' : ''}" data-random-cat="${k}">${label}</button>`).join('')}
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div class="r153-mode-switch" role="group" aria-label="随机推荐展示模式">
+                    <button type="button" class="r153-mode-btn ${_randomMode === 'canvas' ? 'on' : ''}" data-random-mode="canvas" title="海报磁贴无限画布流：拖拽漫游、滚轮缩放">🧱 无限画布</button>
+                    <button type="button" class="r153-mode-btn ${_randomMode === 'deck' ? 'on' : ''}" data-random-mode="deck" title="3D 轮播牌堆：自动巡航">🎴 3D 牌堆</button>
+                </div>
+                <button type="button" class="rfb-dice" id="randomDiceBtn" title="掷骰换一批">
+                    <span class="rfb-dice-face">🎲</span><span class="rfb-dice-label">掷骰换一批</span>
+                </button>
+            </div>
+        </div>`;
 }
 
 // ========== 随机推荐 3D 轮播卡牌堆（自动巡航 + 3D 视差 + 浮空呼吸） ==========
@@ -13915,26 +14085,47 @@ function _stopDeckAuto() {
     }
 }
 
-function renderRandomDeckView(movies) {
+function renderRandomDeckView(movies, cat) {
+    const category = cat || _randomCat || 'film';
+    const isBookCat = category === 'novel' || category === 'comic';
     _deckMovies = movies || [];
     const grid = document.getElementById('movieGrid');
     const emptyTip = document.getElementById('emptyTip');
     grid.classList.remove('tree-mode');
+    /* 非书籍分类不套竖版书架；书籍分类必须显式打开 3:4 立绘，
+       否则随机推荐里的小说/漫画会被 16:9 卡片裁掉，只剩封面正中一条。 */
+    if (isBookCat) grid.setAttribute('data-book-layout', 'portrait');
+    else grid.removeAttribute('data-book-layout');
     _stopDeckAuto();
 
+    const toolbar = randomToolbarHtml(category, _randomPrivacy);
     if (!_deckMovies.length) {
-        grid.innerHTML = '';
+        grid.innerHTML = toolbar + '<div class="random-empty">这一类暂时没有可推荐的内容，换个分类或掷一次骰子。</div>';
+        bindRandomToolbar();
         emptyTip.style.display = 'block';
         return;
     }
     emptyTip.style.display = 'none';
 
+    /* round153：无限画布流（Folia 式）。48 个槽位环形环绕，拖拽/滚轮/惯性。 */
+    if (_randomMode === 'canvas' && window.CVFolia) {
+        grid.innerHTML = toolbar + '<div id="randomCanvasHost"></div>';
+        bindRandomToolbar();
+        const host = document.getElementById('randomCanvasHost');
+        if (host) window.CVFolia.mount(host, _deckMovies);
+        return;
+    }
+
     // 取前 7 部作为 3D 轮播牌堆展示，其余进入下方网格
     const deckCount = Math.min(7, _deckMovies.length);
     _deckCenterIdx = Math.floor(deckCount / 2);
+    /* 混合分类时按前 7 张的多数决定牌堆比例：书多就用竖版立绘，
+       否则 16:9 的宽幅舞台会把竖版封面裁成中间一条。 */
+    const deckIsPortrait = isBookCat ||
+        (_deckMovies.slice(0, deckCount).filter(m => m.type === 'novel' || m.type === 'comic').length >= Math.ceil(deckCount / 2));
 
-    let html = `
-        <div class="deck-carousel-stage" id="deckStage" style="grid-column:1/-1;margin-bottom:28px;">
+    let html = toolbar + `
+        <div class="deck-carousel-stage ${deckIsPortrait ? 'deck-portrait' : 'deck-wide'}" id="deckStage" style="grid-column:1/-1;margin-bottom:28px;">
             <div class="deck-stage-title">
                 <span class="dst-tag">${uiIcon('spark', 15)} 3D 灵感选片 · 封面流动</span>
                 <span class="dst-hint">自动巡航流转 · 鼠标悬停暂停 · 点击中心卡看详情</span>
@@ -13948,6 +14139,7 @@ function renderRandomDeckView(movies) {
     `;
 
     grid.innerHTML = html;
+    bindRandomToolbar();
     updateDeckCards();
 
     const deckWrap = document.getElementById('deckWrap');
@@ -13991,7 +14183,11 @@ function renderRandomDeckView(movies) {
     const remaining = _deckMovies.slice(deckCount);
     if (remaining.length) {
         const subWrap = document.createElement('div');
-        subWrap.style.cssText = 'grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:16px;';
+        subWrap.className = 'random-subgrid' + (isBookCat ? ' is-portrait' : '');
+        subWrap.style.cssText = 'grid-column:1/-1;display:grid;' +
+            (isBookCat
+                ? 'grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:20px;'
+                : 'grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:18px;');
         subWrap.innerHTML = remaining.map(renderMovieCard).join('');
         grid.appendChild(subWrap);
         // round70：下方网格与主列表共用同一份点击绑定（原来漏绑 → 点了没反应）
@@ -14137,6 +14333,36 @@ function shiftDeck(dir) {
     if (deckCount <= 1) return;
     _deckCenterIdx = (_deckCenterIdx + dir + deckCount) % deckCount;
     updateDeckCards();
+}
+
+function bindRandomToolbar() {
+    const grid = document.getElementById('movieGrid');
+    if (!grid) return;
+    grid.querySelectorAll('[data-random-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.randomMode === _randomMode) return;
+            setRandomMode(btn.dataset.randomMode);
+        });
+    });
+    grid.querySelectorAll('[data-random-cat]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.randomCat === _randomCat) return;
+            loadRandom(_randomPrivacy, btn.dataset.randomCat);
+        });
+    });
+    const dice = document.getElementById('randomDiceBtn');
+    if (!dice) return;
+    dice.addEventListener('click', () => {
+        if (dice.classList.contains('is-rolling')) return;
+        dice.classList.add('is-rolling');
+        /* 骰子转 480ms 再换批：视觉上「这一次真的掷了」，而不是瞬间刷屏。 */
+        setTimeout(() => {
+            loadRandom(_randomPrivacy).finally(() => {
+                const fresh = document.getElementById('randomDiceBtn');
+                if (fresh) setTimeout(() => fresh.classList.remove('is-rolling'), 60);
+            });
+        }, 480);
+    });
 }
 
 function handleDeckCardClick(idx) {
@@ -14347,6 +14573,7 @@ async function showMovieDetail(id) {
         </div>
 
         <div class="detail-scroll">
+            <div id="detailAIGuide" class="detail-ai-guide" hidden></div>
             ${bookNavHtml}
 
             <div class="detail-path">
@@ -14441,6 +14668,7 @@ async function showMovieDetail(id) {
         </div>
     `;
     document.getElementById('detailBody').innerHTML = html;
+    loadDetailAIGuide(movie);
     const dm = document.getElementById('detailModal');
     // round126：把「作品类型」写到弹窗根节点，供排版分流用 ——
     // 视频类（jav / anime / movie…）海报多为横版，左栏塞竖条会失真 ⇒ 走原始排版
@@ -14578,6 +14806,33 @@ function resumePreviewVideos() {
         try { const p = v.play(); if (p && p.catch) p.catch(() => { }); } catch (e) { }
     });
     __previewVideosPaused = [];
+}
+
+/* r153 · C3：详情抽屉的 AI 观前导览签（异步、失败静默隐藏） */
+let __guideToken = 0;
+async function loadDetailAIGuide(movie) {
+    const host = document.getElementById('detailAIGuide');
+    if (!host || !movie) return;
+    const my = ++__guideToken;
+    host.hidden = true;
+    host.innerHTML = '';
+    let d;
+    try {
+        const r = await fetch(`/api/ai/guide/${movie.id}`);
+        d = await r.json();
+    } catch (e) {
+        return;
+    }
+    if (my !== __guideToken || !host.isConnected) return;
+    if (!d || d.code !== 0 || !d.data) return;
+    const g = d.data;
+    if (!g.why && !g.mood && !g.pair) return;
+    host.innerHTML = `
+        <div class="dag-head"><span class="dag-kicker">✨ AI 观前导览</span><span class="dag-src">${g.cached ? '策展记忆' : '为本片即时生成'}</span></div>
+        ${g.why ? `<div class="dag-row"><span class="dag-ico">🫶</span><div><b>为什么适合你</b><p>${escapeHtml(g.why)}</p></div></div>` : ''}
+        ${g.mood ? `<div class="dag-row"><span class="dag-ico">🌡️</span><div><b>节奏与雷点</b><p>${escapeHtml(g.mood)}</p></div></div>` : ''}
+        ${g.pair ? `<div class="dag-row"><span class="dag-ico">🎞️</span><div><b>氛围同频</b><p>${escapeHtml(g.pair)}</p></div></div>` : ''}`;
+    host.hidden = false;
 }
 
 function closeModal() {
@@ -15378,8 +15633,12 @@ function closePlayer() {
 }
 
 // 通用视频播放函数（kind='hls' 时用 hls.js 播 m3u8）
-function showVideoPlayer(videoUrl, title = '视频播放', kind = '') {
+function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0) {
     const video = document.getElementById('videoPlayer');
+    if (startAt > 1) {
+        const seek = () => { try { video.currentTime = startAt; } catch (e) { /* 忽略 */ } };
+        video.addEventListener('loadedmetadata', seek, { once: true });
+    }
     playerSeq++;   // v4.6.0：作废上一次还在路上的 hls.js 挂载（含换片到普通 mp4 的情况）
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
 
@@ -16150,8 +16409,13 @@ var V4_SKIN_KEY = 'v4Skin';
      matinee = 夜 · Night（暖黑 + 纸白 + 琥珀）
    aurora / ambient 下线：它们是另一套语法（紫蓝极光 / 中性炭黑），
    且组件级硬编码没跟上（统计条写死橙色、告警条写死暖橙），留 4 套等于每个组件写 4 遍。 */
-var V4_SKINS = ['classic', 'matinee'];
-var V4_SKIN_NAMES = { classic: '纸 · Paper', matinee: '夜 · Night' };
+var V4_SKINS = ['classic', 'matinee', 'whale', 'ink'];
+var V4_SKIN_NAMES = {
+    classic: '纸 · Paper',
+    matinee: '夜 · Night',
+    whale: '鲸 · Deep Whale',
+    ink: '墨 · Ink'
+};
 /* 老用户的偏好平滑迁移：两套已下线的暗色皮肤都落到「夜」 */
 var V4_SKIN_ALIAS = { aurora: 'matinee', ambient: 'matinee' };
 
@@ -16199,12 +16463,15 @@ function applyAmbientGlow(root) {
 function applyV4Skin(skin) {
     if (V4_SKINS.indexOf(skin) < 0) skin = 'classic';
     document.documentElement.setAttribute('data-v4skin', skin);
+    document.body.classList.toggle('skin-whale', skin === 'whale');
 
     /* round115：皮肤与明暗绑定。
        实测发现 matinee 默认是**浅色暖纸**（theme-matinee.css 的 body:not(.dark) 分支），
        只有 body.dark 才是暖黑夜色 —— 所以「夜 · Night」必须同时给 body 挂 .dark，
        否则点「夜」看到的还是浅色，用户会以为没生效。 */
-    var wantDark = (skin === 'matinee');
+    /* round153：whale 是深海暗场，同样挂 .dark；它自己的深海令牌在
+       round153-whale-theme.css 里以 html[data-v4skin="whale"] 覆盖。 */
+    var wantDark = (skin === 'matinee' || skin === 'whale' || skin === 'ink');
     document.body.classList.toggle('dark', wantDark);
     try { localStorage.setItem('darkMode', wantDark ? 'true' : 'false'); } catch (e) { }
     var tb = document.getElementById('themeToggle');
@@ -16225,15 +16492,146 @@ function applyV4Skin(skin) {
         // 网格是异步渲染的，稍后再补一次
         setTimeout(function () { applyAmbientGlow(document); }, 600);
     }
+
+    applyWhaleSkinBits(skin);
+}
+
+/* round153：鲸鱼娘皮肤的环境层与立绘位。
+   只做三件事：挂/摘环境层、换首屏角色图、把 AI 头像换成她的特写；
+   环境层是独立 fixed 元素，粒子 10 颗，页面隐藏时暂停。 */
+var _whaleAmbience = null;
+var _whaleVisibilityBound = false;
+
+function applyWhaleSkinBits(skin) {
+    var on = skin === 'whale';
+
+    if (on && !_whaleAmbience) {
+        var amb = document.createElement('div');
+        amb.id = 'whaleAmbience';
+        amb.setAttribute('aria-hidden', 'true');
+        var svg = '<div class="wa-shaft s1"></div><div class="wa-shaft s2"></div><div class="wa-shaft s3"></div>';
+        /* 蓝鲸剪影直接引 SVG 文件，避免内联 6KB 字符串进 JS */
+        svg += '<img class="wa-whale" src="/img/whale/whale.svg" alt="">';
+        for (var i = 0; i < 10; i++) {
+            var left = 6 + i * 9.4;
+            var drift = (i % 2 ? 1 : -1) * (10 + i * 3);
+            svg += '<i class="wa-mote" style="left:' + left + '%;bottom:' + (4 + (i % 4) * 7) + '%;--drift:' + drift + 'px;animation-delay:' + (i * 1.7) + 's"></i>';
+        }
+        amb.innerHTML = svg;
+        document.body.insertBefore(amb, document.body.firstChild);
+        _whaleAmbience = amb;
+
+        if (!_whaleVisibilityBound) {
+            _whaleVisibilityBound = true;
+            document.addEventListener('visibilitychange', function () {
+                if (!_whaleAmbience) return;
+                _whaleAmbience.style.animationPlayState = document.hidden ? 'paused' : '';
+                _whaleAmbience.querySelectorAll('.wa-mote').forEach(function (m) {
+                    m.style.animationPlayState = document.hidden ? 'paused' : '';
+                });
+            });
+        }
+    } else if (!on && _whaleAmbience) {
+        _whaleAmbience.remove();
+        _whaleAmbience = null;
+    }
+
+    /* round159：纸 / 夜也各有自己的拟人形象，和鲸鱼娘共用同一位看板娘的位置。 */
+    var themeArt = {
+        classic: '/img/paper/closeup-v2.webp',
+        matinee: '/img/night/closeup-v2.webp',
+        whale: '/img/whale/closeup-v2.webp',
+        ink: '/img/ink/closeup-1.webp'
+    };
+    var mascot = document.getElementById('homeMascotStatic');
+    if (mascot) mascot.src = themeArt[skin] || 'img/mascot.png';
+
+    var customIdle = !!(animState && animState.urls && animState.urls.idle
+        && String(animState.urls.idle).indexOf('/custom/') === 0);
+    document.body.classList.toggle('persona-static', !!themeArt[skin] && !customIdle);
+
+    pickThemeHero(skin, false);
+    applyInkCloseup();
+    startHeroRotation();
+}
+
+/* round163：每个主题 3 张首屏图，进入/切换主题随机取一张，之后每 90 秒淡入换一张。 */
+var V4_HERO_ART = {
+    classic: ['/img/paper/hero-1.webp', '/img/paper/hero-2.webp', '/img/paper/hero-3.webp'],
+    matinee: ['/img/night/hero-1.webp', '/img/night/hero-2.webp', '/img/night/hero-3.webp'],
+    whale: ['/img/whale/hero-1-v3.webp', '/img/whale/hero-2-v3.webp', '/img/whale/hero-3-v3.webp'],
+    ink: ['/img/ink/hero-1.webp', '/img/ink/hero-2.webp', '/img/ink/hero-3.webp']
+};
+var V4_HERO_SEL = {
+    classic: '.pp-hero .th-hero-art',
+    matinee: '.nt-hero .th-hero-art',
+    whale: '.wh-hero-art',
+    ink: '.ik-hero .th-hero-art'
+};
+var V4_INK_CLOSEUPS = ['/img/ink/closeup-1.webp', '/img/ink/closeup-2.webp'];
+var _heroRotateTimer = null;
+var _inkCloseupIndex = -1;
+
+function pickThemeHero(skin, fade) {
+    var list = V4_HERO_ART[skin];
+    var sel = V4_HERO_SEL[skin];
+    if (!list || !sel) return;
+    var node = document.querySelector(sel);
+    if (!node) return;
+    var i = Math.floor(Math.random() * list.length);
+    if (list.length > 1 && i === Number(node.getAttribute('data-hero-i'))) i = (i + 1) % list.length;
+    node.setAttribute('data-hero-i', i);
+    if (!fade) { node.src = list[i]; return; }
+    node.classList.add('hero-swapping');
+    setTimeout(function () { node.src = list[i]; }, 180);
+    node.onload = function () { node.classList.remove('hero-swapping'); };
+}
+
+function startHeroRotation() {
+    if (_heroRotateTimer) clearInterval(_heroRotateTimer);
+    _heroRotateTimer = setInterval(function () {
+        if (!document.hidden) pickThemeHero(getV4Skin(), true);
+    }, 90000);
+}
+
+function applyInkCloseup() {
+    var i = Math.floor(Math.random() * V4_INK_CLOSEUPS.length);
+    if (V4_INK_CLOSEUPS.length > 1 && i === _inkCloseupIndex) i = (i + 1) % V4_INK_CLOSEUPS.length;
+    _inkCloseupIndex = i;
+    document.documentElement.style.setProperty('--ink-closeup', 'url("' + V4_INK_CLOSEUPS[i] + '")');
 }
 
 function setV4Skin(skin) {
     if (V4_SKINS.indexOf(skin) < 0) return;
     try { localStorage.setItem(V4_SKIN_KEY, skin); } catch (e) { /* 隐私模式忽略 */ }
     applyV4Skin(skin);
+    syncWhalePersona(skin);
     if (typeof showNotification === 'function') {
         showNotification('风格已切换', V4_SKIN_NAMES[skin] || skin);
     }
+}
+
+/* round153：皮肤 ↔ AI 人格联动。
+   只在用户没有自定义人格时自动切换（默认管家 → 深寻；离开鲸皮肤且当前仍是深寻 → 回默认管家），
+   一旦用户自己选过爱弥斯/达妮雅/自定义，就不再碰他的选择。 */
+function syncWhalePersona(skin) {
+    fetch('/api/ai/persona').then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || j.code !== 0 || !j.data) return;
+        var cur = (j.data.current && j.data.current.presetId) || 'butler';
+        var next = null;
+        if (skin === 'whale' && cur === 'butler') next = 'deep_whale';
+        else if (skin !== 'whale' && cur === 'deep_whale') next = 'butler';
+        if (!next) return;
+        return fetch('/api/ai/persona', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ presetId: next })
+        }).then(function (r2) { return r2.json(); }).then(function (j2) {
+            if (j2 && j2.code === 0 && typeof showNotification === 'function') {
+                showNotification('AI 人格已联动', next === 'deep_whale' ? '鲸鱼娘 · 深寻 已上线' : '已恢复默认管家');
+            }
+        });
+    }).catch(function () { /* 未配置 AI 或离线时静默 */ });
 }
 
 function initV4Skin() {
@@ -16789,9 +17187,71 @@ function handleSearch(e) {
         document.getElementById('actressGrid').style.display = 'none';
         document.getElementById('tagCloud').style.display = 'none';
         hideGallery();
-        renderMovies(movies);
-        updateToolbarTitle(`搜索: ${q}`, movies.length);
+        if (!movies.length) {
+            updateToolbarTitle(`搜索: ${q}`, 0);
+            renderAISearchFallback(q);
+        } else {
+            renderMovies(movies);
+            updateToolbarTitle(`搜索: ${q}`, movies.length);
+        }
     }, 300);
+}
+
+/* r153 · C1：字面 0 结果 → 「AI 帮我找」兜底墙。
+   粗召回永远可用；AI 只负责重排和写一句命中理由，失败也不空屏。 */
+async function renderAISearchFallback(q) {
+    const grid = document.getElementById('movieGrid');
+    if (!grid) return;
+    const emptyTip = document.getElementById('emptyTip');
+    if (emptyTip) emptyTip.style.display = 'none';
+    grid.style.display = 'block';
+    grid.innerHTML = `
+        <div class="ai-ss" id="aiSemanticBox">
+            <div class="ai-ss-head">
+                <span class="ai-ss-kicker">✨ AI 语义选片</span>
+                <b>「${escapeHtml(q)}」没有字面结果</b>
+                <span class="ai-ss-hint">正在按标签、简介和你的口味理解这句话…</span>
+            </div>
+            <div class="ai-ss-grid"><div class="ai-ss-load"><i></i><i></i><i></i></div></div>
+        </div>`;
+    const box = document.getElementById('aiSemanticBox');
+    const privacy = (typeof isAdultNavHidden === 'function' && isAdultNavHidden()) ? 'exclude' : '';
+    let r;
+    try {
+        r = await api.semanticSearch(q, privacy);
+    } catch (e) {
+        if (box) box.querySelector('.ai-ss-grid').innerHTML = `<div class="ai-ss-empty">AI 搜索暂不可用：${escapeHtml(e.message)}</div>`;
+        return;
+    }
+    const items = r.items || [];
+    if (!box) return;
+    if (!items.length) {
+        box.querySelector('.ai-ss-hint').textContent = privacy === 'exclude'
+            ? '当前处于「隐藏成人内容」状态，语义召回也只搜公开片库'
+            : '本地语义召回 0 条';
+        box.querySelector('.ai-ss-grid').innerHTML = '<div class="ai-ss-empty">连语义召回也没找到。换个说法试试，比如「雨夜看的致郁系老番」。</div>';
+        return;
+    }
+    box.querySelector('.ai-ss-hint').textContent = r.source === 'ai'
+        ? 'AI 已从候选里重排，每张都写了命中理由'
+        : '本地语义召回（AI 未启用或超时，仍按标签/简介命中）';
+    box.querySelector('.ai-ss-grid').innerHTML = items.map((m) => `
+        <article class="ai-ss-card" data-ai-id="${m.id}" tabindex="0" role="button" aria-label="${escapeHtml(m.title || '')}">
+            <div class="ai-ss-poster"><img src="${getPosterUrl(m) || ''}" alt="" loading="lazy" onerror="this.parentElement.classList.add('noimg')"></div>
+            <div class="ai-ss-body">
+                <div class="ai-ss-title">${escapeHtml(prefTitle(m))}</div>
+                <div class="ai-ss-meta">${escapeHtml(String(m.type || '').toUpperCase())}${m.releaseDate ? ' · ' + escapeHtml(String(m.releaseDate).slice(0, 4)) : ''}</div>
+                ${m.aiWhy ? `<div class="ai-ss-why">${escapeHtml(m.aiWhy)}</div>` : (m.overview ? `<div class="ai-ss-why">${escapeHtml(String(m.overview).replace(/<[^>]+>/g, '').slice(0, 58))}…</div>` : '')}
+                <span class="ai-ss-go">查看详情 ▸</span>
+            </div>
+        </article>`).join('');
+    box.querySelectorAll('.ai-ss-card').forEach((el) => {
+        const open = () => showMovieDetail(parseInt(el.dataset.aiId, 10));
+        el.addEventListener('click', open);
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    if (emptyTip) emptyTip.style.display = 'none';
+    updateToolbarTitle(`✨ AI 语义: ${q}`, items.length);
 }
 
 // ========== 初始化 ==========

@@ -1157,7 +1157,7 @@ html body #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-
     background-image: var(--book-cover-url, none);
     background-size: cover;
     background-position: center;
-    filter: blur(20px) saturate(135%) brightness(0.68);
+    filter: blur(26px) saturate(150%) brightness(0.46);
     opacity: 0.85;
     z-index: 0;
     pointer-events: none;
@@ -1166,10 +1166,10 @@ html body #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-
     position: relative;
     z-index: 1;
     width: auto !important;
-    max-width: 72% !important;
-    height: 92% !important;
+    max-width: 92% !important;
+    height: 97% !important;
     margin: auto !important;
-    top: 4%;
+    top: 1.5%;
     object-fit: contain !important;
     border-radius: 3px 6px 6px 3px !important;
     box-shadow:

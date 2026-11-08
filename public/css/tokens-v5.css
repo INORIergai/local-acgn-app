@@ -71,3 +71,9 @@ html[data-v4skin="matinee"] {
     --skin-mode: dark;
     --skin-accent: #D99A43;
 }
+
+html[data-v4skin="whale"] {
+    --skin-name: "鲸 · Deep Whale";
+    --skin-mode: dark;
+    --skin-accent: #D3B074;
+}

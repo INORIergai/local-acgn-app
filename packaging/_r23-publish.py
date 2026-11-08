@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v5.0.0'
+TAG = 'v6.0.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,36 +35,31 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v5.0.0：V5「典藏放映室」大改版 + 首页今夜主映放映台 + 双皮肤对比度全达标 + 猜你喜欢提速约 40 倍
+COMMIT_MSG = """v6.0.0：V6 四皮肤（纸 / 夜 / 鲸鱼娘 / 墨）+ 在线观看与阅读全面原生 + 首页 AI 卡收口
 
-【V5 视觉与信息架构】round150 量化评审 -> round151 改版
-- 首页新增「今夜主映 · Curated Screening Stage」：35mm 胶片齿孔饰边 + 环境光模糊 + 3D 立书/海报主视觉，支持立即翻阅/放映、藏品档案、换一部、AI 导读
-- 右侧新增 Archive Pulse 馆藏脉搏四格计数器与 Curated Reel 今夜候选胶片条；AI 升级为「典藏策展人」，配 4 枚一键策展胶囊
-- 竖版书封不再被 16:9 裁切：3D 书脊立书 + 同色系高斯模糊景深底衬，无图藏品自动生成布面典藏扉页
-- 漫画/小说库改亚麻布面藏书函套（纸=亚麻米 / 夜=深焙胡桃），解析文件夹命名拆成作者铭牌 + 正题 + 完结徽章 + 藏书章；全库 0 处「第 ? 卷」，清洗 Z-Library 尾缀
-- 新增单文件收束层 public/css/round151-v5-edition.css
+【四套皮肤】新增 whale（Deep Whale · 鲸鱼娘）与 ink（墨 · 初版档案室），与纸 / 夜并列
+- whale：深海底 + 金色齿孔 + 月光金描边，首屏 wh-hero、深海玻璃 AI 卡、藏蓝热度榜；★色板必须落在 html[data-v4skin="whale"] body.dark，否则子元素继承 body 的夜皮肤变量，只有背景变色、卡片按钮仍是暖琥珀
+- ink：墨黑 #08080A / 哑光卡面 #131316 / 纸灰字 #EDE9E1 / 朱红 #C8443C，宋体大标题「把午夜归档。」+ ACCESSION NO.001 档案卡、朱红顶线与侧栏红条
+- 鲸鱼娘三张场景图重画（round164 以 Alife 原图为唯一基准）：鲸鳍耳、白色荷叶边 maid 头饰、黑 choker、胸前金框蓝宝石、人身人腿 + 身后小鲸鱼尾，不再是精灵耳 / 人鱼下半身
+- 墨主题同步出三张场景图（午夜档案室 / 档案梯 / 头像特写）；V4_SKINS = ['classic','matinee','whale','ink']，setV4Skin 同步 body.dark 与 skin-* 类
 
-【对比度根治】round150 实锤的两处 P0
-- 纸皮肤快捷键面板 1.43:1 -> 7.04:1：背景与前景成对锁死，不再只锁 color 不锁 background
-- 夜皮肤首页 AI 卡 1.01:1 -> 7.07:1；纸 7.30:1 / 夜 7.07:1，双皮肤 88/88 项达标 WCAG AA/AAA
-- AI 回复改 mdLite() 富文本渲染，0 裸露 ** 与 ##
+【在线观看 · 原生重构 Sprint D 阶段 2 / 3】
+- 侧栏 AV / 里番在线观看不再打开整站 iframe 的 watchStage：落 MediaSource.show('stream')，含板块切换、源站卡、源站分类胶囊、16:9 作品墙
+- 新增 utils/media-sources/reading.js 阅读适配层：动漫屋（漫画）+ ESJ Zone（小说）的目录 / 章节 / 正文全部走应用内原生界面，同源字节代理 + 正文脚本清洗
+- 阅读层修两处实测 bug：翻下一章时把上一章滚动比例存到新章名下（新章一开就落在 0.03~0.5）、单槽续读 cv:rdrLast 互相覆盖（回翻只剩 0.03）；漫画图未预设高度导致 scrollHeight 未撑开、按比例恢复接近 0
+- 小说 / 漫画入口按类型分源（watch-comic → dm5/zaimanhua/komiic，watch-novel → esjzone/lightnovel）；封面墙改 3:4 竖版海报（桌面 6 列 / 390 两列），不再被 16:9 裁成横条
+- 动漫屋只抓到 7 条的真因：更新列表封面在 .mh-cover 兄弟节点、不是 a 的子节点；目录空结果不再写 5 分钟缓存
+- 新增 utils/mobi-reader.js（MOBI 解析）与 public/css/round154-native-stream.css
 
-【性能】
-- 猜你喜欢首屏 9391ms -> 153~279ms：移除每次请求 18618 次同步 SQLite 查询与 9 秒同步 AI 阻塞，改后台异步预热 + 观看历史亲和度/有封面优先召回
-- utils/media-tree.js 复用 Intl.Collator，树构建排序 ~1.5s -> <10ms
+【首页 AI 卡收口】
+- 「＋ 新对话」后卡片瞬间缩成一条：补桌面端高度链（.home-chat min-height 560px + dock flex + min-height 0），消息区改内部滚动，长对话不再把卡继续拉长
+- 首页双栏同高：宽屏 620px / 861-1400 单列 672px，AI 卡与热度情报同顶同底（实测误差 ≤1px）
+- 去掉对话框上方的拟人立绘占位；会话切换改 body 级不透明自定义菜单（原生 select 在暗色皮肤下是半透明弹层，会把下面的立绘透出来）
 
-【交互人体工学】
-- 详情弹窗自动收起首次引导遮罩，消除双层模态遮挡
-- 移除常驻断网黄条；通知 toast 移右上、扫描胶囊移左下，不再压搜索框
-- 顶栏纸/夜切换显式带文字标签；桌面端设置页左栏常驻展开；移动端语音球/扫描胶囊抬高到 Tab 栏之上
-
-【v4.8 开发线上尚未单独发布的功能，并入本版】
-- AI 对话内可点击播放卡片：utils/agent/cards.js 归一化工具返回并下发带海报卡片，点一下才播，同轮同片只画一张
-- Fish Audio 云端 TTS：utils/tts/fishaudio-engine.js，音色 ID / 模型档位 / 独立代理；保存配置只回脱敏串（不回吐 apiKey）
-- 里番竖版海报优先：AniList -> FANZA -> 91动漫 -> hanime；hanime 搜索参数 ?q= -> ?query= 等三处真 bug
-- 首页左栏可选 AI 对话框 / Live2D 形象；修复隐私六项强制归组覆盖用户拖动排序
-- 女优头像串行补齐队列 utils/actress-avatar-queue.js
-- 前端缓存版本号修正：motion-v2 ?v=9、tts-panel ?v=23"""
+【其它】
+- 随机画布 round152-random.css + round153-folia.js；round153-v6.css 收口层
+- 命令面板、空态、媒体源引擎、agent runtime、ai-service 若干修复
+- 前端缓存版本号逐文件 bump（round152-random ?v=4、round154-native-stream ?v=7、round162-ink-theme ?v=3 …）"""
 
 
 def get_token():

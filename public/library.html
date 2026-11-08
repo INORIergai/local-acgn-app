@@ -129,7 +129,7 @@
     </script>
     <link rel="stylesheet" href="css/theme-matinee.css?v=1">
     <!-- round115：真正被加载的令牌层 + 字号/形状归并 + 精选推荐折叠 -->
-    <link rel="stylesheet" href="css/tokens-v5.css?v=1">
+    <link rel="stylesheet" href="css/tokens-v5.css?v=2">
     <link rel="stylesheet" href="css/round115-type.css?v=1">
     <link rel="stylesheet" href="css/round115-fold.css?v=1">
     <!-- round116：去容器 / 圆角收口 / 洋红转墨 / 详情工具区压平 -->
@@ -159,6 +159,19 @@
     <link rel="stylesheet" href="css/mobile.css?v=4">
     <!-- round151：V5.0「午夜场 · 典藏放映室」大版本焕新与双皮肤对比度根治层 -->
     <link rel="stylesheet" href="css/round151-v5-edition.css?v=1">
+    <link rel="stylesheet" href="css/round152-random.css?v=4">
+    <!-- round153：🐋 鲸鱼娘 · Deep Whale 特质化角色主题（第 3 皮肤层） -->
+    <link rel="stylesheet" href="css/round153-whale-theme.css?v=2">
+    <!-- round153 · V6：AI 语义选片墙 / 观前导览签 / 在线观看发现页 -->
+    <link rel="stylesheet" href="css/round153-v6.css?v=3">
+    <link rel="stylesheet" href="css/round154-native-stream.css?v=7">
+    <!-- round157：鲸鱼娘 v2 深海材质层（必须最后加载，压过 body.dark 的夜皮肤琥珀规则） -->
+    <link rel="stylesheet" href="css/round157-whale-v2.css?v=2">
+    <link rel="stylesheet" href="css/round159-theme-personas.css?v=2">
+    <link rel="stylesheet" href="css/round160-read-hub.css?v=1">
+    <link rel="stylesheet" href="css/round160-whale-surface.css?v=2">
+    <link rel="stylesheet" href="css/round161-home-fit.css?v=1">
+    <link rel="stylesheet" href="css/round162-ink-theme.css?v=3">
 </head>
 
 <body>
@@ -205,10 +218,12 @@
             <button class="theme-toggle" id="themeToggle" title="切换主题"><svg class="ic ic-moon" width="16" height="16"><use href="#ic-moon"/></svg></button>
             <!-- round41 #8：AV/里番导航显隐开关（默认隐藏，首次解锁需确认） -->
             <button class="theme-toggle" id="adultToggle" title="显示/隐藏成人内容入口（AV库、里番库、演员库等）" onclick="toggleAdultNav()"><svg class="ic ic-lock" width="16" height="16"><use href="#ic-lock"/></svg></button>
-            <!-- 风格切换：纸 / 夜（round115：4 套收敛到 2 套） -->
+            <!-- 风格切换：纸 / 夜 / 鲸（round153：鲸鱼娘 Deep Whale 特质化角色主题） -->
             <div class="v4-skin-switch" id="v4SkinSwitch" role="group" aria-label="界面风格">
                 <button class="v4-skin-btn" data-skin="classic" data-short="纸" data-label="纸 · Paper" onclick="setV4Skin('classic')" aria-label="纸风格"><span class="v4-dot"></span></button>
                 <button class="v4-skin-btn" data-skin="matinee" data-short="夜" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="whale" data-short="鲸" data-label="🐋 鲸 · Deep Whale" onclick="setV4Skin('whale')" aria-label="鲸鱼娘主题"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="ink" data-short="墨" data-label="墨 · Ink" onclick="setV4Skin('ink')" aria-label="墨色档案主题"><span class="v4-dot"></span></button>
             </div>
             <button class="theme-toggle" id="shortcutHelpBtn" title="全局快捷键指南（按 ? 或 F1 呼出）" onclick="toggleShortcutsModal()"><span style="font-weight:700;font-size:14px;font-family:var(--font-mono);line-height:1;">?</span></button>
             <button class="theme-toggle" id="aiTopBtn" title="AI助手" aria-label="AI助手"><svg class="ic ic-ai" width="16" height="16"><use href="#ic-ai"/></svg></button>
@@ -435,6 +450,75 @@
             <!-- 首页视图（round33） -->
             <div id="homeView">
                 <div class="home-backdrop"><img src="img/app-icon.png" alt=""></div>
+                <!-- round158：鲸鱼娘首屏（只在 whale 皮肤显示，由 CSS 控显隐；不新增数据请求） -->
+                <section class="wh-hero" aria-label="鲸鱼娘 · 深海馆藏">
+                    <img class="wh-hero-art" src="img/whale/hero-1-v3.webp" alt="月夜水下图书室里的鲸鱼娘 · 人身人腿与小鲸尾" loading="lazy">
+                    <div class="wh-hero-veil" aria-hidden="true"></div>
+                    <div class="wh-hero-inner">
+                        <p class="wh-hero-kicker">DEEP WHALE · 深海放映季</p>
+                        <h2 class="wh-hero-title">下潜到光<br>够不到的那一层。</h2>
+                        <p class="wh-hero-greet" id="whHeroGreet">越往下越安静，也越私人。</p>
+                        <div class="wh-depth">
+                            <div class="wh-depth-row"><span>-200m</span><b>影片</b><i><em id="whHeroMovies">0</em> 部</i><s style="width:62%"></s></div>
+                            <div class="wh-depth-row"><span>-800m</span><b>书与漫画</b><i><em id="whHeroBooks">0</em> 册</i><s style="width:38%"></s></div>
+                            <div class="wh-depth-row"><span>-2000m</span><b>全部馆藏</b><i><em id="whHeroTotal">0</em> 条</i><s style="width:86%"></s></div>
+                        </div>
+                    </div>
+                    <div class="wh-dive-badge">
+                        <span>DIVE MASTER</span>
+                        <b>鲸鱼娘 · 深深</b>
+                        <i>今晚陪你潜进馆藏</i>
+                    </div>
+                    <div class="wh-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                </section>
+                <!-- round162：初版黑发看板娘 · 墨色档案馆（只在 ink 皮肤显示） -->
+                <section class="th-hero ik-hero" aria-label="墨色档案馆 · 初版看板娘">
+                    <img class="th-hero-art" src="img/ink/hero-1.webp" alt="午夜档案室里黑发白衬衫的初版看板娘" loading="lazy">
+                    <div class="th-hero-veil" aria-hidden="true"></div>
+                    <div class="th-hero-inner">
+                        <p class="th-hero-kicker">INK ARCHIVE · 初版档案室</p>
+                        <p class="th-hero-greet">她一直在。只是你今晚才回来。</p>
+                        <h2 class="th-hero-title">把午夜<br>归档。</h2>
+                        <div class="ik-index">
+                            <span>ACCESSION</span><b>NO. 001</b>
+                            <i>黑发 · 白衬衫 · 红带</i>
+                        </div>
+                        <div class="th-hero-stats">
+                            <span><b id="ikHeroMovies">0</b><i>馆藏条目</i></span>
+                            <span><b id="ikHeroBooks">0</b><i>册书与漫画</i></span>
+                        </div>
+                    </div>
+                    <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                </section>
+                <!-- round159：纸 / 夜两套主题拟人形象首屏，各自只在对应皮肤显示 -->
+                <section class="th-hero pp-hero" aria-label="纸上典藏 · 编目员">
+                    <img class="th-hero-art" src="img/paper/hero-1.webp" alt="阳光档案室里的纸质馆藏编目员" loading="lazy">
+                    <div class="th-hero-veil" aria-hidden="true"></div>
+                    <div class="th-hero-inner">
+                        <p class="th-hero-kicker">PAPER ARCHIVE · 纸上典藏室</p>
+                        <p class="th-hero-greet">今天，翻开你的私人馆藏</p>
+                        <h2 class="th-hero-title">纸上典藏</h2>
+                        <div class="th-hero-stats">
+                            <span><b id="ppHeroMovies">0</b><i>馆藏条目</i></span>
+                            <span><b id="ppHeroBooks">0</b><i>册书与漫画</i></span>
+                        </div>
+                    </div>
+                    <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                </section>
+                <section class="th-hero nt-hero" aria-label="午夜放映 · 放映师">
+                    <img class="th-hero-art" src="img/night/hero-1.webp" alt="暖光放映间里的电影放映师" loading="lazy">
+                    <div class="th-hero-veil" aria-hidden="true"></div>
+                    <div class="th-hero-inner">
+                        <p class="th-hero-kicker">NIGHT PROJECTION · 午夜放映室</p>
+                        <p class="th-hero-greet">今夜，为你亮起一束光</p>
+                        <h2 class="th-hero-title">午夜放映</h2>
+                        <div class="th-hero-stats">
+                            <span><b id="ntHeroMovies">0</b><i>馆藏条目</i></span>
+                            <span><b id="ntHeroBooks">0</b><i>册书与漫画</i></span>
+                        </div>
+                    </div>
+                    <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                </section>
                 <!-- round151 V5：今夜主映 · 典藏放映台 -->
                 <section class="home-curated-stage" id="homeCuratedStage" aria-label="今夜主映典藏放映台"></section>
                 <div class="home-chat">
@@ -451,6 +535,14 @@
                                     <span class="hch-title">AI 典藏策展人</span>
                                 </div>
                                 <span class="hch-sub">CURATOR SALON · 选片 / 找书 / 导读</span>
+                                <div class="hch-tools">
+                                    <!-- round161：原生 select 弹层在暗色皮肤下是半透明的，背后的立绘会透出来。
+                                         保留 select 作为数据源（逻辑不动），可见入口换成自定义不透明菜单。 -->
+                                    <select id="homeSessionSelect" class="hch-session-select" hidden aria-hidden="true" tabindex="-1"></select>
+                                    <button type="button" class="hch-session-btn" id="homeSessionBtn" title="切换对话（与右侧 AI 工作台共用同一份记录）">默认对话</button>
+                                    <button type="button" class="hch-tool-btn" id="homeNewChatBtn" title="新建对话">＋</button>
+                                    <button type="button" class="hch-tool-btn" id="homeOpenWorkbenchBtn" title="展开 AI 工作台（技能 / MCP / 语音 / 最近任务）">⤢</button>
+                                </div>
                             </div>
                             <div class="home-chat-messages" id="homeChatMessages">
                                 <div class="home-chat-empty">
@@ -1102,12 +1194,13 @@
     <!-- round144：标题显示层清洗（剥掉标题里重复的番号前缀）。必须在 app.js 之前加载，
          app.js 的 prefTitle() 依赖 window.cvDisplayTitle。 -->
     <script src="js/aipc-title-clean.js?v=1"></script>
-    <script src="js/app.js?v=155"></script>
+    <script src="js/round153-folia.js?v=2"></script>
+    <script src="js/app.js?v=166"></script>
     <script src="js/magic-likes.js?v=30"></script>
-    <script src="js/command-palette.js?v=2"></script>
-    <script src="js/features.js?v=48"></script>
-    <script src="js/home.js?v=17"></script>
-<script src="js/media-source.js?v=1"></script>
+    <script src="js/command-palette.js?v=3"></script>
+    <script src="js/features.js?v=49"></script>
+    <script src="js/home.js?v=24"></script>
+    <script src="js/media-source.js?v=12"></script>
     <script src="js/series-ui.js?v=7"></script>
     <script src="js/av-board.js?v=23"></script>
     <script src="js/motion.js?v=1"></script>
@@ -1125,7 +1218,7 @@
     <!-- round116：详情「工具」区 14 项收成 4 + 更多（删掉这一行即回滚） -->
     <script src="js/round116-detail.js?v=1"></script>
     <!-- round121：空状态注入（删掉这一行即回滚） -->
-    <script src="js/round121-empty.js?v=1"></script>
+    <script src="js/round121-empty.js?v=2"></script>
     <!-- round122：给影片卡补 tabindex / role / 键盘操作（删掉即回滚） -->
     <script src="js/round122-a11y.js?v=1"></script>
     <!-- round123：网格方向键 + 详情 focus trap（删掉即回滚） -->
@@ -1135,7 +1228,7 @@
     <script src="js/task-capsule.js?v=2"></script>
     <!-- round74：语音朗读设置面板 -->
     <script src="js/tts-panel.js?v=24"></script>
-    <script src="js/companion.js?v=12"></script>
+    <script src="js/companion.js?v=13"></script>
     <script src="js/mobile-nav.js?v=3"></script>
     <!-- 第 21 轮：手机端详情弹窗「下滑关闭」手势（独立文件，删掉本行即可回滚） -->
     <script src="js/mobile-gestures.js?v=2"></script>

@@ -8,6 +8,7 @@ const {
   generateTags,
   recommendMovies,
   chatWithAI,
+  callAI,
   checkOllamaStatus
 } = require('../utils/ai-service');
 const { getMovieById, getAllMovies, getWatchHistory, getMovieTags, updateMovieRelations } = require('../utils/db');
@@ -129,6 +130,164 @@ router.get('/recommend', async (req, res) => {
         }
         
         res.json({ code: 0, data: recommendedMovies });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+/* ========== r153 · C1：Ctrl+K 语义兜底搜索 ==========
+ * 字面搜索 0 结果时调用。先用标签/简介/标题做本地粗召回（永远可用），
+ * 再让已配置的 AI 从 Top 40 里重排 Top 6 并给一句命中理由。
+ * AI 不可用就退回粗召回结果——这个接口不允许因为没配 AI 而整块瘫掉。
+ */
+const SEMANTIC_ALIASES = {
+    '致郁': ['悲剧', '压抑', '黑暗', '虐', '绝望'],
+    '治愈': ['温馨', '日常', '温暖', '轻松', '纯爱'],
+    '雨夜': ['雨', '夜', '氛围', '慢节奏'],
+    '银发': ['白发', '银发', '雪白'],
+    '毒舌': ['傲娇', '嘴硬', '吐槽'],
+    '轻小说': ['轻小说', '小说'],
+    '老番': ['经典', '老片', '怀旧', '年代']
+};
+
+function semanticRecall(q, privacy) {
+    const raw = String(q || '').trim().slice(0, 120);
+    if (!raw) return [];
+    const words = raw.split(/[\s,，。;；/、]+/).filter(Boolean).slice(0, 8);
+    const expanded = new Set(words);
+    for (const w of words) {
+        for (const k of Object.keys(SEMANTIC_ALIASES)) {
+            if (w.includes(k) || k.includes(w)) SEMANTIC_ALIASES[k].forEach((x) => expanded.add(x));
+        }
+    }
+    const tokens = Array.from(expanded).map((x) => x.toLowerCase());
+    const all = getAllMovies.all();
+    const scored = [];
+    for (const m of all) {
+        const type = String(m.type || 'jav').toLowerCase();
+        if (privacy === 'exclude' && (type === 'jav' || type === 'anime')) continue;
+        const title = String(m.title || m.cleanName || '');
+        const hay = [
+            title, m.avid, m.overview, m.releaseDate, m.type, m.director,
+            Array.isArray(m.actresses) ? m.actresses.map((a) => a.name || a).join(' ') : ''
+        ].join(' ').toLowerCase();
+        let score = 0;
+        for (const t of tokens) {
+            if (!t) continue;
+            if (title.toLowerCase().includes(t)) score += 6;
+            else if (hay.includes(t)) score += 2;
+        }
+        if (score > 0) scored.push({ m, score });
+    }
+    scored.sort((a, b) => b.score - a.score || (b.m.hotScore || 0) - (a.m.hotScore || 0));
+    return scored.slice(0, 40);
+}
+
+router.post('/semantic-search', async (req, res) => {
+    try {
+        const q = String((req.body && req.body.q) || '').trim().slice(0, 120);
+        const privacy = String((req.body && req.body.privacy) || '').toLowerCase();
+        if (!q) return res.json({ code: -1, msg: '请输入想找的内容', data: [] });
+
+        const recalls = semanticRecall(q, privacy);
+        if (!recalls.length) return res.json({ code: 0, data: [], source: 'recall' });
+
+        // 粗召回结果直接可返回；AI 只做“重排 + 一句理由”，失败不阻塞。
+        const base = recalls.slice(0, 6).map(({ m }) => ({ ...m, aiWhy: '' }));
+        const brief = recalls.map(({ m }, i) => ({
+            i: i + 1,
+            t: String(m.title || m.cleanName || '').slice(0, 60),
+            type: m.type || 'jav',
+            tags: (getMovieTags.all(m.id) || []).map((t) => t.name).slice(0, 6),
+            s: String(m.overview || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
+        }));
+        let picked = null;
+        try {
+            const out = await Promise.race([
+                callAI(
+                    `用户想找：${q}\n候选（JSON）：\n${JSON.stringify(brief)}\n` +
+                    '请从候选里挑最多 6 部最贴合意图的，输出严格 JSON 数组：[{"i":候选编号,"why":"一句话中文命中理由"}]。' +
+                    '不要输出 JSON 以外的任何字符。',
+                    '你是资深选片向导，擅长把模糊的自然语言需求映射到具体作品。只输出 JSON。'
+                ),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('AI 超时')), 20000))
+            ]);
+            const text = String(out || '');
+            const match = text.match(/\[[\s\S]*\]/);
+            if (match) picked = JSON.parse(match[0]);
+        } catch (e) {
+            console.log('[AI语义搜索] 降级为本地召回:', e.message);
+        }
+
+        let data;
+        if (Array.isArray(picked) && picked.length) {
+            const seen = new Set();
+            data = [];
+            for (const p of picked) {
+                const idx = parseInt(p && p.i, 10) - 1;
+                const hit = recalls[idx];
+                if (!hit || seen.has(idx)) continue;
+                seen.add(idx);
+                data.push({ ...hit.m, aiWhy: String((p && p.why) || '').slice(0, 80) });
+                if (data.length >= 6) break;
+            }
+        }
+        if (!data || !data.length) {
+            data = base;
+        }
+        res.json({ code: 0, data, source: Array.isArray(picked) && picked.length ? 'ai' : 'recall' });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message, data: [] });
+    }
+});
+
+/* ========== r153 · C3：详情抽屉「AI 观前导览签」 ==========
+ * 只读 + 进程内缓存：同一部作品不重复烧 token；AI 不可用时前端整卡隐藏。
+ */
+const guideCache = new Map();
+
+router.get('/guide/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const movie = getMovieById.get(id);
+        if (!movie) return res.json({ code: -1, msg: '作品不存在' });
+        const cacheKey = String(id);
+        if (guideCache.has(cacheKey)) {
+            return res.json({ code: 0, data: { ...guideCache.get(cacheKey), cached: true } });
+        }
+        const tags = (getMovieTags.all(id) || []).map((t) => t.name).slice(0, 12);
+        let memoryText = '';
+        try { memoryText = require('../utils/ai-memory').buildMemoryText(8) || ''; } catch (e) { /* 忽略 */ }
+        const out = await Promise.race([
+            callAI(
+                `作品：${movie.title || movie.cleanName || ''}\n类型：${movie.type || 'jav'}\n` +
+                `年份：${String(movie.releaseDate || '').slice(0, 4)}\n标签：${tags.join('、') || '（无）'}\n` +
+                `简介：${String(movie.overview || '').replace(/<[^>]+>/g, ' ').slice(0, 500)}\n` +
+                `用户长期口味记忆：${String(memoryText || '').slice(0, 800) || '（空）'}\n\n` +
+                '请输出严格 JSON：{"why":"为什么适合这位用户（一句话，40字内）",' +
+                '"mood":"节奏与雷点预警（一句话，40字内）","pair":"看完后适合顺手看的同库作品类型或气质（一句话，40字内）"}。只输出 JSON。',
+                '你是私人影院策展人。依据用户口味记忆写观前导览，不剧透关键剧情。只输出 JSON。'
+            ),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AI 超时')), 20000))
+        ]);
+        const text = String(out || '');
+        let data;
+        const m = text.match(/\{[\s\S]*\}/);
+        if (m) {
+            try {
+                const j = JSON.parse(m[0]);
+                data = {
+                    why: String(j.why || '').slice(0, 100),
+                    mood: String(j.mood || '').slice(0, 100),
+                    pair: String(j.pair || '').slice(0, 100)
+                };
+            } catch (e) { /* 落回原文 */ }
+        }
+        if (!data) data = { why: text.slice(0, 160), mood: '', pair: '' };
+        data.cached = false;
+        if (guideCache.size > 200) guideCache.clear();
+        guideCache.set(cacheKey, data);
+        res.json({ code: 0, data });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

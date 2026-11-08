@@ -135,8 +135,9 @@ function getNovelContent(filePath, novelId) {
     } else if (ext === '.pdf') {
         // PDF需要特殊处理
         return { title: path.basename(filePath), chapters: [], content: 'PDF格式暂不支持在线阅读' };
-    } else if (ext === '.mobi' || ext === '.azw3') {
-        return { title: path.basename(filePath), chapters: [], content: 'Mobi/AZW3格式暂不支持在线阅读' };
+    } else if (ext === '.mobi' || ext === '.azw3' || ext === '.azw') {
+        const { parseMobiOrAzw3 } = require('../utils/mobi-reader');
+        return parseMobiOrAzw3(filePath, novelId);
     }
     
     return { title: path.basename(filePath), chapters: [], content: '不支持的格式' };
@@ -593,7 +594,7 @@ router.get('/:id/info', (req, res) => {
                 readKind: (function () {
                     const e = path.extname(novel.filePath).toLowerCase();
                     if (e === '.pdf') return 'pdf';
-                    if (e === '.mobi' || e === '.azw3' || e === '.azw') return 'unsupported';
+                    if (e === '.mobi' || e === '.azw3' || e === '.azw') return 'text';
                     return 'text';
                 })(),
                 isEpub: !!content.isEpub,
@@ -690,6 +691,28 @@ router.get('/:id/asset/*', (req, res) => {
     }
 });
 
+/**
+ * 读取 MOBI / AZW3 内嵌图片资源
+ */
+router.get('/:id/mobi-image/:idx', (req, res) => {
+    try {
+        const novel = getMovieById.get(req.params.id);
+        if (!novel) return res.status(404).send('小说不存在');
+        const ext = path.extname(novel.filePath || '').toLowerCase();
+        if (ext !== '.mobi' && ext !== '.azw3' && ext !== '.azw') return res.status(404).send('非 MOBI/AZW3');
+        const idx = parseInt(req.params.idx, 10);
+        if (!idx || idx < 1) return res.status(400).send('无效索引');
+        const { readMobiImage } = require('../utils/mobi-reader');
+        const img = readMobiImage(novel.filePath, idx);
+        if (!img || !img.buffer) return res.status(404).send('图片不存在');
+        res.setHeader('Content-Type', img.mime || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        res.send(img.buffer);
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
+});
+
 // 获取小说章节内容
 router.get('/:id/chapter/:chapterIndex', (req, res) => {
     try {
@@ -716,6 +739,68 @@ router.get('/:id/chapter/:chapterIndex', (req, res) => {
                 totalChapters: content.chapters.length
             }
         });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+/* ========== r153 · C2：小说 AI 伴读（前情提要 / 人物卡 / 机翻润色）==========
+ * 只读「截至当前进度」的文本，人物卡模式显式禁止剧透后文。
+ * 结果按 (书, 章, 模式) 在进程内缓存，续读时重复点不再烧 token。
+ */
+const companionCache = new Map();
+
+router.post('/:id/ai-companion', async (req, res) => {
+    try {
+        const novel = getMovieById.get(req.params.id);
+        if (!novel) return res.json({ code: -1, msg: '小说不存在' });
+        const mode = String((req.body && req.body.mode) || 'recap');
+        if (!['recap', 'characters', 'polish'].includes(mode)) {
+            return res.json({ code: -1, msg: '未知的伴读模式' });
+        }
+        const content = getNovelContent(novel.filePath, novel.id);
+        if (!content.chapters.length) return res.json({ code: -1, msg: '这本书没有解析出章节' });
+        const cur = Math.max(0, Math.min(
+            parseInt(req.body && req.body.chapterIndex, 10) || 0,
+            content.chapters.length - 1
+        ));
+        const cacheKey = `${novel.id}:${cur}:${mode}`;
+        if (companionCache.has(cacheKey)) {
+            return res.json({ code: 0, data: { ...companionCache.get(cacheKey), cached: true } });
+        }
+
+        const plain = (ch) => String(ch.text || ch.content || '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const from = mode === 'characters' ? 0 : Math.max(0, cur - 2);
+        const to = mode === 'polish' ? cur + 1 : cur + 1;
+        const parts = [];
+        let budget = 26000;
+        for (let i = from; i < to && budget > 0; i++) {
+            const ch = content.chapters[i];
+            if (!ch) continue;
+            let t = plain(ch);
+            if (mode === 'polish' && t.length > 7000) t = t.slice(0, 7000) + '…';
+            if (t.length > budget) t = t.slice(0, budget);
+            budget -= t.length;
+            parts.push(`【${ch.title || '第 ' + (i + 1) + ' 章'}】\n${t}`);
+        }
+
+        const prompts = {
+            recap: '请用 200 字以内总结以上章节的核心剧情，只讲已经发生的事，结尾点出当前悬念。不要剧透后文。',
+            characters: '请提取截至当前进度已经登场的人物，输出 3~6 条：姓名 / 身份 / 与主角关系 / 一句性格特征。严格只用以上文本，不要推测或剧透后文。',
+            polish: '请把以上当前章节重写为自然流畅的中文（保留情节、人名、专有名词不变，去掉机翻腔）。直接输出正文，不要解释。'
+        };
+        const { callAI } = require('../utils/ai-service');
+        const text = await callAI(
+            `书名：${novel.title || novel.cleanName || ''}\n阅读进度：第 ${cur + 1} / ${content.chapters.length} 章\n\n${parts.join('\n\n')}\n\n${prompts[mode]}`,
+            '你是小说阅读器的伴读助手，只依据用户提供的原文回答，绝不编造后文。'
+        );
+        const data = { text: String(text || '').trim(), mode, chapter: cur, cached: false };
+        if (companionCache.size > 120) companionCache.clear();
+        companionCache.set(cacheKey, data);
+        res.json({ code: 0, data });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

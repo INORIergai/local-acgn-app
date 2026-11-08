@@ -2063,7 +2063,6 @@
             // round56（用户需求）：带词搜索时，首个命中源的结果一出来就自动
             // 「应用内开原站」（进站点窗口带词），不用再手动点一遍。
             // browse 模式不触发；聚合视图保留在背后，自动进站失败时切回来还能看到结果墙。
-            let autoOpened = false;
             const paint = (final) => {
                 const tail = browsing ? `已拿到 ${hits} 条` : `已命中 ${hits} 条`;
                 stat.textContent = final
@@ -2132,11 +2131,9 @@
                                 playWebPage(el.dataset.play);
                             });
                         });
-                        // round56：首个命中源 → 自动进站点窗口（搜索结果出来就打开，省一次手动点击）
-                        if (!browsing && !autoOpened && my === seq) {
-                            autoOpened = true;
-                            openInWindow(site.key, w);
-                        }
+                        /* r153 · D：不再自动跳进原站 iframe。
+                         * 聚合墙本身就是我们的原生前端，点海报直接 resolve → 应用内播放。
+                         * 「应用内开原站」按钮保留，只在解析失败/过 CF 盾时手动用。 */
                     } else {
                         dot.className = 'hub-dot bad';
                         note.textContent = (browsing ? '没取到' : '没搜到') + (d && d.msg ? '（' + d.msg + '）' : '');

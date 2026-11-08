@@ -1,0 +1,657 @@
+/* ============================================================================
+   round157 · 鲸鱼娘 Deep Whale v2
+   ----------------------------------------------------------------------------
+   上一版只挂在 <html> 上，body.dark 又把 --primary/--card-bg 覆盖回暖琥珀，
+   实际只生效了一层背景色。本层把鲸色重新落到 body 上，并补齐首屏、AI 卡、
+   热度榜、片库与设置页的深海材质。金 = 结构，蓝 = 信息。
+   ============================================================================ */
+
+html[data-v4skin="whale"] body,
+html[data-v4skin="whale"] body.dark {
+    --bg: #050C18;
+    --bg-elevated: #0A1628;
+    --card-bg: #0D1D33;
+    --card-bg-hover: #12263F;
+    --text: #E6EEF9;
+    --text-muted: #93AAC8;
+    --text-faint: #5E7A9C;
+    --border: #1B3150;
+    --border-strong: #2A4A6E;
+    --primary: #7FB6E8;
+    --primary-strong: #A9D2F5;
+    --primary-soft: rgba(127, 182, 232, .14);
+    --danger: #E0785C;
+    --danger-soft: rgba(224, 120, 92, .14);
+    --gold-primary: #D3B074;
+    --accent: #D3B074;
+    --accent-soft: rgba(211, 176, 116, .13);
+    --accent-line: rgba(211, 176, 116, .44);
+    --sprocket-bg: #152A46;
+    --sprocket-hole: #050C18;
+    --shadow-1: 0 1px 2px rgba(2, 7, 15, .6);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .8);
+    --cv-glass-rgb: 8, 20, 38;
+    --cv-glass-edge: rgba(169, 210, 245, .16);
+    --cv-glass-edge-2: rgba(0, 0, 0, .5);
+    --cv-glass-shadow: 0 30px 80px -24px rgba(0, 0, 0, .85);
+    --cv-glass-spec: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, 0) 46%);
+    --cv-scrim-rgb: 5, 12, 24;
+    --cv-scrim-strong-rgb: 8, 18, 32;
+}
+
+html[data-v4skin="whale"] body {
+    background:
+        radial-gradient(62% 44% at 78% -8%, rgba(127, 182, 232, .17), transparent 64%),
+        radial-gradient(38% 30% at 10% 4%, rgba(211, 176, 116, .05), transparent 62%),
+        linear-gradient(180deg, #061020 0%, #050C18 48%, #03080F 100%);
+    background-attachment: fixed;
+}
+
+html[data-v4skin="whale"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-v4skin="whale"] ::-webkit-scrollbar-track { background: #050C18; }
+html[data-v4skin="whale"] ::-webkit-scrollbar-thumb {
+    background: #24425F;
+    border: 2px solid #050C18;
+    border-radius: 999px;
+}
+html[data-v4skin="whale"] ::selection { background: rgba(127, 182, 232, .28); color: #F5FAFF; }
+
+/* ---------- 顶栏 / 侧栏 ---------- */
+html[data-v4skin="whale"] .navbar {
+    background: linear-gradient(180deg, rgba(5, 12, 24, .94), rgba(6, 15, 29, .86));
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+    backdrop-filter: blur(18px) saturate(120%);
+    border-bottom: 1px solid rgba(211, 176, 116, .20);
+    box-shadow: 0 12px 34px -18px rgba(0, 0, 0, .8);
+}
+html[data-v4skin="whale"] .logo {
+    color: #F2F7FF;
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: .03em;
+}
+html[data-v4skin="whale"] .logo::after {
+    content: "DEEP WHALE";
+    display: inline-block;
+    margin-left: 10px;
+    padding: 2px 7px;
+    border: 1px solid rgba(211, 176, 116, .40);
+    border-radius: 999px;
+    vertical-align: 2px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .18em;
+    color: var(--accent);
+}
+html[data-v4skin="whale"] .search-box input,
+html[data-v4skin="whale"] #searchInput {
+    background: rgba(7, 17, 31, .82) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text) !important;
+}
+html[data-v4skin="whale"] #searchInput:focus {
+    border-color: rgba(127, 182, 232, .55) !important;
+    box-shadow: 0 0 0 3px rgba(127, 182, 232, .14) !important;
+}
+html[data-v4skin="whale"] .search-sort-select {
+    background: rgba(7, 17, 31, .82);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+html[data-v4skin="whale"] .sidebar {
+    background: linear-gradient(180deg, rgba(6, 14, 27, .76), rgba(4, 10, 20, .9));
+    border-right: 1px solid rgba(211, 176, 116, .14);
+}
+html[data-v4skin="whale"] .nav-item {
+    margin: 1px 8px;
+    padding-left: 10px;
+    border-radius: 8px;
+    color: #B7C9DE;
+}
+html[data-v4skin="whale"] .nav-item.active {
+    background: linear-gradient(90deg, rgba(127, 182, 232, .20), rgba(127, 182, 232, .03) 86%) !important;
+    box-shadow: inset 2px 0 0 var(--primary), inset 0 0 0 1px rgba(127, 182, 232, .20);
+    color: #F3FAFF !important;
+}
+html[data-v4skin="whale"] .nav-item.active .count { color: var(--accent) !important; }
+html[data-v4skin="whale"] .sidebar-section h3 {
+    color: #6F8EB0;
+    letter-spacing: .16em;
+}
+
+/* ---------- 鲸鱼娘首屏（新增，只在 whale 显示） ---------- */
+.wh-hero { display: none; }
+html[data-v4skin="whale"] body #homeView.active {
+    grid-template-areas:
+        "hero hero"
+        "stage stage"
+        "chat rank"
+        "cal cal" !important;
+    grid-template-rows: auto auto minmax(440px, auto) auto !important;
+}
+html[data-v4skin="whale"] .wh-hero {
+    grid-area: hero;
+    position: relative;
+    display: block;
+    min-height: 258px;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(211, 176, 116, .28);
+    background: #071426;
+    box-shadow: 0 28px 70px -32px rgba(0, 0, 0, .9);
+}
+html[data-v4skin="whale"] .wh-hero-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 42%;
+    transform: scale(1.015);
+}
+html[data-v4skin="whale"] .wh-hero-veil {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(4, 10, 20, .96) 0%, rgba(4, 10, 20, .80) 34%, rgba(4, 10, 20, .18) 66%, rgba(4, 10, 20, .40) 100%),
+        linear-gradient(0deg, rgba(4, 10, 20, .80), transparent 58%);
+}
+html[data-v4skin="whale"] .wh-hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    max-width: 580px;
+    padding: 34px 42px;
+}
+html[data-v4skin="whale"] .wh-hero-kicker {
+    margin: 0 0 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .20em;
+    color: var(--accent);
+}
+html[data-v4skin="whale"] .wh-hero-greet {
+    margin: 0 0 4px;
+    font-size: 13px;
+    letter-spacing: .04em;
+    color: #9FC3E4;
+}
+html[data-v4skin="whale"] .wh-hero-title {
+    margin: 0 0 18px;
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    line-height: 1.16;
+    color: #F5FAFF;
+    text-shadow: 0 12px 40px rgba(0, 0, 0, .78);
+}
+html[data-v4skin="whale"] .wh-hero-stats {
+    display: flex;
+    gap: 34px;
+}
+html[data-v4skin="whale"] .wh-hero-stats span {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+}
+html[data-v4skin="whale"] .wh-hero-stats b {
+    font-family: var(--font-mono);
+    font-size: 24px;
+    color: #EAF4FF;
+}
+html[data-v4skin="whale"] .wh-hero-stats i {
+    font-style: normal;
+    font-size: 11.5px;
+    color: #8FA9C4;
+}
+html[data-v4skin="whale"] .wh-hero-rail {
+    position: absolute;
+    right: 26px;
+    bottom: 24px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+html[data-v4skin="whale"] .wh-hero-rail span {
+    display: block;
+    width: 18px;
+    height: 1px;
+    background: rgba(211, 176, 116, .55);
+}
+html[data-v4skin="whale"] .wh-hero-rail span:nth-child(2) { width: 12px; opacity: .75; }
+html[data-v4skin="whale"] .wh-hero-rail span:nth-child(3) { width: 22px; opacity: .9; }
+html[data-v4skin="whale"] .wh-hero-rail span:nth-child(4) { width: 8px; opacity: .5; }
+html[data-v4skin="whale"] .wh-hero-rail span:nth-child(5) { width: 15px; opacity: .65; }
+
+/* ---------- 今夜主映 ---------- */
+html[data-v4skin="whale"] .hcs-shell {
+    border-color: rgba(211, 176, 116, .30) !important;
+    background:
+        linear-gradient(90deg, rgba(4, 10, 20, .97) 0%, rgba(5, 14, 27, .88) 46%, rgba(5, 14, 27, .52) 100%),
+        url("/img/whale/hero-v2.webp") center 34% / cover no-repeat,
+        #071426 !important;
+    box-shadow: 0 30px 72px -30px rgba(0, 0, 0, .92), inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+    color: var(--text) !important;
+}
+html[data-v4skin="whale"] .hcs-ambient { display: none !important; }
+html[data-v4skin="whale"] .hcs-sprocket {
+    background-color: rgba(5, 12, 24, .58) !important;
+    border-bottom-color: rgba(211, 176, 116, .24) !important;
+    background-image: repeating-linear-gradient(90deg, transparent 0, transparent 10px, rgba(211, 176, 116, .34) 10px, rgba(211, 176, 116, .34) 18px, transparent 18px, transparent 28px) !important;
+}
+html[data-v4skin="whale"] .hcs-cover-stage {
+    border-color: rgba(211, 176, 116, .46) !important;
+    box-shadow: 0 20px 44px -20px #000, 0 0 32px rgba(127, 182, 232, .18);
+}
+html[data-v4skin="whale"] .hcs-kicker {
+    color: var(--accent) !important;
+    background: rgba(5, 12, 24, .60) !important;
+    border-color: rgba(211, 176, 116, .38) !important;
+}
+html[data-v4skin="whale"] .hcs-greeting,
+html[data-v4skin="whale"] .hcs-ticket-no { color: #9DB6D2 !important; }
+html[data-v4skin="whale"] .hcs-title {
+    font-family: var(--font-display) !important;
+    color: #F3F9FF !important;
+    letter-spacing: .02em;
+    text-shadow: 0 10px 36px rgba(0, 0, 0, .78);
+}
+html[data-v4skin="whale"] .hcs-badge {
+    background: rgba(8, 20, 36, .68) !important;
+    border-color: rgba(127, 182, 232, .28) !important;
+    color: #DCE9F7 !important;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+}
+html[data-v4skin="whale"] .hcs-badge.is-type {
+    border-color: rgba(211, 176, 116, .45) !important;
+    color: #EBD7AE !important;
+}
+html[data-v4skin="whale"] .hcs-badge.is-score { color: #F0D6A2 !important; }
+html[data-v4skin="whale"] .hcs-reason { color: #C7D8EA !important; }
+html[data-v4skin="whale"] .hcs-btn-primary {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD) !important;
+    border-color: rgba(211, 176, 116, .58) !important;
+    color: #04101E !important;
+    box-shadow: 0 10px 26px -10px rgba(127, 182, 232, .75) !important;
+}
+html[data-v4skin="whale"] .hcs-btn-secondary {
+    background: rgba(8, 18, 34, .74) !important;
+    border-color: rgba(211, 176, 116, .40) !important;
+    color: #E6EEF9 !important;
+}
+html[data-v4skin="whale"] .hcs-btn-ghost {
+    border-color: rgba(127, 182, 232, .24) !important;
+    color: #A9C4DF !important;
+}
+html[data-v4skin="whale"] .hcs-side {
+    border-left-color: rgba(211, 176, 116, .24) !important;
+    background: linear-gradient(180deg, rgba(6, 15, 29, .34), rgba(6, 15, 29, .52));
+    border-radius: 10px;
+    padding: 12px 0 12px 22px;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+html[data-v4skin="whale"] .hcs-side-label { color: var(--accent) !important; }
+html[data-v4skin="whale"] .hcs-side-link { color: #A9D2F5 !important; }
+html[data-v4skin="whale"] .hcs-pulse-card {
+    background: rgba(8, 20, 36, .62) !important;
+    border-color: rgba(127, 182, 232, .18) !important;
+    color: #E6EEF9 !important;
+}
+html[data-v4skin="whale"] .hcs-pulse-card:hover {
+    border-color: rgba(211, 176, 116, .55) !important;
+    background: rgba(14, 32, 56, .80) !important;
+}
+html[data-v4skin="whale"] .hcs-pulse-num { color: var(--accent) !important; }
+html[data-v4skin="whale"] .hcs-pulse-name,
+html[data-v4skin="whale"] .hcs-reel-pos { color: #93AAC8 !important; }
+html[data-v4skin="whale"] .hcs-reel-item {
+    border-color: rgba(127, 182, 232, .22) !important;
+}
+html[data-v4skin="whale"] .hcs-reel-item.active {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 1px rgba(211, 176, 116, .30), 0 0 18px rgba(127, 182, 232, .35) !important;
+}
+
+/* ---------- 首页 AI 卡 ---------- */
+html[data-v4skin="whale"] body.dark .home-chat-card,
+html[data-v4skin="whale"] body .home-chat-card {
+    background: linear-gradient(180deg, rgba(9, 22, 40, .82), rgba(6, 15, 29, .90)) !important;
+    border: 1px solid rgba(211, 176, 116, .26) !important;
+    border-top: 2px solid rgba(211, 176, 116, .58) !important;
+    box-shadow: 0 30px 70px -30px rgba(0, 0, 0, .88), inset 0 1px 0 rgba(255, 255, 255, .05) !important;
+    color: var(--text) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(124%);
+    backdrop-filter: blur(18px) saturate(124%);
+}
+html[data-v4skin="whale"] .home-chat-head {
+    background: rgba(127, 182, 232, .05) !important;
+    border-bottom-color: rgba(127, 182, 232, .16) !important;
+}
+html[data-v4skin="whale"] .hch-title {
+    font-family: var(--font-display);
+    letter-spacing: .03em;
+    color: #EDF6FF;
+}
+html[data-v4skin="whale"] .hch-dot {
+    background: var(--primary);
+    box-shadow: 0 0 10px rgba(127, 182, 232, .8);
+}
+html[data-v4skin="whale"] .hch-sub { color: #7F9AB8 !important; }
+html[data-v4skin="whale"] .hch-tool-btn,
+html[data-v4skin="whale"] .hch-session-select {
+    background: rgba(7, 17, 31, .72);
+    border-color: rgba(127, 182, 232, .24);
+    color: #B7C9DE;
+}
+html[data-v4skin="whale"] body.dark .home-msg.ai .bubble,
+html[data-v4skin="whale"] body .home-msg.ai .bubble {
+    background: rgba(10, 24, 42, .88) !important;
+    border: 1px solid rgba(127, 182, 232, .20) !important;
+    border-left: 3px solid var(--primary) !important;
+    color: #DCE9F7 !important;
+}
+html[data-v4skin="whale"] body.dark .home-msg.user .bubble,
+html[data-v4skin="whale"] body .home-msg.user .bubble {
+    background: linear-gradient(135deg, #2F6FB8, #1B477E) !important;
+    border: 1px solid rgba(211, 176, 116, .38) !important;
+    color: #F5FAFF !important;
+}
+html[data-v4skin="whale"] .home-quick-prompts .hqp,
+html[data-v4skin="whale"] .home-quick-prompts .hqp-pill {
+    background: rgba(127, 182, 232, .08) !important;
+    border: 1px solid rgba(127, 182, 232, .24) !important;
+    color: #CFE0F2 !important;
+}
+html[data-v4skin="whale"] .home-quick-prompts .hqp:hover,
+html[data-v4skin="whale"] .home-quick-prompts .hqp-pill:hover {
+    background: rgba(127, 182, 232, .18) !important;
+    border-color: rgba(211, 176, 116, .40) !important;
+    color: #FFFFFF !important;
+}
+html[data-v4skin="whale"] body.dark .home-chat-input,
+html[data-v4skin="whale"] body .home-chat-input {
+    background: rgba(5, 13, 26, .78) !important;
+    border-top-color: rgba(127, 182, 232, .16) !important;
+}
+html[data-v4skin="whale"] body.dark .home-chat-input textarea,
+html[data-v4skin="whale"] body .home-chat-input textarea {
+    background: rgba(9, 22, 40, .86) !important;
+    border-color: rgba(127, 182, 232, .24) !important;
+    color: #E6EEF9 !important;
+}
+html[data-v4skin="whale"] .home-chat-input textarea::placeholder { color: #6F8EB0 !important; }
+html[data-v4skin="whale"] .home-chat-mic-btn {
+    background: rgba(9, 22, 40, .86);
+    border-color: rgba(127, 182, 232, .22);
+    color: #A9C4DF;
+}
+html[data-v4skin="whale"] .btn-send {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD);
+    border: 1px solid rgba(211, 176, 116, .52);
+    color: #04101E;
+    box-shadow: 0 8px 22px -8px rgba(127, 182, 232, .8);
+}
+html[data-v4skin="whale"] .home-mascot {
+    width: 140px !important;
+    border: 1px solid rgba(211, 176, 116, .50);
+    border-radius: 16px;
+    box-shadow: 0 0 0 4px rgba(127, 182, 232, .10), 0 24px 46px -20px rgba(0, 0, 0, .9), 0 0 30px rgba(127, 182, 232, .28);
+    -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 82%, transparent 100%);
+}
+
+/* ---------- 热度情报 / 本周放送 ---------- */
+html[data-v4skin="whale"] .home-rank-title,
+html[data-v4skin="whale"] .home-calendar .home-rank-title {
+    font-family: var(--font-display);
+    letter-spacing: .03em;
+    color: #F2F7FF;
+}
+html[data-v4skin="whale"] .home-rank-tab {
+    background: rgba(8, 20, 36, .62) !important;
+    border: 1px solid rgba(127, 182, 232, .20) !important;
+    color: #A9C4DF !important;
+}
+html[data-v4skin="whale"] .home-rank-tab.active {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD) !important;
+    border-color: rgba(211, 176, 116, .48) !important;
+    color: #06101C !important;
+}
+html[data-v4skin="whale"] .rank-item {
+    background: rgba(8, 20, 36, .60) !important;
+    border: 1px solid rgba(127, 182, 232, .16) !important;
+    border-radius: 10px;
+}
+html[data-v4skin="whale"] .rank-item:hover {
+    background: rgba(14, 32, 56, .82) !important;
+    border-color: rgba(211, 176, 116, .50) !important;
+    transform: translateY(-2px);
+}
+html[data-v4skin="whale"] .rank-num {
+    font-family: var(--font-mono);
+    color: var(--accent) !important;
+}
+html[data-v4skin="whale"] .rank-title { color: #E6EEF9 !important; }
+html[data-v4skin="whale"] .rank-meta,
+html[data-v4skin="whale"] .rank-loading { color: #8FA9C4 !important; }
+html[data-v4skin="whale"] .cal-item {
+    background: rgba(8, 20, 36, .60) !important;
+    border: 1px solid rgba(127, 182, 232, .16) !important;
+    border-radius: 10px;
+}
+html[data-v4skin="whale"] .cal-item:hover { border-color: rgba(211, 176, 116, .45) !important; }
+html[data-v4skin="whale"] .cal-item-title { color: #E6EEF9 !important; }
+html[data-v4skin="whale"] .cal-item-meta,
+html[data-v4skin="whale"] .home-rank-sub { color: #8FA9C4 !important; }
+html[data-v4skin="whale"] .cal-chip {
+    background: rgba(127, 182, 232, .10) !important;
+    border: 1px solid rgba(127, 182, 232, .20) !important;
+    color: #CFE0F2 !important;
+}
+
+/* ---------- 片库 ---------- */
+html[data-v4skin="whale"] .toolbar { border-bottom-color: rgba(211, 176, 116, .18) !important; }
+html[data-v4skin="whale"] .toolbar-title,
+html[data-v4skin="whale"] #toolbarTitle {
+    font-family: var(--font-display);
+    letter-spacing: .02em;
+    color: #F2F7FF !important;
+}
+html[data-v4skin="whale"] .toolbar-count { color: #8FA9C4 !important; }
+html[data-v4skin="whale"] .movie-card,
+html[data-v4skin="whale"] .movie-card-compact { background: transparent !important; }
+html[data-v4skin="whale"] .movie-poster-wrap {
+    border-radius: 9px;
+    box-shadow: 0 14px 32px -18px rgba(0, 0, 0, .9);
+    background: #0A1628;
+}
+html[data-v4skin="whale"] .movie-card:hover .movie-poster-wrap,
+html[data-v4skin="whale"] .movie-card-compact:hover .movie-poster-wrap {
+    outline: 1px solid rgba(211, 176, 116, .62) !important;
+    outline-offset: 0 !important;
+    box-shadow: 0 20px 44px -20px rgba(0, 0, 0, .95), 0 0 30px rgba(127, 182, 232, .20);
+}
+html[data-v4skin="whale"] .movie-title-below {
+    font-family: var(--font-display);
+    color: #E6EEF9 !important;
+}
+html[data-v4skin="whale"] .mtb-meta,
+html[data-v4skin="whale"] .mtb-author-chip,
+html[data-v4skin="whale"] .mtb-size-chip { color: #8FA9C4 !important; }
+html[data-v4skin="whale"] .facet-group .f-pill,
+html[data-v4skin="whale"] .filter-chip,
+html[data-v4skin="whale"] .slice-pill {
+    background: rgba(8, 20, 36, .62) !important;
+    border-color: rgba(127, 182, 232, .20) !important;
+    color: #B7C9DE !important;
+}
+html[data-v4skin="whale"] .facet-group .f-pill.active,
+html[data-v4skin="whale"] .filter-chip.active,
+html[data-v4skin="whale"] .slice-pill.active {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD) !important;
+    border-color: rgba(211, 176, 116, .44) !important;
+    color: #06101C !important;
+}
+html[data-v4skin="whale"] .stat-card {
+    background: rgba(8, 20, 36, .62) !important;
+    border: 1px solid rgba(127, 182, 232, .16) !important;
+    border-top: 1px solid rgba(211, 176, 116, .34) !important;
+}
+html[data-v4skin="whale"] .stat-card .num { color: #EAF4FF; }
+html[data-v4skin="whale"] .stat-card .label { color: #8FA9C4; }
+
+/* ---------- 详情 / AI / 设置弹层 ---------- */
+html[data-v4skin="whale"] #detailModal .modal-content,
+html[data-v4skin="whale"] #detailModal .detail-modal,
+html[data-v4skin="whale"] body.dark #detailModal .modal-content.detail-modal {
+    background: linear-gradient(168deg, rgba(12, 27, 47, .98), rgba(5, 13, 25, .99)) !important;
+    border: 1px solid rgba(127, 182, 232, .28) !important;
+    border-left-color: rgba(211, 176, 116, .48) !important;
+    color: var(--text) !important;
+}
+html[data-v4skin="whale"] #aiModal .modal-content,
+html[data-v4skin="whale"] #aiModal .ai-modal-card {
+    background: linear-gradient(168deg, rgba(10, 24, 42, .97), rgba(5, 12, 24, .99)) !important;
+    border-color: rgba(127, 182, 232, .26) !important;
+    color: var(--text) !important;
+}
+html[data-v4skin="whale"] .settings-nav-item,
+html[data-v4skin="whale"] .settings-card,
+html[data-v4skin="whale"] .settings-group {
+    background: rgba(9, 22, 40, .62) !important;
+    border-color: rgba(127, 182, 232, .16) !important;
+}
+html[data-v4skin="whale"] .settings-nav-item.active {
+    background: linear-gradient(90deg, rgba(127, 182, 232, .20), rgba(127, 182, 232, .04)) !important;
+    color: #F2F7FF !important;
+}
+html[data-v4skin="whale"] .settings-card h3,
+html[data-v4skin="whale"] .settings-group h3 {
+    font-family: var(--font-display);
+    letter-spacing: .02em;
+    color: #F2F7FF;
+}
+html[data-v4skin="whale"] .settings-input,
+html[data-v4skin="whale"] .select-input {
+    background: rgba(6, 15, 29, .82) !important;
+    border-color: rgba(127, 182, 232, .22) !important;
+    color: #E6EEF9 !important;
+}
+html[data-v4skin="whale"] .theme-card {
+    background: rgba(9, 22, 40, .62) !important;
+    border-color: rgba(127, 182, 232, .16) !important;
+}
+html[data-v4skin="whale"] .theme-card.active {
+    border-color: rgba(211, 176, 116, .55) !important;
+    box-shadow: 0 0 0 1px rgba(211, 176, 116, .25), 0 0 24px rgba(127, 182, 232, .16) !important;
+}
+html[data-v4skin="whale"] .theme-card[data-v4skin="whale"] {
+    background-image:
+        linear-gradient(180deg, rgba(5, 12, 24, .18), rgba(5, 12, 24, .88)),
+        url("/img/whale/card.webp") !important;
+    background-size: cover !important;
+    background-position: center 28% !important;
+}
+html[data-v4skin="whale"] .theme-card[data-v4skin="whale"] .theme-name,
+html[data-v4skin="whale"] .theme-card[data-v4skin="whale"] b { color: #F5FAFF !important; }
+
+/* ---------- 按钮 / 通知 ---------- */
+html[data-v4skin="whale"] .btn-primary,
+html[data-v4skin="whale"] .btn:not(.btn-secondary):not(.btn-danger) {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD) !important;
+    border-color: rgba(211, 176, 116, .55) !important;
+    color: #04101E !important;
+}
+html[data-v4skin="whale"] .btn-secondary {
+    background: rgba(8, 20, 36, .72) !important;
+    border-color: rgba(127, 182, 232, .24) !important;
+    color: #DCE9F7 !important;
+}
+/* AI 工作台：清掉 motion-v2 的琥珀底色 */
+html[data-v4skin="whale"] .dsn-input-box {
+    background: rgba(6, 15, 29, .86) !important;
+    border-color: rgba(127, 182, 232, .24) !important;
+}
+html[data-v4skin="whale"] .dsn-input-box:focus-within {
+    border-color: rgba(127, 182, 232, .58) !important;
+    box-shadow: 0 0 0 2px rgba(127, 182, 232, .16) !important;
+}
+html[data-v4skin="whale"] .dsn-textarea {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: #E6EEF9 !important;
+}
+html[data-v4skin="whale"] .dsn-textarea::placeholder { color: #6F8EB0 !important; }
+html[data-v4skin="whale"] .dsn-pill-btn {
+    background: rgba(8, 20, 36, .58) !important;
+    border-color: rgba(127, 182, 232, .20) !important;
+    color: #B7C9DE !important;
+}
+html[data-v4skin="whale"] .dsn-pill-btn:hover,
+html[data-v4skin="whale"] .dsn-pill-btn.active {
+    background: rgba(127, 182, 232, .16) !important;
+    border-color: rgba(127, 182, 232, .46) !important;
+    color: #EAF4FF !important;
+}
+html[data-v4skin="whale"] .dsn-send-btn {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD) !important;
+    color: #04101E !important;
+}
+html[data-v4skin="whale"] .dsn-popover {
+    background: rgba(6, 16, 30, .96) !important;
+    border-color: rgba(211, 176, 116, .32) !important;
+}
+html[data-v4skin="whale"] .global-asr-fab {
+    background: linear-gradient(180deg, #A9D2F5, #5E96CD) !important;
+    border: 1px solid rgba(211, 176, 116, .60) !important;
+    color: #04101E !important;
+}
+html[data-v4skin="whale"] .notification,
+html[data-v4skin="whale"] .toast {
+    background: rgba(7, 17, 31, .96) !important;
+    border: 1px solid rgba(211, 176, 116, .34) !important;
+    color: #E6EEF9 !important;
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 860px) {
+    html[data-v4skin="whale"] body #homeView.active {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: auto auto auto auto auto !important;
+        grid-template-areas:
+            "hero"
+            "stage"
+            "chat"
+            "rank"
+            "cal" !important;
+    }
+    html[data-v4skin="whale"] .wh-hero { min-height: 190px; }
+    html[data-v4skin="whale"] .wh-hero-inner { padding: 22px 20px; }
+    html[data-v4skin="whale"] .wh-hero-title { font-size: 30px; margin-bottom: 12px; }
+    html[data-v4skin="whale"] .wh-hero-stats { gap: 20px; }
+    html[data-v4skin="whale"] .wh-hero-stats b { font-size: 19px; }
+    html[data-v4skin="whale"] .wh-hero-rail { display: none; }
+    html[data-v4skin="whale"] .logo::after { display: none; }
+    html[data-v4skin="whale"] body .home-rank,
+    html[data-v4skin="whale"] body .home-calendar {
+        background: rgba(8, 20, 36, .62) !important;
+        border-color: rgba(127, 182, 232, .18) !important;
+    }
+    html[data-v4skin="whale"] .hcs-side {
+        background: rgba(6, 15, 29, .72);
+        padding: 10px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-v4skin="whale"] .wh-hero-art { transform: none; }
+}
