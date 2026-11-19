@@ -944,6 +944,11 @@ router.post('/progress/:id', (req, res) => {
         if (dur > 0 && pos / dur >= 0.95) {
             clearPlaybackProgress.run(req.params.id);
             db.prepare('UPDATE movies SET watched = 1 WHERE id = ?').run(req.params.id);
+            // 第一档①：看完自动增量上报 Bangumi（异步、静默，不影响进度响应）
+            setImmediate(() => {
+                try { require('../utils/auto-sync-bangumi').onMovieCompleted(parseInt(req.params.id)); }
+                catch (e) { /* 自动同步失败绝不影响播放进度 */ }
+            });
             return res.json({ code: 0, data: { completed: true } });
         }
         setPlaybackProgress.run({

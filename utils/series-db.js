@@ -253,6 +253,17 @@ function getEpisodeProgress(episodeId) {
   return db.prepare(`SELECT * FROM episode_progress WHERE episodeId = ?`).get(Number(episodeId)) || null;
 }
 
+/** 第一档②：设置某集的跳过片头/片尾区间（秒）。先确保有进度行，再 UPDATE。 */
+function setEpisodeSkip(episodeId, { skipOp = 0, skipEd = 0 } = {}) {
+  const eid = Number(episodeId);
+  if (!eid) return null;
+  // 借 setEpisodeProgress 确保行存在（watched=-1 不改其它字段）
+  setEpisodeProgressStmt.run({ episodeId: eid, position: 0, duration: 0, watched: -1, updatedAt: now() });
+  db.prepare(`UPDATE episode_progress SET skipOp = ?, skipEd = ?, updatedAt = ? WHERE episodeId = ?`)
+    .run(Number(skipOp) || 0, Number(skipEd) || 0, now(), eid);
+  return getEpisodeProgress(eid);
+}
+
 function getEpisodeProgressMap(seriesId) {
   const rows = db.prepare(`
     SELECT p.episodeId, p.position, p.duration, p.watched, p.updatedAt
@@ -346,6 +357,7 @@ module.exports = {
   getFollowStatus,
   getFollowBoard,
   setEpisodeProgress,
+  setEpisodeSkip,
   getEpisodeProgress,
   getEpisodeProgressMap,
   clearEpisodeProgress,

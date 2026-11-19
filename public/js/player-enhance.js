@@ -42,6 +42,16 @@
     readSkipCfg();
     updateSkipBtn();
     updatePipBtn();
+    // 第一档②：追番集从 DB 异步加载跳过区间（按 episode），覆盖 localStorage 值
+    const epId = window.__svPlayingEpisode || 0;
+    if (epId) {
+      fetch('/api/series/episode/skip?episodeId=' + epId).then(r => r.json()).then(j => {
+        if (j && j.code === 0 && j.data && (j.data.skipOp || j.data.skipEd)) {
+          skipCfg = { opEnd: j.data.skipOp || 0, edStart: j.data.skipEd || 0 };
+          updateSkipBtn();
+        }
+      }).catch(() => {});
+    }
     // 本地媒体路径（/api/movie/stream?path=...）才可扫同名字幕；在线流传 videoUrl 让后端过滤
     let mediaPath = '';
     try {
@@ -141,11 +151,20 @@
 
   // ---------- 跳过片头/片尾 ----------
   function readSkipCfg() {
+    // 先读 localStorage（普通影片仍按片名存）；追番集随后由 onPlay 异步从 DB 覆盖
     try { skipCfg = JSON.parse(localStorage.getItem(SKIP_KEY(currentTitle)) || 'null'); }
     catch (e) { skipCfg = null; }
     if (!skipCfg || typeof skipCfg !== 'object') skipCfg = { opEnd: 0, edStart: 0 };
   }
   function saveSkipCfg() {
+    const epId = window.__svPlayingEpisode || 0;
+    if (epId) {
+      // 异步写 DB，失败静默
+      fetch('/api/series/episode/skip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ episodeId: epId, skipOp: skipCfg.opEnd || 0, skipEd: skipCfg.edStart || 0 })
+      }).catch(() => {});
+    }
     try { localStorage.setItem(SKIP_KEY(currentTitle), JSON.stringify(skipCfg)); } catch (e) {}
   }
   function updateSkipBtn() {

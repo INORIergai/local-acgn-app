@@ -277,6 +277,8 @@ CREATE TABLE IF NOT EXISTS episode_progress (
   position  REAL DEFAULT 0,
   duration  REAL DEFAULT 0,
   watched   INTEGER DEFAULT 0,
+  skipOp    REAL DEFAULT 0,
+  skipEd    REAL DEFAULT 0,
   updatedAt INTEGER DEFAULT 0,
   FOREIGN KEY(episodeId) REFERENCES episodes(id) ON DELETE CASCADE
 );

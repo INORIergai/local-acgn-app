@@ -114,6 +114,28 @@ router.post('/episode/progress', (req, res) => {
   } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
+// 第一档②：读某集跳过片头片尾区间
+router.get('/episode/skip', (req, res) => {
+  try {
+    const episodeId = Number(req.query.episodeId);
+    if (!episodeId) return res.json({ code: -1, msg: '缺少 episodeId' });
+    const p = sdb.getEpisodeProgress(episodeId);
+    res.json({ code: 0, data: { skipOp: (p && p.skipOp) || 0, skipEd: (p && p.skipEd) || 0 } });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+// 第一档②：设置某集跳过片头片尾区间（存 DB，按 series/episode 而非片名）
+router.post('/episode/skip', (req, res) => {
+  try {
+    const episodeId = Number(req.body.episodeId);
+    if (!episodeId) return res.json({ code: -1, msg: '缺少 episodeId' });
+    res.json({
+      code: 0,
+      data: sdb.setEpisodeSkip(episodeId, { skipOp: req.body.skipOp, skipEd: req.body.skipEd })
+    });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
 router.post('/episode/link', (req, res) => {
   try {
     const ok = sdb.linkEpisodeMovie(req.body.episodeId, req.body.movieId);

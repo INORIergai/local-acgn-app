@@ -234,6 +234,17 @@ function migrate() {
     }
   }
 
+  // 第一档②：跳过片头片尾区间按 series/episode 存 DB（替代按片名存 localStorage）
+  try {
+    const epCols = db.prepare('PRAGMA table_info(episode_progress)').all().map(c => c.name);
+    for (const [name, def] of [['skipOp', 'REAL DEFAULT 0'], ['skipEd', 'REAL DEFAULT 0']]) {
+      if (!epCols.includes(name)) {
+        db.exec(`ALTER TABLE episode_progress ADD COLUMN ${name} ${def}`);
+        console.log(`[数据库迁移] episode_progress 表新增字段: ${name}`);
+      }
+    }
+  } catch (e) { /* 表还不存在时忽略（首次建库在建表之后才有） */ }
+
   const actressColumns = db.prepare('PRAGMA table_info(actresses)').all();
   const actressFields = actressColumns.map(c => c.name);
 
@@ -550,6 +561,8 @@ function migrate() {
       position  REAL DEFAULT 0,             -- 播放位置（秒）
       duration  REAL DEFAULT 0,
       watched   INTEGER DEFAULT 0,          -- 是否已看完
+      skipOp    REAL DEFAULT 0,             -- 跳过片头结束位置（秒，0=不跳）
+      skipEd    REAL DEFAULT 0,             -- 跳过片尾开始位置（秒，0=不跳）
       updatedAt INTEGER DEFAULT 0,
       FOREIGN KEY(episodeId) REFERENCES episodes(id) ON DELETE CASCADE
     );

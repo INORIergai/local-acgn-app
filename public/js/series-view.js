@@ -114,7 +114,7 @@
                 + '<span class="sv-ep-no">' + esc(e.episodeNo) + '</span>'
                 + '<span class="sv-ep-title">' + esc(e.title || ('第' + e.episodeNo + '集')) + '</span>'
                 + '<span class="sv-ep-stat">' + (watched ? '✓ 已看' : (pct ? pct + '%' : '未看')) + '</span>'
-                + (e.movieId ? '<button class="sv-ep-play" data-act="play" data-movie="' + e.movieId + '">播放</button>'
+                + (e.movieId ? '<button class="sv-ep-play" data-act="play" data-movie="' + e.movieId + '" data-ep="' + e.id + '" data-title="' + esc(d.series.title) + '">播放</button>'
                              : '<button class="sv-ep-nosrc sv-ep-search" data-act="search-bt" data-title="' + esc(d.series.title) + '" data-ep="' + esc(e.episodeNo) + '">🔍 搜BT</button>')
                 + '</div>';
         }).join('');
@@ -228,6 +228,9 @@
         }
         if (act === 'play') {
             const mid = Number(btn.dataset.movie);
+            // 第一档②：把当前追番集号传给播放器，跳过区间改为按 episode 存 DB
+            window.__svPlayingEpisode = Number(btn.dataset.ep) || 0;
+            window.__svPlayingTitle = btn.dataset.title || '';
             closeDetail();
             if (window.playMovieById) window.playMovieById(mid);
             else if (window.showVideoPlayer) window.showVideoPlayer('', '');

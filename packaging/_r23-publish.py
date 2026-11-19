@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.2.0'
+TAG = 'v6.3.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,20 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.2.0：追番内容闭环 + 播放体验（BT搜索 / 自动入库挂分集 / 外挂字幕 / 跳过OPED / PiP）
+COMMIT_MSG = """v6.3.0：第一档改进（看完自动上报 Bangumi + 跳过片头片尾存 DB）
 
-【阶段4 · 内容闭环】
-- 分集抽屉新增「搜BT」：复用 AnimeGarden RSS 源搜带磁力的种子，一键复制磁力转存到夸克/下载器
-- 自动入库挂分集：目录监控入库后自动解析文件名集号(S02E03/E07/第12话/[05]/-21-)，匹配追番 series 挂到对应 episode，「继续看第N集」直接播新下的文件
-- 夸克离线任务列表可读（/task/list，账号28个任务）；推离线API路径不可靠(404)故做半自动闭环，如实记录
-- 冷启动 BT 搜索超时重试 + 关键词只用番名（拼「第N话」实测0结果）
+- 看完自动增量上报 Bangumi：movieId→episode→series→bangumi subjectId，ep_status 只增不减，看完该季末集自动 collect；异步静默不阻塞播放
+- 跳过片头片尾区间从 localStorage 改存 DB（episode_progress 加 skipOp/skipEd 两列，按 series/episode 挂接，换文件名不丢）
+- 新增 GET/POST /api/series/episode/skip 接口；播放器按 episodeId 从 DB 加载
+- 夸克一键离线 API 已调研清楚（/offline/download/submit + dsg.encryption 私有加密），本版不实现，存档待攻
 
-【阶段3 · 播放体验】
-- 外挂字幕：同目录 srt/ass/vtt 自动扫描，转 WebVTT 原生渲染，可切换/关闭，路径过白名单
-- 跳过片头片尾：设秒数存本地，播放到点弹跳过按钮
-- 缓冲进度条 + 画中画 PiP；字幕菜单两栏布局双皮肤适配
-
-真机验证：阶段3 12/12、阶段4 8/8，纸/夜双皮肤截图取证，全程 0 pageerror。六阶段路线 0-4 全部完成。"""
+真机 5/5 通过。承接 v6.2.0 的追番内容闭环 + 播放体验。"""
 
 
 def get_token():
