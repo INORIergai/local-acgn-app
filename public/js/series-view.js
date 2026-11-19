@@ -116,6 +116,7 @@
                 + '<span class="sv-ep-stat">' + (watched ? '✓ 已看' : (pct ? pct + '%' : '未看')) + '</span>'
                 + (e.movieId ? '<button class="sv-ep-play" data-act="play" data-movie="' + e.movieId + '" data-ep="' + e.id + '" data-title="' + esc(d.series.title) + '">播放</button>'
                              : '<button class="sv-ep-nosrc sv-ep-search" data-act="search-bt" data-title="' + esc(d.series.title) + '" data-ep="' + esc(e.episodeNo) + '">🔍 搜BT</button>')
+                + '<button class="sv-ep-link" data-act="link-local" data-eid="' + e.id + '" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '" data-epno="' + esc(e.episodeNo) + '" title="手动挂本地影片">' + (e.movieId ? '换源' : '📎') + '</button>'
                 + '</div>';
         }).join('');
         const html = '<div class="sv-modal-mask" data-act="close-detail">'
@@ -129,6 +130,39 @@
         host.innerHTML = html;
     }
     function closeDetail() { const h = document.getElementById('svDetailHost'); if (h) h.innerHTML = ''; }
+
+    // ---------- v6.4.0④ 手动挂本地影片 ----------
+    async function openLinkLocal(episodeId, title, epno) {
+        let host = document.getElementById('svLinkHost');
+        if (!host) { host = document.createElement('div'); host.id = 'svLinkHost'; document.body.appendChild(host); }
+        host.innerHTML = '<div class="sv-modal-mask" data-act="close-link"><div class="sv-modal sv-link-modal" role="dialog" aria-modal="true">'
+            + '<div class="sv-modal-head"><h3>📎 挂本地影片 · ' + esc(title) + ' 第' + esc(epno) + '集</h3>'
+            + '<button class="sv-modal-close" data-act="close-link">✕</button></div>'
+            + '<div class="sv-link-body" id="svLinkBody"><div class="sv-empty">搜索影片库中…</div></div></div></div>';
+        host.querySelectorAll('[data-act="close-link"]').forEach(el => el.addEventListener('click', (e) => {
+            if (e.target === el || el.classList.contains('sv-modal-close')) host.innerHTML = '';
+        }));
+        // 用番名 + 集号搜影片库
+        const kw = [title, '第' + epno + '集'].filter(Boolean).join(' ');
+        try {
+            const r = await api('/api/movie/search?keyword=' + encodeURIComponent(kw) + '&limit=30');
+            const list = (r && (r.data || r)) || [];
+            const items = Array.isArray(list) ? list : (list.items || list.list || []);
+            const body = document.getElementById('svLinkBody');
+            if (!body) return;
+            if (!items.length) {
+                body.innerHTML = '<div class="sv-empty">没找到匹配影片。可点「🔍 搜BT」找种子，下载后会自动归集到本集。</div>';
+                return;
+            }
+            body.innerHTML = items.slice(0, 30).map(m =>
+                '<div class="sv-link-item"><div class="sv-link-title" title="' + esc(m.title || m.fileName || '') + '">' + esc(m.title || m.fileName || ('影片 #' + m.id)) + '</div>'
+                + '<button class="sv-link-pick" data-act="do-link" data-eid="' + episodeId + '" data-mid="' + m.id + '">挂到本集</button></div>'
+            ).join('');
+        } catch (e) {
+            const body = document.getElementById('svLinkBody');
+            if (body) body.innerHTML = '<div class="sv-empty">搜索失败：' + esc(e.message) + '</div>';
+        }
+    }
 
     // ---------- BT 搜索（阶段4） ----------
     async function copyText(text) {
@@ -176,7 +210,7 @@
     }
 
     // ---------- 事件委托 ----------
-    function onClick(e) {
+    async function onClick(e) {
         const btn = e.target.closest('[data-act]');
         if (!btn) return;
         const act = btn.dataset.act;
@@ -221,6 +255,19 @@
         }
         if (act === 'detail') { openDetail(sid); return; }
         if (act === 'search-bt') { openBtSearch(btn.dataset.title || '', btn.dataset.ep || ''); return; }
+        if (act === 'link-local') { openLinkLocal(Number(btn.dataset.eid), btn.dataset.title || '', btn.dataset.epno || ''); return; }
+        if (act === 'do-link') {
+            const eid = Number(btn.dataset.eid), mid = Number(btn.dataset.mid), seriesId = Number(btn.dataset.sid);
+            try {
+                const r = await api('/api/series/episode/link', { method: 'POST', body: JSON.stringify({ episodeId: eid, movieId: mid }) });
+                if (window.showNotification) showNotification(r && r.code === 0 ? '已挂接' : '挂接失败', r && r.code === 0 ? '现在可以播放这一集了' : (r && r.msg || ''));
+                if (r && r.code === 0) {
+                    const host = document.getElementById('svLinkHost'); if (host) host.innerHTML = '';
+                    if (seriesId) openDetail(seriesId);
+                }
+            } catch (e) { if (window.showNotification) showNotification('挂接失败', e.message); }
+            return;
+        }
         if (act === 'copy-magnet') {
             const mag = btn.dataset.magnet || '';
             copyText(mag).then(ok => { if (window.showNotification) showNotification(ok ? '磁力已复制' : '复制失败', ok ? '粘贴到夸克/下载器离线下载，完成后自动入库挂到本集' : '请手动复制'); });
@@ -242,6 +289,7 @@
         if (e.key !== 'Escape') return;
         closeDetail();
         const bt = document.getElementById('svBtHost'); if (bt) bt.innerHTML = '';
+        const lk = document.getElementById('svLinkHost'); if (lk) lk.innerHTML = '';
     }
 
     // ---------- 对外接口 ----------

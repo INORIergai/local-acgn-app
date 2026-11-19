@@ -39,6 +39,7 @@
     currentTitle = String(title || '');
     skipFired = { op: false, ed: false };
     clearTracks();
+    clearAssLayer();
     readSkipCfg();
     updateSkipBtn();
     updatePipBtn();
@@ -59,7 +60,7 @@
       if (u.pathname.indexOf('/api/movie/stream') >= 0) mediaPath = decodeURIComponent(u.searchParams.get('path') || '');
       else if (/\.(mp4|mkv|avi|mov|m4v|ts|flv|webm)(\?|$)/i.test(videoUrl)) mediaPath = videoUrl;
     } catch (e) { /* 非标准 URL */ }
-    if (mediaPath) scanSubtitles(mediaPath);
+    scanSubtitles(mediaPath);
   }
 
   // ---------- 字幕 ----------
@@ -67,8 +68,16 @@
     const menu = $('playerSubtitleMenu');
     if (!menu) return;
     try {
-      const r = await api('/api/player/subtitles?path=' + encodeURIComponent(mediaPath));
-      subtitleTracks = (r && r.code === 0 && Array.isArray(r.data)) ? r.data : [];
+      if (mediaPath) {
+        const r = await api('/api/player/subtitles?path=' + encodeURIComponent(mediaPath));
+        subtitleTracks = (r && r.code === 0 && Array.isArray(r.data)) ? r.data : [];
+      } else subtitleTracks = [];
+      // v6.4.0②：在线流/无同名字幕 → 在媒体目录按标题搜本地字幕库
+      if (!subtitleTracks.length && currentTitle) {
+        const r2 = await api('/api/player/subtitle-library?title=' + encodeURIComponent(currentTitle));
+        subtitleTracks = (r2 && r2.code === 0 && Array.isArray(r2.data)) ? r2.data : [];
+        if (subtitleTracks.length) subtitleTracks.forEach(x => { x.lang = x.lang || '本地库'; });
+      }
     } catch (e) { subtitleTracks = []; }
     renderSubtitleMenu();
   }
@@ -117,10 +126,71 @@
     subtitleTracks = [];
   }
 
+  // ---------- v6.4.0① ASS 特效字幕层 ----------
+  let assCues = [];
+  let assActive = false;
+  let assRaf = 0;
+
+  function clearAssLayer() {
+    assCues = []; assActive = false;
+    if (assRaf) { cancelAnimationFrame(assRaf); assRaf = 0; }
+    const layer = $('assSubLayer');
+    if (layer) layer.innerHTML = '';
+  }
+
+  async function loadAssStyles(t) {
+    try {
+      const r = await api('/api/player/subtitle-styled?path=' + encodeURIComponent(t.path));
+      const data = r && r.code === 0 && r.data;
+      if (!data || !data.cues || !data.cues.length) return false;
+      assCues = data.cues; assActive = true;
+      startAssLoop();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function startAssLoop() {
+    if (assRaf) return;
+    const tick = () => {
+      if (!assActive) { assRaf = 0; return; }
+      const video = $('videoPlayer'), layer = $('assSubLayer');
+      if (video && layer) {
+        const t = video.currentTime;
+        // 二分找当前 cue（cues 已按 start 排序）
+        let active = null;
+        for (const c of assCues) {
+          if (c.start <= t && t <= c.end) active = c;
+          else if (c.start > t) break;
+        }
+        if (active) {
+          const st = active.style || {};
+          const pos = st.pos || st.move;
+          let css = 'color:' + (st.color || '#fff') + ';font-size:' + (st.fontSize || 20) + 'px;'
+            + 'font-weight:' + (st.bold ? 700 : 400) + ';font-style:' + (st.italic ? 'italic' : 'normal') + ';';
+          if (st.borderColor) css += '-webkit-text-stroke:1px ' + st.borderColor + ';';
+          else if (st.border) css += 'text-shadow:0 1px 2px #000,0 0 1px #000;';
+          if (pos) css += 'left:' + (pos[0] / 3840 * 100).toFixed(2) + '%;top:' + (pos[1] / 2160 * 100).toFixed(2) + '%;transform:translate(-50%,-50%);position:absolute;';
+          else css += 'left:50%;bottom:12%;transform:translateX(-50%);position:absolute;';
+          const html = active.text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+          if (layer.dataset.sig !== active.start + '|' + html) {
+            layer.innerHTML = '<div class="ass-cue" style="' + css + '">' + html + '</div>';
+            layer.dataset.sig = active.start + '|' + html;
+          }
+          layer.style.display = 'block';
+        } else if (layer.innerHTML) {
+          layer.innerHTML = ''; layer.dataset.sig = ''; layer.style.display = 'none';
+        }
+      }
+      assRaf = requestAnimationFrame(tick);
+    };
+    assRaf = requestAnimationFrame(tick);
+  }
+
   function selectSubtitle(idx) {
     const video = $('videoPlayer');
     if (!video) return;
     clearTracks();
+    clearAssLayer();
     if (idx < 0 || !subtitleTracks[idx]) return;
     const t = subtitleTracks[idx];
     const track = document.createElement('track');
@@ -138,6 +208,16 @@
           if (video.textTracks[i].label === t.name) video.textTracks[i].mode = 'showing';
         }
       } catch (e) {}
+      // v6.4.0①：ASS 轨额外加载特效层（隐藏原生 track 避免双重字幕）
+      if (/\.(ass|ssa)$/i.test(t.path || t.name)) {
+        loadAssStyles(t).then(ok => {
+          if (ok) {
+            for (let i = 0; i < video.textTracks.length; i++) {
+              try { video.textTracks[i].mode = 'disabled'; } catch (e) {}
+            }
+          }
+        });
+      }
     }, 120);
   }
 

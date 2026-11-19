@@ -49,8 +49,12 @@
 
             + '<div class="bmp-card">'
             + '<div class="bmp-card-title">2. 同步进度</div>'
-            + '<div class="bmp-hint">pull = 拉 Bangumi 收藏/进度到本地；push = 推本地进度到 Bangumi；同步 = 双向（冲突取较新）。'
+            + '<div class="bmp-hint">pull = 拉 Bangumi 收藏/进度到本地；push = 推本地进度到 Bangumi；同步 = 双向。'
             + ' 首次使用建议先 pull 建立基线。</div>'
+            + '<div class="bmp-strategy"><label>双向同步冲突策略</label>'
+            + '<select id="bmpStrategy"><option value="newer">合并 · 较新者优先（推荐）</option>'
+            + '<option value="local">保留本地 · 只推不拉</option>'
+            + '<option value="remote">用云端 · 只拉不推</option></select></div>'
             + '<div class="bmp-actions">'
             + '<button class="btn btn-sm btn-secondary" data-act="pull"' + (connected ? '' : ' disabled') + '>⇩ 从 Bangumi 拉取</button>'
             + '<button class="btn btn-sm btn-secondary" data-act="push"' + (connected ? '' : ' disabled') + '>⇧ 推送到 Bangumi</button>'
@@ -118,7 +122,9 @@
             }
             if (['pull', 'push', 'sync'].includes(act)) {
                 busy(); syncMsg('同步中，请稍候…', true);
-                const r = await post('/api/bangumi/' + act, {});
+                const strategyEl = document.getElementById('bmpStrategy');
+                const body = (act === 'sync' && strategyEl) ? { strategy: strategyEl.value } : {};
+                const r = await post('/api/bangumi/' + act, body);
                 if (r && r.code === 0) {
                     const d = r.data || {};
                     const parts = [];

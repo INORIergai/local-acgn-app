@@ -143,11 +143,20 @@ async function push(opts = {}) {
     return result;
 }
 
-/** sync：先 pull 再 push（pull 结果作为基线，冲突由较新者覆盖——Bangumi 用 updatedAt） */
+/**
+ * sync：按冲突策略双向同步。
+ *   strategy='newer'(默认) —— 先 pull 建基线再 push（较新者覆盖，等价原行为）
+ *   strategy='local'       —— 本地优先：只 push，不 pull（本地是权威）
+ *   strategy='remote'      —— Bangumi 优先：只 pull，不 push（云端是权威）
+ * ★ 三种策略对应用户选择「保留本地 / 合并取较新 / 用云端」，逐条选择属后续增强。
+ */
 async function sync(opts = {}) {
-    const pulled = await pull({ createMissing: opts.createMissing !== false });
-    const pushed = await push({ delayMs: opts.delayMs || 300 });
-    return { pulled, pushed };
+    const strategy = ['newer', 'local', 'remote'].includes(opts.strategy) ? opts.strategy : 'newer';
+    let pulled = { pulled: 0, created: 0, updated: 0, skipped: 0, details: [] };
+    let pushed = { pushed: 0, skipped: 0, details: [], errors: [] };
+    if (strategy !== 'local') pulled = await pull({ createMissing: opts.createMissing !== false });
+    if (strategy !== 'remote') pushed = await push({ delayMs: opts.delayMs || 300 });
+    return { pulled, pushed, strategy };
 }
 
 module.exports = { STATUS_TO_BGM, BGM_TO_STATUS, fetchCollections, pull, push, sync };

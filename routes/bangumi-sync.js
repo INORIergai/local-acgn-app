@@ -114,7 +114,7 @@ router.post('/push', async (req, res) => {
     catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 router.post('/sync', async (req, res) => {
-    try { res.json({ code: 0, data: await sync.sync({ delayMs: 300 }) }); }
+    try { res.json({ code: 0, data: await sync.sync({ delayMs: 300, strategy: req.body && req.body.strategy }) }); }
     catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 

@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.3.0'
+TAG = 'v6.4.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,14 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.3.0：第一档改进（看完自动上报 Bangumi + 跳过片头片尾存 DB）
+COMMIT_MSG = """v6.4.0：第二档改进（ASS 特效字幕 / 本地字幕库 / Bangumi 冲突策略 / 手动挂载）
 
-- 看完自动增量上报 Bangumi：movieId→episode→series→bangumi subjectId，ep_status 只增不减，看完该季末集自动 collect；异步静默不阻塞播放
-- 跳过片头片尾区间从 localStorage 改存 DB（episode_progress 加 skipOp/skipEd 两列，按 series/episode 挂接，换文件名不丢）
-- 新增 GET/POST /api/series/episode/skip 接口；播放器按 episodeId 从 DB 加载
-- 夸克一键离线 API 已调研清楚（/offline/download/submit + dsg.encryption 私有加密），本版不实现，存档待攻
+- ASS 特效字幕：自研结构化解析（pos/move/颜色/字号/粗斜体/命名样式）+ HTML 字幕层渲染，不依赖 libass.js
+- 在线流字幕：改本地字幕库搜索（递归扫媒体目录，按标题匹配），零外部 API 依赖
+- Bangumi 冲突策略：newer(合并取较新) / local(保留本地) / remote(用云端) 三选一，设置面板下拉可选
+- 分集手动挂本地影片：每集「📎/换源」按钮，按番名+集号搜影片库一键挂接
 
-真机 5/5 通过。承接 v6.2.0 的追番内容闭环 + 播放体验。"""
+真机 7/7 通过。承接 v6.3.0 的追番自动化第一档。"""
 
 
 def get_token():

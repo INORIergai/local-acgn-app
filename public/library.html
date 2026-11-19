@@ -174,11 +174,11 @@
     <link rel="stylesheet" href="css/round162-ink-theme.css?v=4">
     <link rel="stylesheet" href="css/round168-tags.css?v=3">
     <!-- ★ round173b：追番页样式（语义令牌，双皮肤自适应） -->
-    <link rel="stylesheet" href="css/round173b-series.css?v=2">
+    <link rel="stylesheet" href="css/round173b-series.css?v=3">
     <!-- ★ round173e：Bangumi 同步设置面板 -->
-    <link rel="stylesheet" href="css/round173e-bangumi.css?v=1">
+    <link rel="stylesheet" href="css/round173e-bangumi.css?v=2">
     <!-- ★ round173g：播放器增强（字幕/跳过OPED/缓冲条/PiP） -->
-    <link rel="stylesheet" href="css/round173g-player.css?v=1">
+    <link rel="stylesheet" href="css/round173g-player.css?v=2">
     <!-- ★ round173：墨皮肤补齐 V6 新模块（必须排在 round168 之后、mobile.css 之前） -->
     <link rel="stylesheet" href="css/round173-ink-v6.css?v=1">
     <!-- ★ 移动端适配层必须真正置于整条样式链最末。
@@ -768,6 +768,8 @@
                 <div class="player-osd" id="playerOsd" aria-live="polite"></div>
                 <!-- round36：弹幕层 -->
                 <div class="danmaku-layer" id="danmakuLayer"></div>
+                <!-- v6.4.0：ASS 特效字幕层（HTML 渲染，不依赖 track ::cue） -->
+                <div class="ass-sub-layer" id="assSubLayer" style="display:none;" aria-hidden="true"></div>
             </div>
             <div class="player-foot">
                 <button class="btn btn-sm btn-secondary" id="openPotPlayer"><svg class="ic ic-play" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-play"/></svg> PotPlayer</button>
@@ -1230,11 +1232,11 @@
     <script src="js/round153-folia.js?v=3"></script>
     <script src="js/app.js?v=171"></script>
     <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
-    <script src="js/series-view.js?v=3"></script>
+    <script src="js/series-view.js?v=4"></script>
     <!-- round173e：Bangumi 同步设置面板 -->
-    <script src="js/bangumi-panel.js?v=1"></script>
+    <script src="js/bangumi-panel.js?v=2"></script>
     <!-- round173g：播放器增强（必须在 app.js 之后） -->
-    <script src="js/player-enhance.js?v=1"></script>
+    <script src="js/player-enhance.js?v=2"></script>
     <script src="js/tags-ui.js?v=11"></script>
     <script src="js/magic-likes.js?v=30"></script>
     <script src="js/command-palette.js?v=3"></script>

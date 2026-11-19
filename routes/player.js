@@ -52,6 +52,61 @@ router.get('/subtitles', (req, res) => {
   } catch (e) { res.json({ code: 0, data: [] }); }
 });
 
+/** v6.4.0②：本地字幕库搜索——按标题在媒体目录递归找 srt/ass/vtt（在线流也能挂本地字幕） */
+router.get('/subtitle-library', (req, res) => {
+    try {
+        const kw = String(req.query.title || '').trim();
+        if (kw.length < 2) return res.json({ code: 0, data: [] });
+        const config = require('../utils/config');
+        const roots = [];
+        for (const key of ['scanFolders', 'animeFolders', 'filmFolders', 'cartoonFolders']) {
+            for (const d of (config[key] || [])) if (d) roots.push(d);
+        }
+        const SUB_EXT = new Set(['.srt', '.ass', '.ssa', '.vtt']);
+        const norm = (s) => String(s || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '').trim();
+        const key = norm(kw);
+        const found = [];
+        let scanned = 0;
+        const MAX_SCAN = 12000;
+        const walk = (dir, depth) => {
+            if (depth > 4 || scanned > MAX_SCAN || found.length >= 30) return;
+            let names;
+            try { names = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+            for (const ent of names) {
+                if (scanned > MAX_SCAN || found.length >= 30) break;
+                if (ent.isDirectory()) {
+                    if (/^(node_modules|\.git|__pycache__|\.cache)$/i.test(ent.name)) continue;
+                    walk(path.join(dir, ent.name), depth + 1);
+                } else if (ent.isFile() && SUB_EXT.has(path.extname(ent.name).toLowerCase())) {
+                    scanned++;
+                    const stem = norm(path.basename(ent.name, path.extname(ent.name)));
+                    // 标题互相包含（字幕名含番名，或番名含字幕名前缀）
+                    if (stem && (stem.includes(key) || key.includes(stem))) {
+                        const full = path.join(dir, ent.name);
+                        if (isPathAllowed(full)) found.push({ path: full, name: ent.name, ext: path.extname(ent.name).toLowerCase().slice(1) });
+                    }
+                }
+            }
+        };
+        for (const root of roots) { if (scanned > MAX_SCAN || found.length >= 30) break; walk(root, 0); }
+        res.json({ code: 0, data: found, scanned });
+    } catch (e) { res.json({ code: 0, data: [], msg: e.message }); }
+});
+
+/** v6.4.0①：ASS 结构化样式（前端 HTML 字幕层用），非 ASS 返回空 cues */
+router.get('/subtitle-styled', (req, res) => {
+  try {
+    const subPath = decodeURIComponent(String(req.query.path || ''));
+    if (!subPath || !fs.existsSync(subPath)) return res.json({ code: 0, data: { cues: [] } });
+    if (!isPathAllowed(subPath)) return res.json({ code: 0, data: { cues: [] } });
+    const ext = path.extname(subPath).toLowerCase();
+    if (!['.ass', '.ssa'].includes(ext)) return res.json({ code: 0, data: { cues: [] } });
+    const { parseAssStyles } = require('../utils/ass-style');
+    const raw = fs.readFileSync(subPath, 'utf8');
+    res.json({ code: 0, data: parseAssStyles(raw) });
+  } catch (e) { res.json({ code: 0, data: { cues: [] }, msg: e.message }); }
+});
+
 router.get('/subtitle-file', (req, res) => {
   try {
     const subPath = decodeURIComponent(String(req.query.path || ''));

@@ -48,6 +48,11 @@
 /* WebVTT 字幕样式（track 默认渲染在 video 内，这里尽量统一） */
 #videoPlayer::cue { background: rgba(0,0,0,.55); color: #fff; font-size: 1.05em; }
 
+/* v6.4.0①：ASS 特效字幕层（叠在 video 上，pointer-events:none 不挡操作） */
+#playerModal .ass-sub-layer { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+#playerModal .ass-cue { max-width: 92%; text-align: center; line-height: 1.35; white-space: normal;
+    font-family: var(--font-sans, system-ui, sans-serif); text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+
 @media (max-width: 860px) {
     #playerModal .player-submenu { bottom: 64px; }
 }
