@@ -50,6 +50,30 @@ function proxyDispatcher() {
 }
 
 /**
+ * round181：清洗播放器 JS 拼出的畸形 URL。
+ * 实测叽哔动漫的播放器把 `//cdn.xxx/?url=...` 拼到当前域名后，变成
+ * `https://www.jibi.cchttps//cdn.xxx/?url=...`（域名与协议粘在一起），
+ * 直接代理会 404。这里把被粘连的真协议头抠出来重构成合法 URL。
+ */
+function sanitizeStreamUrl(u) {
+    let s = String(u || '').trim();
+    // round181b：跳转壳 `cdn.xxx/?url=<编码后的真m3u8>` —— 真地址就在 url 参数里，
+    // 解出来直接用，比再开一次浏览器稳（壳用 MSE blob:，二次嗅探也抓不到 .m3u8 请求）。
+    try {
+        const q = new URL(s).searchParams.get('url');
+        // 真地址就在 url 参数里；Referer 仍需用壳域名（调用方另取）
+        if (q && /\.(m3u8|mp4|mkv|flv|ts)(\?|$)/i.test(q)) return q;
+    } catch (e) { /* 不是合法 URL，继续下面的粘连清洗 */ }
+    // 形如 https://hostXhttps//realhost/... 或 https://hostXhttp//realhost/...
+    const m = /^https?:\/\/[^/]*?(https?)\/\/([^\s]+)$/i.exec(s);
+    if (m) s = m[1] + '://' + m[2];
+    // 形如 hostXhttps://realhost（没吞掉协议冒号的情况）
+    const m2 = /^https?:\/\/[^/]*?(https?:\/\/[^\s]+)$/i.exec(s);
+    if (m2) s = m2[1];
+    return s;
+}
+
+/**
  * 抓一个 URL，返回 { ok, status, buf, text, headers, error }。
  * 代理配了就先走代理；代理层炸了（拒连 / 502 / 超时 / SSL 被掐）立刻直连补一发。
  */
@@ -462,6 +486,20 @@ async function episodesOf(source, detailUrl, opts = {}) {
         if (!isNaN(a.sort) && !isNaN(b.sort)) return a.sort - b.sort;
         return a.name.localeCompare(b.name, 'zh', { numeric: true });
     });
+    if (!list.length && opts.browser !== false) {
+        // round182 P0-2：静态选择器全失败 → 开浏览器跑 JS 渲染的详情页抓剧集链接
+        try {
+            const br = await require('./browser-resolve').resolveEpisodes(detailUrl, { timeout: opts.timeout || 20000 });
+            if (br.episodes && br.episodes.length) {
+                const lit = br.episodes.map((e, i) => {
+                    const m = /第\s*([\d.]+)\s*[话集]/.exec(e.name || '');
+                    return { name: e.name, sort: m ? parseFloat(m[1]) : i + 1,
+                             channel: '', channelTier: 0, url: e.url };
+                });
+                return { episodes: lit, error: '', via: 'browser' };
+            }
+        } catch (e) { /* 浏览器也失败就走下面的空结果 */ }
+    }
     return { episodes: list, error: list.length ? '' : '没解析到剧集（站点可能改版）' };
 }
 
@@ -523,8 +561,24 @@ async function resolveVideo(source, episodeUrl, opts = {}) {
             const { resolveByBrowser } = require('./browser-resolve');   // 延迟 require，避免两模块循环依赖
             const br = await resolveByBrowser(episodeUrl, { timeout: opts.timeout || 25000 });
             if (br.url) {
+                let finalUrl = sanitizeStreamUrl(br.url);
+                // round181：有些站第一个抓到的是「跳转壳」（如 cdn.xxx/?url=...，返回 HTML
+                // 再由 player.js 发真流）。壳的特征：URL 不以视频后缀结尾且带 url= 参数。
+                // 再开一次浏览器跟进这个壳，抓它 JS 真正发出的 m3u8/mp4。
+                const isShell = !/\.(m3u8|mp4|mkv|flv|ts)(\?|$)/i.test(finalUrl)
+                    && /[?&]url=/i.test(finalUrl);
+                if (isShell && opts.browser !== 'no-follow') {
+                    try {
+                        const br2 = await require('./browser-resolve').resolveByBrowser(finalUrl, {
+                            timeout: opts.timeout || 25000, followShell: true
+                        });
+                        if (br2.url && br2.url !== finalUrl) {
+                            finalUrl = sanitizeStreamUrl(br2.url);
+                        }
+                    } catch (e) { /* 跟进失败就用壳地址，至少不比原来差 */ }
+                }
                 return {
-                    url: br.url,
+                    url: finalUrl,
                     headers: { Referer: br.referer || episodeUrl, 'User-Agent': br.ua || UA },
                     cookie: cookie || '',
                     referer: br.referer || episodeUrl,
@@ -541,7 +595,7 @@ async function resolveVideo(source, episodeUrl, opts = {}) {
     if (!found.length) return { url: '', error: '没抽到播放地址（可能要先过人机验证，或站点已改版）' };
 
     found.sort((a, b) => (/\.m3u8(\?|$)/i.test(b) ? 1 : 0) - (/\.m3u8(\?|$)/i.test(a) ? 1 : 0));
-    const url = found[0];
+    const url = sanitizeStreamUrl(found[0]);
 
     const headers = {};
     const h = mv.addHeadersToVideo || {};
@@ -617,8 +671,25 @@ async function refreshSubscription() {
     return { updated, failed, error: '' };
 }
 
+/** round182 P0-3：订阅新鲜度——用 override 目录里最新 json 的 mtime 当"上次刷新时间" */
+function subscriptionFreshness() {
+    try {
+        const files = [];
+        walk(OVERRIDE_DIR, files);
+        let latest = 0;
+        for (const f of files) {
+            const m = fs.statSync(f).mtimeMs;
+            if (m > latest) latest = m;
+        }
+        const ageDays = latest ? (Date.now() - latest) / 86400000 : null;
+        return { lastRefresh: latest || 0, ageDays: ageDays == null ? null : Math.round(ageDays * 10) / 10,
+                 stale: ageDays == null || ageDays > 7, count: files.length };
+    } catch (e) { return { lastRefresh: 0, ageDays: null, stale: true, count: 0, error: e.message }; }
+}
+
 module.exports = {
     loadSources,
+    subscriptionFreshness,
     getSource,
     searchOn,
     catalogOf,

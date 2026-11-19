@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.6.0'
+TAG = 'v6.7.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,13 +35,16 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.6.0：第四档技术债收尾（四档迭代全部完成）
+COMMIT_MSG = """v6.7.0：追番在线源闭环（用户质疑修正 + Kazumi/Animeko 逆向落地）
 
-- prepare-export 的 rm_rf 加有限退避重试：Windows 瞬时文件占用(杀毒/索引/刚关EXE)导致的 EPERM 不再让导出中断，其它错误照抛不吞
-- 历史 exe 归档：6.0.0~6.3.0 的 8 个安装包(1.4GB)移到 dist/_archive/，顶层只留最近两版；归档可恢复
-- 墨皮肤对比度：审计量化后把 --text-faint 从 3.62:1 提到 5.18:1，ink-v6 里 8 处硬编码弱文一并提亮到正文级 AA
+- 全网多源搜在线源：追番详情页「搜在线源」并发18源，实测命中10源；选源挂载到分集，点「在线」内置播放器播放
+- 修流地址解析：跳转壳 url= 参数解码真 m3u8、播放器JS拼错域名清洗、types集号字段映射修正
+- 在线播放进度回写分集：追番「继续看」真正闭环（10秒节流+关闭补写+按上次进度续播）
+- 剧集解析浏览器兜底：静态选择器失败时开浏览器抓 JS 渲染的剧集链接
+- 订阅刷新常态化：进追番页检查新鲜度，超7天自动拉最新规则；24个最新源固化为内置规则随包出厂
+- 附 Kazumi/Animeko 完整逆向报告 + 7维度对比调研
 
-真机 4/4 + 正常导出通过。承接 v6.5.0，四档迭代(v6.3→v6.6)全部完成。"""
+真机闭环全绿：搜源10/18、挂6集、进度回写、freshness 有效。承接 v6.6.0。"""
 
 
 def get_token():

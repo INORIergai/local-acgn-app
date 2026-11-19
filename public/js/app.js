@@ -18,6 +18,8 @@ let galleryMovies = [];
 // 标签弹窗方块用的糖果色池（与 av-board CANDY 同源）
 const TAG_CANDY = ['#ffdbfd', '#FAED8F', '#DDFCFC', '#CAF7C8', '#fbb663', '#f49978', '#feb6fa', '#c2b4eb', '#997ade', '#00ecef'];
 let currentPlayerMovie = null;
+// round182 P0-1：追番在线播放当前集 id（关闭播放器时补写进度用）
+let currentPlayerEpisode = 0;
 // 当前详情弹窗中的影片（用于详情弹窗内的按钮操作，不依赖列表缓存）
 let currentDetailMovie = null;
 // 当前列表筛选上下文（标签/女优筛选），用于数据变更后原地刷新保持状态
@@ -15645,6 +15647,14 @@ function closePlayer() {
     }
     const video = document.getElementById('videoPlayer');
     const playedMovie = currentPlayerMovie;
+    // round182 P0-1：关闭时补写一次在线追番进度（兜住最后 <10 秒未节流上报的部分）
+    if (currentPlayerEpisode && video.duration > 0) {
+        fetch('/api/series/episode/progress', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ episodeId: currentPlayerEpisode, position: Math.floor(video.currentTime), duration: Math.floor(video.duration) })
+        }).then(r => r.json()).catch(() => {});
+    }
+    currentPlayerEpisode = 0;
     playerSeq++;   // v4.6.0：作废还在路上的 hls.js 挂载回调
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
     if (window.Danmaku) window.Danmaku.stop();
@@ -15661,8 +15671,11 @@ function closePlayer() {
 }
 
 // 通用视频播放函数（kind='hls' 时用 hls.js 播 m3u8）
-function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0) {
+function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0, episodeId = 0) {
     const video = document.getElementById('videoPlayer');
+    // round182 P0-1：追番在线播放时把进度写回 episode（此前只更新 UI，追番"继续看"永不动）
+    currentPlayerEpisode = Number(episodeId) || 0;
+    window.__epLastSave = 0;
     if (startAt > 1) {
         const seek = () => { try { video.currentTime = startAt; } catch (e) { /* 忽略 */ } };
         video.addEventListener('loadedmetadata', seek, { once: true });
@@ -15712,8 +15725,17 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
         document.getElementById('playerProgressFill').style.width = progress + '%';
         document.getElementById('playerTime').textContent =
             `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        // round182 P0-1：在线追番进度回写（10 秒节流，换片/关闭时 ontimeupdate 不会再触发，故靠节流兜底）
+        if (currentPlayerEpisode && video.duration > 0 && Date.now() - window.__epLastSave > 10000) {
+            window.__epLastSave = Date.now();
+            const epIdNow = currentPlayerEpisode;
+            fetch('/api/series/episode/progress', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ episodeId: epIdNow, position: Math.floor(video.currentTime), duration: Math.floor(video.duration) })
+            }).then(r => r.json()).catch(() => {});
+        }
     };
-    
+
     // 点击进度条跳转
     document.getElementById('playerProgress').onclick = (e) => {
         const rect = e.currentTarget.getBoundingClientRect();

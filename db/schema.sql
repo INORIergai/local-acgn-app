@@ -260,6 +260,9 @@ CREATE TABLE IF NOT EXISTS episodes (
   airDate   TEXT DEFAULT '',
   duration  REAL DEFAULT 0,
   movieId   INTEGER,
+  sourceId  TEXT DEFAULT '',
+  sourceUrl TEXT DEFAULT '',
+  sourceName TEXT DEFAULT '',
   createdAt INTEGER DEFAULT 0,
   FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
   UNIQUE(seriesId, seasonId, episodeNo)

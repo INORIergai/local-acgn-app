@@ -404,6 +404,11 @@ router.post('/refresh', async (req, res) => {
     res.json({ code: 0, msg: `已刷新 ${r.updated} 份源定义${r.failed ? `（${r.failed} 份失败）` : ''}`, data: r });
 });
 
+/** round182 P0-3：订阅新鲜度（前端进追番页时检查，过期自动刷新） */
+router.get('/freshness', (req, res) => {
+    res.json({ code: 0, data: engine.subscriptionFreshness() });
+});
+
 // ==================================================================
 // 在线阅读（r155 · 阶段3）：漫画章节图 / 小说正文 → 应用内原生阅读器
 // ==================================================================

@@ -115,13 +115,15 @@
                 + '<span class="sv-ep-title">' + esc(e.title || ('第' + e.episodeNo + '集')) + '</span>'
                 + '<span class="sv-ep-stat">' + (watched ? '✓ 已看' : (pct ? pct + '%' : '未看')) + '</span>'
                 + (e.movieId ? '<button class="sv-ep-play" data-act="play" data-movie="' + e.movieId + '" data-ep="' + e.id + '" data-title="' + esc(d.series.title) + '">播放</button>'
-                             : '<button class="sv-ep-nosrc sv-ep-search" data-act="search-bt" data-title="' + esc(d.series.title) + '" data-ep="' + esc(e.episodeNo) + '">🔍 搜BT</button>')
+                             : (e.sourceUrl ? '<button class="sv-ep-play sv-ep-online" data-act="play-online" data-eid="' + e.id + '" data-src="' + esc(e.sourceId || '') + '" data-url="' + esc(e.sourceUrl) + '" data-epno="' + esc(e.episodeNo) + '" data-pos="' + (watched ? 0 : pos) + '" data-title="' + esc(d.series.title) + '">🌐 在线</button>'
+                             : '<button class="sv-ep-nosrc sv-ep-search" data-act="search-bt" data-title="' + esc(d.series.title) + '" data-ep="' + esc(e.episodeNo) + '">🔍 搜BT</button>'))
                 + '<button class="sv-ep-link" data-act="link-local" data-eid="' + e.id + '" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '" data-epno="' + esc(e.episodeNo) + '" title="手动挂本地影片">' + (e.movieId ? '换源' : '📎') + '</button>'
                 + '</div>';
         }).join('');
         const html = '<div class="sv-modal-mask" data-act="close-detail">'
             + '<div class="sv-modal" role="dialog" aria-modal="true" aria-label="分集列表">'
             + '<div class="sv-modal-head"><h3>' + esc(d.series.title) + '</h3>'
+            + '<button class="sv-online-match" data-act="match-online" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '">🌐 搜在线源</button>'
             + '<button class="sv-modal-close" data-act="close-detail" aria-label="关闭">✕</button></div>'
             + '<div class="sv-ep-list">' + (rows || '<div class="sv-empty">还没有分集数据，等待刮削回填。</div>') + '</div>'
             + '</div></div>';
@@ -130,6 +132,60 @@
         host.innerHTML = html;
     }
     function closeDetail() { const h = document.getElementById('svDetailHost'); if (h) h.innerHTML = ''; }
+
+    // ---------- round182 P0-3：订阅新鲜度自动刷新 ----------
+    let __sourceRefreshDone = false;
+    async function autoRefreshSources() {
+        if (__sourceRefreshDone) return;
+        __sourceRefreshDone = true;
+        try {
+            const f = await api('/api/media-source/freshness');
+            if (!f || f.code !== 0 || !f.data || !f.data.stale) return;
+            // 后台刷新，不阻塞 UI；静默完成（不弹通知打扰）
+            const r = await api('/api/media-source/refresh', { method: 'POST', body: '{}' });
+            if (r && r.code === 0 && window.showNotification) {
+                showNotification('在线源规则已更新', `拉取了 ${r.data.updated} 份最新规则，追番搜源更准`);
+            }
+        } catch (e) { /* 网络不通就跳过，下次再试 */ }
+    }
+
+    // ---------- v6.7.0：全网多源搜索在线源 ----------
+    async function openOnlineMatch(seriesId, title) {
+        let host = document.getElementById('svOnlineHost');
+        if (!host) { host = document.createElement('div'); host.id = 'svOnlineHost'; document.body.appendChild(host); }
+        host.innerHTML = '<div class="sv-modal-mask" data-closem="1"><div class="sv-modal sv-online-modal" role="dialog" aria-modal="true">'
+            + '<div class="sv-modal-head"><h3>🌐 全网搜在线源 · ' + esc(title) + '</h3>'
+            + '<button class="sv-modal-close" data-closem="1">✕</button></div>'
+            + '<div class="sv-online-body" id="svOnlineBody"><div class="sv-empty">正在并发搜索所有在线源（约 10~15 秒）…</div></div></div></div>';
+        host.querySelectorAll('[data-closem="1"]').forEach(el => el.addEventListener('click', e => {
+            if (e.target === el || el.classList.contains('sv-modal-close')) host.innerHTML = '';
+        }));
+        try {
+            const r = await api('/api/series/match-online', { method: 'POST', body: JSON.stringify({ seriesId, keyword: title }) });
+            const body = document.getElementById('svOnlineBody');
+            if (!body) return;
+            if (!r || r.code !== 0) {
+                body.innerHTML = '<div class="sv-empty">搜索失败：' + esc((r && r.msg) || '服务无响应') + '。可稍后重试或点「🔍 搜BT」。</div>';
+                return;
+            }
+            const hits = (r.data && r.data.hits) || [];
+            if (!hits.length) {
+                body.innerHTML = '<div class="sv-empty">没找到匹配的在线源（扫了 ' + (r.data.scanned || 0) + ' 个源）。可试试「🔍 搜BT」下载。</div>';
+                return;
+            }
+            let n = 0;
+            body.innerHTML = '<div class="sv-online-tip">找到 ' + hits.length + ' 个源有结果，点「挂载」把剧集接到本番分集：</div>'
+                + hits.map(h => h.items.map(it => {
+                    const i = n++;
+                    return '<div class="sv-online-item"><div class="sv-online-name" title="' + esc(it.name) + '">' + esc(it.name) + '</div>'
+                        + '<span class="sv-online-src">' + esc(h.sourceName) + '</span>'
+                        + '<button class="sv-online-pick" data-act="apply-online-source" data-sid="' + seriesId + '" data-src="' + esc(h.sourceId) + '" data-url="' + esc(it.url) + '">挂载</button></div>';
+                }).join('')).join('');
+        } catch (e) {
+            const body = document.getElementById('svOnlineBody');
+            if (body) body.innerHTML = '<div class="sv-empty">搜索失败：' + esc(e.message) + '</div>';
+        }
+    }
 
     // ---------- v6.4.0④ 手动挂本地影片 ----------
     async function openLinkLocal(episodeId, title, epno) {
@@ -268,6 +324,35 @@
             } catch (e) { if (window.showNotification) showNotification('挂接失败', e.message); }
             return;
         }
+        if (act === 'match-online') { openOnlineMatch(Number(btn.dataset.sid), btn.dataset.title || ''); return; }
+        if (act === 'apply-online-source') {
+            const seriesId = Number(btn.dataset.sid);
+            try {
+                const r = await api('/api/series/apply-online', { method: 'POST', body: JSON.stringify({
+                    seriesId, sourceId: btn.dataset.src, detailUrl: btn.dataset.url, seasonNo: 1
+                }) });
+                if (window.showNotification) showNotification(r && r.code === 0 ? '在线源已挂载' : '挂载失败',
+                    r && r.code === 0 ? ('已挂 ' + r.data.updated + ' 集，点分集的「🌐 在线」即可播放') : (r && r.msg || ''));
+                if (r && r.code === 0) {
+                    const host = document.getElementById('svOnlineHost'); if (host) host.innerHTML = '';
+                    openDetail(seriesId);
+                }
+            } catch (e) { if (window.showNotification) showNotification('挂载失败', e.message); }
+            return;
+        }
+        if (act === 'play-online') {
+            const src = btn.dataset.src, url = btn.dataset.url;
+            if (!src || !url) { if (window.showNotification) showNotification('无法播放', '该集在线源信息缺失'); return; }
+            if (window.showNotification) showNotification('正在解析在线播放地址', '首次解析可能需十几秒（内置浏览器嗅探）');
+            try {
+                const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url));
+                if (d && d.code === 0 && window.showVideoPlayer) {
+                    window.showVideoPlayer(d.data.streamUrl, btn.dataset.title + ' · 第' + (btn.dataset.epno || '') + '集', d.data.kind,
+                        Number(btn.dataset.pos) || 0, Number(btn.dataset.eid) || 0);
+                } else if (window.showNotification) showNotification('解析失败', d && d.msg || '未知错误');
+            } catch (e) { if (window.showNotification) showNotification('解析失败', e.message); }
+            return;
+        }
         if (act === 'copy-magnet') {
             const mag = btn.dataset.magnet || '';
             copyText(mag).then(ok => { if (window.showNotification) showNotification(ok ? '磁力已复制' : '复制失败', ok ? '粘贴到夸克/下载器离线下载，完成后自动入库挂到本集' : '请手动复制'); });
@@ -290,6 +375,7 @@
         closeDetail();
         const bt = document.getElementById('svBtHost'); if (bt) bt.innerHTML = '';
         const lk = document.getElementById('svLinkHost'); if (lk) lk.innerHTML = '';
+        const om = document.getElementById('svOnlineHost'); if (om) om.innerHTML = '';
     }
 
     // ---------- 对外接口 ----------
@@ -303,6 +389,8 @@
         // v6.5.0①：注入系列关系图 / Jellyfin 入口（幂等）
         if (window.SeriesGraph && window.SeriesGraph.injectButton) window.SeriesGraph.injectButton();
         if (window.JellyfinPanel && window.JellyfinPanel.injectButton) window.JellyfinPanel.injectButton();
+        // round182 P0-3：订阅超过 7 天没刷新则后台自动拉最新源规则（不阻塞 UI）
+        autoRefreshSources();
         document.addEventListener('click', onClick);
         document.addEventListener('keydown', onKeydown);
     }

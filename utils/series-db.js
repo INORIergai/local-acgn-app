@@ -165,6 +165,44 @@ function getSeasons(seriesId) {
     .all(Number(seriesId));
 }
 
+/** round181：把在线源剧集挂到某季的分集上（按集号对齐）。
+ *  episodes 入参：[{episodeNo, title, url}]，url 为该集详情页（resolve 用）。
+ *  已有本地 movieId 的集不动（本地优先，别覆盖用户已下载的文件）。 */
+function applyOnlineSource(seriesId, seasonNo, sourceId, sourceName, eps) {
+  const season = db.prepare(`SELECT id FROM seasons WHERE seriesId = ? AND seasonNo = ?`)
+    .get(Number(seriesId), Number(seasonNo) || 1);
+  if (!season) return { updated: 0, error: '季度不存在' };
+  const update = db.prepare(`UPDATE episodes SET sourceId = ?, sourceUrl = ?, sourceName = ?
+    WHERE seasonId = ? AND episodeNo = ? AND movieId IS NULL`);
+  let updated = 0;
+  const tx = db.transaction(() => {
+    for (const ep of (Array.isArray(eps) ? eps : [])) {
+      const no = Number(ep.episodeNo);
+      if (!no || !ep.url) continue;
+      const r = update.run(String(sourceId || ''), String(ep.url || ''), String(sourceName || ''), season.id, no);
+      updated += r.changes;
+      // 在线源带来的集号若本地还没有，补一行（没有 seasonId/集号时也能看）
+      if (r.changes === 0) {
+        const exists = db.prepare(`SELECT id FROM episodes WHERE seasonId = ? AND episodeNo = ?`).get(season.id, no);
+        if (!exists) {
+          db.prepare(`INSERT INTO episodes (seriesId, seasonId, episodeNo, title, sourceId, sourceUrl, sourceName, createdAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(Number(seriesId), season.id, no, String(ep.title || ('第' + no + '集')),
+            String(sourceId || ''), String(ep.url || ''), String(sourceName || ''), Date.now());
+          updated++;
+        }
+      }
+    }
+  });
+  try { tx(); } catch (e) { return { updated, error: e.message }; }
+  return { updated, error: '' };
+}
+
+/** round181：取某集的在线源信息（给 /resolve 用） */
+function getEpisodeSource(episodeId) {
+  return db.prepare(`SELECT id, seriesId, episodeNo, sourceId, sourceUrl, sourceName, movieId
+    FROM episodes WHERE id = ?`).get(Number(episodeId)) || null;
+}
+
 /** 把本地 movie 挂到某一集上（下载入库后调用） */
 function linkEpisodeMovie(episodeId, movieId) {
   const r = db.prepare(`UPDATE episodes SET movieId = ? WHERE id = ?`)
@@ -351,6 +389,8 @@ module.exports = {
   getSeasons,
   bulkUpsertEpisodes,
   getEpisodes,
+  applyOnlineSource,
+  getEpisodeSource,
   linkEpisodeMovie,
   setFollow,
   unfollow,

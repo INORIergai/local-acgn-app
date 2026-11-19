@@ -196,6 +196,73 @@ router.get('/graph', (req, res) => {
   } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
+// ---- round181：追番在线源闭环（字面路径，必须在 /:id 前） ----
+/** 按番名并发搜索所有在线源，返回有结果的源及其条目 */
+router.post('/match-online', async (req, res) => {
+  try {
+    const seriesId = Number(req.body.seriesId || req.params.id);
+    const kw = String(req.body.keyword || '').trim();
+    const s = sdb.getSeriesById(seriesId);
+    const keyword = kw || (s && s.title) || '';
+    if (!keyword) return res.json({ code: -1, msg: '缺少搜索关键词' });
+    const engine = require('../utils/media-sources/engine');
+    const web = engine.loadSources(true).filter(x => x.kind === 'web');
+    const results = await Promise.all(web.map(async (src) => {
+      try {
+        const r = await engine.searchOn(src, keyword, { timeout: 12000 });
+        const items = (r.items || []).slice(0, 20);
+        return { sourceId: src.id, sourceName: src.name, tier: src.tier, items, error: r.error || '' };
+      } catch (e) { return { sourceId: src.id, sourceName: src.name, tier: src.tier, items: [], error: e.message }; }
+    }));
+    const ok = results.filter(x => x.items.length > 0).sort((a, b) => (a.tier - b.tier));
+    res.json({ code: 0, data: { keyword, hits: ok, scanned: web.length } });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/** 选一个源+条目，把它的剧集挂到本季分集 */
+router.post('/apply-online', async (req, res) => {
+  try {
+    const seriesId = Number(req.body.seriesId);
+    const sourceId = String(req.body.sourceId || '');
+    const detailUrl = String(req.body.detailUrl || '');
+    const seasonNo = Number(req.body.seasonNo || 1);
+    if (!seriesId || !sourceId || !detailUrl) return res.json({ code: -1, msg: '缺少 seriesId/sourceId/detailUrl' });
+    const engine = require('../utils/media-sources/engine');
+    const src = engine.getSource(sourceId);
+    if (!src) return res.json({ code: -1, msg: '源不存在：' + sourceId });
+    const epRes = await engine.episodesOf(src, detailUrl, { timeout: 15000 });
+    // episodesOf 返回 {name, sort, url, channel...}：集号在 sort（名字正则提取），不是 episodeNo
+    const eps = (epRes.episodes || []).map((e, i) => {
+      let no = Number(e.episodeNo ?? e.no ?? e.sort);
+      if (!no) {
+        const m = /第\s*([\d.]+)\s*[话集]/.exec(String(e.name || ''));
+        if (m) no = parseFloat(m[1]);
+      }
+      if (!no) no = i + 1;   // 实在没集号就按出现顺序，总比丢掉强
+      return { episodeNo: no, title: e.name || e.title || '', url: e.url || e.href || '' };
+    }).filter(e => e.episodeNo > 0 && e.url);
+    if (!eps.length) return res.json({ code: -1,
+      msg: `该条目没解析出可用剧集（原始 ${(epRes.episodes || []).length} 条，error=${epRes.error || '无'}，url=${detailUrl.slice(0, 80)}）` });
+    const r = sdb.applyOnlineSource(seriesId, seasonNo, sourceId, src.name, eps);
+    res.json({ code: r.error ? -1 : 0, data: { updated: r.updated, total: eps.length }, msg: r.error });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/** 取某集的在线源信息；前端拿 sourceId/url 直接复用现成的 /api/media-source/resolve 播放 */
+router.get('/episode/online-url', (req, res) => {
+  try {
+    const ep = sdb.getEpisodeSource(req.query.episodeId);
+    if (!ep || !ep.sourceId || !ep.sourceUrl) return res.json({ code: -1, msg: '该集没有在线源' });
+    const src = require('../utils/media-sources/engine').getSource(ep.sourceId);
+    if (!src) return res.json({ code: -1, msg: '源已失效：' + ep.sourceId });
+    res.json({ code: 0, data: {
+      sourceId: ep.sourceId, sourceName: ep.sourceName || src.name,
+      url: ep.sourceUrl, episodeNo: ep.episodeNo,
+      movieId: ep.movieId || null
+    } });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
 // ---- 带 /:id 的路径（字面路径已处理完） ----
 router.post('/:id/episodes', (req, res) => {
   try {

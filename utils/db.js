@@ -245,6 +245,21 @@ function migrate() {
     }
   } catch (e) { /* 表还不存在时忽略（首次建库在建表之后才有） */ }
 
+  // round181：追番在线源闭环——每集可挂一个在线源（sourceId/sourceUrl），与 movieId 二选一播放
+  try {
+    const epCols2 = db.prepare('PRAGMA table_info(episodes)').all().map(c => c.name);
+    for (const [name, def] of [
+      ['sourceId', 'TEXT DEFAULT ""'],
+      ['sourceUrl', 'TEXT DEFAULT ""'],
+      ['sourceName', 'TEXT DEFAULT ""']
+    ]) {
+      if (!epCols2.includes(name)) {
+        db.exec(`ALTER TABLE episodes ADD COLUMN ${name} ${def}`);
+        console.log(`[数据库迁移] episodes 表新增字段: ${name}`);
+      }
+    }
+  } catch (e) { /* 表还不存在时忽略 */ }
+
   const actressColumns = db.prepare('PRAGMA table_info(actresses)').all();
   const actressFields = actressColumns.map(c => c.name);
 
