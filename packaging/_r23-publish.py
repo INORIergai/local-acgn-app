@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.1.0'
+TAG = 'v6.2.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,25 +35,20 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.1.0：追番功能完整落地（数据地基 / 主循环 / Bangumi 云同步）
+COMMIT_MSG = """v6.2.0：追番内容闭环 + 播放体验（BT搜索 / 自动入库挂分集 / 外挂字幕 / 跳过OPED / PiP）
 
-【阶段0 · 数据地基】
-- 新增 series/seasons/episodes/follows/episode_progress 五表 + 15 条 REST API；坚决不 ALTER movies（规避 FTS 触发器事故）
-- 幂等 upsert 数据层 utils/series-db.js；真机 8/8 验证，movies 数据纹丝未动
+【阶段4 · 内容闭环】
+- 分集抽屉新增「搜BT」：复用 AnimeGarden RSS 源搜带磁力的种子，一键复制磁力转存到夸克/下载器
+- 自动入库挂分集：目录监控入库后自动解析文件名集号(S02E03/E07/第12话/[05]/-21-)，匹配追番 series 挂到对应 episode，「继续看第N集」直接播新下的文件
+- 夸克离线任务列表可读（/task/list，账号28个任务）；推离线API路径不可靠(404)故做半自动闭环，如实记录
+- 冷启动 BT 搜索超时重试 + 关键词只用番名（拼「第N话」实测0结果）
 
-【阶段1 · 追番主循环】
-- 新番放送表一键加追（cycanime 源 93 部），三栏看板（追番中/计划看/已完成）+ 分集抽屉
-- 加追后台自动回填分集（AniList 集数 → 第1..N话占位，幂等），卡片显示「已看 N/总集」+「继续看第 N 集」
-- 番剧更新站内提醒（animeUpdate 通知类型）：放送表与追番清单匹配，双模式（有集数按集号 / 无集数按今日放送）+ 双层去重
-- 独立视图 #seriesView + series-view.js，语义令牌双皮肤自适应；真机 UI 10/10 + 尾项 11/11
+【阶段3 · 播放体验】
+- 外挂字幕：同目录 srt/ass/vtt 自动扫描，转 WebVTT 原生渲染，可切换/关闭，路径过白名单
+- 跳过片头片尾：设秒数存本地，播放到点弹跳过按钮
+- 缓冲进度条 + 画中画 PiP；字幕菜单两栏布局双皮肤适配
 
-【阶段2 · Bangumi OAuth 云同步】
-- 双路请求层（代理→直连，bgm.tv 直连超时、走 7892 代理通）；OAuth 授权码 + 手动 token 两种接入
-- pull/push/sync 双向同步：状态映射 wish/collect/do/dropped，进度 ep_status 互转，401 自动刷新 token
-- 设置页新增「Bangumi 同步」分组；离线 mock 6 组 + 真机 14/14 通过
-- API base 可用 CINEMAVAULT_BGM_API 覆盖，支持自建镜像
-
-真机验证：阶段0 8/8、阶段1 10/10+11/11、阶段2 14/14，纸/夜双皮肤截图取证，全程 0 pageerror。"""
+真机验证：阶段3 12/12、阶段4 8/8，纸/夜双皮肤截图取证，全程 0 pageerror。六阶段路线 0-4 全部完成。"""
 
 
 def get_token():

@@ -1,0 +1,53 @@
+/* ============================================================
+   round173g-player.css —— 播放器增强（字幕 / 跳过OPED / 缓冲条 / PiP）
+   纪律：语义令牌双皮肤自适应；#.player-modal 内选择器带父 id 权重。
+   ============================================================ */
+
+/* 缓冲进度：垫在 playerProgressFill 下方 */
+#playerModal .player-progress { position: relative; overflow: hidden; }
+#playerModal .player-buffered-fill {
+    position: absolute; left: 0; top: 0; height: 100%;
+    background: var(--text-muted, rgba(127,127,127,.35));
+    opacity: .35; border-radius: inherit; pointer-events: none;
+    transition: width .2s linear;
+}
+#playerModal .player-progress-fill { position: relative; z-index: 1; }
+
+/* 字幕菜单：浮在工具栏上方 */
+#playerModal .player-submenu {
+    position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
+    z-index: 20; width: min(520px, 92vw); max-height: 190px; overflow-y: auto;
+    background: var(--bg-elevated); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--r-lg, 12px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.25);
+    padding: 10px 14px; font-size: 13px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start;
+}
+#playerModal .player-submenu .psm-col { min-width: 0; }
+#playerModal .player-submenu .psm-col + .psm-col { border-left: 1px solid var(--border); padding-left: 12px; }
+#playerModal .psm-title { font-size: 12px; color: var(--text-muted); margin: 4px 4px 8px; }
+#playerModal .psm-item {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    color: var(--text); cursor: pointer; padding: 8px 10px; border-radius: 8px; font-size: 13px;
+}
+#playerModal .psm-item:hover { background: var(--card-bg-hover, rgba(127,127,127,.1)); }
+#playerModal .psm-empty { padding: 8px 10px; color: var(--text-muted); font-size: 12px; }
+#playerModal .psm-sep { height: 1px; background: var(--border); margin: 10px 0; }
+#playerModal .psm-skip-row { display: flex; align-items: center; gap: 10px; margin: 6px 4px; }
+#playerModal .psm-skip-row label { flex: 0 0 76px; font-size: 12px; color: var(--text-secondary, var(--text)); }
+#playerModal .psm-skip-row input {
+    flex: 1 1 auto; min-width: 0; background: var(--bg-secondary, rgba(127,127,127,.1));
+    border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px;
+}
+#playerModal .psm-save {
+    width: 100%; margin-top: 8px; border: 1px solid var(--primary); color: var(--primary);
+    background: transparent; border-radius: 8px; padding: 7px; cursor: pointer; font-size: 12.5px;
+}
+#playerModal .psm-save:hover { background: var(--card-bg-hover, rgba(127,127,127,.1)); }
+
+/* WebVTT 字幕样式（track 默认渲染在 video 内，这里尽量统一） */
+#videoPlayer::cue { background: rgba(0,0,0,.55); color: #fff; font-size: 1.05em; }
+
+@media (max-width: 860px) {
+    #playerModal .player-submenu { bottom: 64px; }
+}

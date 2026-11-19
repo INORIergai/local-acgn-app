@@ -174,9 +174,11 @@
     <link rel="stylesheet" href="css/round162-ink-theme.css?v=4">
     <link rel="stylesheet" href="css/round168-tags.css?v=3">
     <!-- ★ round173b：追番页样式（语义令牌，双皮肤自适应） -->
-    <link rel="stylesheet" href="css/round173b-series.css?v=1">
+    <link rel="stylesheet" href="css/round173b-series.css?v=2">
     <!-- ★ round173e：Bangumi 同步设置面板 -->
     <link rel="stylesheet" href="css/round173e-bangumi.css?v=1">
+    <!-- ★ round173g：播放器增强（字幕/跳过OPED/缓冲条/PiP） -->
+    <link rel="stylesheet" href="css/round173g-player.css?v=1">
     <!-- ★ round173：墨皮肤补齐 V6 新模块（必须排在 round168 之后、mobile.css 之前） -->
     <link rel="stylesheet" href="css/round173-ink-v6.css?v=1">
     <!-- ★ 移动端适配层必须真正置于整条样式链最末。
@@ -770,6 +772,11 @@
             <div class="player-foot">
                 <button class="btn btn-sm btn-secondary" id="openPotPlayer"><svg class="ic ic-play" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-play"/></svg> PotPlayer</button>
                 <button class="btn btn-sm btn-secondary" id="danmakuToggle" title="弹幕设置"><svg class="ic ic-chat" width="13" height="13" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-chat"/></svg> 弹幕</button>
+                <!-- round173g：字幕 / 跳过片头片尾 / 画中画 -->
+                <button class="btn btn-sm btn-secondary" id="playerSubtitleBtn" title="外挂字幕（同目录 srt/ass/vtt）">CC 字幕</button>
+                <button class="btn btn-sm btn-secondary" id="playerSkipBtn" title="标记/跳过片头片尾（在片头处点设起点，片尾处点设终点）" style="display:none;">⏭ 跳过片头</button>
+                <button class="btn btn-sm btn-secondary" id="playerPipBtn" title="画中画" style="display:none;">🖼 画中画</button>
+                <div id="playerSubtitleMenu" class="player-submenu" style="display:none;"></div>
                 <!-- r64: 上一集与下一集按钮，附带快捷键提示 -->
                 <button class="btn btn-sm btn-secondary" id="playerPrevBtn" onclick="playPrevEpisode()" title="上一集（快捷键：PageUp 或 P）">⏮ 上集 <kbd style="font-size:10px;opacity:.7;">P</kbd></button>
                 <button class="btn btn-sm btn-secondary" id="playerNextBtn" onclick="playNextEpisode()" title="下一集（快捷键：PageDown 或 N）">下集 ⏭ <kbd style="font-size:10px;opacity:.7;">N</kbd></button>
@@ -1221,11 +1228,13 @@
          app.js 的 prefTitle() 依赖 window.cvDisplayTitle。 -->
     <script src="js/aipc-title-clean.js?v=1"></script>
     <script src="js/round153-folia.js?v=3"></script>
-    <script src="js/app.js?v=170"></script>
+    <script src="js/app.js?v=171"></script>
     <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
-    <script src="js/series-view.js?v=2"></script>
+    <script src="js/series-view.js?v=3"></script>
     <!-- round173e：Bangumi 同步设置面板 -->
     <script src="js/bangumi-panel.js?v=1"></script>
+    <!-- round173g：播放器增强（必须在 app.js 之后） -->
+    <script src="js/player-enhance.js?v=1"></script>
     <script src="js/tags-ui.js?v=11"></script>
     <script src="js/magic-likes.js?v=30"></script>
     <script src="js/command-palette.js?v=3"></script>

@@ -1,6 +1,6 @@
 {
     "name": "local-movie-library",
-    "version": "6.1.0",
+    "version": "6.2.0",
     "description": "本地影片媒体库管理系统",
     "main": "server.js",
     "dependencies": {

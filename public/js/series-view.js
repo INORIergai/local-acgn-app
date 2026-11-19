@@ -115,7 +115,7 @@
                 + '<span class="sv-ep-title">' + esc(e.title || ('第' + e.episodeNo + '集')) + '</span>'
                 + '<span class="sv-ep-stat">' + (watched ? '✓ 已看' : (pct ? pct + '%' : '未看')) + '</span>'
                 + (e.movieId ? '<button class="sv-ep-play" data-act="play" data-movie="' + e.movieId + '">播放</button>'
-                             : '<span class="sv-ep-nosrc">无本地源</span>')
+                             : '<button class="sv-ep-nosrc sv-ep-search" data-act="search-bt" data-title="' + esc(d.series.title) + '" data-ep="' + esc(e.episodeNo) + '">🔍 搜BT</button>')
                 + '</div>';
         }).join('');
         const html = '<div class="sv-modal-mask" data-act="close-detail">'
@@ -129,6 +129,51 @@
         host.innerHTML = html;
     }
     function closeDetail() { const h = document.getElementById('svDetailHost'); if (h) h.innerHTML = ''; }
+
+    // ---------- BT 搜索（阶段4） ----------
+    async function copyText(text) {
+        try { await navigator.clipboard.writeText(text); return true; }
+        catch (e) {
+            const ta = document.createElement('textarea'); ta.value = text;
+            ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta);
+            ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e2) {}
+            document.body.removeChild(ta); return ok;
+        }
+    }
+
+    async function openBtSearch(title, ep) {
+        // ★ BT 种子标题多用原名 + E01/[01]，几乎不用中文「第N话」——
+        //   拼中文话数会让 RSS 整串匹配落空（实测"葬送的芙莉莲 第1话"=0 条，纯番名=48 条）。
+        //   只用番名搜索，让用户从结果里自己挑集的种子。
+        const kw = String(title || '').trim();
+        let host = document.getElementById('svBtHost');
+        if (!host) { host = document.createElement('div'); host.id = 'svBtHost'; document.body.appendChild(host); }
+        host.innerHTML = '<div class="sv-modal-mask" data-act="close-bt"><div class="sv-modal sv-bt-modal" role="dialog" aria-modal="true">'
+            + '<div class="sv-modal-head"><h3>🔍 BT 搜索：' + esc(kw) + '</h3>'
+            + '<button class="sv-modal-close" data-act="close-bt">✕</button></div>'
+            + '<div class="sv-bt-body" id="svBtBody"><div class="sv-empty">搜索中…</div></div>'
+            + '<div class="sv-bt-tip">只展示磁力链接，应用不下载任何内容。复制后粘到夸克/下载器离线，完成后自动入库并挂到本集。</div>'
+            + '</div></div>';
+        // 关闭按钮
+        host.querySelectorAll('[data-act="close-bt"]').forEach(el => el.addEventListener('click', (e) => {
+            if (e.target === el || el.classList.contains('sv-modal-close')) { host.innerHTML = ''; }
+        }));
+        try {
+            const r = await api('/api/bt/search?kw=' + encodeURIComponent(kw));
+            const items = (r && r.code === 0 && Array.isArray(r.data)) ? r.data : [];
+            const body = document.getElementById('svBtBody');
+            if (!body) return;
+            if (!items.length) { body.innerHTML = '<div class="sv-empty">未找到种子（BT 源可能不可达，可稍后重试）</div>'; return; }
+            body.innerHTML = items.slice(0, 40).map(it =>
+                '<div class="sv-bt-item"><div class="sv-bt-title" title="' + esc(it.title) + '">' + esc(it.title) + '</div>'
+                + '<div class="sv-bt-meta">' + esc(it.size || '') + ' · ' + esc(it.date || '').slice(0, 16) + ' · ' + esc(it.sourceName || '') + '</div>'
+                + '<button class="sv-bt-copy" data-act="copy-magnet" data-magnet="' + esc(it.magnet) + '">复制磁力</button></div>'
+            ).join('');
+        } catch (e) {
+            const body = document.getElementById('svBtBody');
+            if (body) body.innerHTML = '<div class="sv-empty">搜索失败：' + esc(e.message) + '</div>';
+        }
+    }
 
     // ---------- 事件委托 ----------
     function onClick(e) {
@@ -175,6 +220,12 @@
             return;
         }
         if (act === 'detail') { openDetail(sid); return; }
+        if (act === 'search-bt') { openBtSearch(btn.dataset.title || '', btn.dataset.ep || ''); return; }
+        if (act === 'copy-magnet') {
+            const mag = btn.dataset.magnet || '';
+            copyText(mag).then(ok => { if (window.showNotification) showNotification(ok ? '磁力已复制' : '复制失败', ok ? '粘贴到夸克/下载器离线下载，完成后自动入库挂到本集' : '请手动复制'); });
+            return;
+        }
         if (act === 'play') {
             const mid = Number(btn.dataset.movie);
             closeDetail();
@@ -184,7 +235,11 @@
         }
     }
 
-    function onKeydown(e) { if (e.key === 'Escape') closeDetail(); }
+    function onKeydown(e) {
+        if (e.key !== 'Escape') return;
+        closeDetail();
+        const bt = document.getElementById('svBtHost'); if (bt) bt.innerHTML = '';
+    }
 
     // ---------- 对外接口 ----------
     function show() {

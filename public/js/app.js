@@ -15703,6 +15703,9 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
     // round36：弹幕（网络流按标题匹配）
     if (window.Danmaku) window.Danmaku.start(title, video);
 
+    // round173g：播放器增强（外挂字幕 / 跳过 OP-ED / 缓冲条 / 画中画）
+    if (window.PlayerEnhance) window.PlayerEnhance.onPlay(videoUrl, title);
+
     // 播放进度更新
     video.ontimeupdate = () => {
         const progress = (video.currentTime / video.duration) * 100;

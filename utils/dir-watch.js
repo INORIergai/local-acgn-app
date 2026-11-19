@@ -331,6 +331,17 @@ async function drain() {
                 await runOne(job, { network: allowNetwork });
                 S.done++;
                 console.log(`[目录监控] 已入库: ${path.basename(job.path)}（${job.type}）`);
+                // round173h：追番自动归集——视频入库后挂到对应 series/episode，
+                // 让追番页「继续看第 N 集」能直接播刚下的文件。失败绝不影响入库。
+                if (['anime', 'cartoon', 'film'].includes(job.type)) {
+                    try {
+                        const movie = require('./db').getMovieByPath.get(job.path);
+                        if (movie) {
+                            const r = require('./series-ingest').linkMovieToSeries(movie);
+                            if (r.linked) console.log(`[追番归集] ${path.basename(job.path)} → 第${r.episodeNo}集已挂接 (series=${r.seriesId})`);
+                        }
+                    } catch (e) { /* 归集失败不影响入库 */ }
+                }
                 // round34 批次B：发现新作 → 站内通知（用户可按偏好关闭）
                 try {
                     require('./notify').notify('newItem', '📥 发现新作',
