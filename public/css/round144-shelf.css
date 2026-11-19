@@ -1,0 +1,179 @@
+/* ==========================================================================
+   round144-shelf.css —— 左栏「书架 · 按标签」（小说库 / 漫画库共用）
+   --------------------------------------------------------------------------
+   背景：小说库左栏此前只有「根目录 + 展开本层文件」，等于没有书架入口；
+        漫画库虽然有系列树，但标签体系（round168 五库 + 语义类目）在左栏完全没用上。
+   做法：一级=语义类目（题材/角色职业/场景…）、二级=该类目标签、三级=关联标签，
+        点二级/三级就把主区筛成「标签 · xxx」视图。
+   颜色一律走令牌，纸皮肤/夜皮肤自动跟随，不写死颜色。
+   ========================================================================== */
+
+.av-tree .avt-shelf {
+    margin: 2px 0 10px;
+    padding: 8px 8px 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--text, #2A241C) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border, #D8CFBC) 70%, transparent);
+}
+
+.av-tree .avt-shelf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: var(--t-caption, 12.5px);
+    font-weight: 700;
+    color: var(--text-muted, #6B6157);
+    letter-spacing: .02em;
+    margin-bottom: 8px;
+}
+
+.av-tree .avt-shelf-clear {
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--border, #D8CFBC);
+    background: transparent;
+    color: var(--text-muted, #6B6157);
+    font-size: 13px;
+    cursor: pointer;
+}
+.av-tree .avt-shelf-clear:hover {
+    color: var(--text, #2A241C);
+    border-color: var(--text-muted, #6B6157);
+}
+
+/* ---- 一级：类目 chips ---- */
+.av-tree .avt-shelf-cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.av-tree .avt-cat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border, #D8CFBC);
+    background: transparent;
+    color: var(--text-muted, #6B6157);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+}
+.av-tree .avt-cat em {
+    font-style: normal;
+    opacity: .6;
+    font-size: 10.5px;
+}
+.av-tree .avt-cat:hover {
+    color: var(--text, #2A241C);
+    border-color: color-mix(in srgb, var(--text, #2A241C) 35%, transparent);
+}
+.av-tree .avt-cat.on {
+    background: var(--text, #2A241C);
+    border-color: var(--text, #2A241C);
+    color: var(--bg-elevated, #FAF8F1);
+}
+.av-tree .avt-cat.on em { opacity: .75; }
+
+/* ---- 二级：标签行 ---- */
+.av-tree .avt-shelf-tags {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 210px;
+    overflow: auto;
+}
+
+.av-tree .avt-tag {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text, #2A241C);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+.av-tree .avt-tag:hover {
+    background: color-mix(in srgb, var(--text, #2A241C) 7%, transparent);
+}
+.av-tree .avt-tag.on {
+    background: color-mix(in srgb, var(--text, #2A241C) 12%, transparent);
+    font-weight: 700;
+}
+.av-tree .avt-tag-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.av-tree .avt-tag em {
+    font-style: normal;
+    font-family: var(--font-num, monospace);
+    font-size: 10.5px;
+    color: var(--text-muted, #6B6157);
+    flex: none;
+}
+
+/* ---- 三级：关联标签 ---- */
+.av-tree .avt-shelf-rel {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed color-mix(in srgb, var(--border, #D8CFBC) 70%, transparent);
+}
+.av-tree .avt-shelf-rel:empty { display: none; }
+
+.av-tree .avt-rel-head {
+    font-size: 11px;
+    color: var(--text-muted, #6B6157);
+    margin-bottom: 5px;
+    letter-spacing: .04em;
+}
+
+.av-tree .avt-rel {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 4px 4px 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border, #D8CFBC) 80%, transparent);
+    background: transparent;
+    color: var(--text-muted, #6B6157);
+    font-size: 11px;
+    cursor: pointer;
+}
+.av-tree .avt-rel:hover { color: var(--text, #2A241C); }
+.av-tree .avt-rel.on {
+    background: color-mix(in srgb, var(--text, #2A241C) 12%, transparent);
+    color: var(--text, #2A241C);
+    border-color: color-mix(in srgb, var(--text, #2A241C) 30%, transparent);
+}
+.av-tree .avt-rel em {
+    font-style: normal;
+    font-family: var(--font-num, monospace);
+    font-size: 10px;
+    opacity: .65;
+}
+
+.av-tree .avt-shelf-mute {
+    font-size: 11.5px;
+    color: var(--text-muted, #6B6157);
+    opacity: .8;
+}
+
+/* 移动端左栏本来就隐藏在抽屉里，这里不额外改动尺寸 */
+@media (max-width: 860px) {
+    .av-tree .avt-shelf-tags { max-height: 160px; }
+}

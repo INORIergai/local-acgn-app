@@ -32,6 +32,11 @@ const db = dbModule.db;
 const posterHealth = require('./poster-health');
 const { titleIsCodeOnly } = require('./poster-fetcher');
 
+/* round143：哪些库真的接得上有网络刮削源。
+ * jav → 一整套 javbus/javdb/jav321/dmm；anime → AniList/FANZA/91动漫；
+ * film → TMDB（k 计划里可打开）。comic / novel 没有对应的源，走本地校验即可。 */
+const NET_SCRAPE_TYPES = new Set(['jav', 'anime', 'film']);
+
 /* ---------------- 运行状态（供设置页/未来的 AI 工具查询） ---------------- */
 const state = {
     queued: 0,
@@ -41,12 +46,24 @@ const state = {
     postersFixed: 0,
     tagged: 0,
     failed: 0,
+    deduped: 0,      // 已在队列里的重复入队（同一 movieId）
+    overflow: 0,     // 队列硬上限被顶满而未能入队（round143 起不再静默丢最老）
     lastRunAt: 0,
     lastReport: null,
     consecutiveNetFail: 0
 };
 
 const queue = [];
+/**
+ * round143：入队去重表 + 不再「丢最老」。
+ * 旧实现 `if (queue.length >= maxPerRun) queue.shift()` 会在批量入库时把**最老的待办
+ * 直接扔掉**（maxPerRun 默认 40）。实测代价：2026-10-31 一次进 6447 条，最终只有 1 条
+ * 留下体检标记 —— 换句话说"入库自愈"对大批量导入等于不存在。
+ * 现在：同 id 未处理前只入队一次（Set 去重），队列按需增长，只在极端的
+ * MAX_QUEUE 硬上限才拒收，并把拒收次数记到 state.overflow 里（可查，不再无声）。
+ */
+const queuedIds = new Set();
+const MAX_QUEUE = Math.max(200, Number(((config && config.ingest) || {}).maxQueue) || 20000);
 let draining = false;
 
 /* 扫描忙闲闸：大批量扫描期间先攒队列、不并发跑（否则两条网络链路互抢，
@@ -271,7 +288,6 @@ state.aiTaggedThisRun = 0;
 /* ---------------- ② 海报匹配（复用 poster-health） ---------------- */
 
 async function ensurePoster(movie, opts) {
-    if (!opts.repairPoster) return { ok: true, action: 'skipped(开关关闭)' };
     if (Number(movie.posterLocked || 0) === 1 && !opts.includeLocked) {
         return { ok: true, action: 'skipped(封面已锁定)' };
     }
@@ -279,10 +295,16 @@ async function ensurePoster(movie, opts) {
     try { judge = posterHealth.judgeMovie(movie); } catch (e) { return { ok: false, action: 'judge-error', error: e.message }; }
 
     // 记录体检结果（即使不修也落库，供清单/巡检使用）
+    // round143：把「换图开关」的判断挪到体检之后 —— 关掉换图不等于连体检都不做，
+    // 否则漫画/小说这类「没有网络源、只想留体检结果」的库会一条标记都没有。
     try {
         db.prepare('UPDATE movies SET posterHealth = ?, posterHealthReason = ?, posterHealthAt = ? WHERE id = ?')
             .run(judge.level, judge.reason || '', Date.now(), movie.id);
     } catch (e) { }
+
+    if (!opts.repairPoster) {
+        return { ok: true, action: 'skipped(换图开关关闭)', level: judge.level };
+    }
 
     if (judge.level === 'ok' || judge.level === 'suspect') {
         return { ok: true, action: 'healthy(' + judge.level + ')' };
@@ -325,7 +347,15 @@ async function ensureOne(movieId, opts) {
     // ① 补全：只在该补的时候才碰网络
     const needFill = before.missing.some(m =>
         ['标题', '简介', '发行日期', '厂商'].includes(m) || m.startsWith('女优'));
-    if (needFill && state.consecutiveNetFail < 5) {
+    /* round143：按库分流。
+     * comic / novel 没有任何对应的网络刮削源（刮削链是 jav/anime/tmdb 那一套），
+     * 把它们硬塞进 fillMissingFields 只会得到「所有源未命中」，
+     * 还会把 consecutiveNetFail 推到 5 → 连 jav 的补全一起熔断。
+     * 所以这两库只做「本地校验 + 零成本打标 + 海报体检」，网络步骤明确跳过。 */
+    const netOK = NET_SCRAPE_TYPES.has(report.type);
+    if (!netOK) {
+        report.steps.fill = { ok: true, filled: [], skipped: '该库无网络刮削源（仅本地校验）' };
+    } else if (needFill && state.consecutiveNetFail < 5) {
         const f = await fillMissingFields(movie);
         report.steps.fill = f;
         report.filled = report.filled.concat(f.filled || []);
@@ -337,13 +367,15 @@ async function ensureOne(movieId, opts) {
     // 重读（补全可能改了行）
     const mid = (() => { try { return db.prepare('SELECT * FROM movies WHERE id = ?').get(movieId); } catch (e) { return movie; } })();
 
-    // ④ 打标（依赖 ① 补到的 genres）
-    const t = await ensureTags(mid, o);
+    // ④ 打标（依赖 ① 补到的 genres）。非网络库不给 AI 打标预算：
+    //    没源就没题材字段，AI 只能凭空编，且几千本会白烧 token。
+    const t = await ensureTags(mid, netOK ? o : Object.assign({}, o, { aiTagging: false }));
     report.steps.tag = t;
     report.filled = report.filled.concat(t.filled || []);
 
     // ② 海报（放最后：补全可能改了 avid/title，影响候选检索质量）
-    const p = await ensurePoster(mid, o);
+    //    非网络库只体检不换图：候选检索依赖刮削源，没有源就没有可换的图。
+    const p = await ensurePoster(mid, netOK ? o : Object.assign({}, o, { repairPoster: false }));
     report.steps.poster = p;
     if (p.ok && p.action.indexOf('replaced') === 0) report.posterFixed = true;
 
@@ -372,12 +404,20 @@ async function ensureOne(movieId, opts) {
 function enqueue(movieId, reason) {
     const o = getOptions();
     if (!o.enabled) return false;
-    if (!movieId) return false;
-    if (queue.length >= o.maxPerRun) {
-        // 队列已满（大批量扫描）：丢弃最老的待办，避免内存膨胀
-        queue.shift();
+    const id = Number(movieId);
+    if (!id) return false;
+    // 同一 id 还没轮到就不重复排队（扫描/目录监控会把同一条反复喂进来）
+    if (queuedIds.has(id)) { state.deduped++; return false; }
+    if (queue.length >= MAX_QUEUE) {
+        state.overflow++;
+        // 每 100 条提示一次，避免刷屏但也不至于无声
+        if (state.overflow % 100 === 1) {
+            console.log('[入库自愈] 队列已达硬上限 ' + MAX_QUEUE + '，暂缓入队（累计拒收 ' + state.overflow + ' 条）');
+        }
+        return false;
     }
-    queue.push({ movieId: Number(movieId), reason: reason || 'scan', at: Date.now() });
+    queuedIds.add(id);
+    queue.push({ movieId: id, reason: reason || 'scan', at: Date.now() });
     state.queued++;
     drain();
     return true;
@@ -391,11 +431,16 @@ async function drain() {
     const startedAt = Date.now();
     let processed = 0;
     const reports = [];
+    // round143：AI 打标预算按「本轮」重置。
+    // 旧实现只在模块加载时初始化一次 ⇒ aiTagBudget=10 变成**整个进程生命周期**总共 10 条，
+    // 跑满就永久不再打标，而配置项文案写的是"本轮预算"。
+    state.aiTaggedThisRun = 0;
 
     try {
         while (queue.length && processed < o.maxPerRun) {
             if (busyNow()) break;   // 扫描进行中：留给 finally 里的重排
             const job = queue.shift();
+            queuedIds.delete(job.movieId);
             processed++;
             try {
                 const rep = await ensureOne(job.movieId, {});

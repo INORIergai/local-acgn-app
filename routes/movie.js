@@ -423,6 +423,31 @@ router.post('/:id/upload-poster', async (req, res) => {
     }
 });
 
+// 按绝对路径读取作品目录里的封面（漫画/小说的 `xxx-poster.jpg` 存在作品旁边，不在 cache）
+// ★ 为什么需要它：/poster/:hash 只在 cache/posters 里找，磁盘路径的封面必然 404。
+//   安全阀：不是「任意文件读取」——路径必须真的被某条 movies 记录引用过才放行。
+router.get('/poster-file', (req, res) => {
+    try {
+        const p = String(req.query.path || '');
+        if (!p || p.length > 400) return res.status(400).end();
+        if (!/^[A-Za-z]:[\\/]/.test(p)) return res.status(400).end();
+        if (p.includes('..')) return res.status(400).end();
+        if (!/\.(jpe?g|png|webp|gif|avif|bmp)$/i.test(p)) return res.status(400).end();
+        const norm = p.replace(/\\/g, '/');
+        // ★ 这里的 db 是原生 better-sqlite3 句柄：utils/db 导出的是模块对象，句柄在 .db 上
+        const sqlite = require('../utils/db').db;
+        const hit = sqlite.prepare(
+            `SELECT 1 FROM movies WHERE REPLACE(localPosterPath, '\\', '/') = ?
+                OR REPLACE(posterPath, '\\', '/') = ? LIMIT 1`
+        ).get(norm, norm);
+        if (!hit) return res.status(403).end();
+        if (!fs.existsSync(p)) return res.status(404).end();
+        res.sendFile(p);
+    } catch (e) {
+        res.status(500).end();
+    }
+});
+
 // 代理预览URL图片（绕过防盗链）
 router.get('/poster/proxy', async (req, res) => {
     try {
@@ -2234,7 +2259,10 @@ router.post('/batch-poster/start', async (req, res) => {
 // 海报代理访问（hash 参数只允许安全字符，防止 ../ 目录穿越）
 router.get('/poster/:hash', (req, res) => {
     const hash = req.params.hash;
-    if (!/^[\w.-]+$/.test(hash)) {
+    /* ★ 旧正则 /^[\w.-]+$/ 不认中文：漫画的缓存文件名带「阿南小姐…第10话」这类中文，
+     *   一律被 400 拒掉（实测 25 次请求全是 400，浏览器只显示碎图）。
+     *   改成「只禁目录穿越」——这里本来就只取 basename，不需要字符白名单。 */
+    if (!hash || hash.length > 200 || hash.includes('/') || hash.includes('\\') || hash.includes('..')) {
         return res.status(400).end();
     }
     const posterPath = path.join(__dirname, '../cache/posters', hash);

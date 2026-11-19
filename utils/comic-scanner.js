@@ -198,6 +198,17 @@ async function indexComic(filePath) {
         } catch (e) { /* 标签失败不影响入库 */ }
         try { recalcHotScore(movieId); } catch (e) { /* 热度失败不影响入库 */ }
 
+        /* round143：漫画也接上入库自愈流水线（此前只有 scanner.js 的 jav/anime 接了）。
+         * 漫画没有网络刮削源，所以 ingest-ensure 里按类型分流成「只做本地校验 +
+         * genres→标签零成本建行 + 海报体检」，不会出去打网络、也不会把 jav 的熔断计数带脏。
+         * 触发条件：新入库，或从来没体检过（posterHealth 为空）—— 存量的 2351 条会在
+         * 下一次扫描时各补一次体检标记，之后就靠标记避免重复排队。 */
+        try {
+            if (row && (!prev || !prev.posterHealth)) {
+                require('./ingest-ensure').enqueue(row.id, 'scan');
+            }
+        } catch (e) { /* 自愈入队失败不影响入库 */ }
+
         // 导出 NFO（如果启用）
         const exportCfg = config.export || {};
         if (exportCfg.enableNfoExport && !nfoData) {
@@ -317,6 +328,31 @@ async function enrichComic(filePath, opts) {
         }
     }
 
+    // ---- 1.5) 中文简介补源（默认关）：kmoe 站点**不提供简介**，Bangumi 给的是日文摘要。
+    // manhuagui 详情页有 300+ 字中文内容简介，但反爬严格 —— 实测连续十几次请求后
+    // 会在 HTTP 200 下**静默返回空结果**，做默认源会让整条链路变得不可预测。
+    // 所以只在 config.sources.manhuagui.enabled === true 时尝试。
+    if (wantNetwork && (!webData || !webData.description) && config.sources?.manhuagui?.enabled === true) {
+        try {
+            const Mhg = require('./crawler/manhuagui');
+            const mg = new Mhg(config.sources.manhuagui);
+            const list = await mg.search(searchKeyword(cleanName));
+            if (Array.isArray(list) && list.length) {
+                const d = await mg.getDetail(list[0].url);
+                if (d && (d.overview || d.cover)) {
+                    webData = webData || {};
+                    webData.description = webData.description || d.overview || '';
+                    webData.cover = webData.cover || d.cover || '';
+                    webData.author = webData.author || d.author || '';
+                    webData.title = webData.title || d.title || '';
+                    webData.originalTitle = webData.originalTitle || d.originalTitle || '';
+                    webData.tags = (webData.tags && webData.tags.length) ? webData.tags : (d.tags || []);
+                    if (!webData.source) webData.source = 'manhuagui';
+                }
+            }
+        } catch (e) { console.log(`  [manhuagui] 补源失败: ${e.message}`); }
+    }
+
     // ---- 2) 合并元数据 ----
     let posterPath = rec.posterPath || '';
     if (webData) {
@@ -333,7 +369,8 @@ async function enrichComic(filePath, opts) {
                 overview,
                 producer: author,
                 genres: rec.genres || (webData.tags || []).join(', '),
-                source: 'kmoe',
+                // 实际提供数据的源（kmoe 没简介时可能是 manhuagui 补的），别再写死
+                source: webData.source || 'kmoe',
                 serial: rec.serial || extractSeriesKey(title || cleanName) || '',
                 id: rec.id
             });

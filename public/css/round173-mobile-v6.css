@@ -1,0 +1,396 @@
+/* ============================================================================
+   round173 · 2026-11 增量：把 round126~round168 这 15 个后加补丁全部纳入手机端
+   ----------------------------------------------------------------------------
+   背景：这些补丁此前都排在 mobile.css 之后加载，手机端适配层根本没机会兜住它们
+   （V5 首页双栏在 390px 直接横向溢出、三态书版被通用两列规则压死、AI 工作台
+   会话侧栏与消息区并排挤成 100px 等）。
+   加载顺序：library.html 中本文件必须排在 round168-tags.css 之后。
+   全部规则位于 @media (max-width:860px) 内，桌面端零影响。
+   ============================================================================ */
+
+/* 桌面端兜底：AI 会话抽屉按钮 / 遮罩只在手机端出现（JS 也只在手机端注入） */
+#aiModal .m-ai-scrim,
+#aiModal .m-ai-sb-btn { display: none; }
+
+/* Folia 无限画布的缩放工具组：桌面端同样可用（手机端只做尺寸收敛） */
+.r153-folia-hud {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.r153-hud-zoom {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+}
+.r153-hud-btn {
+    appearance: none;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border, rgba(120, 100, 70, .22));
+    border-radius: 7px;
+    background: var(--card-bg, rgba(255, 253, 249, .8));
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+.r153-hud-btn:hover { color: var(--primary); border-color: var(--primary); }
+/* HUD 本体是 pointer-events:none（不挡拖拽），只有工具组接收点击 */
+.r153-folia-hud .r153-hud-zoom { pointer-events: auto; }
+
+@media (max-width: 860px) {
+
+    /* ---------- A. V5 首页「今夜主映 · 典藏放映台」 ---------- */
+    .home-curated-stage { grid-area: auto !important; }
+    .hcs-shell { border-radius: var(--r-2, 10px) !important; }
+    .hcs-sprocket { height: 6px !important; }
+    .hcs-body {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        padding: 12px 13px 14px !important;
+        align-items: stretch !important;
+    }
+    .hcs-main { gap: 12px !important; align-items: flex-start !important; }
+    .hcs-cover-stage {
+        flex: 0 0 88px !important;
+        width: 88px !important;
+        height: 124px !important;
+        border-radius: 4px 8px 8px 4px !important;
+    }
+    .hcs-info { gap: 6px !important; }
+    .hcs-kicker-row { gap: 6px !important; }
+    .hcs-kicker { font-size: 9.5px !important; padding: 2px 8px !important; }
+    .hcs-ticket-no { display: none !important; }
+    .hcs-greeting { font-size: 11.5px !important; }
+    .hcs-title {
+        font-size: 15.5px !important;
+        line-height: 1.32 !important;
+        -webkit-line-clamp: 2 !important;
+    }
+    .hcs-badges { gap: 4px !important; }
+    .hcs-badge { font-size: 10.5px !important; padding: 2px 7px !important; }
+    .hcs-reason { font-size: 11.5px !important; -webkit-line-clamp: 2 !important; }
+    .hcs-actions { gap: 6px !important; margin-top: 2px !important; }
+    .hcs-btn { min-height: 34px !important; padding: 6px 11px !important; font-size: 12px !important; }
+    .hcs-side {
+        padding: 10px 0 0 !important;
+        border-left: 0 !important;
+        border-top: 1px solid var(--border) !important;
+        gap: 8px !important;
+    }
+    .hcs-pulse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 6px !important; }
+    .hcs-pulse-card { padding: 7px 9px !important; }
+    .hcs-pulse-num { font-size: 14px !important; }
+    .hcs-pulse-name { font-size: 10.5px !important; }
+    .hcs-reel-strip {
+        display: flex !important;
+        overflow-x: auto !important;
+        gap: 7px !important;
+        padding-bottom: 2px;
+        scrollbar-width: none !important;
+    }
+    .hcs-reel-strip::-webkit-scrollbar { display: none !important; }
+    .hcs-reel-item { flex: 0 0 62px !important; width: 62px !important; height: 54px !important; }
+    .hcs-side-label { font-size: 10px !important; }
+
+    /* ---------- B. 四皮肤拟人首屏（纸 / 夜 / 鲸 / 墨） ---------- */
+    .th-hero, .wh-hero, .ik-hero { min-height: 190px !important; border-radius: var(--r-2, 10px) !important; }
+    .th-hero-inner, .wh-hero-inner {
+        max-width: 100% !important;
+        padding: 18px 16px !important;
+        justify-content: flex-end !important;
+    }
+    .th-hero-kicker, .wh-hero-kicker {
+        font-size: 9.5px !important;
+        letter-spacing: .14em !important;
+        margin-bottom: 7px !important;
+    }
+    .th-hero-greet, .wh-hero-greet { font-size: 11.5px !important; margin-bottom: 3px !important; }
+    .th-hero-title, .wh-hero-title {
+        font-size: 23px !important;
+        line-height: 1.22 !important;
+        letter-spacing: .02em !important;
+        margin-bottom: 10px !important;
+    }
+    .th-hero-stats { gap: 18px !important; }
+    .th-hero-stats b { font-size: 18px !important; }
+    .th-hero-stats i { font-size: 10.5px !important; }
+    .th-hero-rail, .wh-hero-rail, .wh-dive-badge { display: none !important; }
+    .wh-depth { gap: 3px !important; margin-top: 2px !important; }
+    .wh-depth-row { font-size: 10.5px !important; }
+    .wh-depth-row s { display: none !important; }
+    .ik-index {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        font-size: 10px !important;
+    }
+    .ik-index span, .ik-index b, .ik-index i { font-size: 10px !important; }
+
+    /* ---------- C. V5 三态书版：placard / stage / portrait ---------- */
+    #movieGrid[data-book-layout="placard"] {
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 9px !important;
+    }
+    #movieGrid[data-book-layout="placard"] .movie-card.movie-card-compact {
+        display: grid !important;
+        grid-template-columns: 92px minmax(0, 1fr) !important;
+        min-height: 132px !important;
+        padding: 10px !important;
+        gap: 11px !important;
+        border-radius: var(--r-2, 10px) !important;
+    }
+    #movieGrid[data-book-layout="placard"] .movie-card .movie-poster-wrap {
+        width: 92px !important;
+        height: 124px !important;
+        aspect-ratio: 3 / 4.05 !important;
+    }
+    #movieGrid[data-book-layout="placard"] .movie-card .movie-poster {
+        width: 100% !important;
+        height: 100% !important;
+        aspect-ratio: auto !important;
+        object-fit: cover !important;
+        margin: 0 !important;
+    }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-main-title {
+        font-size: 14px !important;
+        line-height: 1.38 !important;
+        -webkit-line-clamp: 2 !important;
+    }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-kicker-row { margin-bottom: 4px !important; }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-placard-foot {
+        margin-top: 6px !important;
+        padding-top: 6px !important;
+        gap: 5px !important;
+    }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-cta-link { display: none !important; }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-author-chip { max-width: 150px !important; font-size: 11px !important; }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-type-pill { font-size: 10px !important; padding: 1px 7px !important; }
+    #movieGrid[data-book-layout="placard"] .movie-card .mtb-date { font-size: 10px !important; }
+
+    #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-poster-wrap {
+        aspect-ratio: 16 / 9 !important;
+        width: 100% !important;
+        height: auto !important;
+    }
+    #movieGrid[data-book-layout="stage"] .movie-card.is-book-media .movie-poster {
+        width: auto !important;
+        max-width: 92% !important;
+        height: 97% !important;
+        aspect-ratio: auto !important;
+        object-fit: contain !important;
+        margin: auto !important;
+        top: 1.5% !important;
+    }
+    #movieGrid[data-book-layout="portrait"] .movie-card {
+        border-radius: 4px 8px 8px 4px !important;
+        box-shadow: -2px 0 0 rgba(122, 84, 24, 0.22), 0 8px 18px -10px rgba(28, 20, 10, 0.28) !important;
+    }
+    #movieGrid[data-book-layout="portrait"] .movie-card .movie-poster-wrap { aspect-ratio: 3 / 4.1 !important; }
+
+    /* ---------- D. AI 工作台：会话侧栏改抽屉 + 触控常驻操作 ---------- */
+    #aiModal .modal-content { position: relative !important; }
+    #aiModal .dsn-sidebar {
+        position: absolute !important;
+        left: 0 !important; top: 0 !important; bottom: 0 !important;
+        width: min(82vw, 312px) !important;
+        z-index: 8 !important;
+        background: var(--bg-elevated) !important;
+        border-right: 1px solid var(--border) !important;
+        transform: translateX(-104%) !important;
+        transition: transform var(--mv2-d2, .26s) var(--mv2-settle, cubic-bezier(.16, 1, .3, 1)) !important;
+        box-shadow: 10px 0 36px rgba(0, 0, 0, .45) !important;
+    }
+    #aiModal .dsn-sidebar.m-open { transform: translateX(0) !important; }
+    #aiModal .dsn-main { width: 100% !important; min-width: 0 !important; }
+    #aiModal .m-ai-scrim {
+        position: absolute; inset: 0; z-index: 7;
+        background: rgba(0, 0, 0, .42);
+        opacity: 0; visibility: hidden;
+        transition: opacity .2s ease, visibility .2s ease;
+    }
+    #aiModal .m-ai-scrim.on { opacity: 1; visibility: visible; }
+    /* 会话行操作在手机上永远可见（hover 在触屏等于不存在） */
+    #aiModal .dsn-session-item { padding-right: 4px !important; min-height: 46px !important; }
+    #aiModal .dsn-session-actions {
+        position: static !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        pointer-events: auto !important;
+        margin-left: auto !important;
+    }
+    #aiModal .dsn-session-actions::before { display: none !important; }
+    #aiModal .dsn-session-actions .dsn-act-btn { width: 30px !important; height: 30px !important; }
+    #aiModal .dsn-session-title { font-size: 13px !important; }
+    #aiModal .dsn-topbar { flex-wrap: nowrap !important; gap: 6px !important; padding: 8px 10px !important; }
+    #aiModal .dsn-topic { flex: 0 1 auto; min-width: 0; }
+    #aiModal .dsn-tools-row {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        scrollbar-width: none !important;
+        justify-content: flex-start !important;
+    }
+    #aiModal .dsn-tools-row::-webkit-scrollbar { display: none !important; }
+    #aiModal .dsn-pill-btn { flex: 0 0 auto !important; }
+    #aiModal .dsn-messages { padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
+    #aiModal .dsn-input-shell { padding: 8px 10px !important; }
+    #aiModal .dsn-jobs-panel {
+        position: fixed !important;
+        top: auto !important;
+        bottom: calc(var(--m-tab-h, 58px) + 10px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 8px !important; right: 8px !important;
+        width: auto !important;
+        max-width: none !important;
+        max-height: 62vh !important;
+        z-index: 10050 !important;
+    }
+    #aiModal .m-ai-sb-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 4px;
+        height: 30px;
+        padding: 0 9px;
+        border-radius: 8px;
+        border: 1px solid var(--border-strong, var(--border));
+        background: var(--bg-elevated);
+        color: var(--text);
+        font-size: 11.5px;
+        font-weight: 600;
+        flex: 0 0 auto;
+        margin-right: 4px;
+    }
+    #aiModal .m-ai-sb-btn:active { background: var(--primary-soft); }
+
+    /* ---------- E. V6：AI 语义选片 / 观前导览 / 原生流 / 阅读大厅 ---------- */
+    .ai-ss { padding: 12px 10px 22px !important; }
+    .ai-ss-head { gap: 6px !important; margin-bottom: 10px !important; }
+    .ai-ss-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 9px !important; }
+    .ai-ss-card { grid-template-columns: 70px minmax(0, 1fr) !important; gap: 9px !important; padding: 9px !important; }
+    .ai-ss-poster { width: 70px !important; }
+    .ai-ss-title { font-size: 13px !important; }
+    .ai-ss-why { font-size: 11.5px !important; -webkit-line-clamp: 2 !important; }
+
+    .detail-ai-guide { padding: 10px 12px !important; border-radius: var(--r-2, 10px) !important; }
+    .detail-ai-guide .dag-row { grid-template-columns: 18px minmax(0, 1fr) !important; padding: 5px 0 !important; }
+    .detail-ai-guide .dag-row p { font-size: 12px !important; line-height: 1.55 !important; }
+
+    .msv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 9px !important; }
+    .msv-card b { font-size: 11.5px !important; }
+    .msv-sheet.on, .rdr-sheet.on {
+        align-items: flex-end !important;
+        justify-content: center !important;
+        padding: 0 !important;
+    }
+    .msv-card-lg {
+        width: 100% !important;
+        max-height: 88dvh !important;
+        overflow-y: auto !important;
+        border-radius: 18px 18px 0 0 !important;
+        padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+    .msv-lg-top { flex-direction: column !important; gap: 10px !important; }
+    .msv-lg-top img { width: 100% !important; }
+    .msv-acts .btn { min-height: 38px !important; }
+    .rdr-sheet-card {
+        width: 100% !important;
+        max-height: 90dvh !important;
+        overflow-y: auto !important;
+        border-radius: 18px 18px 0 0 !important;
+        background: var(--bg-elevated) !important;
+    }
+
+    .rh-shell { padding: 0 0 26px !important; }
+    .rh-head { padding: 4px 0 12px !important; gap: 10px !important; }
+    .rh-title { font-size: 23px !important; }
+    .rh-sub { font-size: 11.5px !important; line-height: 1.55 !important; }
+    .rh-kinds { width: 100% !important; }
+    .rh-kinds button { flex: 1 1 0 !important; padding: 8px 10px !important; }
+    .rh-toolbar { padding: 10px 0 8px !important; gap: 8px !important; }
+    .rh-tools { flex: 1 1 100% !important; flex-wrap: wrap !important; }
+    .rh-search { flex: 1 1 100% !important; }
+    .rh-wall { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 15px 11px !important; }
+    .rh-card-title { font-size: 12px !important; }
+    .rh-cont-card { padding: 9px 12px 9px 9px !important; gap: 10px !important; }
+    .rh-detail-cover { width: 118px !important; flex: 0 0 118px !important; }
+    .rh-detail-meta h2 { font-size: 20px !important; }
+    .rh-primary, .rh-secondary { flex: 1 1 auto; text-align: center; min-height: 40px; }
+    .rh-chapters { max-height: 46vh !important; }
+    .rh-ch { min-height: 42px !important; }
+    .rh-reader-bar { padding: 8px 10px calc(8px + env(safe-area-inset-top, 0px)) !important; }
+
+    /* ---------- F. 标签库：五库 / 思维空间 / 多选浮条 ---------- */
+    .tg-tabs { width: 100% !important; overflow-x: auto !important; flex-wrap: nowrap !important; scrollbar-width: none !important; }
+    .tg-tabs::-webkit-scrollbar { display: none !important; }
+    .tg-tab { flex: 0 0 auto !important; }
+    .tg-tool { gap: 6px !important; }
+    .tg-search-wrap { flex: 1 1 100% !important; }
+    .tg-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important; }
+    .tg-space-main { grid-template-columns: minmax(0, 1fr) !important; }
+    .tg-space-svg { max-height: 56vh !important; }
+    .tg-space-side { max-height: 30vh !important; }
+    .tg-space-head { gap: 6px !important; }
+    .tg-space-legend { flex-wrap: wrap; gap: 6px !important; }
+    .tg-space-reset { min-height: 34px !important; }
+    .tg-selbar {
+        bottom: calc(var(--m-tab-h, 58px) + 10px + env(safe-area-inset-bottom, 0px)) !important;
+        z-index: 195 !important;
+    }
+    .tg-dlg { width: calc(100vw - 28px) !important; }
+    .tg-merge-row { grid-template-columns: auto auto minmax(0, 1fr) !important; }
+    .tg-mr-why { grid-column: 1 / -1 !important; }
+
+    /* ---------- G. 随机推荐无限画布（Folia）：HUD 与画布高度 ---------- */
+    .r153-folia { height: clamp(400px, 62vh, 620px) !important; border-radius: var(--r-2, 10px) !important; }
+    .r153-folia-hud {
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        font-size: 10px !important;
+        padding: 6px 8px !important;
+    }
+    .r153-hud-btn {
+        width: 30px !important;
+        height: 30px !important;
+        border-radius: 8px !important;
+        border: 1px solid var(--border-strong, var(--border)) !important;
+        background: var(--bg-elevated) !important;
+        color: var(--text) !important;
+        font-size: 15px !important;
+        line-height: 1 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+    }
+    .r153-hud-btn:active { background: var(--primary-soft) !important; }
+    .r153-mode-switch { width: 100% !important; justify-content: center; }
+
+    /* ---------- H. 顶部 Toast 在手机上必须整宽居中 ---------- */
+    html body #notification {
+        left: 8px !important;
+        right: 8px !important;
+        top: calc(var(--nav-h, 54px) + 8px + env(safe-area-inset-top, 0px)) !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        border-radius: var(--r-2, 10px) !important;
+        transform: translateY(-10px) !important;
+    }
+    html body #notification.show { transform: translateY(0) !important; }
+
+    /* ---------- I. 设置页：导航横向胶囊 + 分组卡整宽 ---------- */
+    .settings-shell { display: block !important; }
+    .settings-nav { width: 100% !important; min-width: 0 !important; }
+    .settings-panel, .settings-section { min-width: 0 !important; }
+}

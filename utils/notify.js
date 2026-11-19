@@ -13,6 +13,7 @@
 //   dbHeal       数据库自愈/异常    默认 toast+站内信
 //   update       应用更新           默认 toast+站内信
 //   operation    普通操作成功/失败  默认 仅toast（短时反馈，不必留档）
+//   animeUpdate  追番更新           默认 toast+站内信（round173c）
 //
 // 偏好存 config.notifyPrefs = { scanDone: 'both'|'inbox'|'toast'|'off', ... }
 // 未配置的类型用上面默认值；'off' = 完全静默（连站内信都不落）。
@@ -30,6 +31,7 @@ const DEFAULT_PREFS = {
     dbHeal: 'both',
     update: 'both',
     operation: 'toast',
+    animeUpdate: 'both',
 };
 
 const LEVEL_OF = {
@@ -40,6 +42,7 @@ const LEVEL_OF = {
     dbHeal: 'error',
     update: 'info',
     operation: 'success',
+    animeUpdate: 'info',
 };
 
 function getPrefs() {

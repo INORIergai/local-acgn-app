@@ -1,0 +1,102 @@
+/* ============================================================
+   round173b-series.css —— 追番页（阶段1）
+   纪律：
+   · 颜色只取语义令牌（--text/--text-muted/--bg-elevated/--border/--primary）
+     ⇒ classic(纸)/matinee(夜) 双皮肤自动适配，不写死色值
+   · #seriesView 是独立容器，不在 movieGrid 内，无需 grid-column:1/-1
+   · flex 子项 min-width:0 防长标题撑爆
+   · 断点统一 max-width:860px
+   ============================================================ */
+
+#seriesView { padding: var(--s-4, 16px) var(--s-5, 20px) 60px; color: var(--text); }
+#seriesView .sv-wrap { max-width: 1400px; margin: 0 auto; }
+
+.sv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: var(--s-4, 16px); }
+.sv-head h2 { margin: 0; font-size: 20px; font-weight: 500; }
+.sv-refresh {
+    border: 1px solid var(--border); background: var(--bg-elevated, rgba(127,127,127,.06));
+    color: var(--text); border-radius: var(--r-pill, 999px); padding: 7px 14px; cursor: pointer; font-size: 13px;
+}
+.sv-refresh:hover { background: var(--card-bg-hover, var(--bg-elevated)); }
+.sv-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.sv-section { margin-bottom: var(--s-6, 28px); }
+.sv-section > h3 { font-size: 15px; font-weight: 500; margin: 0 0 12px; }
+.sv-section > h3 small { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+
+/* ---------- 本周新番横条 ---------- */
+.sv-calendar {
+    display: grid; grid-auto-flow: column; grid-auto-columns: 132px;
+    gap: 12px; overflow-x: auto; padding: 4px 2px 14px; scrollbar-width: thin;
+}
+.sv-cal-card {
+    border: 1px solid var(--border); border-radius: var(--r-lg, 12px);
+    background: var(--bg-elevated, rgba(127,127,127,.06));
+    padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0;
+}
+.sv-cal-poster { width: 100%; aspect-ratio: 3/4; border-radius: 8px; overflow: hidden; background: var(--bg-secondary, rgba(127,127,127,.1)); }
+.sv-cal-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sv-poster-ph { width: 100%; height: 100%; background: var(--bg-secondary, rgba(127,127,127,.1)); }
+.sv-cal-title { font-size: 13px; font-weight: 500; line-height: 1.35; min-width: 0;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sv-cal-meta { font-size: 11px; color: var(--text-muted); }
+.sv-follow-btn {
+    margin-top: auto; border: 1px solid var(--primary); color: var(--primary);
+    background: transparent; border-radius: var(--r-pill, 999px); padding: 5px 8px; cursor: pointer; font-size: 12px;
+}
+.sv-follow-btn.following { background: var(--primary); color: var(--bg-elevated, #fff); }
+.sv-follow-btn:disabled { opacity: .5; cursor: wait; }
+
+/* ---------- 追番看板三栏卡片 ---------- */
+.sv-tabs { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border);
+    border-radius: var(--r-pill, 999px); background: var(--bg-elevated, rgba(127,127,127,.06)); margin-bottom: 16px; }
+.sv-tabs button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer;
+    padding: 6px 16px; border-radius: var(--r-pill, 999px); font-size: 13px; }
+.sv-tabs button.active { background: var(--primary); color: var(--bg-elevated, #fff); }
+
+.sv-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; align-content: start; }
+.sv-card {
+    border: 1px solid var(--border); border-radius: var(--r-lg, 12px); overflow: hidden;
+    background: var(--bg-elevated, rgba(127,127,127,.06)); display: flex; flex-direction: column; min-width: 0;
+}
+.sv-poster { position: relative; width: 100%; aspect-ratio: 16/9; background: var(--bg-secondary, rgba(127,127,127,.1)); cursor: pointer; overflow: hidden; }
+.sv-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sv-progress-badge { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff;
+    font-size: 11px; padding: 2px 8px; border-radius: var(--r-pill, 999px); }
+.sv-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.sv-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-count { font-size: 12px; color: var(--text-muted); }
+.sv-bar { height: 4px; border-radius: 999px; background: var(--bg-secondary, rgba(127,127,127,.15)); overflow: hidden; }
+.sv-bar i { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
+.sv-next { border: 1px solid var(--border); background: transparent; color: var(--text);
+    border-radius: 8px; padding: 6px; cursor: pointer; font-size: 12px; }
+.sv-next:hover { background: var(--card-bg-hover, var(--bg-elevated)); }
+.sv-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.sv-card-actions button { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--text-muted);
+    cursor: pointer; font-size: 11px; padding: 4px 2px; }
+.sv-card-actions button:hover { color: var(--primary); }
+
+.sv-empty, .sv-empty-line { color: var(--text-muted); font-size: 13px; padding: 24px; text-align: center; }
+.sv-empty-line { padding: 12px; }
+
+/* ---------- 分集抽屉 ---------- */
+.sv-modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 900; padding: 20px; }
+.sv-modal { width: min(560px, 100%); max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;
+    border: 1px solid var(--border); border-radius: var(--r-xl, 16px); background: var(--bg-elevated); color: var(--text); }
+.sv-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.sv-modal-head h3 { margin: 0; font-size: 16px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-modal-close { border: 0; background: transparent; color: var(--text); cursor: pointer; font-size: 18px; padding: 4px 8px; }
+.sv-ep-list { overflow-y: auto; padding: 8px 12px 16px; }
+.sv-ep { display: flex; align-items: center; gap: 10px; padding: 10px 6px; border-bottom: 1px solid var(--border); min-width: 0; }
+.sv-ep-no { flex: 0 0 34px; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.sv-ep-title { flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-ep-stat { flex: 0 0 auto; font-size: 12px; color: var(--text-muted); }
+.sv-ep-play { flex: 0 0 auto; border: 1px solid var(--primary); color: var(--primary); background: transparent;
+    border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+.sv-ep-nosrc { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); }
+
+@media (max-width: 860px) {
+    #seriesView { padding: 12px 12px 50px; }
+    .sv-calendar { grid-auto-columns: 116px; }
+    .sv-board { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+}

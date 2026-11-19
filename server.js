@@ -261,6 +261,7 @@ app.use('/api/media', require('./routes/media-progress')); // round73：漫画/�
 app.use('/api/tts', require('./routes/tts'));   // round74：语音朗读（一键体检/自启/音色）
 app.use('/api/actress', require('./routes/actress'));
 app.use('/api/tags', require('./routes/tags'));
+app.use('/api/enrich', require('./routes/enrich'));   // round169：漫画/小说元数据补齐
 app.use('/api/recommend', require('./routes/recommend'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/config', require('./routes/config'));
@@ -297,6 +298,8 @@ app.use('/api/health', require('./routes/health'));     // round36：环境信�
 // ★ 必须挂在整站反代（app.use('/', webviewProxy)）之前：反代会接管任意一层路径，
 //   挂它后面可能被当成某个站点的子路径吞掉。
 app.use('/api/media-source', require('./routes/media-source'));
+app.use('/api/bangumi', require('./routes/bangumi-sync'));   // round173e：Bangumi OAuth 云同步（须在反代之前）
+app.use('/api/series', require('./routes/series'));   // round173：追番数据层（series/season/episode/follows/progress）
 app.use('/api/maintenance', require('./routes/maintenance'));   // round37：封面缓存盘点/清理/回收站
 app.use('/api/connect', require('./routes/connect'));   // 移动端扫码连接（connect.html 二维码页）
 

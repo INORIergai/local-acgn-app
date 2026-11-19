@@ -223,3 +223,67 @@ CREATE TABLE IF NOT EXISTS ai_memories (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(sessionId, id);
 CREATE INDEX IF NOT EXISTS idx_ai_summaries_session ON ai_summaries(sessionId, level);
+
+-- ========== round173 · 追番数据地基（series / seasons / episodes / follows / episode_progress） ==========
+-- 设计铁律：不 ALTER movies 加列（FTS5 外部内容表历史事故）；关联走 episodes.movieId。
+CREATE TABLE IF NOT EXISTS series (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  title         TEXT NOT NULL,
+  originalTitle TEXT DEFAULT '',
+  provider      TEXT DEFAULT '',
+  providerId    TEXT DEFAULT '',
+  type          TEXT DEFAULT 'cartoon',
+  overview      TEXT DEFAULT '',
+  posterPath    TEXT DEFAULT '',
+  airDate       TEXT DEFAULT '',
+  status        TEXT DEFAULT 'ongoing',
+  episodeCount  INTEGER DEFAULT 0,
+  createdAt     INTEGER DEFAULT 0,
+  updatedAt     INTEGER DEFAULT 0,
+  UNIQUE(provider, providerId)
+);
+CREATE TABLE IF NOT EXISTS seasons (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  seriesId   INTEGER NOT NULL,
+  seasonNo   INTEGER NOT NULL DEFAULT 1,
+  title      TEXT DEFAULT '',
+  posterPath TEXT DEFAULT '',
+  FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+  UNIQUE(seriesId, seasonNo)
+);
+CREATE TABLE IF NOT EXISTS episodes (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  seriesId  INTEGER NOT NULL,
+  seasonId  INTEGER NOT NULL DEFAULT 1,
+  episodeNo INTEGER NOT NULL,
+  title     TEXT DEFAULT '',
+  airDate   TEXT DEFAULT '',
+  duration  REAL DEFAULT 0,
+  movieId   INTEGER,
+  createdAt INTEGER DEFAULT 0,
+  FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+  UNIQUE(seriesId, seasonId, episodeNo)
+);
+CREATE TABLE IF NOT EXISTS follows (
+  seriesId  INTEGER PRIMARY KEY,
+  status    TEXT DEFAULT 'watching',
+  favorite  INTEGER DEFAULT 0,
+  addedAt   INTEGER DEFAULT 0,
+  updatedAt INTEGER DEFAULT 0,
+  FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS episode_progress (
+  episodeId INTEGER PRIMARY KEY,
+  position  REAL DEFAULT 0,
+  duration  REAL DEFAULT 0,
+  watched   INTEGER DEFAULT 0,
+  updatedAt INTEGER DEFAULT 0,
+  FOREIGN KEY(episodeId) REFERENCES episodes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_series_provider ON series(provider, providerId);
+CREATE INDEX IF NOT EXISTS idx_series_type ON series(type, airDate DESC);
+CREATE INDEX IF NOT EXISTS idx_seasons_series ON seasons(seriesId);
+CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(seriesId, seasonId, episodeNo);
+CREATE INDEX IF NOT EXISTS idx_episodes_movie ON episodes(movieId) WHERE movieId IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_follows_status ON follows(status, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_episode_progress_watched ON episode_progress(watched, updatedAt DESC);

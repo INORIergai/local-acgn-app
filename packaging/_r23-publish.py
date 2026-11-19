@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.0.0'
+TAG = 'v6.1.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,31 +35,25 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.0.0：V6 四皮肤（纸 / 夜 / 鲸鱼娘 / 墨）+ 在线观看与阅读全面原生 + 首页 AI 卡收口
+COMMIT_MSG = """v6.1.0：追番功能完整落地（数据地基 / 主循环 / Bangumi 云同步）
 
-【四套皮肤】新增 whale（Deep Whale · 鲸鱼娘）与 ink（墨 · 初版档案室），与纸 / 夜并列
-- whale：深海底 + 金色齿孔 + 月光金描边，首屏 wh-hero、深海玻璃 AI 卡、藏蓝热度榜；★色板必须落在 html[data-v4skin="whale"] body.dark，否则子元素继承 body 的夜皮肤变量，只有背景变色、卡片按钮仍是暖琥珀
-- ink：墨黑 #08080A / 哑光卡面 #131316 / 纸灰字 #EDE9E1 / 朱红 #C8443C，宋体大标题「把午夜归档。」+ ACCESSION NO.001 档案卡、朱红顶线与侧栏红条
-- 鲸鱼娘三张场景图重画（round164 以 Alife 原图为唯一基准）：鲸鳍耳、白色荷叶边 maid 头饰、黑 choker、胸前金框蓝宝石、人身人腿 + 身后小鲸鱼尾，不再是精灵耳 / 人鱼下半身
-- 墨主题同步出三张场景图（午夜档案室 / 档案梯 / 头像特写）；V4_SKINS = ['classic','matinee','whale','ink']，setV4Skin 同步 body.dark 与 skin-* 类
+【阶段0 · 数据地基】
+- 新增 series/seasons/episodes/follows/episode_progress 五表 + 15 条 REST API；坚决不 ALTER movies（规避 FTS 触发器事故）
+- 幂等 upsert 数据层 utils/series-db.js；真机 8/8 验证，movies 数据纹丝未动
 
-【在线观看 · 原生重构 Sprint D 阶段 2 / 3】
-- 侧栏 AV / 里番在线观看不再打开整站 iframe 的 watchStage：落 MediaSource.show('stream')，含板块切换、源站卡、源站分类胶囊、16:9 作品墙
-- 新增 utils/media-sources/reading.js 阅读适配层：动漫屋（漫画）+ ESJ Zone（小说）的目录 / 章节 / 正文全部走应用内原生界面，同源字节代理 + 正文脚本清洗
-- 阅读层修两处实测 bug：翻下一章时把上一章滚动比例存到新章名下（新章一开就落在 0.03~0.5）、单槽续读 cv:rdrLast 互相覆盖（回翻只剩 0.03）；漫画图未预设高度导致 scrollHeight 未撑开、按比例恢复接近 0
-- 小说 / 漫画入口按类型分源（watch-comic → dm5/zaimanhua/komiic，watch-novel → esjzone/lightnovel）；封面墙改 3:4 竖版海报（桌面 6 列 / 390 两列），不再被 16:9 裁成横条
-- 动漫屋只抓到 7 条的真因：更新列表封面在 .mh-cover 兄弟节点、不是 a 的子节点；目录空结果不再写 5 分钟缓存
-- 新增 utils/mobi-reader.js（MOBI 解析）与 public/css/round154-native-stream.css
+【阶段1 · 追番主循环】
+- 新番放送表一键加追（cycanime 源 93 部），三栏看板（追番中/计划看/已完成）+ 分集抽屉
+- 加追后台自动回填分集（AniList 集数 → 第1..N话占位，幂等），卡片显示「已看 N/总集」+「继续看第 N 集」
+- 番剧更新站内提醒（animeUpdate 通知类型）：放送表与追番清单匹配，双模式（有集数按集号 / 无集数按今日放送）+ 双层去重
+- 独立视图 #seriesView + series-view.js，语义令牌双皮肤自适应；真机 UI 10/10 + 尾项 11/11
 
-【首页 AI 卡收口】
-- 「＋ 新对话」后卡片瞬间缩成一条：补桌面端高度链（.home-chat min-height 560px + dock flex + min-height 0），消息区改内部滚动，长对话不再把卡继续拉长
-- 首页双栏同高：宽屏 620px / 861-1400 单列 672px，AI 卡与热度情报同顶同底（实测误差 ≤1px）
-- 去掉对话框上方的拟人立绘占位；会话切换改 body 级不透明自定义菜单（原生 select 在暗色皮肤下是半透明弹层，会把下面的立绘透出来）
+【阶段2 · Bangumi OAuth 云同步】
+- 双路请求层（代理→直连，bgm.tv 直连超时、走 7892 代理通）；OAuth 授权码 + 手动 token 两种接入
+- pull/push/sync 双向同步：状态映射 wish/collect/do/dropped，进度 ep_status 互转，401 自动刷新 token
+- 设置页新增「Bangumi 同步」分组；离线 mock 6 组 + 真机 14/14 通过
+- API base 可用 CINEMAVAULT_BGM_API 覆盖，支持自建镜像
 
-【其它】
-- 随机画布 round152-random.css + round153-folia.js；round153-v6.css 收口层
-- 命令面板、空态、媒体源引擎、agent runtime、ai-service 若干修复
-- 前端缓存版本号逐文件 bump（round152-random ?v=4、round154-native-stream ?v=7、round162-ink-theme ?v=3 …）"""
+真机验证：阶段0 8/8、阶段1 10/10+11/11、阶段2 14/14，纸/夜双皮肤截图取证，全程 0 pageerror。"""
 
 
 def get_token():

@@ -67,7 +67,8 @@
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: background var(--mv2-d2, 0.2s) var(--mv2-snap, ease), transform var(--mv2-d2, 0.2s) cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: background var(--mv2-d1, 0.14s) var(--mv2-snap, ease),
+              transform var(--mv2-d2, 0.22s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1));
   vertical-align: middle;
 }
 .nv-annual-btn:hover { background: rgba(251, 191, 36, 0.24); transform: translateY(-1px); }
@@ -402,10 +403,10 @@ body[data-view="watch"] #toolbarTitle i { --tb-c: #67E8F8; }
   -webkit-backdrop-filter: blur(16px) saturate(1.35);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   text-align: center;
-  transform: translateX(-50%) translateY(-26px) scale(0.9);
+  transform: translateX(-50%) translateY(-16px) scale(0.96);
   transform-origin: center top;
-  transition: opacity var(--mv2-d2, 0.3s) var(--mv2-snap, ease),
-              transform var(--mv2-d3, 0.55s) cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity var(--mv2-d2, 0.26s) var(--mv2-snap, ease),
+              transform var(--mv2-d2, 0.26s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .notification.show { transform: translateX(-50%) translateY(0) scale(1); }
 .notification::before {
@@ -474,21 +475,21 @@ body[data-view="watch"] #toolbarTitle i { --tb-c: #67E8F8; }
   50% { transform: translateY(-3px) scale(1.08); color: var(--primary); }
 }
 
-/* ④ skiper3 Apple play button → 播放按钮：悬停膨胀回弹 + 按下压扁 */
+/* ④ skiper3 Apple play button → 播放按钮：克制微升 + 按下微缩 */
 .play-btn {
-  transition: transform var(--mv2-d2, 0.35s) cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow var(--mv2-d2, 0.35s) var(--mv2-snap, ease), background var(--mv2-d2, 0.3s) var(--mv2-snap, ease);
+  transition: transform var(--mv2-d1, 0.14s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--mv2-d2, 0.26s) var(--mv2-snap, ease), background var(--mv2-d1, 0.14s) var(--mv2-snap, ease);
 }
 .play-btn:hover {
-  transform: scale(1.12);
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--primary, #818CF8) 45%, transparent);
+  transform: scale(1.04);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--primary, #818CF8) 35%, transparent);
 }
-.play-btn:active { transform: scale(0.94); transition-duration: var(--mv2-dpress, 0.1s) var(--mv2-snap, ease); }
+.play-btn:active { transform: scale(0.96); transition-duration: var(--mv2-dpress, 0.1s) var(--mv2-snap, ease); }
 
-/* ⑤ skiper4 Theme toggle → 主题球点击弹性翻转 */
-.theme-toggle { transition: transform var(--mv2-d2, 0.3s) cubic-bezier(0.34, 1.56, 0.64, 1); }
-.theme-toggle:hover { transform: scale(1.1); }
-.nvx-tspin { animation: nvxTspin 0.55s cubic-bezier(0.34, 1.56, 0.64, 1); }
+/* ⑤ skiper4 Theme toggle → 主题按钮克制反馈 */
+.theme-toggle { transition: transform var(--mv2-d1, 0.14s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)); }
+.theme-toggle:hover { transform: scale(1.04); }
+.nvx-tspin { animation: nvxTspin 0.36s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)); }
 @keyframes nvxTspin {
   0%   { transform: rotateY(0) scale(1); }
   40%  { transform: rotateY(180deg) scale(0.82); }

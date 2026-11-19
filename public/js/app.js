@@ -2568,6 +2568,13 @@ async function openTagById(tagId, tagName) {
     document.getElementById('sortSelect').parentElement.style.display = 'block';
     hideGallery();
     renderMoviesChunked(movies, `标签筛选 - ${tagName}`);
+    // round168：补「进得去出不来」——侧栏归属高亮 + 结果页返回条
+    document.querySelectorAll('.nav-item.active').forEach(n => n.classList.remove('active'));
+    const navTag = document.querySelector('.nav-item[data-view="tags"]');
+    if (navTag) navTag.classList.add('active');
+    if (window.TagsUI && typeof window.TagsUI.showBackBar === 'function') {
+        window.TagsUI.showBackBar(`标签筛选 - ${tagName}`, movies.length);
+    }
     if (window.Features && window.Features.renderProfile) {
         window.Features.renderProfile('tag', tagName, movies);
     }
@@ -6690,6 +6697,7 @@ function switchSettingsGroup(name) {
     // r60：进入 Cookie 分组时检测夸克登录脚本位置
     if (name === 'cookies') { loadQuarkBatInfo(); loadOAuthStatus(); }   // round91：+ 网盘 OAuth 状态
     if (name === 'cloudsync') loadCloudSyncPanel();   // round92：数据同步面板
+    if (name === 'bangumi' && window.BangumiPanel) window.BangumiPanel.render();   // round173e：Bangumi 同步面板
     // round91：进入「扫描路径」时渲染网盘目录绑定
     if (name === 'paths') renderCloudDirBindings();
     // 进入「个性化」时刷新动画卡缩略图（round38）+ 动效库面板（round49）
@@ -7779,6 +7787,7 @@ function renderSettings(config) {
         { id: 'tools', icon: 'clock', name: '工具维护' },
         { id: 'cookies', icon: 'bookmark', name: '授权 Cookie' },
         { id: 'cloudsync', icon: 'shuffle', name: '数据同步' },
+        { id: 'bangumi', icon: 'reel', name: 'Bangumi 同步' },   // round173e：追番进度云同步
         { id: 'version', icon: 'chart', name: '版本' },
         { id: 'about', icon: 'home', name: '关于' }
     ];
@@ -9255,6 +9264,11 @@ function renderSettings(config) {
                             <div style="font-size:12px;color:var(--text-muted);">提示：百度网盘的备份文件需放在 /apps/ 开放目录下，选自己网盘里的文件夹即可；123云盘任意文件夹。</div>
                         </div>
                     </div>
+                </section>
+
+                <!-- ☁️ Bangumi 云同步（round173e） -->
+                <section class="settings-section" data-group="bangumi" style="display:none;" id="bangumiSection">
+                    <div id="bangumiPanel"><div style="padding:24px;color:var(--text-muted);">加载中…</div></div>
                 </section>
 
                 <!-- 🆙 版本与更新 -->
@@ -13490,6 +13504,8 @@ function switchView(view) {
     document.getElementById('statsPanel').style.display = 'none';
     document.getElementById('emptyTip').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    // round173b：离开追番页时收起独立视图 + 卸载事件监听（避免点别的视图还触发追番的委托）
+    if (view !== 'series' && window.SeriesView && typeof window.SeriesView.hide === 'function') window.SeriesView.hide();
     const featureView = document.getElementById('featureView');
     if (featureView) featureView.style.display = 'none';
     const profileStrip = document.getElementById('profileStrip');
@@ -13619,6 +13635,13 @@ function switchView(view) {
             document.getElementById('movieGrid').style.display = 'grid';
             hideGallery();
             loadCartoonMovies();
+            break;
+        // round173b：追番（新番加追 + 分集进度看板）
+        case 'series':
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle('📺 追番');
+            if (window.SeriesView && window.SeriesView.show) window.SeriesView.show();
             break;
         case 'favorites':
             document.getElementById('movieGrid').style.display = 'grid';
@@ -13975,6 +13998,11 @@ async function loadActresses(type) {
 
 async function loadTags(type) {
     if (type !== undefined) slicerState.tagType = type;
+    // round168：标签库交给 tags-ui.js（五库 / 大卡 / 思维空间 / 合并）；老实现保留为回退
+    if (window.TagsUI && typeof window.TagsUI.enter === 'function') {
+        await window.TagsUI.enter(type === undefined ? slicerState.tagType : type);
+        return;
+    }
     updateToolbarTitle('🏷️ 标签库');
     renderSlicerTabs('tagSlicer', slicerState.tagType, (t) => loadTags(t));
     const tags = await api.getTags(slicerState.tagType);
@@ -16106,38 +16134,71 @@ async function toggleWatch(id) {
 }
 
 // ========== 批量操作 ==========
+function syncCardSelectionDOM() {
+    document.querySelectorAll('#movieGrid .movie-card[data-id], #movieGrid [data-mid]').forEach(el => {
+        const id = parseInt(el.dataset.id || el.dataset.mid, 10);
+        if (!id) return;
+        el.classList.toggle('selected', selectedMovies.has(id));
+    });
+    if (typeof window.__syncMobileBatchUI === 'function') {
+        window.__syncMobileBatchUI();
+    }
+}
+
 function toggleSelect(id) {
+    id = parseInt(id, 10);
+    if (!id) return;
     if (selectedMovies.has(id)) {
         selectedMovies.delete(id);
     } else {
         selectedMovies.add(id);
     }
     updateBatchToolbar();
-    // 重新渲染当前列表
-    if (currentView === 'movies' || currentView === 'favorites' ||
-        currentView === 'hot' || currentView === 'random' ||
-        currentView === 'guess' || currentView === 'unwatched' ||
-        currentView === 'recent' || currentView === 'movies-adult' || currentView === 'recent-adult') {
-        renderMovies(currentMovies);
+    syncCardSelectionDOM();
+}
+
+function selectAllCurrent() {
+    const cards = Array.from(document.querySelectorAll('#movieGrid .movie-card[data-id], #movieGrid [data-mid]'));
+    const ids = cards.map(el => parseInt(el.dataset.id || el.dataset.mid, 10)).filter(Boolean);
+    if (!ids.length && Array.isArray(currentMovies)) {
+        currentMovies.forEach(m => { if (m && m.id) ids.push(m.id); });
     }
+    const allPicked = ids.length > 0 && ids.every(id => selectedMovies.has(id));
+    if (allPicked) {
+        ids.forEach(id => selectedMovies.delete(id));
+    } else {
+        ids.forEach(id => selectedMovies.add(id));
+    }
+    updateBatchToolbar();
+    syncCardSelectionDOM();
 }
 
 function updateBatchToolbar() {
     const toolbar = document.getElementById('batchToolbar');
-    document.getElementById('batchCount').textContent = `已选 ${selectedMovies.size} 部`;
+    const countEl = document.getElementById('batchCount');
+    if (countEl) countEl.textContent = `已选 ${selectedMovies.size} 部`;
     
-    if (selectedMovies.size > 0) {
-        toolbar.classList.add('show');
-    } else {
-        toolbar.classList.remove('show');
+    if (toolbar) {
+        if (selectedMovies.size > 0 || window._mobileSelectMode) {
+            toolbar.classList.add('show');
+        } else {
+            toolbar.classList.remove('show');
+        }
     }
 }
 
 function clearSelection() {
     selectedMovies.clear();
+    window._mobileSelectMode = false;
+    document.body.classList.remove('m-select-mode');
     updateBatchToolbar();
-    renderMovies(currentMovies);
+    syncCardSelectionDOM();
 }
+window.selectedMovies = selectedMovies;
+window.toggleSelect = toggleSelect;
+window.clearSelection = clearSelection;
+window.selectAllCurrent = selectAllCurrent;
+window.updateBatchToolbar = updateBatchToolbar;
 
 async function batchAction(action) {
     if (selectedMovies.size === 0) return;
@@ -17996,7 +18057,12 @@ function applyAdultNav() {
     if (hidden && currentView && ['jav', 'anime', 'movies-adult', 'recent-adult', 'actresses', 'tags', 'watch', 'watch-hanime'].includes(currentView)) {
         switchView('movies');
     }
+    if (typeof window.__syncMobileAdultUI === 'function') {
+        try { window.__syncMobileAdultUI(); } catch (e) { /* 忽略 */ }
+    }
 }
+window.isAdultNavHidden = isAdultNavHidden;
+window.toggleAdultNav = toggleAdultNav;
 
 /* ★ round127 · bug1：解锁后把隐私内容功能栏「显式地」摆到用户眼前 ——
  * 仅仅让它 display 出来还不够，用户可能根本没注意到侧栏多了一组，

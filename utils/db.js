@@ -484,6 +484,85 @@ function migrate() {
     );
   `);
 
+  /* ==================== round173 · 追番数据地基 ====================
+     设计铁律（吸取 round73 的 FTS 事故教训）：
+     1. **绝不 ALTER movies 加列**。movies 有 FTS5 外部内容表 + 触发器，历史加列
+        撞出过「整表任何 UPDATE 都报 database disk image is malformed」。关联一律
+        走新表自己的列（episodes.movieId），零 FTS 交互。
+     2. 一部番 = series 一行；季 = seasons（多数番只有 1 季，seasonId 默认 1，
+        不用 NULL，否则 SQLite UNIQUE(seriesId,seasonId,episodeNo) 对 NULL 失效）；
+        集 = episodes，movieId 可空（本地有文件才挂，在线源无本地文件）。
+     3. 追番清单 follows 与分集进度 episode_progress 都是独立表，主键即外键，
+        一个番/一集只有一行，天然幂等。 */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS series (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      title         TEXT NOT NULL,
+      originalTitle TEXT DEFAULT '',
+      provider      TEXT DEFAULT '',        -- bangumi / anilist / tmdb / custom
+      providerId    TEXT DEFAULT '',        -- 第三方条目 ID
+      type          TEXT DEFAULT 'cartoon', -- cartoon(普通向) / anime(里番) / film ...
+      overview      TEXT DEFAULT '',
+      posterPath    TEXT DEFAULT '',        -- 本地缓存路径或远程 URL（追番侧独立，不复用 movies）
+      airDate       TEXT DEFAULT '',        -- 首播日期 YYYY-MM-DD
+      status        TEXT DEFAULT 'ongoing', -- ongoing / finished / upcoming
+      episodeCount  INTEGER DEFAULT 0,      -- 总集数
+      createdAt     INTEGER DEFAULT 0,
+      updatedAt     INTEGER DEFAULT 0,
+      UNIQUE(provider, providerId)
+    );
+
+    CREATE TABLE IF NOT EXISTS seasons (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      seriesId   INTEGER NOT NULL,
+      seasonNo   INTEGER NOT NULL DEFAULT 1,
+      title      TEXT DEFAULT '',
+      posterPath TEXT DEFAULT '',
+      FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+      UNIQUE(seriesId, seasonNo)
+    );
+
+    CREATE TABLE IF NOT EXISTS episodes (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      seriesId  INTEGER NOT NULL,
+      seasonId  INTEGER NOT NULL DEFAULT 1,
+      episodeNo INTEGER NOT NULL,           -- 第几集（0=OVA/特别篇）
+      title     TEXT DEFAULT '',
+      airDate   TEXT DEFAULT '',
+      duration  REAL DEFAULT 0,
+      movieId   INTEGER,                    -- 本地文件关联，可空；不设 FK 避免 FTS 侧连锁
+      createdAt INTEGER DEFAULT 0,
+      FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+      UNIQUE(seriesId, seasonId, episodeNo)
+    );
+
+    CREATE TABLE IF NOT EXISTS follows (
+      seriesId  INTEGER PRIMARY KEY,
+      status    TEXT DEFAULT 'watching',    -- watching / planned / completed / dropped
+      favorite  INTEGER DEFAULT 0,
+      addedAt   INTEGER DEFAULT 0,
+      updatedAt INTEGER DEFAULT 0,
+      FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS episode_progress (
+      episodeId INTEGER PRIMARY KEY,
+      position  REAL DEFAULT 0,             -- 播放位置（秒）
+      duration  REAL DEFAULT 0,
+      watched   INTEGER DEFAULT 0,          -- 是否已看完
+      updatedAt INTEGER DEFAULT 0,
+      FOREIGN KEY(episodeId) REFERENCES episodes(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_series_provider ON series(provider, providerId);
+    CREATE INDEX IF NOT EXISTS idx_series_type ON series(type, airDate DESC);
+    CREATE INDEX IF NOT EXISTS idx_seasons_series ON seasons(seriesId);
+    CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(seriesId, seasonId, episodeNo);
+    CREATE INDEX IF NOT EXISTS idx_episodes_movie ON episodes(movieId) WHERE movieId IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_follows_status ON follows(status, updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_episode_progress_watched ON episode_progress(watched, updatedAt DESC);
+  `);
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_movie_hotscore ON movies(hotScore DESC);
     CREATE INDEX IF NOT EXISTS idx_movie_playcount ON movies(playCount DESC);
@@ -904,6 +983,187 @@ const getAllTags = db.prepare(`
 
 const getTagById = db.prepare(`SELECT * FROM tags WHERE id = ?`);
 const getTagByName = db.prepare(`SELECT * FROM tags WHERE name = ?`);
+
+/* ============================================================
+ * round168 · 五库标签作用域
+ *
+ * 设计：不迁移 tags 表（9310 部影片 / 4629 条关系，动表风险远大于收益）。
+ *   「五个库各一套」在查询层实现 —— 用 movies.type 判定归属，
+ *   同一个标签名在不同库里各自算独立计数、独立联想空间、独立可见性。
+ *   ⇒ 好处：零迁移、可随时回滚；代价：同名标签跨库共用一条 tags 记录
+ *     （真要独立命名空间再做一次迁移，届时才有必要）。
+ * ============================================================ */
+const TAG_LIB_TYPES = {
+    film: ['film', 'cartoon'],   // 影视库（film 与 cartoon 合并为一个库口径）
+    anime: ['anime'],            // 动漫库
+    comic: ['comic'],            // 漫画库
+    novel: ['novel'],            // 小说库
+    jav: ['jav']                 // AV 库（成人，受右上角锁控制）
+};
+const TAG_LIB_ADULT = { jav: true };
+
+const _tagStmtCache = new Map();
+function _tagPrep(sql) {
+    let s = _tagStmtCache.get(sql);
+    if (!s) { s = db.prepare(sql); _tagStmtCache.set(sql, s); }
+    return s;
+}
+/** 生成 type 作用域片段与参数（lib 为空/非法 ⇒ 不过滤） */
+function _tagScope(lib) {
+    const types = TAG_LIB_TYPES[lib];
+    if (!types) return { sql: '', args: [] };
+    return { sql: ` AND m.type IN (${types.map(() => '?').join(',')})`, args: types.slice() };
+}
+
+/**
+ * 某库的标签列表。
+ * ★ 只返回「在本库至少挂着 1 部作品」的标签 —— INNER JOIN 天然排除了 0 关系的幽灵标签。
+ *   之前的 includeEmpty 参数是**假的**（JOIN 已经把它们滤掉，参数传了也没用），
+ *   所以直接删掉，幽灵标签统一走 /prune-empty 那个出口，语义才不打架。
+ */
+function getTagsByLib(lib) {
+    const sc = _tagScope(lib);
+    /* ★ 不要写 HAVING movieCount >= ? / ORDER BY movieCount ——
+     *   tags 表本身就有一个 movieCount 列（历史遗留、值已过期），
+     *   SQLite 会优先把它当成列而不是聚合别名 ⇒ 列表只剩 7 条且顺序错乱。
+     *   一律用聚合表达式 COUNT(m.id) 本体，别名只给前端看。 */
+    const sql = `
+        SELECT t.id, t.name, t.category, t.hotScore,
+               COUNT(m.id) AS movieCount,
+               COALESCE(SUM(CASE WHEN m.watched = 1 THEN 1 ELSE 0 END), 0) AS watchedCount,
+               MAX(m.releaseDate) AS latestDate
+        FROM tags t
+        JOIN movie_tag mt ON mt.tagId = t.id
+        JOIN movies m ON m.id = mt.movieId
+        WHERE 1 = 1${sc.sql}
+        GROUP BY t.id
+        HAVING COUNT(m.id) >= 1
+        ORDER BY COUNT(m.id) DESC, t.name ASC`;
+    return _tagPrep(sql).all(...sc.args);
+}
+
+/** 某库的 Top 标签（修掉 getTopTags 写死 LIMIT 30 的问题） */
+function getTopTagsByLib(lib, limit = 30) {
+    const sc = _tagScope(lib);
+    if (sc.sql) {
+        const sql = `SELECT t.id, t.name, COUNT(m.id) AS movieCount
+            FROM tags t
+            JOIN movie_tag mt ON mt.tagId = t.id
+            JOIN movies m ON m.id = mt.movieId
+            WHERE 1 = 1${sc.sql}
+            GROUP BY t.id
+            ORDER BY COUNT(m.id) DESC
+            LIMIT ?`;
+        return _tagPrep(sql).all(...sc.args, limit);
+    }
+    const sqlAll = `SELECT t.id, t.name, COUNT(mt.movieId) AS movieCount
+        FROM tags t JOIN movie_tag mt ON mt.tagId = t.id
+        GROUP BY t.id ORDER BY COUNT(mt.movieId) DESC LIMIT ?`;
+    return _tagPrep(sqlAll).all(limit);
+}
+
+/** 某个标签在指定库内的计数（详情页/卡片徽标用） */
+function getTagCountInLib(tagId, lib) {
+    const sc = _tagScope(lib);
+    const sql = `SELECT COUNT(*) AS n FROM movie_tag mt JOIN movies m ON m.id = mt.movieId
+        WHERE mt.tagId = ?${sc.sql}`;
+    return _tagPrep(sql).get(tagId, ...sc.args).n || 0;
+}
+
+/** 轻量海报：只回 id + 一张海报路径（悬停预览专用，904KB → ~1KB） */
+function getTagPosters(tagId, lib, limit = 6) {
+    const sc = _tagScope(lib);
+    const sql = `
+        SELECT m.id, m.title, m.fileName,
+               CASE WHEN m.localPosterPath IS NOT NULL AND m.localPosterPath <> ''
+                    THEN m.localPosterPath ELSE m.posterPath END AS poster
+        FROM movies m
+        JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId = ?${sc.sql}
+        ORDER BY m.hotScore DESC, m.lastScanTime DESC
+        LIMIT ?`;
+    return _tagPrep(sql).all(tagId, ...sc.args, limit)
+        .filter(r => r.poster)
+        .map(r => {
+            /* ★★ 封面路径有两种形态，前端不能一视同仁（round172 实锤）：
+             *   ① `cache/posters/<hash>.jpg`   → 走 /api/movie/poster/:hash（只在这个目录里找）
+             *   ② `J:\manga\作品\xxx-poster.jpg` → 作品目录里的原图，**不在 cache 里**
+             *   旧代码把 ② 也当 ①，只取 basename 去 cache 目录找 ⇒ 必然 400/404。
+             *   实测漫画库 90 张墙图里 50 张破图（55.6%），全是这个原因。
+             *   ⇒ 明确返回 kind，前端据此选接口。 */
+            const p = String(r.poster);
+            const isDisk = /^[A-Za-z]:[\\/]/.test(p);
+            return { id: r.id, poster: p, kind: isDisk ? 'disk' : 'cache', title: r.title || r.fileName || '' };
+        });
+}
+
+/** 系列键：把「_第03话」「_01卷」这类卷次差异抹平，用于同一标签下海报去重 */
+function seriesKey(title) {
+    let s = String(title || '');
+    s = s.replace(/\.(pdf|epub|mobi|azw3|txt|cbz|cbr|zip|rar)$/i, '');
+    s = s.replace(/[_ ]+\d{1,4}\s*(卷|话|話|章|回|期)?\s*$/g, '');
+    s = s.replace(/\s*\d{1,4}\s*(卷|话|話|章|回|期)\s*$/g, '');
+    s = s.replace(/[-_]\s*\d{1,4}\s*$/g, '');
+    s = s.replace(/\s*第\s*\d{1,4}\s*[话話章回]\s*$/g, '');
+    return s.trim().toLowerCase();
+}
+
+/** 某标签在某库内的影片（详情页代表作品 / 进入筛选结果） */
+function getTagMovies(tagId, lib, limit = 0, offset = 0) {
+    const sc = _tagScope(lib);
+    const lim = limit > 0 ? ' LIMIT ? OFFSET ?' : '';
+    const sql = `SELECT m.* FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId = ?${sc.sql} ORDER BY m.hotScore DESC, m.lastScanTime DESC${lim}`;
+    const args = [tagId, ...sc.args];
+    if (limit > 0) args.push(limit, offset);
+    return _tagPrep(sql).all(...args);
+}
+
+/** 多标签组合筛选：mode='and'（同时包含全部）| 'or'（命中任一） */
+function getTagsFilter(tagIds, lib, mode = 'and') {
+    if (!tagIds || !tagIds.length) return [];
+    const sc = _tagScope(lib);
+    const ph = tagIds.map(() => '?').join(',');
+    if (mode === 'or') {
+        const sql = `SELECT m.* FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+            WHERE mt.tagId IN (${ph})${sc.sql}
+            GROUP BY m.id ORDER BY m.hotScore DESC, m.lastScanTime DESC`;
+        return _tagPrep(sql).all(...tagIds, ...sc.args);
+    }
+    const sql = `SELECT m.* FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId IN (${ph})${sc.sql}
+        GROUP BY m.id HAVING COUNT(DISTINCT mt.tagId) = ?
+        ORDER BY m.hotScore DESC, m.lastScanTime DESC`;
+    return _tagPrep(sql).all(...tagIds, ...sc.args, tagIds.length);
+}
+
+/** 某标签的年份分布（详情页柱状） */
+function getTagYearHistogram(tagId, lib) {
+    const sc = _tagScope(lib);
+    const sql = `SELECT SUBSTR(m.releaseDate, 1, 4) AS year, COUNT(*) AS n
+        FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId = ?${sc.sql} AND m.releaseDate IS NOT NULL AND LENGTH(m.releaseDate) >= 4
+        GROUP BY year ORDER BY year ASC`;
+    return _tagPrep(sql).all(tagId, ...sc.args).filter(r => /^\d{4}$/.test(r.year || ''));
+}
+
+/** 共现矩阵（思维空间的「结构关系」边）：同库内两个标签同时出现在一部作品上 */
+function getTagCooccurrence(lib, minCo = 2) {
+    const sc = _tagScope(lib);
+    const sql = `SELECT a.tagId AS a, b.tagId AS b, COUNT(*) AS co
+        FROM movie_tag a
+        JOIN movie_tag b ON b.movieId = a.movieId AND b.tagId > a.tagId
+        JOIN movies m ON m.id = a.movieId
+        WHERE 1 = 1${sc.sql}
+        GROUP BY a.tagId, b.tagId
+        HAVING co >= ?`;
+    return _tagPrep(sql).all(...sc.args, minCo);
+}
+
+/** 别名表（合并后保留的旧名） */
+const getTagAliases = db.prepare(`SELECT tagId, aliasName FROM tag_alias`);
+const getAliasesOfTag = db.prepare(`SELECT aliasName FROM tag_alias WHERE tagId = ?`);
+const insertTagAlias = db.prepare(`INSERT OR IGNORE INTO tag_alias (tagId, aliasName) VALUES (?, ?)`);
 
 const getMovieTags = db.prepare(`
   SELECT t.id, t.name, t.category FROM tags t
@@ -1444,6 +1704,21 @@ module.exports = {
   getStatsByYear,
   getTopActresses,
   getTopTags,
+  // round168 · 五库标签作用域
+  TAG_LIB_TYPES,
+  TAG_LIB_ADULT,
+  getTagsByLib,
+  getTopTagsByLib,
+  getTagCountInLib,
+  getTagPosters,
+  seriesKey,
+  getTagMovies,
+  getTagsFilter,
+  getTagYearHistogram,
+  getTagCooccurrence,
+  getTagAliases,
+  getAliasesOfTag,
+  insertTagAlias,
   getStatsByResolution,
   getStatsByDuration,
   getStatsByFormat,

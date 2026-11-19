@@ -348,18 +348,26 @@
         }
         @media (max-width: 860px) {
             .reader-area {
-                padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+                /* 2026-11-13 修复：原值 calc(14px + safe-area) 严重不足。
+                   .toolbar 是 position:fixed，其实际占位已达 calc(50px + safe-area)，
+                   正文顶部因此被工具栏压住约 36px（刘海机型）。现让位与工具栏等高。 */
+                padding: calc(52px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
                 font-size: 17px;
             }
             .paged-content {
-                padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px));
+                /* 2026-11-13 修复：本元素位于 .reader-area 内部，外层已让出
+                   calc(52px + safe-area)，此处再叠加会让顶部留白翻倍。顶部归零。 */
+                padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px));
             }
             .catalog-sidebar, .settings-panel {
                 width: min(85vw, 320px);
             }
             .toolbar {
-                height: 50px !important;
-                min-height: 50px !important;
+                /* 2026-11-13 修复：原 height:50px 与 padding-top:calc(4px + safe-area) 在
+                   box-sizing:border-box 下相加超限——刘海机型(47px)内容盒 = 50-51-4 = -5px，
+                   按钮被压出可视区。改为高度随安全区自适应，安全区只经这一处传递。 */
+                height: auto !important;
+                min-height: calc(50px + env(safe-area-inset-top, 0px)) !important;
                 padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px !important;
                 flex-wrap: nowrap !important;
                 background: rgba(18, 16, 14, 0.94) !important;
@@ -801,6 +809,51 @@
         .acp-body .acp-load { color: #8a7d68; font-size: 13px; }
         .acp-foot { padding: 10px 18px 16px; border-top: 1px solid rgba(120, 92, 48, .12); display: flex; gap: 8px; }
         body.night-mode .acp-foot { border-top-color: rgba(255, 233, 190, .1); }
+    </style>
+    <!-- round173：与主站四皮肤同源（只跟随，不新增开关；阅读器自己的夜间模式仍然优先） -->
+    <script>
+        (function () {
+            try {
+                var s = localStorage.getItem('v4skin') || 'classic';
+                document.documentElement.setAttribute('data-v4skin', s);
+            } catch (e) { /* 隐私模式读不到就用默认 */ }
+        })();
+    </script>
+    <style>
+        html[data-v4skin="matinee"] { --nr-accent: #D99A43; --nr-accent-hover: #F2BC5E; }
+        html[data-v4skin="whale"] { --nr-accent: #7FB6E8; --nr-accent-hover: #A9D2F5; }
+        html[data-v4skin="ink"] { --nr-accent: #C8443C; --nr-accent-hover: #E15A50; }
+
+        html[data-v4skin="matinee"] body:not(.night-mode) { background: #131110; color: #EFE9DC; }
+        html[data-v4skin="whale"] body:not(.night-mode) { background: #050C18; color: #E6EEF9; }
+        html[data-v4skin="ink"] body:not(.night-mode) { background: #08080A; color: #EDE9E1; }
+        html[data-v4skin="whale"] body.night-mode { background: #050C18; color: #E6EEF9; }
+        html[data-v4skin="ink"] body.night-mode { background: #08080A; color: #EDE9E1; }
+
+        html[data-v4skin="matinee"] .toolbar { background: rgba(19, 17, 16, .94); border-bottom-color: rgba(229, 166, 60, .18); }
+        html[data-v4skin="whale"] .toolbar { background: rgba(5, 12, 24, .94); border-bottom-color: rgba(127, 182, 232, .20); }
+        html[data-v4skin="ink"] .toolbar { background: rgba(8, 8, 10, .94); border-bottom-color: rgba(200, 68, 60, .28); }
+        html[data-v4skin="matinee"] .btn { background: rgba(255, 233, 190, .08); }
+        html[data-v4skin="whale"] .btn { background: rgba(127, 182, 232, .10); }
+        html[data-v4skin="ink"] .btn { background: rgba(237, 233, 225, .07); }
+
+        /* 手机端：正文列不再用 20% 大边距；工具栏更紧凑，给正文留高度 */
+        @media (max-width: 860px) {
+            .reader-area { padding: 60px 16px 92px; }
+            body.read-mode-page .reader-area { padding: 0; }
+            #chapterContent { max-width: 100%; }
+            .toolbar {
+                padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px;
+                gap: 8px;
+            }
+            .toolbar-left { gap: 10px; min-width: 0; }
+            .toolbar-title { max-width: 44vw; font-size: 13px; }
+            .toolbar-right { gap: 8px; }
+            .btn { padding: 7px 12px; min-height: 36px; font-size: 12.5px; }
+            .chapter-title { font-size: 20px; margin-bottom: 20px; padding-bottom: 14px; }
+            .paged-content { padding: 62px 16px 86px; }
+            .paged-inner { max-width: 100%; }
+        }
     </style>
 </head>
 <body>

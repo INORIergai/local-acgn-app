@@ -56,6 +56,27 @@
         try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
     }
 
+    function isTouchLike() {
+        try {
+            return !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
+        } catch (e) { return false; }
+    }
+
+    /* round173：统一的缩放入口（HUD 按钮 / 滚轮 / 双指捏合共用）。
+       cx/cy 是相对画布中心的偏移；传 0,0 即以中心为锚点缩放。 */
+    function zoomBy(st, factor, cx, cy) {
+        if (!st) return;
+        cx = (typeof cx === 'number') ? cx : 0;
+        cy = (typeof cy === 'number') ? cy : 0;
+        var old = st.scale;
+        var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, old * factor));
+        if (Math.abs(next - old) < 1e-4) return;
+        st.camX += cx / old - cx / next;
+        st.camY += cy / old - cy / next;
+        st.scale = next;
+        layout(st);
+    }
+
     function inkFor(seed) {
         var s = String(seed || ''), h = 0;
         for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -130,7 +151,19 @@
 
         var hud = document.createElement('div');
         hud.className = 'r153-folia-hud';
-        hud.innerHTML = '<span>🧱 拖拽漫游 · 滚轮缩放 · 双击起播</span><span class="r153-zoom">100%</span>';
+        /* round173：手机端补上缩放工具组（原来只有滚轮，触屏没有任何缩放入口）；
+           提示文案也随输入方式切换 —— 触屏没有「滚轮」，双击也不该是唯一入口。 */
+        var touchMode = isTouchLike();
+        hud.innerHTML =
+            '<span class="r153-hud-hint">' +
+                (touchMode ? '🧱 拖拽漫游 · 双指缩放 · 点海报看详情' : '🧱 拖拽漫游 · 滚轮缩放 · 双击起播') +
+            '</span>' +
+            '<span class="r153-hud-zoom">' +
+                '<button type="button" class="r153-hud-btn" data-z="out" aria-label="缩小">－</button>' +
+                '<span class="r153-zoom">100%</span>' +
+                '<button type="button" class="r153-hud-btn" data-z="in" aria-label="放大">＋</button>' +
+                '<button type="button" class="r153-hud-btn" data-z="reset" aria-label="复位视图" title="复位视图">⟲</button>' +
+            '</span>';
         host.appendChild(hud);
 
         var api = opts && opts.api ? opts.api : null;
@@ -221,14 +254,21 @@
         var host = st.host;
 
         host.addEventListener('pointerdown', function (e) {
-            if (e.button !== 0) return;
-            if (e.target.closest && e.target.closest('img')) { /* 仍允许拖拽 */ }
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+            /* HUD 上的缩放按钮不参与拖拽 */
+            if (e.target.closest && e.target.closest('.r153-folia-hud')) return;
             st.dragging = true;
             st.moved = 0;
             st.vx = st.vy = 0;
-            st.last = { x: e.clientX, y: e.clientY, t: performance.now() };
+            /* ★ round173：setPointerCapture 会把后续 pointerup / click 的 target
+               重定向到 host 本身，于是 e.target.closest('.r153-tile') 恒为 null
+               —— 触屏（以及部分鼠标环境）点海报完全没反应。这里在 pointerdown
+               时就把磁贴记下来，松手时按位移判断是「点击」还是「拖拽」。 */
+            st.downTile = e.target.closest ? e.target.closest('.r153-tile') : null;
+            st.downAt = performance.now();
+            st.last = { x: e.clientX, y: e.clientY, t: st.downAt };
             st.lastAt = st.last.t;
-            host.setPointerCapture && host.setPointerCapture(e.pointerId);
+            try { host.setPointerCapture && host.setPointerCapture(e.pointerId); } catch (err) { }
             host.classList.add('is-dragging');
         }, sig);
 
@@ -247,15 +287,38 @@
             layout(st);
         }, sig);
 
+        function tileOfEl(el) {
+            if (!el) return null;
+            for (var i = 0; i < st.tiles.length; i++) {
+                if (st.tiles[i].el === el) return st.tiles[i];
+            }
+            return null;
+        }
+
         function endDrag(e) {
             if (!st.dragging) return;
             st.dragging = false;
             host.classList.remove('is-dragging');
-            if (st.moved < 8) { st.vx = st.vy = 0; return; }
-            if (reduced()) { st.vx = st.vy = 0; }
             if (e && e.pointerId != null && host.releasePointerCapture) {
                 try { host.releasePointerCapture(e.pointerId); } catch (err) { }
             }
+            /* 双指缩放刚刚结束：不当作点击 */
+            if (st.pinched) { st.vx = st.vy = 0; st.downTile = null; return; }
+            if (st.moved < 8) {
+                st.vx = st.vy = 0;
+                var t = tileOfEl(st.downTile);
+                st.downTile = null;
+                if (!t || t.idx < 0 || !st.pool[t.idx]) return;
+                var m = st.pool[t.idx];
+                var now = performance.now();
+                var dbl = st.lastTap && st.lastTap.idx === t.idx && (now - st.lastTap.t) < 320;
+                st.tapHandledAt = now;
+                if (dbl) { st.lastTap = null; playItem(m); }
+                else { st.lastTap = { idx: t.idx, t: now }; openItem(m); }
+                return;
+            }
+            st.downTile = null;
+            if (reduced()) { st.vx = st.vy = 0; }
         }
         host.addEventListener('pointerup', endDrag, sig);
         host.addEventListener('pointercancel', endDrag, sig);
@@ -265,27 +328,76 @@
             var rect = host.getBoundingClientRect();
             var cx = e.clientX - rect.left - rect.width / 2;
             var cy = e.clientY - rect.top - rect.height / 2;
-            var old = st.scale;
-            var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, old * (e.deltaY > 0 ? 0.92 : 1.08)));
-            if (next === old) return;
-            st.camX += cx / old - cx / next;
-            st.camY += cy / old - cy / next;
-            st.scale = next;
-            layout(st);
+            zoomBy(st, e.deltaY > 0 ? 0.92 : 1.08, cx, cy);
         }, Object.assign({ passive: false }, sig));
 
+        /* ---------- round173：HUD 缩放按钮（触屏唯一的缩放入口） ---------- */
+        var zoomBox = hud && hud.querySelector ? hud.querySelector('.r153-hud-zoom') : null;
+        if (zoomBox) {
+            zoomBox.addEventListener('pointerdown', function (e) {
+                e.stopPropagation();
+            }, sig);
+            zoomBox.addEventListener('click', function (e) {
+                var b = e.target.closest && e.target.closest('.r153-hud-btn');
+                if (!b) return;
+                e.preventDefault();
+                e.stopPropagation();
+                var z = b.getAttribute('data-z');
+                if (z === 'in') zoomBy(st, 1.15);
+                else if (z === 'out') zoomBy(st, 1 / 1.15);
+                else if (z === 'reset') {
+                    st.scale = 1;
+                    st.camX = st.camY = 0;
+                    layout(st);
+                }
+            }, sig);
+        }
+
+        /* ---------- round173：双指捏合缩放 ---------- */
+        var pinch = null;
+        function touchDist(t) {
+            var dx = t[0].clientX - t[1].clientX;
+            var dy = t[0].clientY - t[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy) || 1;
+        }
+        host.addEventListener('touchstart', function (e) {
+            if (e.touches.length !== 2) return;
+            pinch = { d: touchDist(e.touches), s: st.scale };
+            st.pinched = true;
+            st.dragging = false;
+            host.classList.remove('is-dragging');
+        }, Object.assign({ passive: true }, sig));
+        host.addEventListener('touchmove', function (e) {
+            if (e.touches.length !== 2 || !pinch) return;
+            if (e.cancelable) e.preventDefault();
+            var rect = host.getBoundingClientRect();
+            var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left - rect.width / 2;
+            var my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top - rect.height / 2;
+            var factor = (pinch.s * (touchDist(e.touches) / pinch.d)) / st.scale;
+            zoomBy(st, factor, mx, my);
+        }, Object.assign({ passive: false }, sig));
+        host.addEventListener('touchend', function (e) {
+            if (e.touches.length < 2) pinch = null;
+            if (st.pinched) {
+                setTimeout(function () { st.pinched = false; }, 80);
+            }
+        }, Object.assign({ passive: true }, sig));
+
         host.addEventListener('click', function (e) {
+            /* pointerup 已经处理过点击（setPointerCapture 下 click 的 target 会被重定向） */
+            if (st.tapHandledAt && performance.now() - st.tapHandledAt < 500) return;
             var el = e.target.closest && e.target.closest('.r153-tile');
             if (!el) return;
             if (st.moved >= 8) return;
-            var t = st.tiles.find(function (x) { return x.el === el; });
+            var t = tileOfEl(el);
             if (t && st.pool[t.idx]) openItem(st.pool[t.idx]);
         }, sig);
 
         host.addEventListener('dblclick', function (e) {
+            if (st.tapHandledAt && performance.now() - st.tapHandledAt < 500) return;
             var el = e.target.closest && e.target.closest('.r153-tile');
             if (!el) return;
-            var t = st.tiles.find(function (x) { return x.el === el; });
+            var t = tileOfEl(el);
             if (t && st.pool[t.idx]) { e.preventDefault(); playItem(st.pool[t.idx]); }
         }, sig);
 

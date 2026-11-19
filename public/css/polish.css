@@ -220,41 +220,40 @@
 .detail-head-meta.dm-blocks {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 10px;
-    margin-top: 16px;
+    gap: 8px;
+    margin-top: 14px;
     justify-content: center;
-    padding: 4px 2px 2px;
-    perspective: 600px;
+    padding: 4px 0;
 }
 .dm-block {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 3px;
-    min-width: 76px;
+    min-width: 82px;
     max-width: 240px;
-    padding: 9px 14px 10px;
-    border-radius: 10px;
+    padding: 8px 12px;
+    border-radius: var(--r-1, 6px);
     background: var(--bg-elevated, #FAF8F1);
     border: 1px solid var(--border);
-    box-shadow: 0 6px 16px -10px rgba(0, 0, 0, .45);
-    /* 每个方块轻微随机歪斜：落下来堆着而不是摆齐 */
-    transform: rotate(var(--dm-rot, 0deg)) translateY(var(--dm-dy, 0px));
-    animation: dmDrop .52s var(--mv2-spring, cubic-bezier(.22, 1.4, .36, 1)) both;
-    animation-delay: calc(var(--di, 0) * 45ms);
-    transition: transform var(--mv2-d2, .22s) var(--pl-ease-pop), box-shadow var(--mv2-d2, .22s) var(--mv2-snap, ease);
+    box-shadow: none;
+    transform: none;
+    animation: dmDrop var(--mv2-d2, .26s) var(--mv2-settle, cubic-bezier(.16, 1, .3, 1)) both;
+    animation-delay: calc(var(--di, 0) * 28ms);
+    transition: border-color var(--mv2-d1, .14s) var(--mv2-snap, ease),
+                background var(--mv2-d1, .14s) var(--mv2-snap, ease);
 }
-/* 顶部糖果色条：同色系呼应 Aardvark 调色板 */
+/* 左侧极细档案标尺线替代原顶部糖果色条 */
 .dm-block::before {
     content: '';
     position: absolute;
-    left: 12px;
-    right: 12px;
-    top: 0;
-    height: 3px;
-    border-radius: 0 0 3px 3px;
-    background: var(--dc, var(--pl-amber));
-    opacity: .9;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--primary);
+    opacity: .65;
 }
 .dm-block-k {
     font-size: 10.5px;
@@ -265,33 +264,23 @@
 }
 .dm-block-v {
     font-size: 13px;
-    font-weight: 800;
+    font-weight: 700;
+    font-family: var(--font-mono);
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* 宽字段（厂商/发行商/系列）占更宽，制造大小块堆积的错落感 */
 .dm-block.wide { flex: 1 1 170px; }
-.dm-block.wide .dm-block-v { white-space: normal; }
+.dm-block.wide .dm-block-v { white-space: normal; font-family: inherit; }
 
-/* 交替歪斜 + 上下错位：nth-child 而不是随机数，保证每次打开一致（否则每次都在抖）。
-   五种姿态循环，错位幅度比初版更大 —— 要看出「堆」而不是「排」。 */
-.dm-block:nth-child(5n + 1) { --dm-rot: -1.6deg; --dm-dy: 3px; }
-.dm-block:nth-child(5n + 2) { --dm-rot: 1.2deg;  --dm-dy: -5px; }
-.dm-block:nth-child(5n + 3) { --dm-rot: -.7deg;  --dm-dy: 1px; }
-.dm-block:nth-child(5n + 4) { --dm-rot: 1.8deg;  --dm-dy: -3px; }
-.dm-block:nth-child(5n + 5) { --dm-rot: -1deg;   --dm-dy: 5px; }
-/* 悬停时被"拾起"：摆正 + 抬高 */
 .dm-block:hover {
-    transform: rotate(0deg) translateY(-3px) scale(1.04);
-    box-shadow: 0 12px 24px -10px rgba(0, 0, 0, .5);
-    z-index: 2;
+    border-color: var(--primary);
+    background: var(--card-bg-hover, var(--bg-elevated));
 }
 @keyframes dmDrop {
-    0%   { opacity: 0; transform: rotate(var(--dm-rot, 0deg)) translateY(-26px) scale(.9); }
-    60%  { opacity: 1; }
-    100% { opacity: 1; transform: rotate(var(--dm-rot, 0deg)) translateY(var(--dm-dy, 0px)) scale(1); }
+    0%   { opacity: 0; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
 }
 
 /* 主操作：常驻头部，一眼看到 */

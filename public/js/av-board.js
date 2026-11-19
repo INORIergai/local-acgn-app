@@ -276,8 +276,9 @@
        · 模拟分辨率上限 420px 宽，渲染时放大 → 既柔和又省 CPU */
     function hero(opts) {
         var showTitle = opts.showTitle !== false;
+        /* round144：移除 hero 上的水波纹 canvas（用户反馈：banner 上的波纹特效不要了）。
+           canvas 删掉后 initRipple 会因为找不到节点直接 return，JS 留着也不会跑。 */
         return '<div class="av-hero' + (showTitle ? '' : ' is-compact-bar') + '">' +
-            '<canvas class="av-ripple" aria-hidden="true"></canvas>' +
             (showTitle ? ('<div class="av-kicker">' + esc(opts.kicker) + '</div><h2>' + esc(opts.title) + '</h2>') : '') +
             (opts.hand ? '<p class="av-sub"><span class="av-hand">' + esc(opts.hand) + '</span></p>' : '') +
             (function () {
@@ -305,13 +306,9 @@
 
     function bindHeroMotion(root) {
         if (!root) return;
-        var staticOK = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-        root.querySelectorAll('.av-hero').forEach(function (el) {
-            if (el.__avHeroBound) return;
-            el.__avHeroBound = true;
-            if (staticOK) return;          // 减少动态：不启动水面
-            initRipple(el);
-        });
+        /* round144：水波纹已移除（用户明确要求去掉 banner 上的波纹特效）。
+           这里保留函数壳但不再启动模拟，历史实现见 initRipple（现已无 canvas 可挂）。 */
+        return;
     }
 
     function initRipple(el) {
@@ -473,6 +470,17 @@
         var st = (typeof getTreeState === 'function') ? getTreeState(type) : { tree: null, path: '' };
         var html = '<aside class="av-tree"><div class="avt-head">' +
             (type === 'novel' ? '📚 小说库' : '📁 漫画库') + '</div>';
+        /* round144：左栏加「书架 · 按标签」——一/二/三级标签逐层收窄。
+           数据来自 /api/tags/taxonomy（一级=语义类目，二级=标签）与
+           /api/tags/:id/profile 的 related（三级=关联标签）。
+           小说库此前只有「根目录 + 展开本层文件」，等于没有书架入口。 */
+        html += '<div class="avt-shelf" data-avt-shelf="' + type + '">' +
+            '<div class="avt-shelf-head"><span>📚 书架 · 按标签</span>' +
+            '<button class="avt-shelf-clear" data-shelf-clear="1" title="回到文件夹视图" hidden>×</button></div>' +
+            '<div class="avt-shelf-cats" data-shelf-cats><span class="avt-shelf-mute">加载中…</span></div>' +
+            '<div class="avt-shelf-tags" data-shelf-tags></div>' +
+            '<div class="avt-shelf-rel" data-shelf-rel></div>' +
+            '</div>';
         html += avtNode(type, st.tree, '', st.path || '', true);
         html += '</aside>';
         return html;
@@ -535,6 +543,192 @@
                 if (Number.isFinite(id) && typeof showMovieDetail === 'function') showMovieDetail(id);
             });
         });
+    }
+
+    /* ============================================================
+       round144 · 左栏「书架 · 按标签」（一/二/三级）
+       ------------------------------------------------------------
+       一级：语义类目（题材 / 角色职业 / 场景 …，来自 /api/tags/taxonomy）
+       二级：该类目下的标签（带本库作品数）
+       三级：选中标签的关联标签（/api/tags/:id/profile 的 related），点它继续收窄
+       点二级/三级 → POST /api/tags/filter/movies 拿影片，用书架层渲染。
+       数据按库缓存；选择按库各自记忆（切库不会串）。
+       ============================================================ */
+    var shelfCache = {};
+    var shelfSel = {
+        comic: { cat: '', tagId: 0, tagName: '', label: '', ids: [] },
+        novel: { cat: '', tagId: 0, tagName: '', label: '', ids: [] }
+    };
+
+    function shelfRoot(type) {
+        return document.querySelector('[data-avt-shelf="' + type + '"]');
+    }
+
+    function jget(url) {
+        return fetch(url).then(function (r) { return r.json(); });
+    }
+
+    function shelfTaxonomy(type) {
+        if (shelfCache[type]) return Promise.resolve(shelfCache[type]);
+        return jget('/api/tags/taxonomy?lib=' + encodeURIComponent(type)).then(function (j) {
+            if (!j || j.code !== 0 || !j.data) return null;
+            shelfCache[type] = j.data;
+            return j.data;
+        }).catch(function () { return null; });
+    }
+
+    function hydrateShelf(type) {
+        var root = shelfRoot(type);
+        if (!root || root.__hydrated) return;
+        root.__hydrated = true;
+
+        var catsBox = root.querySelector('[data-shelf-cats]');
+        var tagsBox = root.querySelector('[data-shelf-tags]');
+        var relBox = root.querySelector('[data-shelf-rel]');
+        var clearBtn = root.querySelector('[data-shelf-clear]');
+        var sel = shelfSel[type];
+
+        shelfTaxonomy(type).then(function (data) {
+            if (!data) {
+                if (catsBox) catsBox.innerHTML = '<span class="avt-shelf-mute">标签数据不可用</span>';
+                return;
+            }
+            var counts = data.counts || {};
+            var cats = (data.taxonomy || []).filter(function (t) { return (counts[t.key] || 0) > 0; });
+            cats = cats.slice(0, 7);
+
+            // ---- 一级：类目 ----
+            /* 这里不显示数字：counts 是「该类别下有几个标签」，不是作品数，
+               写成「题材 14」会被读成 14 部作品。作品数留给二级标签行去表达。 */
+            var ch = '<button class="avt-cat' + (sel.cat === '' ? ' on' : '') + '" data-shelf-cat="">全部</button>';
+            cats.forEach(function (t) {
+                ch += '<button class="avt-cat' + (sel.cat === t.key ? ' on' : '') + '" data-shelf-cat="' + esc(t.key) + '">' +
+                    esc((t.icon ? t.icon + ' ' : '') + t.label) + '</button>';
+            });
+            catsBox.innerHTML = ch;
+
+            // ---- 二级：标签 ----
+            var items = (data.items || []).filter(function (it) {
+                return !sel.cat || it.category === sel.cat;
+            }).sort(function (a, b) { return (b.n || 0) - (a.n || 0); }).slice(0, 16);
+
+            if (!items.length) {
+                tagsBox.innerHTML = '<span class="avt-shelf-mute">该类目下还没有标签</span>';
+            } else {
+                tagsBox.innerHTML = items.map(function (it) {
+                    return '<button class="avt-tag' + (sel.tagId === it.id ? ' on' : '') + '" data-shelf-tag="' + it.id +
+                        '" data-shelf-tag-name="' + esc(it.name) + '" title="' + esc(it.name + '（' + it.categoryLabel + '）') + '">' +
+                        '<span class="avt-tag-name">' + esc(it.name) + '</span><em>' + it.n + '</em></button>';
+                }).join('');
+            }
+
+            if (clearBtn) clearBtn.hidden = !sel.tagId;
+            if (sel.tagId) loadShelfRelated(type, sel.tagId, relBox);
+            else if (relBox) relBox.innerHTML = '';
+
+            // ---- 交互 ----
+            catsBox.querySelectorAll('[data-shelf-cat]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    sel.cat = btn.getAttribute('data-shelf-cat') || '';
+                    root.__hydrated = false;          // 重填二级
+                    hydrateShelf(type);
+                });
+            });
+            tagsBox.querySelectorAll('[data-shelf-tag]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var id = parseInt(btn.getAttribute('data-shelf-tag'), 10);
+                    var name = btn.getAttribute('data-shelf-tag-name') || '';
+                    if (!Number.isFinite(id)) return;
+                    shelveselect_tag(type, id, name);
+                });
+            });
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () { shelfClear(type); });
+            }
+        });
+    }
+
+    /* 选中二级标签 → 存状态、拉三级、过滤主区 */
+    function shelveselect_tag(type, id, name) {
+        var sel = shelfSel[type];
+        sel.tagId = id;
+        sel.tagName = name;
+        sel.ids = [id];
+        sel.label = name;
+        var root = shelfRoot(type);
+        if (root) {
+            root.querySelectorAll('[data-shelf-tag]').forEach(function (b) {
+                b.classList.toggle('on', parseInt(b.getAttribute('data-shelf-tag'), 10) === id);
+            });
+            var clearBtn = root.querySelector('[data-shelf-clear]');
+            if (clearBtn) clearBtn.hidden = false;
+            loadShelfRelated(type, id, root.querySelector('[data-shelf-rel]'));
+        }
+        applyShelfFilter(type);
+    }
+
+    /* 三级：关联标签 */
+    function loadShelfRelated(type, id, box) {
+        if (!box) return;
+        jget('/api/tags/' + id + '/profile?lib=' + encodeURIComponent(type)).then(function (j) {
+            var rel = (j && j.data && j.data.related) || [];
+            if (!rel.length) { box.innerHTML = ''; return; }
+            box.innerHTML = '<div class="avt-rel-head">关联标签</div>' + rel.slice(0, 8).map(function (r) {
+                /* r.n 是该标签**自己**的作品数，不是共现数（实测「漫画」n=44 但只与本片共现 32 部）。
+                   共现数只写在 reason 里：「共同出现 32 部作品（Jaccard 1.00）」。
+                   显示自己的总数会让 8 个 chip 出现 32/44/498 三种数字，读起来像 bug。 */
+                var m = /共同出现\s*(\d+)\s*部/.exec(String(r.reason || ''));
+                var co = m ? m[1] : '';
+                /* 被选中的三级标签要保留高亮：applyShelfFilter 会整块重渲染 tree panel，
+                   状态必须从 shelfSel 读，不能只靠点击时加 class（实测被冲掉）。 */
+                var cur = shelfSel[type];
+                var on = cur.ids.length > 1 && cur.ids[1] === r.id;
+                return '<button class="avt-rel' + (on ? ' on' : '') + '" data-shelf-rel-tag="' + r.id + '" data-shelf-tag-name="' + esc(r.name) + '"' +
+                    (r.reason ? ' title="' + esc(r.reason) + '"' : '') + '>' +
+                    esc(r.name) + (co ? '<em>' + co + '</em>' : '') + '</button>';
+            }).join('');
+            box.querySelectorAll('[data-shelf-rel-tag]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var rid = parseInt(b.getAttribute('data-shelf-rel-tag'), 10);
+                    var rname = b.getAttribute('data-shelf-tag-name') || '';
+                    if (!Number.isFinite(rid)) return;
+                    var sel = shelfSel[type];
+                    sel.ids = [sel.tagId, rid];
+                    sel.label = sel.tagName + ' + ' + rname;
+                    box.querySelectorAll('[data-shelf-rel]').forEach(function (x) { x.classList.remove('on'); });
+                    b.classList.add('on');
+                    applyShelfFilter(type);
+                });
+            });
+        }).catch(function () { });
+    }
+
+    /* 拉影片 → 用书架层渲染（与文件夹视图同一套卡片/英雄区） */
+    function applyShelfFilter(type) {
+        var sel = shelfSel[type];
+        if (!sel.ids.length) return;
+        fetch('/api/tags/filter/movies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tagIds: sel.ids, lib: type, mode: 'and' })
+        }).then(function (r) { return r.json(); }).then(function (j) {
+            var movies = (j && j.data) || [];
+            if (!movies.length) {
+                if (typeof showNotification === 'function') showNotification('书架', '这个标签组合下没有内容', 'info');
+                return;
+            }
+            var node = { name: sel.label, children: [], items: movies };
+            renderTreeLevel(type, node, '标签 · ' + sel.label);
+            hydrateShelf(type);      // 面板被重画过，重新挂载
+        }).catch(function () { });
+    }
+
+    function shelfClear(type) {
+        var sel = shelfSel[type];
+        sel.cat = ''; sel.tagId = 0; sel.tagName = ''; sel.label = ''; sel.ids = [];
+        if (typeof renderTreeLibrary === 'function') { renderTreeLibrary(type); return; }
+        var root = shelfRoot(type);
+        if (root) { root.__hydrated = false; hydrateShelf(type); }
     }
 
     function folderCardView(child, i) {
@@ -856,6 +1050,7 @@
         }
         bindHeroMotion(grid);
         bindTreePanel(grid, type);
+        hydrateShelf(type);
         if (typeof window.loadReadingStatsInto === 'function') {
             window.loadReadingStatsInto(type, document.getElementById('avStatsSlot'));
         }

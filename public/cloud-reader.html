@@ -4,23 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>网盘阅读器</title>
+<link rel="stylesheet" href="css/tokens-v5.css?v=2">
 <link rel="stylesheet" href="css/reader-settings.css?v=2">
+<script>
+    (function () {
+        try {
+            var skin = localStorage.getItem('v4skin') || 'classic';
+            document.documentElement.setAttribute('data-v4skin', skin);
+        } catch (e) {}
+    })();
+</script>
 <style>
-    :root { --bg:#f7f7f7; --card:#fff; --ink:#111; --muted:#6b7280; --line:#e5e5e5; --accent:#d62e67;
-            --rd-dur:560ms; --rd-read-bg:#ffffff; --rd-read-ink:#111111; }
+    :root { --bg:#F1EEE6; --card:#FAF8F1; --ink:#26211A; --muted:#7C7466; --line:#DCD5C7; --accent:#8A5A12;
+            --rd-dur:420ms; --rd-read-bg:#FAF8F1; --rd-read-ink:#26211A; }
     @media (prefers-color-scheme: dark) {
-        :root { --bg:#141414; --card:#1c1c1c; --ink:#ededed; --muted:#9ca3af; --line:#2c2c2c; --accent:#ff5b8f;
-                --rd-read-bg:#141414; --rd-read-ink:#ededed; }
+        :root { --bg:#131110; --card:#1C1915; --ink:#EFE9DC; --muted:#9C9282; --line:#2E2820; --accent:#D99A43;
+                --rd-read-bg:#131110; --rd-read-ink:#EFE9DC; }
+    }
+    html[data-v4skin="matinee"] {
+        --bg:#131110; --card:#1C1915; --ink:#EFE9DC; --muted:#9C9282; --line:#2E2820; --accent:#D99A43;
+        --rd-read-bg:#131110; --rd-read-ink:#EFE9DC;
+    }
+    html[data-v4skin="whale"] {
+        --bg:#050C18; --card:#0A1628; --ink:#E6EEF9; --muted:#93AAC8; --line:#1B3150; --accent:#7FB6E8;
+        --rd-read-bg:#050C18; --rd-read-ink:#E6EEF9;
+    }
+    html[data-v4skin="ink"] {
+        --bg:#08080A; --card:#101013; --ink:#EDE9E1; --muted:#9C978F; --line:#27272B; --accent:#C8443C;
+        --rd-read-bg:#08080A; --rd-read-ink:#EDE9E1;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:var(--bg); color:var(--ink); font-family:"Segoe UI Variable","Segoe UI","Microsoft YaHei",system-ui,sans-serif; height:100vh; overflow:hidden; }
-    #bar { height:44px; display:flex; align-items:center; gap:10px; padding:0 14px; background:var(--card); border-bottom:1px solid var(--line); font-size:13px; }
-    #bar .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
-    #bar .page { color:var(--muted); font-variant-numeric:tabular-nums; }
-    #bar button { border:1px solid var(--line); background:transparent; color:var(--ink); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:13px; }
+    body { background:var(--bg); color:var(--ink); font-family:var(--font-ui, "Segoe UI Variable","Segoe UI","Microsoft YaHei",system-ui,sans-serif); height:100vh; height:100dvh; overflow:hidden; }
+    #bar { height:48px; display:flex; align-items:center; gap:8px; padding:0 14px; background:var(--card); border-bottom:1px solid var(--line); font-size:13px; position:relative; z-index:120; }
+    #bar .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; min-width:0; }
+    #bar .page { color:var(--muted); font-variant-numeric:tabular-nums; font-family:var(--font-num, monospace); white-space:nowrap; }
+    #bar button { border:1px solid var(--line); background:transparent; color:var(--ink); border-radius:var(--r-1, 6px); padding:6px 10px; min-height:34px; cursor:pointer; font-size:12.5px; font-weight:600; white-space:nowrap; }
     #bar button:hover { border-color:var(--accent); color:var(--accent); }
     #bar button.on { border-color:var(--accent); color:#fff; background:var(--accent); }
-    #stage { height:calc(100vh - 44px); overflow:auto; background:var(--rd-read-bg); }
+    #btnToc { display:none; }
+    #stage { height:calc(100vh - 48px); height:calc(100dvh - 48px); overflow:auto; background:var(--rd-read-bg); position:relative; }
     #msg { padding:48px 24px; text-align:center; color:var(--muted); line-height:1.9; }
     #msg b { color:var(--ink); }
     /* PDF：整页纵向连续渲染 */
@@ -28,14 +50,24 @@
     #pages canvas { background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.18); border-radius:2px; }
     .ph { width:min(92vw,900px); background:#0001; border-radius:2px; }
     /* EPUB/TXT */
-    #read { display:none; height:100%; }
+    #read { display:none; height:100%; position:relative; }
     #read.on { display:flex; }
-    #toc { width:260px; overflow:auto; border-right:1px solid var(--line); background:var(--card); padding:10px; flex:0 0 auto; }
-    #toc div { padding:8px 10px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--muted); }
+    #toc { width:260px; overflow:auto; border-right:1px solid var(--line); background:var(--card); padding:10px; flex:0 0 auto; transition:transform .26s cubic-bezier(.32,.72,0,1); }
+    #toc div { padding:9px 10px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--muted); }
     #toc div:hover { background:var(--bg); }
     #toc div.on { color:var(--accent); font-weight:600; }
     #body { flex:1; overflow:auto; padding:28px 32px 80px; line-height:1.85; font-size:16px;
             background:var(--rd-read-bg); color:var(--rd-read-ink); }
+    @media (max-width: 860px) {
+        #khint { display:none !important; }
+        #btnToc.has-toc { display:inline-flex; align-items:center; }
+        #toc {
+            position:fixed; left:0; top:48px; bottom:0; width:min(82vw, 300px);
+            z-index:150; transform:translateX(-104%); box-shadow:8px 0 28px rgba(0,0,0,.35);
+        }
+        #toc.m-open { transform:translateX(0); }
+        #body { padding:18px 16px calc(64px + env(safe-area-inset-bottom, 0px)); }
+    }
     #body img { max-width:100%; height:auto; }
     #body p { margin:0 0 1em; }
 
@@ -82,6 +114,8 @@
 </head>
 <body>
 <div id="bar">
+    <button id="btnBack" title="返回书架" onclick="if(window.parent&&window.parent!==window&&typeof window.parent.closeReader==='function'){window.parent.closeReader();}else{history.back();}">← 返回</button>
+    <button id="btnToc" title="展开/收起章节目录" onclick="document.getElementById('toc').classList.toggle('m-open')">☰ 目录</button>
     <span class="name" id="name">网盘文件</span>
     <span class="page" id="page"></span>
     <span id="khint"></span>
@@ -463,12 +497,16 @@ async function initEpub() {
     }
 
     const toc = $('toc');
+    if (chapters.length > 0 && $('btnToc')) $('btnToc').classList.add('has-toc');
     toc.innerHTML = chapters.map((c, i) =>
         `<div data-i="${i}" class="${i === 0 ? 'on' : ''}">${c.title || c.href || ('第 ' + (i + 1) + ' 章')}</div>`
     ).join('');
     toc.onclick = (e) => {
         const li = e.target.closest('div[data-i]');
-        if (li) show(Number(li.dataset.i), 0);
+        if (li) {
+            toc.classList.remove('m-open');
+            show(Number(li.dataset.i), 0);
+        }
     };
 
     // 章节是不是「整页一张图」（图片漫画的判定，用于点击翻页与图片适配）

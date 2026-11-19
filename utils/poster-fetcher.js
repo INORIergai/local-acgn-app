@@ -874,8 +874,17 @@ function normalizeResult(result, source, avid) {
  * @param {string} avid
  * @param {string} fromSource 已经用过的源，跳过不再问
  */
-const ENRICH_SOURCES = ['javbus', 'javdb', 'jav321', 'dmm'];
-const ENRICH_FIELDS = ['director', 'producer', 'publisher', 'serial', 'releaseDate'];
+/* round143：把 dmm 提到 javdb 之前。
+ * javdb 的搜索页一律跳「登入 | JavDB」（实测 + 日志里每次都是「未找到番号」），
+ * 排在前面只会白等一轮重试；而 dmm 是唯一能稳定给出简介的源。 */
+const ENRICH_SOURCES = ['javbus', 'jav321', 'dmm', 'javdb'];
+/* round143：把 overview 加进补全字段。
+ * 起因（实测）：javbus 详情页**根本没有简介区块**（只有識別碼/日期/長度/導演/製作商/
+ * 發行商/系列/類別/演員），javdb 搜索页则一律跳「登入 | JavDB」，两家都给不出简介；
+ * 而 dmm.js 的 description 一直是对的（HUNTC-603 实测 324 字、SSIS-001 199 字）。
+ * 此前 ENRICH_FIELDS 没有 overview ⇒ 补全循环"没有缺失项"直接早退，DMM 永远轮不到，
+ * 库里 1930 条 jav 只有 151 条有简介，且 100% 来自 local-nfo，网络来源 0 条。 */
+const ENRICH_FIELDS = ['director', 'producer', 'publisher', 'serial', 'releaseDate', 'overview'];
 
 async function enrichMissingFields(result, avid, fromSource) {
   try {

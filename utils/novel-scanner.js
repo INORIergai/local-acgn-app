@@ -184,6 +184,17 @@ async function indexNovel(filePath) {
       }
     } catch (e) { /* 忽略 */ }
 
+    /* round143：小说同样接入入库自愈（此前这条流水线只服务 jav/anime）。
+     * 小说没有网络刮削源 ⇒ ingest-ensure 按类型只做「本地校验 + 零成本打标 + 海报体检」，
+     * 不联网、不烧 AI 预算，也不会污染 jav 的连续失败熔断。
+     * 触发：新入库，或从未体检过（posterHealth 为空）—— 存量 4095 本在下次扫描各补一次
+     * 体检标记后就不再重复排队。 */
+    try {
+      if (row && (!prev || !prev.posterHealth)) {
+        require('./ingest-ensure').enqueue(row.id, 'scan');
+      }
+    } catch (e) { /* 自愈入队失败不影响入库 */ }
+
     const exportCfg = config.export || {};
     if (exportCfg.enableNfoExport && !nfoData) {
       try {

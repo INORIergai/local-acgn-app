@@ -243,19 +243,40 @@ class KmoeCrawler {
       const keywords = $('meta[name="keywords"]').attr('content') || '';
       const kwParts = keywords.split(',').map(s => s.trim()).filter(Boolean);
       const authorFromMeta = kwParts.length >= 2 ? kwParts[1] : '';
+      /* round143：站点文案是**繁体**（「狀態」「分類」「語言」），而且信息根本不在 `<td>` 里
+       * —— 实测详情页是 `<font class="text_bglight"> 狀態：連載 地區：日本 語言：繁體 …
+       * 分類：後宮 (12) 魔法 (11) 冒險 (10)</font>` 这种「一行塞多组键值」的纯文本。
+       * 旧实现 `td:contains("状态").next()` 永远返回空，于是状态/分类长期读不到，
+       * 还让「分类」变成空数组导致漫画一条题材标签都建不起来。 */
+      const infoLines = [];
+      $('font.text_bglight').each((i, el) => {
+        const t = $(el).text().replace(/\s+/g, ' ').trim();
+        if (t) infoLines.push(t);
+      });
+      const infoAll = infoLines.join(' | ');
+      const grab = (labels) => {
+        for (const lb of labels) {
+          const m = infoAll.match(new RegExp(lb + '：\\s*([^|]+?)(?=\\s+(?:狀態|状态|地區|地区|語言|语言|最後出版|最后出版|更新|版本|掃者|扫者|維護者|维护者|訂閱|订阅|收藏|讀過|读过|熱度|热度|分類|分类|作者)\\s*[：:]|$|\\s\\|)'));
+          if (m && m[1].trim()) return m[1].trim();
+        }
+        return '';
+      };
+
       const authorMatch = $('td:contains("作者")').next().text().trim();
       detail.author = authorMatch || authorFromMeta;
 
-      // 状态
-      const statusMatch = $('td:contains("状态")').next().text().trim();
+      const statusMatch = grab(['狀態', '状态']);
       if (statusMatch) detail.status = statusMatch;
 
-      // 分类
-      const categoryMatch = $('td:contains("分类")').next().text().trim();
-      if (categoryMatch) detail.category = categoryMatch;
+      // 分类：把「後宮 (12) 魔法 (11)」里的计数去掉，只留题材名
+      const catRaw = grab(['分類', '分类']);
+      if (catRaw) {
+        const names = catRaw.replace(/\(\s*\d+\s*\)/g, ' ').split(/[\s,、/]+/).map(s => s.trim()).filter(Boolean);
+        if (names.length) detail.category = names.join(',');
+      }
 
-      // 简介
-      const introMatch = $('td:contains("简介")').next().text().trim();
+      // 简介（kzo.moe 多数条目本身没有简介，读到空属正常，不要当异常）
+      const introMatch = grab(['簡介', '简介', '內容簡介', '内容简介']);
       if (introMatch) detail.intro = introMatch;
 
       // 评分

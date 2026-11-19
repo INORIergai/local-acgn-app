@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="css/magic-likes.css?v=28">
     <link rel="stylesheet" href="css/av-board.css?v=6">
     <link rel="stylesheet" href="css/motion.css?v=1">
-    <link rel="stylesheet" href="css/polish.css?v=14">
+    <link rel="stylesheet" href="css/polish.css?v=15">
     <link rel="stylesheet" href="css/detail-mode.css?v=1">
     <link rel="stylesheet" href="css/theme-v4.css?v=3">
     <!-- 在线观看：macOS 窗口皮（放在 theme-v4 之后，皮肤令牌才能继承下来） -->
@@ -49,7 +49,7 @@
     <!-- 换页加载动画「开演」：胶片盘循环 + 极光线 + 走带（零改动包装 switchView），删掉两行即回滚 -->
     <link rel="stylesheet" href="css/round-view-loader.css?v=2">
     <!-- 交互瞬间素材包：抽牌光扫/空态家族/待机银幕/年度档案，删掉两行即回滚 -->
-    <link rel="stylesheet" href="css/round-motion-extras.css?v=13">
+    <link rel="stylesheet" href="css/round-motion-extras.css?v=14">
     <!-- 第 34 轮覆盖层：密码门禁弹窗 / 演员·标签切片条 / 六切片新作监视（放在功能层之后、mobile 之前无法保证，故置于最后） -->
     <link rel="stylesheet" href="css/round34.css?v=5">
 <link rel="stylesheet" href="css/round36b.css?v=1">
@@ -148,6 +148,8 @@
     <link rel="stylesheet" href="css/round124-shortcuts.css?v=1">
     <!-- round125：对比度（全局次级文字 + 两个深色玻璃面板） -->
     <link rel="stylesheet" href="css/round125-contrast.css?v=1">
+    <!-- round144：左栏书架（标签一/二/三级） -->
+    <link rel="stylesheet" href="css/round144-shelf.css?v=1">
     <link rel="stylesheet" href="css/round126-ai-sessions.css?v=1">
     <!-- round131：毛玻璃 UI 层（AI 工作台 / 详情弹窗 / 通用弹窗），透明度由 --cv-glass-alpha 控制 -->
     <link rel="stylesheet" href="css/round131-glass-ui.css?v=1">
@@ -155,8 +157,6 @@
     <link rel="stylesheet" href="css/round136-agent-jobs.css?v=1">
 <link rel="stylesheet" href="css/round140-ai-play-cards.css?v=1">
     <link rel="stylesheet" href="css/round137-home-l2d.css?v=1">
-    <!-- 移动端适配层：置于最底保证最高层叠优先级，避免被各轮补丁覆盖 -->
-    <link rel="stylesheet" href="css/mobile.css?v=4">
     <!-- round151：V5.0「午夜场 · 典藏放映室」大版本焕新与双皮肤对比度根治层 -->
     <link rel="stylesheet" href="css/round151-v5-edition.css?v=1">
     <link rel="stylesheet" href="css/round152-random.css?v=4">
@@ -171,7 +171,22 @@
     <link rel="stylesheet" href="css/round160-read-hub.css?v=1">
     <link rel="stylesheet" href="css/round160-whale-surface.css?v=2">
     <link rel="stylesheet" href="css/round161-home-fit.css?v=1">
-    <link rel="stylesheet" href="css/round162-ink-theme.css?v=3">
+    <link rel="stylesheet" href="css/round162-ink-theme.css?v=4">
+    <link rel="stylesheet" href="css/round168-tags.css?v=3">
+    <!-- ★ round173b：追番页样式（语义令牌，双皮肤自适应） -->
+    <link rel="stylesheet" href="css/round173b-series.css?v=1">
+    <!-- ★ round173e：Bangumi 同步设置面板 -->
+    <link rel="stylesheet" href="css/round173e-bangumi.css?v=1">
+    <!-- ★ round173：墨皮肤补齐 V6 新模块（必须排在 round168 之后、mobile.css 之前） -->
+    <link rel="stylesheet" href="css/round173-ink-v6.css?v=1">
+    <!-- ★ 移动端适配层必须真正置于整条样式链最末。
+         2026-11 实测：此前它排在 round151~168 之前，导致 V5 首页典藏放映台、
+         四皮肤拟人首屏、三态书版、V6 阅读大厅/原生流等 15 个后加载补丁
+         全都没被手机端覆盖层兜住（首页双栏 390px 直接横向溢出）。
+         mobile.css 内部全部规则都包在 @media (max-width:860px) 里，桌面端零影响。 -->
+    <link rel="stylesheet" href="css/mobile.css?v=6">
+    <!-- ★ round173：round126~168 这 15 个后加补丁的手机端适配（必须排在 mobile.css 之后） -->
+    <link rel="stylesheet" href="css/round173-mobile-v6.css?v=1">
 </head>
 
 <body>
@@ -290,6 +305,10 @@
                 <div class="nav-item" data-view="cartoon">
                     <span>🐾 动漫库</span>
                     <span class="count" id="countCartoon">0</span>
+                </div>
+                <!-- round173b：追番（新番表一键加追 + 分集进度看板） -->
+                <div class="nav-item" data-view="series">
+                    <span>📺 追番</span>
                 </div>
                 <div class="nav-item" data-view="comic">
                     <span>📚 漫画库</span>
@@ -683,6 +702,9 @@
 
             <!-- 影片网格 -->
             <div id="movieGrid" class="movie-grid"></div>
+
+            <!-- round173b：追番页独立视图容器 -->
+            <div id="seriesView" style="display:none;"></div>
 
             <!-- 猜你喜欢 · 魔术卡片（magic-likes.js 渲染） -->
             <div id="magicView" class="magic-view"></div>
@@ -1102,10 +1124,11 @@
     <!-- 批量操作工具栏 -->
     <div id="batchToolbar" class="batch-toolbar">
         <span class="batch-count" id="batchCount">已选 0 部</span>
+        <button class="btn btn-sm btn-secondary" onclick="window.selectAllCurrent && window.selectAllCurrent()">☑ 全选本页</button>
         <button class="btn btn-sm btn-secondary" onclick="batchAction('favorite')">⭐ 收藏</button>
         <button class="btn btn-sm btn-secondary" onclick="batchAction('watched')">✓ 标记已看</button>
         <button class="btn btn-sm btn-secondary" onclick="openBatchRenameDrawer()">📝 批量重命名</button>
-        <button class="btn btn-sm" onclick="clearSelection()">取消选择</button>
+        <button class="btn btn-sm" onclick="clearSelection()">完成 / 取消</button>
     </div>
 
     <!-- 【round52】批量重命名预览确认抽屉 -->
@@ -1167,16 +1190,19 @@
     <div class="m-nav-mask" id="mNavMask"></div>
     <nav class="m-tabbar" id="mTabbar" aria-label="主导航">
         <button class="m-tab" data-view="home" aria-label="首页">
-            <span class="m-tab-glyph">🏠</span><span class="m-tab-label">首页</span>
+            <span class="m-tab-glyph"><svg class="ic" width="20" height="20"><use href="#ic-spark"/></svg></span><span class="m-tab-label">首页</span>
         </button>
         <button class="m-tab" data-view="movies" aria-label="影剧库">
-            <span class="m-tab-glyph">🎬</span><span class="m-tab-label">影剧</span>
+            <span class="m-tab-glyph"><svg class="ic" width="20" height="20"><use href="#ic-reel"/></svg></span><span class="m-tab-label">影剧</span>
         </button>
         <button class="m-tab" data-view="comic" aria-label="书架">
-            <span class="m-tab-glyph">📖</span><span class="m-tab-label">书架</span>
+            <span class="m-tab-glyph"><svg class="ic" width="20" height="20"><use href="#ic-book"/></svg></span><span class="m-tab-label">书架</span>
         </button>
-        <button class="m-tab" id="mTabMore" aria-label="我的">
-            <span class="m-tab-glyph">👤</span><span class="m-tab-label">我的</span>
+        <button class="m-tab" id="mTabAi" aria-label="AI助手">
+            <span class="m-tab-glyph"><svg class="ic" width="20" height="20"><use href="#ic-ai"/></svg></span><span class="m-tab-label">AI助手</span>
+        </button>
+        <button class="m-tab" id="mTabMore" aria-label="全功能导航与我的">
+            <span class="m-tab-glyph"><svg class="ic" width="20" height="20"><use href="#ic-grid"/></svg></span><span class="m-tab-label">全库·我的</span>
         </button>
     </nav>
 
@@ -1194,15 +1220,20 @@
     <!-- round144：标题显示层清洗（剥掉标题里重复的番号前缀）。必须在 app.js 之前加载，
          app.js 的 prefTitle() 依赖 window.cvDisplayTitle。 -->
     <script src="js/aipc-title-clean.js?v=1"></script>
-    <script src="js/round153-folia.js?v=2"></script>
-    <script src="js/app.js?v=166"></script>
+    <script src="js/round153-folia.js?v=3"></script>
+    <script src="js/app.js?v=170"></script>
+    <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
+    <script src="js/series-view.js?v=2"></script>
+    <!-- round173e：Bangumi 同步设置面板 -->
+    <script src="js/bangumi-panel.js?v=1"></script>
+    <script src="js/tags-ui.js?v=11"></script>
     <script src="js/magic-likes.js?v=30"></script>
     <script src="js/command-palette.js?v=3"></script>
     <script src="js/features.js?v=49"></script>
     <script src="js/home.js?v=24"></script>
     <script src="js/media-source.js?v=12"></script>
     <script src="js/series-ui.js?v=7"></script>
-    <script src="js/av-board.js?v=23"></script>
+    <script src="js/av-board.js?v=27"></script>
     <script src="js/motion.js?v=1"></script>
     <script src="js/motion-v2.js?v=9"></script>
     <script src="js/motion-flip.js?v=1"></script>
@@ -1229,7 +1260,7 @@
     <!-- round74：语音朗读设置面板 -->
     <script src="js/tts-panel.js?v=24"></script>
     <script src="js/companion.js?v=13"></script>
-    <script src="js/mobile-nav.js?v=3"></script>
+    <script src="js/mobile-nav.js?v=5"></script>
     <!-- 第 21 轮：手机端详情弹窗「下滑关闭」手势（独立文件，删掉本行即可回滚） -->
     <script src="js/mobile-gestures.js?v=2"></script>
     <!-- 移动端应用内自动检查更新与一键升级模块 -->

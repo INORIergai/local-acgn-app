@@ -4,25 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, viewport-fit=cover">
     <title>漫画阅读器</title>
+    <link rel="stylesheet" href="css/tokens-v5.css?v=2">
     <!-- round81：阅读器设置面板（小说 / 漫画共用） -->
     <link rel="stylesheet" href="css/reader-settings.css?v=1">
+    <script>
+        (function () {
+            try {
+                var skin = localStorage.getItem('v4skin') || 'matinee';
+                document.documentElement.setAttribute('data-v4skin', skin);
+            } catch (e) {}
+        })();
+    </script>
     <style>
         /* ==========================================================
-           漫画阅读器 · 暖夜版 v2（2026-09-21 重构）
-           设计基调：Aardvark 实测色板 —— 暖琥珀 #F9A220 / 桃红 #ff008c
-           原则：默认暗色护住画面本身，所有强调色来自暖色系，拒绝通用蓝
+           漫画阅读器 · 四皮肤同源版
+           原则：默认暗色护住画面本身，强调色随主站皮肤切换，废除旧版荧光粉 #ff008c
            ========================================================== */
         :root {
             --rd-bg: #12100c;
-            --rd-surface: rgba(24, 20, 14, 0.82);
-            --rd-line: rgba(255, 240, 214, 0.1);
+            --rd-surface: rgba(24, 20, 14, 0.88);
+            --rd-line: rgba(255, 240, 214, 0.12);
             --rd-text: #f3ecdd;
-            --rd-text-dim: rgba(243, 236, 221, 0.62);
-            --rd-amber: #F9A220;
-            --rd-amber-soft: rgba(249, 162, 32, 0.16);
-            --rd-pink: #ff008c;
+            --rd-text-dim: rgba(243, 236, 221, 0.64);
+            --rd-amber: #D99A43;
+            --rd-amber-soft: rgba(217, 154, 67, 0.16);
+            --rd-pink: #8A5A12;
             --rd-ease-pop: cubic-bezier(.32, .72, 0, 1);
-            --rd-ease-over: cubic-bezier(.34, 1.56, .64, 1);
+            --rd-ease-over: cubic-bezier(.16, 1, .3, 1);
+        }
+        html[data-v4skin="whale"] {
+            --rd-bg: #050C18;
+            --rd-surface: rgba(8, 20, 38, 0.90);
+            --rd-line: rgba(127, 182, 232, 0.16);
+            --rd-text: #E6EEF9;
+            --rd-text-dim: #93AAC8;
+            --rd-amber: #7FB6E8;
+            --rd-amber-soft: rgba(127, 182, 232, 0.16);
+            --rd-pink: #D3B074;
+        }
+        html[data-v4skin="ink"] {
+            --rd-bg: #08080A;
+            --rd-surface: rgba(16, 16, 19, 0.92);
+            --rd-line: rgba(237, 233, 225, 0.12);
+            --rd-text: #EDE9E1;
+            --rd-text-dim: #9C978F;
+            --rd-amber: #C8443C;
+            --rd-amber-soft: rgba(200, 68, 60, 0.16);
+            --rd-pink: #A33A2A;
         }
 
         * {
