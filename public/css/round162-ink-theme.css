@@ -12,7 +12,9 @@ html[data-v4skin="ink"] body.dark {
     --card-bg-hover: #19191D;
     --text: #EDE9E1;
     --text-muted: #9C978F;
-    --text-faint: #6C6862;
+    /* round179：原 #6C6862 在墨底 #08080A 上仅 3.62:1（卡片 3.35:1），
+       只达大字/UI 标准；小字角标与占位符发虚。提到 #86817A → 5.18:1 / ~4.8:1，正文级达标。 */
+    --text-faint: #86817A;
     --border: #27272B;
     --border-strong: #3A3A40;
     --primary: #C8443C;

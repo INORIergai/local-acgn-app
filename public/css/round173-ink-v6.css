@@ -4,6 +4,10 @@
    round153-v6 / round154 / round160 这三层只写了 纸 / 夜 / 鲸 三套皮肤，
    墨皮肤下这些新组件会退回纸皮肤的暖白底（在同一屏里出现「黑底白卡」）。
    本文件只补 html[data-v4skin="ink"] 分支，不改任何既有规则。
+
+   round179：8 处硬编码 #7C7770（弱文）在墨底仅 3.6:1、小字发虚，统一提到
+   #928D85（墨底 6.07:1 / 深卡片 5.63:1，WCAG AA 正文达标）；与 round162 的
+   --text-faint 提亮保持同一调性。
    ============================================================================ */
 
 /* ---------- AI 语义选片墙 ---------- */
@@ -19,7 +23,7 @@ html[data-v4skin="ink"] .ai-ss-card:focus-visible {
 }
 html[data-v4skin="ink"] .ai-ss-title { color: #EDE9E1; }
 html[data-v4skin="ink"] .ai-ss-why { color: #B5AFA6; }
-html[data-v4skin="ink"] .ai-ss-meta { color: #7C7770; }
+html[data-v4skin="ink"] .ai-ss-meta { color: #928D85; }
 html[data-v4skin="ink"] .ai-ss-go { color: #E15A50; }
 html[data-v4skin="ink"] .ai-ss-kicker {
     color: #E15A50;
@@ -27,7 +31,7 @@ html[data-v4skin="ink"] .ai-ss-kicker {
     background: rgba(200, 68, 60, .10);
 }
 html[data-v4skin="ink"] .ai-ss-hint,
-html[data-v4skin="ink"] .ai-ss-empty { color: #7C7770; }
+html[data-v4skin="ink"] .ai-ss-empty { color: #928D85; }
 html[data-v4skin="ink"] .ai-ss-load i { background: #C8443C; }
 
 /* ---------- 详情抽屉 · AI 观前导览签 ---------- */
@@ -37,7 +41,7 @@ html[data-v4skin="ink"] .detail-ai-guide {
     box-shadow: 0 6px 18px rgba(0, 0, 0, .5);
 }
 html[data-v4skin="ink"] .detail-ai-guide .dag-kicker { color: #E15A50; }
-html[data-v4skin="ink"] .detail-ai-guide .dag-src { color: #7C7770; }
+html[data-v4skin="ink"] .detail-ai-guide .dag-src { color: #928D85; }
 html[data-v4skin="ink"] .detail-ai-guide .dag-row b { color: #B5AFA6; }
 html[data-v4skin="ink"] .detail-ai-guide .dag-row p { color: #EDE9E1; }
 html[data-v4skin="ink"] .detail-ai-guide .dag-row + .dag-row { border-top-color: rgba(200, 68, 60, .18); }
@@ -50,7 +54,7 @@ html[data-v4skin="ink"] .ms-source-card {
 }
 html[data-v4skin="ink"] .ms-source-card:hover { border-color: rgba(200, 68, 60, .55); }
 html[data-v4skin="ink"] .ms-source-card b { color: #EDE9E1; }
-html[data-v4skin="ink"] .ms-source-card span { color: #7C7770; }
+html[data-v4skin="ink"] .ms-source-card span { color: #928D85; }
 html[data-v4skin="ink"] .ms-alt {
     border-color: rgba(200, 68, 60, .32);
     background: rgba(200, 68, 60, .05);
@@ -73,7 +77,7 @@ html[data-v4skin="ink"] .msv-card {
 }
 html[data-v4skin="ink"] .msv-card:hover { border-color: rgba(200, 68, 60, .55); }
 html[data-v4skin="ink"] .msv-card b { color: #EDE9E1; }
-html[data-v4skin="ink"] .msv-card span { color: #7C7770; }
+html[data-v4skin="ink"] .msv-card span { color: #928D85; }
 html[data-v4skin="ink"] .msv-card-lg {
     background: #131316;
     border-color: rgba(200, 68, 60, .28);
@@ -99,7 +103,7 @@ html[data-v4skin="ink"] .rh-sub,
 html[data-v4skin="ink"] .rh-cont-body i,
 html[data-v4skin="ink"] .rh-card-meta,
 html[data-v4skin="ink"] .rh-wall-head,
-html[data-v4skin="ink"] .rh-detail-sub { color: #7C7770; }
+html[data-v4skin="ink"] .rh-detail-sub { color: #928D85; }
 html[data-v4skin="ink"] .rh-kinds,
 html[data-v4skin="ink"] .rh-src,
 html[data-v4skin="ink"] .rh-search,
@@ -142,7 +146,7 @@ html[data-v4skin="ink"] .rh-secondary {
     background: rgba(111, 207, 168, .08);
     color: #8FDDBD;
 }
-html[data-v4skin="ink"] .rh-empty { border-color: rgba(200, 68, 60, .3); color: #7C7770; }
+html[data-v4skin="ink"] .rh-empty { border-color: rgba(200, 68, 60, .3); color: #928D85; }
 html[data-v4skin="ink"] .rh-skel span { background: linear-gradient(100deg, #1A1A1E 20%, #26262B 42%, #1A1A1E 64%); }
 html[data-v4skin="ink"] .rh-skel b,
 html[data-v4skin="ink"] .rh-skel i { background: #1A1A1E; }
@@ -152,7 +156,7 @@ html[data-v4skin="ink"] .rh-reader-bar {
     border-bottom-color: rgba(200, 68, 60, .22);
 }
 html[data-v4skin="ink"] .rh-reader-title { color: #EDE9E1; }
-html[data-v4skin="ink"] .rh-reader-count { color: #7C7770; }
+html[data-v4skin="ink"] .rh-reader-count { color: #928D85; }
 html[data-v4skin="ink"] .rh-rbtn { color: #C9C4BB; border-color: rgba(200, 68, 60, .30); }
 html[data-v4skin="ink"] .rh-reader-progress { background: rgba(200, 68, 60, .14); }
 html[data-v4skin="ink"] .rh-reader-progress i { background: linear-gradient(90deg, #C8443C, #E15A50); }

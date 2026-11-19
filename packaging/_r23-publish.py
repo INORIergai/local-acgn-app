@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.5.0'
+TAG = 'v6.6.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,13 +35,13 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.5.0：第三档改进（系列关系图 / Jellyfin 只读接入）
+COMMIT_MSG = """v6.6.0：第四档技术债收尾（四档迭代全部完成）
 
-- 系列关系图：Canvas 力导向画布，节点=番剧、边=标题互含的续作/同系列，点节点打开分集；规模控制200节点
-- Jellyfin 只读接入：配置服务器地址+API Key、测试连接、片单预览；不写库不下载不双向同步
-- Android 版本诚实跳过：本机无 JDK17 无法重编 APK，升 build.gradle 会让旧包冒充新版下发，绝不造假
+- prepare-export 的 rm_rf 加有限退避重试：Windows 瞬时文件占用(杀毒/索引/刚关EXE)导致的 EPERM 不再让导出中断，其它错误照抛不吞
+- 历史 exe 归档：6.0.0~6.3.0 的 8 个安装包(1.4GB)移到 dist/_archive/，顶层只留最近两版；归档可恢复
+- 墨皮肤对比度：审计量化后把 --text-faint 从 3.62:1 提到 5.18:1，ink-v6 里 8 处硬编码弱文一并提亮到正文级 AA
 
-真机 10/10 通过。承接 v6.4.0 的第二档改进。"""
+真机 4/4 + 正常导出通过。承接 v6.5.0，四档迭代(v6.3→v6.6)全部完成。"""
 
 
 def get_token():

@@ -46,8 +46,22 @@ const EXTRA_SKIP = [
     'config.json', 'config.docker.json',
 ];
 
+/**
+ * 健壮删除：Windows 上杀毒/Windows Search/刚关的 EXE 会瞬时占用文件，
+ * fs.rmSync 直接抛 EPERM 导致整个导出中断（实测「立刻重跑就好」）。
+ * 这里对 EPERM/EBUSY 做有限退避重试，其它错误照抛（不吞真实故障）。
+ */
 function rm_rf(p) {
-    fs.rmSync(p, { recursive: true, force: true });
+    const MAX = 6;
+    for (let i = 0; i < MAX; i++) {
+        try { fs.rmSync(p, { recursive: true, force: true }); return; }
+        catch (e) {
+            if (!['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY'].includes(e.code) || i === MAX - 1) throw e;
+            const ms = 120 * (i + 1);
+            try { require('child_process').execSync(`ping -n ${Math.ceil(ms / 1000) + 1} 127.0.0.1 >nul 2>&1`, { stdio: 'ignore' }); }
+            catch (_) { /* 退避失败也继续重试 */ }
+        }
+    }
 }
 
 /** 清空目录但保留指定项（node_modules 要留着：里面的原生模块是按 Electron ABI 编的，
