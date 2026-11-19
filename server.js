@@ -301,6 +301,7 @@ app.use('/api/media-source', require('./routes/media-source'));
 app.use('/api/bangumi', require('./routes/bangumi-sync'));   // round173e：Bangumi OAuth 云同步（须在反代之前）
 app.use('/api/player', require('./routes/player'));   // round173g：播放器增强（字幕扫描/VTT 转换）
 app.use('/api/bt', require('./routes/bt-search'));   // round173h：阶段4 BT 搜索 + 夸克离线任务（须在反代前）
+app.use('/api/jellyfin', require('./routes/jellyfin'));   // v6.5.0：Jellyfin 只读接入评估（须在反代前）
 app.use('/api/series', require('./routes/series'));   // round173：追番数据层（series/season/episode/follows/progress）
 app.use('/api/maintenance', require('./routes/maintenance'));   // round37：封面缓存盘点/清理/回收站
 app.use('/api/connect', require('./routes/connect'));   // 移动端扫码连接（connect.html 二维码页）

@@ -153,6 +153,49 @@ router.post('/:id/backfill-episodes', async (req, res) => {
     } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
+// v6.5.0 第三档①：系列关系图数据（节点=series，边=标题相似的续作/同系列）
+router.get('/graph', (req, res) => {
+  try {
+    const { db } = require('../utils/db');
+    const list = db.prepare('SELECT id, title, originalTitle, provider, type, episodeCount, airDate, posterPath, status FROM series').all();
+    const norm = (s) => String(s || '').toLowerCase()
+      .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
+      .replace(/第?\s*\d+\s*[季话集部篇]/g, ' ')
+      .replace(/(second|third|final)\s*season|season\s*\d+/gi, ' ')
+      .replace(/[\s\p{P}\p{S}]/gu, '')
+      .trim();
+    const keys = list.map(s => norm(s.title) || norm(s.originalTitle));
+    const nodes = list.map((s, i) => ({
+      id: s.id, title: s.title, posterPath: s.posterPath || '',
+      eps: Number(s.episodeCount) || 0, type: s.type || '',
+      status: s.status || '', airDate: s.airDate || '',
+      key: keys[i]
+    }));
+    const edges = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        if (!a.key || !b.key || a.key.length < 3 || b.key.length < 3) continue;
+        // 严格互含（续作/同名不同季）——避免短标题误连
+        const related = (a.key === b.key) || (a.key.length >= 4 && b.key.length >= 4 && (a.key.includes(b.key) || b.key.includes(a.key)));
+        if (related) edges.push({ source: a.id, target: b.id, kind: a.key === b.key ? 'same' : 'sequel' });
+      }
+    }
+    // 度数，便于前端定节点大小/过滤孤立点
+    const deg = {}; edges.forEach(e => { deg[e.source] = (deg[e.source] || 0) + 1; deg[e.target] = (deg[e.target] || 0) + 1; });
+    nodes.forEach(n => { n.degree = deg[n.id] || 0; });
+    // 规模控制：关系图只画有关联的节点 + 少量高集数代表；全量番几千个画不动。
+    const total = nodes.length, totalLinks = edges.length;
+    const withLinks = new Set(edges.flatMap(e => [e.source, e.target]));
+    let keep = nodes.filter(n => withLinks.has(n.id));
+    const room = Math.max(0, 200 - keep.length);
+    if (room > 0) keep = keep.concat(nodes.filter(n => !withLinks.has(n.id)).sort((a, b) => b.eps - a.eps).slice(0, room));
+    const keepIds = new Set(keep.map(n => n.id));
+    res.json({ code: 0, data: { nodes: keep, edges: edges.filter(e => keepIds.has(e.source) && keepIds.has(e.target)),
+      stats: { series: total, shown: keep.length, links: totalLinks } } });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
 // ---- 带 /:id 的路径（字面路径已处理完） ----
 router.post('/:id/episodes', (req, res) => {
   try {

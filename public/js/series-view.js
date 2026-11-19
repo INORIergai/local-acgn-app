@@ -300,6 +300,9 @@
         buildShell(r);
         loadBoard();
         loadCalendar(false);
+        // v6.5.0①：注入系列关系图 / Jellyfin 入口（幂等）
+        if (window.SeriesGraph && window.SeriesGraph.injectButton) window.SeriesGraph.injectButton();
+        if (window.JellyfinPanel && window.JellyfinPanel.injectButton) window.JellyfinPanel.injectButton();
         document.addEventListener('click', onClick);
         document.addEventListener('keydown', onKeydown);
     }
@@ -337,6 +340,6 @@
     }
 
     window.SeriesView = Object.assign(window.SeriesView || {}, {
-        show, hide, loadBoard, loadCalendar, refresh: () => { loadBoard(); loadCalendar(false); }
+        show, hide, openDetail, loadBoard, loadCalendar, refresh: () => { loadBoard(); loadCalendar(false); }
     });
 })();

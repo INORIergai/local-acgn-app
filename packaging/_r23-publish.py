@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.4.0'
+TAG = 'v6.5.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,14 +35,13 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.4.0：第二档改进（ASS 特效字幕 / 本地字幕库 / Bangumi 冲突策略 / 手动挂载）
+COMMIT_MSG = """v6.5.0：第三档改进（系列关系图 / Jellyfin 只读接入）
 
-- ASS 特效字幕：自研结构化解析（pos/move/颜色/字号/粗斜体/命名样式）+ HTML 字幕层渲染，不依赖 libass.js
-- 在线流字幕：改本地字幕库搜索（递归扫媒体目录，按标题匹配），零外部 API 依赖
-- Bangumi 冲突策略：newer(合并取较新) / local(保留本地) / remote(用云端) 三选一，设置面板下拉可选
-- 分集手动挂本地影片：每集「📎/换源」按钮，按番名+集号搜影片库一键挂接
+- 系列关系图：Canvas 力导向画布，节点=番剧、边=标题互含的续作/同系列，点节点打开分集；规模控制200节点
+- Jellyfin 只读接入：配置服务器地址+API Key、测试连接、片单预览；不写库不下载不双向同步
+- Android 版本诚实跳过：本机无 JDK17 无法重编 APK，升 build.gradle 会让旧包冒充新版下发，绝不造假
 
-真机 7/7 通过。承接 v6.3.0 的追番自动化第一档。"""
+真机 10/10 通过。承接 v6.4.0 的第二档改进。"""
 
 
 def get_token():
