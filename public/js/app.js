@@ -15671,6 +15671,20 @@ function closePlayer() {
 }
 
 // 通用视频播放函数（kind='hls' 时用 hls.js 播 m3u8）
+/**
+ * round185 A4：从展示标题派生「可用于匹配」的媒体名。
+ * 在线追番播放时标题是「冰之城墙 · 第1集」：人看着舒服，但弹弹play 的 matchMode=fileNameOnly
+ * 和本地字幕库都是按**文件名**匹配的，带「·」和单位数集号命中率很低。
+ * 这里统一成「冰之城墙 第01话」这种更接近真实文件名的形态。
+ */
+function cleanMediaTitle(t) {
+    return String(t || '')
+        .replace(/\s*[·•|｜]\s*/g, ' ')
+        .replace(/第\s*(\d+)\s*集/g, (m, n) => '第' + String(n).padStart(2, '0') + '话')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0, episodeId = 0) {
     const video = document.getElementById('videoPlayer');
     // round182 P0-1：追番在线播放时把进度写回 episode（此前只更新 UI，追番"继续看"永不动）
@@ -15714,10 +15728,12 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
     }
 
     // round36：弹幕（网络流按标题匹配）
-    if (window.Danmaku) window.Danmaku.start(title, video);
+    // round185 A4：传清洗后的匹配串，别把「· 第1集」这种展示用装饰喂给弹弹play 的文件名解析
+    const matchTitle = cleanMediaTitle(title);
+    if (window.Danmaku) window.Danmaku.start(matchTitle || title, video);
 
     // round173g：播放器增强（外挂字幕 / 跳过 OP-ED / 缓冲条 / 画中画）
-    if (window.PlayerEnhance) window.PlayerEnhance.onPlay(videoUrl, title);
+    if (window.PlayerEnhance) window.PlayerEnhance.onPlay(videoUrl, title, matchTitle || title);
 
     // 播放进度更新
     video.ontimeupdate = () => {

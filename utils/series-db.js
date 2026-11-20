@@ -169,9 +169,21 @@ function getSeasons(seriesId) {
  *  episodes 入参：[{episodeNo, title, url}]，url 为该集详情页（resolve 用）。
  *  已有本地 movieId 的集不动（本地优先，别覆盖用户已下载的文件）。 */
 function applyOnlineSource(seriesId, seasonNo, sourceId, sourceName, eps) {
-  const season = db.prepare(`SELECT id FROM seasons WHERE seriesId = ? AND seasonNo = ?`)
-    .get(Number(seriesId), Number(seasonNo) || 1);
-  if (!season) return { updated: 0, error: '季度不存在' };
+  const no = Number(seasonNo) || 1;
+  let season = db.prepare(`SELECT id FROM seasons WHERE seriesId = ? AND seasonNo = ?`)
+    .get(Number(seriesId), no);
+  if (!season) {
+    /* round185：在线源可能是用户第一次接触这部番 —— backfill 还没跑过（或 AniList 不可达），
+     * 此时季是空的，直接更新会得到「季度不存在」。这里自建季，否则「搜到源却挂不上」
+     * 就断在最后一步，且提示语完全看不出真因。 */
+    try {
+      db.prepare(`INSERT INTO seasons (seriesId, seasonNo, title) VALUES (?, ?, ?)`)
+        .run(Number(seriesId), no, '');
+    } catch (e) { /* 并发插入撞 UNIQUE：下面重查即可 */ }
+    season = db.prepare(`SELECT id FROM seasons WHERE seriesId = ? AND seasonNo = ?`)
+      .get(Number(seriesId), no);
+  }
+  if (!season) return { updated: 0, error: '季度创建失败' };
   const update = db.prepare(`UPDATE episodes SET sourceId = ?, sourceUrl = ?, sourceName = ?
     WHERE seasonId = ? AND episodeNo = ? AND movieId IS NULL`);
   let updated = 0;
@@ -220,7 +232,8 @@ const setFollowStmt = db.prepare(`
     updatedAt = @updatedAt
 `);
 
-const FOLLOW_STATUS = ['watching', 'planned', 'completed', 'dropped'];
+// round185 B1：对齐 Kazumi 六态。onhold=搁置（想弃但没死心）、dropped=抛弃（彻底放弃）
+const FOLLOW_STATUS = ['watching', 'planned', 'onhold', 'completed', 'dropped'];
 
 function setFollow(seriesId, status = 'watching', favorite = -1) {
   if (!FOLLOW_STATUS.includes(status)) throw new Error('无效追番状态: ' + status);
@@ -275,16 +288,70 @@ const setEpisodeProgressStmt = db.prepare(`
  * ★ 与影片级一致：position/duration >= 0.95 视为看完，自动置 watched=1。
  */
 function setEpisodeProgress(episodeId, { position = 0, duration = 0, watched = -1 } = {}) {
+  const eid = Number(episodeId);
   let w = Number(watched);
   if (w < 0 && duration > 0 && position / duration >= 0.95) w = 1;
   setEpisodeProgressStmt.run({
-    episodeId: Number(episodeId),
+    episodeId: eid,
     position: Number(position) || 0,
     duration: Number(duration) || 0,
     watched: w,
     updatedAt: now()
   });
-  return getEpisodeProgress(episodeId);
+  /* round185 B3：双键 —— 若这集绑了 Bangumi episode id，同步写进解耦账本。
+   * 写失败不影响本地进度（账本是附加能力，不是主链路）。 */
+  try {
+    const ep = db.prepare(`SELECT seriesId, episodeNo, bangumiEpisodeId FROM episodes WHERE id = ?`).get(eid);
+    if (ep && ep.bangumiEpisodeId) {
+      db.prepare(`INSERT INTO bangumi_progress
+          (bangumiEpisodeId, seriesId, episodeNo, position, duration, watched, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(bangumiEpisodeId) DO UPDATE SET
+            position = excluded.position,
+            duration = CASE WHEN excluded.duration > 0 THEN excluded.duration ELSE bangumi_progress.duration END,
+            watched  = CASE WHEN excluded.watched  >= 0 THEN excluded.watched  ELSE bangumi_progress.watched  END,
+            updatedAt = excluded.updatedAt`)
+        .run(Number(ep.bangumiEpisodeId), Number(ep.seriesId), Number(ep.episodeNo),
+             Number(position) || 0, Number(duration) || 0,
+             w >= 0 ? w : 0, now());
+    }
+  } catch (e) { /* 账本写失败不阻塞 */ }
+  return getEpisodeProgress(eid);
+}
+
+/**
+ * round185 B3：按 Bangumi 集号把账本里的进度接回当前本地 episode 行。
+ * 用于番剧重建 / 换源后 episode 行被替换的场景 —— 这是「进度不丢」的真解。
+ * @returns {{restored:number, skipped:number}}
+ */
+function restoreBangumiProgress(seriesId, seasonNo = 1) {
+  const eps = db.prepare(`SELECT e.id, e.episodeNo, e.bangumiEpisodeId
+    FROM episodes e JOIN seasons s ON s.id = e.seasonId
+    WHERE e.seriesId = ? AND s.seasonNo = ?`).all(Number(seriesId), Number(seasonNo) || 1);
+  // 没有 bangumiEpisodeId 的集，用 (seriesId, episodeNo) 在账本里反查
+  const byNo = db.prepare(`SELECT * FROM bangumi_progress WHERE seriesId = ? AND episodeNo = ? ORDER BY updatedAt DESC LIMIT 1`);
+  let restored = 0, skipped = 0;
+  const tx = db.transaction(() => {
+    for (const e of eps) {
+      const rec = e.bangumiEpisodeId
+        ? db.prepare(`SELECT * FROM bangumi_progress WHERE bangumiEpisodeId = ?`).get(Number(e.bangumiEpisodeId))
+        : byNo.get(Number(seriesId), Number(e.episodeNo));
+      if (!rec) { skipped++; continue; }
+      // 只在本地没有更"新"的进度时回填，避免覆盖用户刚看的
+      const cur = getEpisodeProgress(e.id);
+      if (cur && Number(cur.updatedAt) >= Number(rec.updatedAt)) { skipped++; continue; }
+      setEpisodeProgressStmt.run({
+        episodeId: Number(e.id),
+        position: Number(rec.position) || 0,
+        duration: Number(rec.duration) || 0,
+        watched: Number(rec.watched) || 0,
+        updatedAt: Number(rec.updatedAt) || now()
+      });
+      restored++;
+    }
+  });
+  try { tx(); } catch (err) { return { restored, skipped, error: err.message }; }
+  return { restored, skipped };
 }
 
 function getEpisodeProgress(episodeId) {
@@ -398,6 +465,7 @@ module.exports = {
   getFollowBoard,
   setEpisodeProgress,
   setEpisodeSkip,
+  restoreBangumiProgress,
   getEpisodeProgress,
   getEpisodeProgressMap,
   clearEpisodeProgress,

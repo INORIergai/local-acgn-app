@@ -410,6 +410,46 @@ router.get('/freshness', (req, res) => {
 });
 
 // ==================================================================
+// round185 A2：人机验证救回（有头浏览器过验证 → 存 cookie 复用）
+// ==================================================================
+/**
+ * 打开一个可见浏览器让用户过验证。★ 这是**长请求**（最多 2 分钟），
+ * 前端必须给 loading 态，不能当普通接口调。
+ */
+router.post('/verify', async (req, res) => {
+    try {
+        const sourceId = String((req.body && req.body.sourceId) || '');
+        if (!sourceId) return res.json({ code: -1, msg: '缺少 sourceId' });
+        const r = await require('../utils/media-sources/verify').verifySource(sourceId, {
+            timeout: Number(req.body && req.body.timeout) || 120000,
+            url: req.body && req.body.url
+        });
+        if (r.ok && r.passed) {
+            engine.clearCooldown(sourceId);   // 过了验证就没必要再冷却
+            return res.json({ code: 0, msg: `验证通过，已保存 ${r.cookies} 条 Cookie`, data: r });
+        }
+        res.json({ code: 1, msg: r.reason || '验证未通过', data: r });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/** 有没有正在跑的验证窗口（前端防重复点） */
+router.get('/verify-status', (req, res) => {
+    let busy = null;
+    try { busy = require('../utils/media-sources/verify').verifyBusy(); } catch (e) { /* 模块没加载 */ }
+    res.json({ code: 0, data: { busy } });
+});
+
+/** 清除某源保存的 Cookie（验证失效/换号时用） */
+router.post('/clear-cookie', (req, res) => {
+    try {
+        const sourceId = String((req.body && req.body.sourceId) || '');
+        if (!sourceId) return res.json({ code: -1, msg: '缺少 sourceId' });
+        engine.clearSourceCookies(sourceId);
+        res.json({ code: 0, data: { cleared: sourceId } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+// ==================================================================
 // 在线阅读（r155 · 阶段3）：漫画章节图 / 小说正文 → 应用内原生阅读器
 // ==================================================================
 router.get('/reading/adapters', (req, res) => {

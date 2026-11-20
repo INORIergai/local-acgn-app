@@ -260,6 +260,27 @@ function migrate() {
     }
   } catch (e) { /* 表还不存在时忽略 */ }
 
+  /* round185 B3：进度双键。
+   * episodes 记住 Bangumi 的 episode id —— 番剧被删了重导、或换源重建 episode 行之后，
+   * 仍能按 Bangumi 集号把进度接回来（原来只认本地自增 id，行一换进度就归零）。
+   * bangumi_progress 是与本地行解耦的账本，主键就是 bangumiEpisodeId。 */
+  try {
+    const epCols3 = db.prepare('PRAGMA table_info(episodes)').all().map(c => c.name);
+    if (!epCols3.includes('bangumiEpisodeId')) {
+      db.exec('ALTER TABLE episodes ADD COLUMN bangumiEpisodeId INTEGER');
+      console.log('[数据库迁移] episodes 表新增字段: bangumiEpisodeId');
+    }
+    db.exec(`CREATE TABLE IF NOT EXISTS bangumi_progress (
+      bangumiEpisodeId INTEGER PRIMARY KEY,
+      seriesId   INTEGER,
+      episodeNo  INTEGER,
+      position   REAL DEFAULT 0,
+      duration   REAL DEFAULT 0,
+      watched    INTEGER DEFAULT 0,
+      updatedAt  INTEGER DEFAULT 0
+    )`);
+  } catch (e) { /* 表还不存在时忽略 */ }
+
   const actressColumns = db.prepare('PRAGMA table_info(actresses)').all();
   const actressFields = actressColumns.map(c => c.name);
 

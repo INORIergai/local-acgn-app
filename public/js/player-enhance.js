@@ -13,6 +13,7 @@
 
   let bound = false;
   let currentTitle = '';
+  let currentMatchTitle = '';
   let skipCfg = null;         // {opEnd, edStart}
   let skipFired = { op: false, ed: false };
   let subtitleTracks = [];
@@ -34,9 +35,11 @@
   }
 
   /** 由 showVideoPlayer 调用：新片开始，重置状态并探测字幕 */
-  function onPlay(videoUrl, title) {
+  function onPlay(videoUrl, title, matchTitle) {
     bindOnce();
     currentTitle = String(title || '');
+    // round185 A4：本地字幕库是按文件名搜的，展示标题里的「· 第N集」要洗掉
+    currentMatchTitle = String(matchTitle || title || '');
     skipFired = { op: false, ed: false };
     clearTracks();
     clearAssLayer();
@@ -58,7 +61,10 @@
     try {
       const u = new URL(videoUrl, location.href);
       if (u.pathname.indexOf('/api/movie/stream') >= 0) mediaPath = decodeURIComponent(u.searchParams.get('path') || '');
-      else if (/\.(mp4|mkv|avi|mov|m4v|ts|flv|webm)(\?|$)/i.test(videoUrl)) mediaPath = videoUrl;
+      /* round185 A4：只有「本地可访问的路径」才谈得上扫同目录字幕。
+       * 在线流是 http(s) 直链/代理地址，拿它去 /api/player/subtitles 只会白等一次请求，
+       * 直接跳过、走下面的字幕库按标题搜。 */
+      else if (!/^https?:\/\//i.test(videoUrl) && /\.(mp4|mkv|avi|mov|m4v|ts|flv|webm)(\?|$)/i.test(videoUrl)) mediaPath = videoUrl;
     } catch (e) { /* 非标准 URL */ }
     scanSubtitles(mediaPath);
   }
@@ -73,8 +79,8 @@
         subtitleTracks = (r && r.code === 0 && Array.isArray(r.data)) ? r.data : [];
       } else subtitleTracks = [];
       // v6.4.0②：在线流/无同名字幕 → 在媒体目录按标题搜本地字幕库
-      if (!subtitleTracks.length && currentTitle) {
-        const r2 = await api('/api/player/subtitle-library?title=' + encodeURIComponent(currentTitle));
+      if (!subtitleTracks.length && currentMatchTitle) {
+        const r2 = await api('/api/player/subtitle-library?title=' + encodeURIComponent(currentMatchTitle));
         subtitleTracks = (r2 && r2.code === 0 && Array.isArray(r2.data)) ? r2.data : [];
         if (subtitleTracks.length) subtitleTracks.forEach(x => { x.lang = x.lang || '本地库'; });
       }

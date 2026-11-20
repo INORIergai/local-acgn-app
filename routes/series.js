@@ -197,7 +197,7 @@ router.get('/graph', (req, res) => {
 });
 
 // ---- round181：追番在线源闭环（字面路径，必须在 /:id 前） ----
-/** 按番名并发搜索所有在线源，返回有结果的源及其条目 */
+/** 按番名并发搜索所有在线源，返回有结果的源、失败状态分布、以及自动选源建议 */
 router.post('/match-online', async (req, res) => {
   try {
     const seriesId = Number(req.body.seriesId || req.params.id);
@@ -205,17 +205,53 @@ router.post('/match-online', async (req, res) => {
     const s = sdb.getSeriesById(seriesId);
     const keyword = kw || (s && s.title) || '';
     if (!keyword) return res.json({ code: -1, msg: '缺少搜索关键词' });
+    const online = require('../utils/series-online');
+    const found = await online.searchAllWeb(keyword, {
+      timeout: Number(req.body.timeout) || 12000,
+      force: req.body.force === true
+    });
+    const autoPick = online.pickBest(found.hits, keyword);
+    // captcha 源单独拎出来，前端给「去验证」入口（不然用户只看到"没有结果"）
+    const needsVerify = found.all.filter(x => x.state === 'captcha')
+      .map(x => ({ sourceId: x.sourceId, sourceName: x.sourceName }));
+    res.json({ code: 0, data: {
+      keyword, hits: found.hits, all: found.all, states: found.states,
+      scanned: found.scanned, skipped: found.skipped,
+      autoPick, needsVerify
+    } });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/**
+ * 一键挂载：搜源 → 按标题相似度 + tier 选最优 → 解析剧集 → 写进 episodes。
+ * 前端「+ 追番」成功后直接调它，失败了再降级成手动选源弹窗。
+ */
+router.post('/auto-attach', async (req, res) => {
+  try {
+    const seriesId = Number(req.body.seriesId);
+    if (!seriesId) return res.json({ code: -1, msg: '缺少 seriesId' });
+    const s = sdb.getSeriesById(seriesId);
+    if (!s) return res.json({ code: -1, msg: '番剧不存在' });
+    const keyword = String(req.body.keyword || s.title || '').trim();
+    const seasonNo = Number(req.body.seasonNo || 1);
+    const r = await require('../utils/series-online').autoAttach(seriesId, keyword, seasonNo, {
+      force: req.body.force === true,
+      timeout: Number(req.body.timeout) || 12000
+    });
+    const ok = r.attached > 0;
+    res.json({ code: ok ? 0 : 1, data: r,
+      msg: ok ? '' : (r.reason || '没有可用的在线源') });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/** 解除某源的黑名单冷却（用户手动点「重试这个源」时用） */
+router.post('/online-retry-source', (req, res) => {
+  try {
+    const sourceId = String(req.body.sourceId || '');
+    if (!sourceId) return res.json({ code: -1, msg: '缺少 sourceId' });
     const engine = require('../utils/media-sources/engine');
-    const web = engine.loadSources(true).filter(x => x.kind === 'web');
-    const results = await Promise.all(web.map(async (src) => {
-      try {
-        const r = await engine.searchOn(src, keyword, { timeout: 12000 });
-        const items = (r.items || []).slice(0, 20);
-        return { sourceId: src.id, sourceName: src.name, tier: src.tier, items, error: r.error || '' };
-      } catch (e) { return { sourceId: src.id, sourceName: src.name, tier: src.tier, items: [], error: e.message }; }
-    }));
-    const ok = results.filter(x => x.items.length > 0).sort((a, b) => (a.tier - b.tier));
-    res.json({ code: 0, data: { keyword, hits: ok, scanned: web.length } });
+    if (sourceId === '*') engine.clearCooldown(); else engine.clearCooldown(sourceId);
+    res.json({ code: 0, data: { cleared: sourceId } });
   } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 

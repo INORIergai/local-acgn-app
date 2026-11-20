@@ -263,9 +263,20 @@ CREATE TABLE IF NOT EXISTS episodes (
   sourceId  TEXT DEFAULT '',
   sourceUrl TEXT DEFAULT '',
   sourceName TEXT DEFAULT '',
+  bangumiEpisodeId INTEGER,
   createdAt INTEGER DEFAULT 0,
   FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
   UNIQUE(seriesId, seasonId, episodeNo)
+);
+-- round185 B3：与本地 episode 行解耦的 Bangumi 进度账本（换源/重建后按集号接回进度）
+CREATE TABLE IF NOT EXISTS bangumi_progress (
+  bangumiEpisodeId INTEGER PRIMARY KEY,
+  seriesId   INTEGER,
+  episodeNo  INTEGER,
+  position   REAL DEFAULT 0,
+  duration   REAL DEFAULT 0,
+  watched    INTEGER DEFAULT 0,
+  updatedAt  INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS follows (
   seriesId  INTEGER PRIMARY KEY,

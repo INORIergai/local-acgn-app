@@ -48,11 +48,17 @@
 .sv-follow-btn:disabled { opacity: .5; cursor: wait; }
 
 /* ---------- 追番看板三栏卡片 ---------- */
-.sv-tabs { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border);
+/* round185 B1：5 态 + 全部，6 个 tab 必须能换行，不然窄屏直接溢出 */
+.sv-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--border);
     border-radius: var(--r-pill, 999px); background: var(--bg-elevated, rgba(127,127,127,.06)); margin-bottom: 16px; }
 .sv-tabs button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer;
-    padding: 6px 16px; border-radius: var(--r-pill, 999px); font-size: 13px; }
+    padding: 6px 13px; border-radius: var(--r-pill, 999px); font-size: 12.5px; }
 .sv-tabs button.active { background: var(--primary); color: var(--bg-elevated, #fff); }
+
+/* round185 B1：非「追番中」状态的卡片给个小徽章，否则在「全部」里分不清 */
+.sv-status-chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 5px;
+    font-size: 10.5px; line-height: 1.5; color: var(--text-muted);
+    border: 1px solid var(--border); vertical-align: 1px; }
 
 .sv-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; align-content: start; }
 .sv-card {
@@ -118,6 +124,23 @@
 #svOnlineHost .sv-online-pick { flex: 0 0 auto; border: 1px solid var(--primary); color: var(--primary);
     background: transparent; border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
 #svOnlineHost .sv-online-pick:hover { background: var(--card-bg-hover, var(--bg-elevated)); }
+
+/* round185：自动选源（推荐位 + 失败状态条 + 需验证入口） */
+#svOnlineHost .sv-online-rec { border: 1px solid var(--primary); border-radius: 10px;
+    padding: 10px 12px; margin: 10px 0 12px; background: var(--bg-elevated); }
+#svOnlineHost .sv-rec-head { font-size: 11.5px; color: var(--primary); letter-spacing: .4px; margin-bottom: 6px; }
+#svOnlineHost .sv-rec-score { color: var(--text-muted); margin-left: 8px; font-weight: 400; }
+#svOnlineHost .sv-rec-name { font-size: 14px; font-weight: 600; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#svOnlineHost .sv-rec-src { font-size: 11.5px; color: var(--text-muted); margin: 4px 0 10px; }
+#svOnlineHost .sv-rec-btn { width: 100%; padding: 7px 12px; font-size: 13px; }
+#svOnlineHost .sv-online-stat { font-size: 11.5px; color: var(--text-muted); margin-top: 14px;
+    padding-top: 10px; border-top: 1px solid var(--border); line-height: 1.8; }
+#svOnlineHost .sv-st-ok { color: var(--success, #3f9e5a); font-weight: 600; }
+#svOnlineHost .sv-st-cap { color: var(--warning, #c8843c); font-weight: 600; }
+#svOnlineHost .sv-online-verify { border: 1px dashed var(--border); background: transparent;
+    color: var(--text-muted); border-radius: 7px; padding: 3px 9px; cursor: pointer; font-size: 11.5px; margin: 0 4px 4px 0; }
+#svOnlineHost .sv-online-verify:hover { color: var(--primary); border-color: var(--primary); }
 
 /* v6.5.0② Jellyfin 接入面板 */
 #jfHost .jf-modal { width: min(620px, 96vw); max-height: 82vh; display: flex; flex-direction: column; }

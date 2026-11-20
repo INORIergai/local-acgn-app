@@ -16,6 +16,10 @@
     let boardCache = null;
     let calendarItems = null;
 
+    // round185 B1：对齐 Kazumi 的 6 态（我们实现 5 态 + 全部）
+    const STATUS_LABELS = { watching: '追番中', planned: '计划看', onhold: '搁置', completed: '已完成', dropped: '抛弃' };
+    const STATUS_ORDER = ['watching', 'planned', 'onhold', 'completed', 'dropped'];
+
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const api = async (url, opts) => {
         const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
@@ -55,7 +59,7 @@
                 + '<div class="sv-cal-poster">' + poster + '</div>'
                 + '<div class="sv-cal-title" title="' + esc(it.title) + '">' + esc(it.title) + '</div>'
                 + '<div class="sv-cal-meta">' + esc(label) + '</div>'
-                + '<button class="sv-follow-btn' + (following ? ' following' : '') + '" data-act="follow" data-sid="' + it.seriesId + '" data-status="watching">'
+                + '<button class="sv-follow-btn' + (following ? ' following' : '') + '" data-act="follow" data-sid="' + it.seriesId + '" data-status="watching" data-title="' + esc(it.title) + '">'
                 + (following ? '✓ 已追' : '+ 追番') + '</button>'
                 + '</div>';
         }).join('');
@@ -70,7 +74,9 @@
             const tips = {
                 watching: '还没有追番。从上方「本周新番」点「+ 追番」开始吧。',
                 planned: '计划看列表是空的。在追番卡片上切到「计划看」。',
-                completed: '还没有已完成的番。'
+                onhold: '搁置列表是空的。看上头了想先放一放的番可以切到「搁置」。',
+                completed: '还没有已完成的番。',
+                dropped: '抛弃列表是空的。'
             };
             box.innerHTML = '<div class="sv-empty">' + (tips[currentTab] || '暂无数据') + '</div>';
             return;
@@ -88,13 +94,17 @@
                 + '<div class="sv-poster" data-act="detail" data-sid="' + b.id + '">' + poster
                 + '<span class="sv-progress-badge">' + pct + '%</span></div>'
                 + '<div class="sv-body">'
-                + '<div class="sv-title" title="' + esc(b.title) + '">' + esc(b.title) + '</div>'
+                + '<div class="sv-title" title="' + esc(b.title) + '">' + esc(b.title)
+                + (b.followStatus && b.followStatus !== 'watching'
+                    ? '<span class="sv-status-chip">' + esc(STATUS_LABELS[b.followStatus] || b.followStatus) + '</span>' : '')
+                + '</div>'
                 + '<div class="sv-count">已看 ' + watched + ' / ' + total + ' 集</div>'
                 + '<div class="sv-bar"><i style="width:' + pct + '%"></i></div>'
                 + '<button class="sv-next" data-act="detail" data-sid="' + b.id + '">' + nextLabel + '</button>'
                 + '<div class="sv-card-actions">'
-                + '<button data-act="status" data-sid="' + b.id + '" data-status="planned">计划看</button>'
-                + '<button data-act="status" data-sid="' + b.id + '" data-status="completed">已完成</button>'
+                + STATUS_ORDER.filter(st => st !== b.followStatus).map(st =>
+                    '<button data-act="status" data-sid="' + b.id + '" data-status="' + st + '" data-title="' + esc(b.title) + '">'
+                    + STATUS_LABELS[st] + '</button>').join('')
                 + '<button data-act="unfollow" data-sid="' + b.id + '">移除</button>'
                 + '</div></div></div>';
         }).join('');
@@ -133,6 +143,47 @@
     }
     function closeDetail() { const h = document.getElementById('svDetailHost'); if (h) h.innerHTML = ''; }
 
+    // ---------- round185 A1：追番即自动挂在线源 ----------
+    /**
+     * 点「+ 追番」之后的完整主循环：
+     *   回填分集（生成第1..N集占位）→ 全网搜源 → 按标题相似度+tier 选最优 → 挂上去。
+     * 成功就 toast 报源名和集数；失败才弹手动选源（跟 Kazumi/Animeko 的降级路径一致）。
+     */
+    async function autoAttachFlow(seriesId, title) {
+        if (window.showNotification) {
+            showNotification('正在全网找在线源', '回填分集 + 匹配最合适的源，约 10~25 秒');
+        }
+        try {
+            // 先回填占位分集：在线源只知道集号，得有 season 骨架才能挂
+            await api('/api/series/' + seriesId + '/backfill-episodes', {
+                method: 'POST', body: '{}'
+            }).catch(() => {});
+            const r = await api('/api/series/auto-attach', {
+                method: 'POST', body: JSON.stringify({ seriesId, keyword: title })
+            });
+            if (r && r.code === 0 && r.data && r.data.attached > 0) {
+                const d = r.data;
+                if (window.showNotification) {
+                    showNotification('已自动挂载在线源',
+                        d.sourceName + ' · ' + d.attached + '/' + d.total + ' 集（匹配「' + (d.matchedName || '') + '」· ' +
+                        (d.score >= 0.95 ? '完全一致' : d.score >= 0.8 ? '高度相似' : '标题相近') + '）');
+                }
+                loadBoard();
+                return true;
+            }
+            // 没挂上：把原因讲清楚，再给手动选源的入口
+            const why = (r && (r.msg || (r.data && r.data.reason))) || '没有可用的在线源';
+            if (window.showNotification) showNotification('未能自动挂源', why + '。已打开手动选源。');
+            openOnlineMatch(seriesId, title);
+            loadBoard();
+            return false;
+        } catch (e) {
+            if (window.showNotification) showNotification('自动挂源失败', e.message || '网络异常');
+            loadBoard();
+            return false;
+        }
+    }
+
     // ---------- round182 P0-3：订阅新鲜度自动刷新 ----------
     let __sourceRefreshDone = false;
     async function autoRefreshSources() {
@@ -149,7 +200,7 @@
         } catch (e) { /* 网络不通就跳过，下次再试 */ }
     }
 
-    // ---------- v6.7.0：全网多源搜索在线源 ----------
+    // ---------- round181/185：全网多源搜索在线源 ----------
     async function openOnlineMatch(seriesId, title) {
         let host = document.getElementById('svOnlineHost');
         if (!host) { host = document.createElement('div'); host.id = 'svOnlineHost'; document.body.appendChild(host); }
@@ -168,19 +219,55 @@
                 body.innerHTML = '<div class="sv-empty">搜索失败：' + esc((r && r.msg) || '服务无响应') + '。可稍后重试或点「🔍 搜BT」。</div>';
                 return;
             }
-            const hits = (r.data && r.data.hits) || [];
+            const d = r.data || {};
+            const hits = d.hits || [];
+            const st = d.states || {};
+            const pick = d.autoPick;
+
+            // 状态条：让「搜不到」能看出到底是源挂了、无结果、还是要验证码
+            const stat = '扫描 ' + (d.scanned || 0) + ' 个源 · '
+                + '<b class="sv-st-ok">成功 ' + (st.success || 0) + '</b> · '
+                + '无结果 ' + (st.noResult || 0) + ' · '
+                + '不可用 ' + (st.error || 0)
+                + (st.captcha ? ' · <b class="sv-st-cap">需验证 ' + st.captcha + '</b>' : '')
+                + (st.cooling ? ' · 冷却 ' + st.cooling : '');
+
             if (!hits.length) {
-                body.innerHTML = '<div class="sv-empty">没找到匹配的在线源（扫了 ' + (r.data.scanned || 0) + ' 个源）。可试试「🔍 搜BT」下载。</div>';
+                body.innerHTML = '<div class="sv-empty">没找到匹配的在线源。<br>' + stat + '</div>'
+                    + (d.needsVerify && d.needsVerify.length
+                        ? '<div class="sv-online-tip">这些源要求人机验证，验过后再搜命中率会高很多：'
+                          + d.needsVerify.map(v => '<button class="sv-online-verify" data-act="verify-source" data-sid="' + seriesId + '" data-title="' + esc(title) + '" data-src="' + esc(v.sourceId) + '">' + esc(v.sourceName) + ' 重试</button>').join(' ')
+                          + '</div>' : '');
                 return;
             }
-            let n = 0;
-            body.innerHTML = '<div class="sv-online-tip">找到 ' + hits.length + ' 个源有结果，点「挂载」把剧集接到本番分集：</div>'
-                + hits.map(h => h.items.map(it => {
-                    const i = n++;
-                    return '<div class="sv-online-item"><div class="sv-online-name" title="' + esc(it.name) + '">' + esc(it.name) + '</div>'
-                        + '<span class="sv-online-src">' + esc(h.sourceName) + '</span>'
-                        + '<button class="sv-online-pick" data-act="apply-online-source" data-sid="' + seriesId + '" data-src="' + esc(h.sourceId) + '" data-url="' + esc(it.url) + '">挂载</button></div>';
-                }).join('')).join('');
+
+            // 自动推荐单独置顶（点一下就等于「一键挂载」的结果）
+            const recHtml = pick ? '<div class="sv-online-rec">'
+                + '<div class="sv-rec-head">⚡ 自动推荐 <span class="sv-rec-score">相似度 ' + Math.round(pick.score * 100) + '%</span></div>'
+                + '<div class="sv-rec-name" title="' + esc(pick.name) + '">' + esc(pick.name) + '</div>'
+                + '<div class="sv-rec-src">' + esc(pick.sourceName) + ' · tier ' + esc(pick.tier) + ' · ' + esc(pick.reason || '') + '</div>'
+                + '<button class="sv-online-pick sv-rec-btn" data-act="apply-online-source" data-sid="' + seriesId + '" data-src="' + esc(pick.sourceId) + '" data-url="' + esc(pick.detailUrl) + '">⚡ 挂载这个</button>'
+                + '</div>' : '';
+
+            // 列表里排除已推荐的同一条目，避免用户以为有两部番
+            const rest = [];
+            hits.forEach(h => (h.items || []).forEach(it => {
+                if (pick && it.url === pick.detailUrl) return;
+                rest.push({ h, it });
+            }));
+
+            body.innerHTML = recHtml
+                + '<div class="sv-online-tip">' + (rest.length ? '其他候选（点「挂载」换成这个源）：' : '没有其他候选源。') + '</div>'
+                + rest.map(({ h, it }) => '<div class="sv-online-item">'
+                    + '<div class="sv-online-name" title="' + esc(it.name) + '">' + esc(it.name) + '</div>'
+                    + '<span class="sv-online-src">' + esc(h.sourceName) + '</span>'
+                    + '<button class="sv-online-pick" data-act="apply-online-source" data-sid="' + seriesId + '" data-src="' + esc(h.sourceId) + '" data-url="' + esc(it.url) + '">挂载</button>'
+                    + '</div>').join('')
+                + '<div class="sv-online-stat">' + stat + '</div>'
+                + (d.needsVerify && d.needsVerify.length
+                    ? '<div class="sv-online-tip">需人机验证：'
+                      + d.needsVerify.map(v => '<button class="sv-online-verify" data-act="verify-source" data-sid="' + seriesId + '" data-title="' + esc(title) + '" data-src="' + esc(v.sourceId) + '">' + esc(v.sourceName) + '</button>').join(' ')
+                      + '</div>' : '');
         } catch (e) {
             const body = document.getElementById('svOnlineBody');
             if (body) body.innerHTML = '<div class="sv-empty">搜索失败：' + esc(e.message) + '</div>';
@@ -287,16 +374,14 @@
         }
         if (act === 'follow' || act === 'status') {
             const status = btn.dataset.status || 'watching';
+            const title = btn.dataset.title || '';
             btn.disabled = true;
             api('/api/series/follow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seriesId: sid, status }) })
                 .then(r => {
                     if (r && r.code === 0) {
                         loadBoard(); loadCalendar(false);
-                        // round173c：首次追番后台回填分集（静默，不阻塞 UI）；完成/失败都刷新看板
-                        if (status === 'watching') {
-                            api('/api/series/' + sid + '/backfill-episodes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-                                .then(() => loadBoard()).catch(() => {});
-                        }
+                        // round185 A1：追番成功后自动回填分集 + 全网挂在线源（后台跑，不锁按钮太久）
+                        if (status === 'watching') autoAttachFlow(sid, title);
                     } else if (window.showNotification) showNotification('操作失败', r && r.msg);
                 })
                 .finally(() => { btn.disabled = false; });
@@ -325,6 +410,45 @@
             return;
         }
         if (act === 'match-online') { openOnlineMatch(Number(btn.dataset.sid), btn.dataset.title || ''); return; }
+        if (act === 'verify-source') {
+            /* round185 A2：开一个有头浏览器让用户自己过验证，过了把 Cookie 存下来复用。
+             * 这是长请求（最多 2 分钟），按钮必须锁住并给明确提示。 */
+            const src = btn.dataset.src || '';
+            const sid2 = Number(btn.dataset.sid) || 0;
+            const title2 = btn.dataset.title || '';
+            const old = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '等待验证…';
+            if (window.showNotification) showNotification('请在刚打开的浏览器窗口里完成验证', '通过后会自动保存 Cookie，最多等 2 分钟');
+            try {
+                const r = await api('/api/media-source/verify', { method: 'POST', body: JSON.stringify({ sourceId: src }) });
+                if (r && r.code === 0) {
+                    if (window.showNotification) showNotification('验证通过', '正在用新 Cookie 重新搜索全部源…');
+                    if (sid2) openOnlineMatch(sid2, title2);
+                } else {
+                    if (window.showNotification) showNotification('验证未通过', (r && r.msg) || '窗口关了或超时，可再点一次');
+                }
+            } catch (e) {
+                if (window.showNotification) showNotification('验证失败', e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = old;
+            }
+            return;
+        }
+        if (act === 'retry-source') {
+            // 解除该源冷却后重新搜一遍（用户可能刚在浏览器里过了验证码）
+            const src = btn.dataset.src || '';
+            const sid2 = Number(btn.dataset.sid) || 0;
+            const title2 = btn.dataset.title || '';
+            btn.disabled = true;
+            try {
+                await api('/api/series/online-retry-source', { method: 'POST', body: JSON.stringify({ sourceId: src }) });
+                if (window.showNotification) showNotification('已解除冷却', '正在重新搜索全部源…');
+                if (sid2) openOnlineMatch(sid2, title2);
+            } catch (e) { if (window.showNotification) showNotification('重试失败', e.message); }
+            return;
+        }
         if (act === 'apply-online-source') {
             const seriesId = Number(btn.dataset.sid);
             try {
@@ -343,6 +467,11 @@
         if (act === 'play-online') {
             const src = btn.dataset.src, url = btn.dataset.url;
             if (!src || !url) { if (window.showNotification) showNotification('无法播放', '该集在线源信息缺失'); return; }
+            /* round185 A4：在线播放也必须把 episode 交出去 ——
+             * 此前只有「播本地」分支设 __svPlayingEpisode，导致在线看番时跳过 OP/ED 走的是
+             * localStorage（按标题），DB 里按 episode 存的区间永远读不到。 */
+            window.__svPlayingEpisode = Number(btn.dataset.eid) || 0;
+            window.__svPlayingTitle = btn.dataset.title || '';
             if (window.showNotification) showNotification('正在解析在线播放地址', '首次解析可能需十几秒（内置浏览器嗅探）');
             try {
                 const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url));
@@ -411,9 +540,12 @@
             + '<section class="sv-section"><h3>本周新番 <small>点「+ 追番」加入清单</small></h3>'
             + '<div class="sv-calendar" id="svCalendar"><div class="sv-empty-line">加载中…</div></div></section>'
             + '<section class="sv-section"><div class="sv-tabs" id="svTabs">'
+            + '<button data-tab="">全部</button>'
             + '<button data-tab="watching" class="active">追番中</button>'
             + '<button data-tab="planned">计划看</button>'
-            + '<button data-tab="completed">已完成</button></div>'
+            + '<button data-tab="onhold">搁置</button>'
+            + '<button data-tab="completed">已完成</button>'
+            + '<button data-tab="dropped">抛弃</button></div>'
             + '<div class="sv-board" id="svBoard"><div class="sv-empty">加载中…</div></div></section>'
             + '</div>';
         r.dataset.built = '1';

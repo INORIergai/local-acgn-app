@@ -59,7 +59,9 @@
             + '<button class="btn btn-sm btn-secondary" data-act="pull"' + (connected ? '' : ' disabled') + '>⇩ 从 Bangumi 拉取</button>'
             + '<button class="btn btn-sm btn-secondary" data-act="push"' + (connected ? '' : ' disabled') + '>⇧ 推送到 Bangumi</button>'
             + '<button class="btn btn-sm" data-act="sync"' + (connected ? '' : ' disabled') + '>⇄ 双向同步</button>'
+            + '<button class="btn btn-sm btn-secondary" data-act="diff"' + (connected ? '' : ' disabled') + '>🔀 逐条对比</button>'
             + '</div>'
+            + '<div class="bmp-diff" id="bmpDiff"></div>'
             + '<div class="bmp-msg" id="bmpSyncMsg"></div>'
             + '</div>'
             + '</div>';
@@ -72,6 +74,67 @@
     function syncMsg(text, ok) {
         const el = document.getElementById('bmpSyncMsg'); if (!el) return;
         el.textContent = text; el.className = 'bmp-msg ' + (ok ? 'ok' : 'err');
+    }
+
+    // ---------- round185 B2：逐条对比 ----------
+    let diffRows = [];
+    let diffChoice = new Map();   // idx -> 'local' | 'remote'
+
+    function renderDiff(res) {
+        const box = document.getElementById('bmpDiff');
+        if (!box) return;
+        if (!res || res.code !== 0 || !res.data) {
+            box.innerHTML = '<div class="bmp-diff-empty">对比失败：' + esc((res && res.msg) || '未知错误') + '</div>';
+            return;
+        }
+        const d = res.data;
+        diffRows = d.rows || [];
+        diffChoice = new Map();
+        if (!diffRows.length) {
+            box.innerHTML = '<div class="bmp-diff-empty">本地与 Bangumi 完全一致（远端 ' + (d.remoteCount || 0) +
+                ' 部 / 本地 ' + (d.localCount || 0) + ' 部），没有需要处理的冲突。</div>';
+            return;
+        }
+        diffRows.forEach((r, i) => { diffChoice.set(i, r.suggested || 'local'); });
+
+        const kindLabel = { conflict: '冲突', remoteOnly: '云端独有', localOnly: '本地独有' };
+        box.innerHTML = '<div class="bmp-diff-head">发现 ' + diffRows.length + ' 条差异（冲突 ' +
+            ((d.counts && d.counts.conflict) || 0) + ' · 云端独有 ' + ((d.counts && d.counts.remoteOnly) || 0) +
+            ' · 本地独有 ' + ((d.counts && d.counts.localOnly) || 0) + '）——逐条选保留哪边：</div>'
+            + diffRows.map((r, i) => {
+                const localTxt = r.localStatus
+                    ? ('本地：' + (r.localStatusLabel || r.localStatus) + ' · 看到第 ' + (r.localEp || 0) + ' 集')
+                    : '本地：无';
+                const remoteTxt = r.remoteStatus
+                    ? ('云端：' + (r.remoteStatusLabel || r.remoteStatus) + ' · 看到第 ' + (r.remoteEp || 0) + ' 集')
+                    : '云端：无';
+                return '<div class="bmp-diff-row" data-idx="' + i + '">'
+                    + '<div class="bmp-diff-title"><span class="bmp-diff-kind">' + (kindLabel[r.kind] || r.kind) + '</span>'
+                    + esc(r.title || '') + '</div>'
+                    + '<div class="bmp-diff-meta">' + esc(localTxt) + '<i>·</i>' + esc(remoteTxt) + '</div>'
+                    + '<div class="bmp-diff-btns">'
+                    + '<button class="bmp-pick" data-act="pick" data-idx="' + i + '" data-side="local">保留本地</button>'
+                    + '<button class="bmp-pick" data-act="pick" data-idx="' + i + '" data-side="remote">用云端</button>'
+                    + '</div></div>';
+            }).join('')
+            + '<div class="bmp-diff-foot"><button class="btn btn-sm" data-act="apply-diff">应用全部选择</button>'
+            + '<span class="bmp-diff-count" id="bmpDiffCount"></span></div>';
+        paintChoice();
+    }
+
+    function paintChoice() {
+        document.querySelectorAll('#bmpDiff .bmp-diff-row').forEach((row) => {
+            const i = Number(row.dataset.idx);
+            const side = diffChoice.get(i);
+            row.querySelectorAll('.bmp-pick').forEach((b) => {
+                b.classList.toggle('active', b.dataset.side === side);
+            });
+            row.dataset.side = side || '';
+        });
+        const c = document.getElementById('bmpDiffCount');
+        if (c) c.textContent = '已选 ' + diffRows.length + ' 条（本地 ' +
+            Array.from(diffChoice.values()).filter((v) => v === 'local').length + ' / 云端 ' +
+            Array.from(diffChoice.values()).filter((v) => v === 'remote').length + '）';
     }
 
     async function onClick(e) {
@@ -118,6 +181,35 @@
                 const r = await post('/api/bangumi/disconnect', {});
                 msg(r && r.code === 0 ? '已断开 Bangumi' : '断开失败', r && r.code === 0);
                 if (r && r.code === 0) render();
+                free(); return;
+            }
+            if (act === 'diff') {
+                busy(); syncMsg('正在比对 Bangumi 与本地…', true);
+                const r = await api('/api/bangumi/diff');
+                renderDiff(r);
+                syncMsg(r && r.code === 0 ? '对比完成，请逐条选择' : ((r && r.msg) || '对比失败'), !!(r && r.code === 0));
+                free(); return;
+            }
+            if (act === 'pick') {
+                const i = Number(b.dataset.idx);
+                diffChoice.set(i, b.dataset.side);
+                paintChoice();
+                return;
+            }
+            if (act === 'apply-diff') {
+                if (!diffRows.length) return;
+                busy();
+                const items = diffRows.map((r, i) => Object.assign({}, r, { choice: diffChoice.get(i) || 'local' }));
+                syncMsg('正在应用 ' + items.length + ' 条选择…', true);
+                const r = await post('/api/bangumi/apply', { items });
+                if (r && r.code === 0) {
+                    const d = r.data || {};
+                    syncMsg('已应用 ' + (d.applied || 0) + ' 条' +
+                        (d.failed ? ('，失败 ' + d.failed + ' 条：' + (d.details || []).filter(x => !x.ok).map(x => x.title).slice(0, 3).join('、')) : ''),
+                        !d.failed);
+                    const box = document.getElementById('bmpDiff');
+                    if (box) box.innerHTML = '<div class="bmp-diff-empty">已应用。可再点「逐条对比」复查是否还有差异。</div>';
+                } else syncMsg((r && r.msg) || '应用失败', false);
                 free(); return;
             }
             if (['pull', 'push', 'sync'].includes(act)) {

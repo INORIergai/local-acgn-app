@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.7.0'
+TAG = 'v6.8.0'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,16 +35,23 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.7.0：追番在线源闭环（用户质疑修正 + Kazumi/Animeko 逆向落地）
+COMMIT_MSG = """v6.8.0：追番从"搜到"变成"点一下就播"
 
-- 全网多源搜在线源：追番详情页「搜在线源」并发18源，实测命中10源；选源挂载到分集，点「在线」内置播放器播放
-- 修流地址解析：跳转壳 url= 参数解码真 m3u8、播放器JS拼错域名清洗、types集号字段映射修正
-- 在线播放进度回写分集：追番「继续看」真正闭环（10秒节流+关闭补写+按上次进度续播）
-- 剧集解析浏览器兜底：静态选择器失败时开浏览器抓 JS 渲染的剧集链接
-- 订阅刷新常态化：进追番页检查新鲜度，超7天自动拉最新规则；24个最新源固化为内置规则随包出厂
-- 附 Kazumi/Animeko 完整逆向报告 + 7维度对比调研
+A 档 · 看番链路
+- 自动选源：点「+ 追番」后自动回填分集 → 全网搜源 → 按标题相似度+tier 选最优 → 直接挂上，全程不用手点（失败才降级成手动选源）
+- 季号对齐：追第一季不会再被自动挂到第二季（归一化会抹掉季号，加权重修正）
+- 失败五态：success/noResult/error/captcha 分开计数，搜不到时能看出是源挂了、无结果、还是要人机验证
+- 验证码救回：需验证的源可一键开有头浏览器自己过，过完 Cookie 落盘复用；连续失败 3 次的源冷却 24h
+- 新增 json-api 源工厂：受限 JSONPath（禁过滤器/递归/切片）跑通稀饭动漫 Next，搜索→剧集→签发播放地址全链路
+- 在线播放补弹幕/字幕匹配：展示标题「番名 · 第N集」洗成「番名 第01话」再喂弹弹play 与本地字幕库；在线流不再白跑一次同目录字幕扫描
+- 修在线播放跳过 OP/ED 读不到 DB 区间（此前只有本地播放分支传了 episode）
 
-真机闭环全绿：搜源10/18、挂6集、进度回写、freshness 有效。承接 v6.6.0。"""
+B 档 · 管理与同步
+- 追番补「搁置/抛弃」两态，看板 5 态 + 全部，卡片显示状态徽章
+- Bangumi 逐条冲突对比：先出差异清单（冲突/云端独有/本地独有），逐条选「保留本地」或「用云端」，不再无脑整批覆盖
+- 进度双键：episode 记住 Bangumi 集号 + 独立账本，番剧重建后按集号把进度接回来
+
+验收：追番页 UI 6 tab / 卡片 5 按钮 / 详情 7 集全绿，页面零报错；json-api 三段落实测通；双键账本写入与恢复实测通。承接 v6.7.0。"""
 
 
 def get_token():

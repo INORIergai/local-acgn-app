@@ -118,4 +118,21 @@ router.post('/sync', async (req, res) => {
     catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
+// round185 B2：先看差异（只读），再由用户逐条选「保留本地」还是「用云端」
+router.get('/diff', async (req, res) => {
+    try {
+        if (!oauth.getToken()) return res.json({ code: -1, msg: '未连接 Bangumi' });
+        res.json({ code: 0, data: await sync.diff() });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/apply', async (req, res) => {
+    try {
+        if (!oauth.getToken()) return res.json({ code: -1, msg: '未连接 Bangumi' });
+        const items = (req.body && req.body.items) || [];
+        if (!Array.isArray(items) || !items.length) return res.json({ code: -1, msg: '没有要应用的条目' });
+        res.json({ code: 0, data: await sync.applyConflicts(items) });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
 module.exports = router;

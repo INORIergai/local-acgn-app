@@ -73,6 +73,202 @@ function sanitizeStreamUrl(u) {
     return s;
 }
 
+// ==================================================================
+// round185 · json-api 工厂的底座：受限 JSONPath / 模板 / 请求头
+// ==================================================================
+/**
+ * 受限 JSONPath 求值，**只认** `$` / `.key` / `[*]` 三种语法。
+ * 明确拒绝：过滤器 `[?(...)]`、递归 `..`、切片 `[0:2]`、函数调用、脚本表达式。
+ * 订阅规则来自第三方仓库，本质是外部输入 —— 不能给它 eval 的能力。
+ * 返回**始终是数组**（表达式取到单值也包一层），调用方用 jpathFirst 取首个。
+ */
+function jpathAll(root, expr) {
+    if (typeof expr !== 'string') return [];
+    const p = expr.trim();
+    if (!p.startsWith('$')) return [];
+    // 沙箱闸：出现这些一律当非法表达式，宁可这条源不出结果，也不执行外部语法
+    if (/\[\?|\.\.|\[\s*-?\d*\s*:\s*-?\d*\s*\]|\(|\)|\{|\}|=>|;\s*\w/.test(p)) return [];
+    let cur = [root];
+    for (const seg of p.slice(1).split('.')) {
+        if (!seg) continue;
+        const m = /^([^\[\]]*)((?:\[\*\])*)$/.exec(seg);
+        if (!m) return [];
+        const key = m[1];
+        if (key) {
+            cur = cur.map((v) => (v == null ? null : v[key])).filter((v) => v !== undefined && v !== null);
+        }
+        if (m[2]) cur = cur.flat().filter((v) => v !== undefined && v !== null);
+    }
+    return cur;
+}
+function jpathFirst(root, expr) {
+    const a = jpathAll(root, expr);
+    return a.length ? a[0] : '';
+}
+
+/** `apikey: xxx\nOrigin: yyy` 文本 → 对象（订阅规则里 headers 就是这种换行格式） */
+function parseHeaderText(t) {
+    const out = {};
+    String(t || '').split(/\r?\n/).forEach((line) => {
+        const i = line.indexOf(':');
+        if (i <= 0) return;
+        const k = line.slice(0, i).trim();
+        const v = line.slice(i + 1).trim();
+        if (k) out[k] = v;
+    });
+    return out;
+}
+
+/**
+ * json-api 请求头。
+ * ★ 坑：grab 默认只带 UA/Accept，非 GET 请求缺 Content-Type 时 fetch 会按 text/plain
+ * 发出去，Supabase 那类 RPC 网关会**静默忽略 body 并返回默认列表** —— 表现为
+ * 「搜什么都能搜到，但结果跟关键词毫无关系」，比报错还难查。
+ */
+function apiHeaders(sc, req) {
+    const h = Object.assign(parseHeaderText((sc && sc.headers) || ''), parseHeaderText((req && req.headers) || ''));
+    const m = String((req && req.method) || 'GET').toUpperCase();
+    if (m !== 'GET' && !Object.keys(h).some((k) => k.toLowerCase() === 'content-type')) {
+        h['Content-Type'] = 'application/json';
+    }
+    return h;
+}
+
+/** URL 模板：值按 percent-encoding（{keyword} 进 query 必须编码） */
+function fillUrlTemplate(tpl, vars) {
+    return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : encodeURIComponent(String(vars[k]))));
+}
+/** Body 模板：字符串按 JSON 转义（关键词带引号不能把 body 拼坏），数字原样 */
+function fillBodyTemplate(tpl, vars) {
+    return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => {
+        if (vars[k] == null) return m;
+        const v = vars[k];
+        if (typeof v === 'number' && isFinite(v)) return String(v);
+        return JSON.stringify(String(v)).slice(1, -1);
+    });
+}
+
+/** 从详情页 URL 抠出源站自己的条目 id（模板反解优先，退化为末段路径） */
+function idFromDetailUrl(url, tpl) {
+    const t = String(tpl || '');
+    if (t && t.includes('{id}')) {
+        const re = new RegExp('^' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{id\\}', '([^/?#]+)') + '$');
+        const m = re.exec(String(url || ''));
+        if (m && m[1]) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
+    }
+    try {
+        const p = new URL(url);
+        const segs = p.pathname.split('/').filter(Boolean);
+        const last = segs[segs.length - 1] || '';
+        return decodeURIComponent(last.replace(/\.(html?|php|shtml)$/i, ''));
+    } catch (e) { return ''; }
+}
+
+// ==================================================================
+// round185 · 失败五态（pending / success / noResult / error / captcha）
+// ==================================================================
+/** 需要人机验证的特征词。命中就不是"站点改版"，救法也完全不同。 */
+const CAPTCHA_RE = /(请输入验证码|人机验证|安全验证|滑动验证|请完成验证|访问验证|Just a moment|cf-challenge|challenge-platform|Enable JavaScript and cookies|Attention Required|Cloudflare)/i;
+
+function classifyHttp(r) {
+    if (!r) return { state: 'error', error: '无响应' };
+    if (!r.status) return { state: 'error', error: r.error || '网络错误' };
+    const head = (r.text || '').slice(0, 6000);
+    if (r.status === 403 || r.status === 429 || r.status === 503) {
+        const cap = CAPTCHA_RE.test(head);
+        return { state: cap ? 'captcha' : 'error', error: 'HTTP ' + r.status + (cap ? '（需人机验证）' : '') };
+    }
+    if (r.status >= 400) return { state: 'error', error: 'HTTP ' + r.status };
+    if (CAPTCHA_RE.test(head)) return { state: 'captcha', error: '需要人机验证' };
+    return { state: 'success', error: '' };
+}
+
+// 源黑名单：连续失败 3 次冷却 24h，成功一次立即清零。
+// 目的不是惩罚源，而是别让用户每次搜源都白等 20 个必挂的站。
+const BLACKLIST_FILE = path.join(__dirname, '..', '..', 'data', 'media-sources', 'blacklist.json');
+
+// round185 A2：人机验证过后的 cookie。过验证用的是有头浏览器（见 verify.js），
+// 过完把 storageState 的 cookies 落盘，之后 fetch 请求自动带上——否则用户白过一遍验证。
+const COOKIE_DIR = path.join(__dirname, '..', '..', 'data', 'media-sources', 'cookies');
+
+function cookieFileOf(sourceId) {
+    return path.join(COOKIE_DIR, encodeURIComponent(String(sourceId)) + '.json');
+}
+
+/** 取某源的 Cookie 请求头（没有就返回空串） */
+function sourceCookieHeader(sourceId) {
+    try {
+        const f = cookieFileOf(sourceId);
+        if (!fs.existsSync(f)) return '';
+        const arr = JSON.parse(fs.readFileSync(f, 'utf8'));
+        if (!Array.isArray(arr)) return '';
+        const now = Date.now() / 1000;
+        return arr
+            .filter((c) => c && c.name && c.value && (!c.expires || c.expires < 0 || c.expires > now))
+            .map((c) => `${c.name}=${c.value}`)
+            .join('; ');
+    } catch (e) { return ''; }
+}
+
+function saveSourceCookies(sourceId, cookies) {
+    try {
+        fs.mkdirSync(COOKIE_DIR, { recursive: true });
+        fs.writeFileSync(cookieFileOf(sourceId), JSON.stringify(cookies || [], null, 2), 'utf8');
+        return true;
+    } catch (e) { return false; }
+}
+
+function clearSourceCookies(sourceId) {
+    try {
+        const f = cookieFileOf(sourceId);
+        if (fs.existsSync(f)) fs.unlinkSync(f);
+        return true;
+    } catch (e) { return false; }
+}
+const FAIL_LIMIT = 3;
+const COOLDOWN_MS = 24 * 3600 * 1000;
+
+function loadBlacklist() {
+    try { return JSON.parse(fs.readFileSync(BLACKLIST_FILE, 'utf8')) || {}; } catch (e) { return {}; }
+}
+function saveBlacklist(o) {
+    try {
+        fs.mkdirSync(path.dirname(BLACKLIST_FILE), { recursive: true });
+        fs.writeFileSync(BLACKLIST_FILE, JSON.stringify(o, null, 2), 'utf8');
+    } catch (e) { /* 写不进去不影响搜索，只是下次还得再等一次 */ }
+}
+/** 记一次失败。只有 error / captcha 计数；noResult 属于规则问题，不冷却（刷新订阅就能救） */
+function noteFailure(sourceId, state) {
+    if (!sourceId) return;
+    if (state !== 'error' && state !== 'captcha') return;
+    const all = loadBlacklist();
+    const rec = all[sourceId] || { fails: 0 };
+    rec.fails = (rec.fails || 0) + 1;
+    rec.at = Date.now();
+    rec.reason = state;
+    if (rec.fails >= FAIL_LIMIT) rec.until = Date.now() + COOLDOWN_MS;
+    all[sourceId] = rec;
+    saveBlacklist(all);
+}
+function noteSuccess(sourceId) {
+    if (!sourceId) return;
+    const all = loadBlacklist();
+    if (all[sourceId]) { delete all[sourceId]; saveBlacklist(all); }
+}
+/** 是否在冷却期。返回 { cooling, until, fails, reason } */
+function cooldownOf(sourceId) {
+    const rec = loadBlacklist()[sourceId];
+    if (!rec) return { cooling: false, until: 0, fails: 0, reason: '' };
+    const cooling = rec.until && rec.until > Date.now();
+    return { cooling, until: rec.until || 0, fails: rec.fails || 0, reason: rec.reason || '' };
+}
+function clearCooldown(sourceId) {
+    const all = loadBlacklist();
+    if (sourceId) delete all[sourceId];
+    else Object.keys(all).forEach((k) => delete all[k]);
+    saveBlacklist(all);
+}
+
 /**
  * 抓一个 URL，返回 { ok, status, buf, text, headers, error }。
  * 代理配了就先走代理；代理层炸了（拒连 / 502 / 超时 / SSL 被掐）立刻直连补一发。
@@ -160,7 +356,9 @@ function loadSources(force) {
         }
         const args = def.arguments || {};
         const sc = args.searchConfig || {};
-        const host = hostOf(sc.searchUrl || '');
+        // json-api 源没有 searchUrl，入口在 search.request.url；统一给一个「搜索地址」便于状态灯/UI
+        const searchEntry = sc.searchUrl || String((sc.search && sc.search.request && sc.search.request.url) || '');
+        const host = hostOf(searchEntry);
         const rec = {
             id: rel.replace(/\.json$/, ''),
             name: args.name || rel.replace(/\.json$/, ''),
@@ -171,7 +369,7 @@ function loadSources(force) {
             kind: def.factoryId === 'rss' ? 'bt' : 'web',
             tier: typeof args.tier === 'number' ? args.tier : 9,
             host,
-            searchUrl: sc.searchUrl || '',
+            searchUrl: searchEntry,
             origin,
             def
         };
@@ -230,8 +428,9 @@ function urlCandidates(text) {
 }
 
 async function searchOn(source, keyword, opts = {}) {
+    if (source.factoryId === 'json-api') return searchOnApi(source, keyword, opts);
     const sc = source.def.arguments.searchConfig || {};
-    if (!sc.searchUrl) return { items: [], error: '该源没有搜索地址' };
+    if (!sc.searchUrl) return { items: [], error: '该源没有搜索地址', state: 'error' };
 
     const kw = sc.searchUseOnlyFirstWord ? firstWord(keyword) : String(keyword || '').trim();
     let url = sc.searchUrl.replace('{keyword}', encodeURIComponent(kw));
@@ -242,13 +441,63 @@ async function searchOn(source, keyword, opts = {}) {
     url = url.replace(/[^\x21-\x7E]/g, (c) => encodeURIComponent(c))
         .replace(/[\[\]{}"<>\\^`| ]/g, (c) => encodeURIComponent(c));
 
-    const r = await grab(url, { timeout: opts.timeout || 15000, referer: url });
-    if (!r.ok || !r.text) return { items: [], error: r.error || ('HTTP ' + r.status) };
+    const r = await grab(url, { timeout: opts.timeout || 15000, referer: url,
+        cookie: opts.cookie || sourceCookieHeader(source.id) });
+    const cls = classifyHttp(r);
+    if (cls.state !== 'success') return { items: [], error: cls.error, state: cls.state };
 
-    if (source.factoryId === 'rss') return parseRss(r.text, source, kw);
+    if (source.factoryId === 'rss') {
+        const rr = parseRss(r.text, source, kw);
+        return Object.assign(rr, { state: rr.items.length ? 'success' : 'noResult' });
+    }
 
     const items = parseSearchPage(r.text, source, url);
-    return { items, error: items.length ? '' : '选择器没匹配到条目（站点可能改版）' };
+    return { items, error: items.length ? '' : '选择器没匹配到条目（站点可能改版）',
+             state: items.length ? 'success' : 'noResult' };
+}
+
+/**
+ * round185 · json-api 工厂（稀饭动漫 Next 这类纯 RPC 源）。
+ * 与 web-selector 的本质区别：没有可解析的 HTML，全部是 JSON 接口 + 受限 JSONPath。
+ */
+async function searchOnApi(source, keyword, opts = {}) {
+    const sc = source.def.arguments.searchConfig || {};
+    const cfg = sc.search || {};
+    const req = cfg.request || {};
+    if (!req.url) return { items: [], error: 'json-api 源缺少 search.request.url', state: 'error' };
+
+    const pageSize = Number(cfg.pageSize) || 20;
+    const vars = { keyword: String(keyword || '').trim(), page: 1, pageSize };
+    const headers = apiHeaders(sc, req);
+    const method = String(req.method || 'GET').toUpperCase();
+
+    const r = await grab(fillUrlTemplate(req.url, vars), {
+        timeout: opts.timeout || 15000,
+        method,
+        body: method === 'GET' ? undefined : fillBodyTemplate(req.body, vars),
+        headers
+    });
+    const cls = classifyHttp(r);
+    if (cls.state !== 'success') return { items: [], error: cls.error, state: cls.state };
+
+    let data;
+    try { data = JSON.parse(r.text); } catch (e) {
+        return { items: [], error: '响应不是 JSON（可能被 WAF 拦截）', state: 'noResult' };
+    }
+    const list = jpathAll(data, cfg.selectItems || '$[*]');
+    const items = [];
+    for (const it of list) {
+        const name = String(jpathFirst(it, cfg.selectName || '$.title') || '').replace(/\s+/g, ' ').trim();
+        const id = jpathFirst(it, cfg.selectId || '$.id');
+        if (!name || id === '') continue;
+        const url = fillUrlTemplate(cfg.subjectUrlTemplate || '', { id });
+        if (!/^https?:\/\//i.test(url)) continue;
+        if (items.some((x) => x.url === url)) continue;
+        items.push({ name, url, sourceId: source.id, sourceName: source.name,
+                     tier: source.tier, kind: 'web', entryId: String(id) });
+    }
+    return { items, error: items.length ? '' : 'JSONPath 没取到条目（规则可能过期）',
+             state: items.length ? 'success' : 'noResult' };
 }
 
 /**
@@ -380,8 +629,12 @@ function parseRss(xml, source, kw) {
 // 剧集
 // ==================================================================
 async function episodesOf(source, detailUrl, opts = {}) {
-    const r = await grab(detailUrl, { timeout: opts.timeout || 15000 });
-    if (!r.ok || !r.text) return { episodes: [], error: r.error || ('HTTP ' + r.status) };
+    if (source.factoryId === 'json-api') return episodesOfApi(source, detailUrl, opts);
+    const r = await grab(detailUrl, { timeout: opts.timeout || 15000,
+        cookie: opts.cookie || sourceCookieHeader(source.id) });
+    const cls = classifyHttp(r);
+    if (cls.state !== 'success') return { episodes: [], error: cls.error, state: cls.state };
+    if (!r.text) return { episodes: [], error: '响应为空', state: 'noResult' };
 
     const $ = cheerio.load(r.text);
     const sc = source.def.arguments.searchConfig || {};
@@ -496,20 +749,111 @@ async function episodesOf(source, detailUrl, opts = {}) {
                     return { name: e.name, sort: m ? parseFloat(m[1]) : i + 1,
                              channel: '', channelTier: 0, url: e.url };
                 });
-                return { episodes: lit, error: '', via: 'browser' };
+                return { episodes: lit, error: '', via: 'browser', state: 'success' };
             }
         } catch (e) { /* 浏览器也失败就走下面的空结果 */ }
     }
-    return { episodes: list, error: list.length ? '' : '没解析到剧集（站点可能改版）' };
+    return { episodes: list, error: list.length ? '' : '没解析到剧集（站点可能改版）',
+             state: list.length ? 'success' : 'noResult' };
+}
+
+/** round185 · json-api 剧集：subject.request 拿详情 JSON，按 grouped 频道 + episodes 模板展开 */
+async function episodesOfApi(source, detailUrl, opts = {}) {
+    const sc = source.def.arguments.searchConfig || {};
+    const subj = sc.subject || {};
+    const req = subj.request || {};
+    if (!req.url) return { episodes: [], error: 'json-api 源缺少 subject.request.url', state: 'error' };
+
+    const subjectId = idFromDetailUrl(detailUrl, (sc.search && sc.search.subjectUrlTemplate) || '');
+    if (!subjectId) return { episodes: [], error: '无法从详情页地址解析条目 id', state: 'error' };
+
+    const headers = apiHeaders(sc, req);
+    const method = String(req.method || 'GET').toUpperCase();
+    const vars = { id: subjectId, subjectId };
+    const r = await grab(fillUrlTemplate(req.url, vars), {
+        timeout: opts.timeout || 15000,
+        method,
+        body: method === 'GET' ? undefined : fillBodyTemplate(req.body, vars),
+        headers
+    });
+    const cls = classifyHttp(r);
+    if (cls.state !== 'success') return { episodes: [], error: cls.error, state: cls.state };
+
+    let data;
+    try { data = JSON.parse(r.text); } catch (e) {
+        return { episodes: [], error: '响应不是 JSON（可能被 WAF 拦截）', state: 'noResult' };
+    }
+
+    const ep = subj.episodes || {};
+    const grouped = subj.channelFormatGrouped || {};
+    const channelTiers = source.def.arguments.channelTiers || {};
+
+    const mkEp = (e, i, ch) => {
+        const name = String(jpathFirst(e, ep.selectName || '$.title') || '').trim();
+        const id = jpathFirst(e, ep.selectId || '$.id');
+        const sortRaw = jpathFirst(e, ep.selectSort || '$.episode_number');
+        const sort = parseFloat(String(sortRaw).replace(/[^\d.]/g, ''));
+        const url = fillUrlTemplate(ep.episodeUrlTemplate || '', { id, subjectId, sort, name });
+        if (!id || !url) return null;
+        const display = ep.nameTemplate
+            ? fillBodyTemplate(ep.nameTemplate, { sort: isNaN(sort) ? i + 1 : sort, name })
+            : (name || `第${isNaN(sort) ? i + 1 : sort}集`);
+        return {
+            name: String(display || '').trim() || `第${i + 1}集`,
+            sort: isNaN(sort) ? NaN : sort,
+            channel: ch || '',
+            channelTier: (ch && channelTiers[ch] != null) ? channelTiers[ch] : 0,
+            url
+        };
+    };
+
+    /* ★ 关键：订阅规则的 episodes 选择器写的是「相对当前分组」(`$.episodes[*]`)，
+     * 而真实响应是 { anime, sources: [{ name, episodes: [] }] } —— 必须先在组内求值，
+     * 直接对顶层文档求值会一条都取不到（这是 round185 实测踩的坑）。 */
+    const groups = grouped.selectChannels ? jpathAll(data, grouped.selectChannels) : [];
+    const list = [];
+    let seg = 0;
+    const groupedWorked = groups.some((g) => jpathAll(g, ep.selectEpisodes || '$.episodes[*]').length > 0);
+    if (groups.length && groupedWorked) {
+        groups.forEach((g) => {
+            const ch = String(jpathFirst(g, grouped.selectChannelName || '$.name') || '').trim();
+            jpathAll(g, ep.selectEpisodes || '$.episodes[*]').forEach((e) => {
+                const rec = mkEp(e, seg++, ch);
+                if (rec) list.push(rec);
+            });
+        });
+    } else {
+        jpathAll(data, ep.selectEpisodes || '$.episodes[*]').forEach((e) => {
+            const rec = mkEp(e, seg++, '');
+            if (rec) list.push(rec);
+        });
+    }
+
+    if (!list.length) return { episodes: [], error: 'JSONPath 没取到剧集（规则可能过期）', state: 'noResult' };
+
+    // 同序号去重，保留 tier 更优的频道（与 web-selector 一致）
+    const best = new Map();
+    list.forEach((e) => {
+        const key = isNaN(e.sort) ? e.name : '#' + e.sort;
+        const old = best.get(key);
+        if (!old || e.channelTier < old.channelTier) best.set(key, e);
+    });
+    const out = Array.from(best.values()).sort((a, b) => {
+        if (!isNaN(a.sort) && !isNaN(b.sort)) return a.sort - b.sort;
+        return a.name.localeCompare(b.name, 'zh', { numeric: true });
+    });
+    return { episodes: out, error: '', state: 'success' };
 }
 
 // ==================================================================
 // 解析真流地址
 // ==================================================================
 async function resolveVideo(source, episodeUrl, opts = {}) {
+    if (source.factoryId === 'json-api') return resolveVideoApi(source, episodeUrl, opts);
     const sc = source.def.arguments.searchConfig || {};
     const mv = sc.matchVideo || {};
-    const cookie = mv.cookies || '';
+    // round185 A2：规则里写死的 cookie 优先，没有就用「过验证」时存下来的
+    const cookie = mv.cookies || sourceCookieHeader(source.id) || '';
 
     let r = await grab(episodeUrl, { timeout: opts.timeout || 15000, cookie, referer: episodeUrl });
     if (!r.ok || !r.text) return { url: '', error: r.error || ('HTTP ' + r.status) };
@@ -607,6 +951,57 @@ async function resolveVideo(source, episodeUrl, opts = {}) {
     return { url, headers, cookie: cookie || '', referer: headers.Referer, ua: headers['User-Agent'], from: finalUrl };
 }
 
+/** round185 · json-api 播放地址：play.request 签发 → candidates[].url，静态直出无需浏览器嗅探 */
+async function resolveVideoApi(source, episodeUrl, opts = {}) {
+    const sc = source.def.arguments.searchConfig || {};
+    const play = sc.play || {};
+    const req = play.request || {};
+    if (!req.url) return { url: '', error: 'json-api 源缺少 play.request.url', state: 'error' };
+
+    const episodeId = idFromDetailUrl(episodeUrl, (sc.subject && sc.subject.episodes && sc.subject.episodes.episodeUrlTemplate) || '');
+    if (!episodeId) return { url: '', error: '无法从剧集地址解析 episode id', state: 'error' };
+
+    const headers = apiHeaders(sc, req);
+    const method = String(req.method || 'GET').toUpperCase();
+    const vars = { id: episodeId, episodeId };
+    const r = await grab(fillUrlTemplate(req.url, vars), {
+        timeout: opts.timeout || 15000,
+        method,
+        body: method === 'GET' ? undefined : fillBodyTemplate(req.body, vars),
+        headers,
+        referer: play.referer || episodeUrl
+    });
+    const cls = classifyHttp(r);
+    if (cls.state !== 'success') return { url: '', error: cls.error, state: cls.state };
+
+    let data;
+    try { data = JSON.parse(r.text); } catch (e) {
+        return { url: '', error: '播放接口返回不是 JSON', state: 'noResult' };
+    }
+    const cands = jpathAll(data, play.selectCandidates || '$.candidates[*]');
+    if (!cands.length) return { url: '', error: '播放接口没返回候选项（可能该集未上线）', state: 'noResult' };
+
+    const pickUrl = (c) => String(jpathFirst(c, play.selectVideoUrl || '$.url') || '');
+    let url = '';
+    for (const c of cands) {
+        const u = pickUrl(c);
+        if (/^https?:\/\//i.test(u)) { url = sanitizeStreamUrl(u); break; }
+    }
+    if (!url) return { url: '', error: '候选项里没有可用地址', state: 'noResult' };
+
+    const referer = play.referer || '';
+    return {
+        url,
+        headers: { Referer: referer || episodeUrl, 'User-Agent': UA },
+        cookie: '',
+        referer: referer || episodeUrl,
+        ua: UA,
+        from: episodeUrl,
+        via: 'json-api',
+        state: 'success'
+    };
+}
+
 // ==================================================================
 // 源状态灯 + 订阅刷新
 // ==================================================================
@@ -617,7 +1012,9 @@ async function probeSource(source, force) {
     const hit = statusCache.get(source.id);
     if (!force && hit && Date.now() - hit.at < STATUS_TTL) return hit;
     const t0 = Date.now();
-    const base = source.searchUrl ? (source.searchUrl.split('?')[0] || source.searchUrl) : '';
+    const sc0 = source.def.arguments.searchConfig || {};
+    const base = source.searchUrl ? (source.searchUrl.split('?')[0] || source.searchUrl)
+        : String((sc0.search && sc0.search.request && sc0.search.request.url) || '').replace(/^([^:]+:\/\/[^/]+).*$/, '$1');
     let res;
     if (!base) res = { ok: false, ms: 0, error: '无搜索地址' };
     else {
@@ -700,6 +1097,19 @@ module.exports = {
     refreshSubscription,
     grab,
     absUrl,
+    // round185：json-api 底座 + 失败五态 + 源黑名单
+    jpathAll,
+    jpathFirst,
+    classifyHttp,
+    cooldownOf,
+    clearCooldown,
+    noteFailure,
+    noteSuccess,
+    sourceCookieHeader,
+    saveSourceCookies,
+    clearSourceCookies,
     OVERRIDE_DIR,
-    BUILTIN_DIR
+    BUILTIN_DIR,
+    BLACKLIST_FILE,
+    COOKIE_DIR
 };
