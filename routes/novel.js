@@ -135,8 +135,9 @@ function getNovelContent(filePath, novelId) {
     } else if (ext === '.pdf') {
         // PDF需要特殊处理
         return { title: path.basename(filePath), chapters: [], content: 'PDF格式暂不支持在线阅读' };
-    } else if (ext === '.mobi' || ext === '.azw3') {
-        return { title: path.basename(filePath), chapters: [], content: 'Mobi/AZW3格式暂不支持在线阅读' };
+    } else if (ext === '.mobi' || ext === '.azw3' || ext === '.azw') {
+        const { parseMobiOrAzw3 } = require('../utils/mobi-reader');
+        return parseMobiOrAzw3(filePath, novelId);
     }
     
     return { title: path.basename(filePath), chapters: [], content: '不支持的格式' };
@@ -297,8 +298,13 @@ function getEpubContent(filePath, novelId) {
             const spineMatches = [...opfXml.matchAll(/<itemref[^>]+idref="([^"]+)"[^>]*>/gi)];
             const spineOrder = spineMatches.map(m => m[1]);
             
-            // 读取每个HTML文件的内容
-            const opfDir = path.dirname(opfEntry.entryName).replace(/\\/g, '/');
+            /* 读取每个HTML文件的内容
+               ★ round117：这里原来是 `const opfDir`，下一行又给它赋值 ''。
+                 只要 .opf 位于压缩包根目录（opfDir === '.'），这一行就抛
+                 `TypeError: Assignment to constant variable`，被外层 catch 吞掉
+                 ⇒ 整本 EPUB 返回 0 章节 ⇒ 阅读器只显示「无法读取小说内容」。
+                 抽样 8 本 EPUB 有 3 本属于这种结构（opf 在根），不是小概率。 */
+            let opfDir = path.dirname(opfEntry.entryName).replace(/\\/g, '/');
             if (opfDir === '.') opfDir = '';
 
             const seen = new Set();
@@ -583,6 +589,14 @@ router.get('/:id/info', (req, res) => {
                 title: content.title || novel.title,
                 filePath: novel.filePath,
                 format: path.extname(novel.filePath).replace('.', '').toLowerCase(),
+                /* round117：前端据此决定走「文字章节」还是「PDF 逐页」
+                   —— 只判 format 就够，但 mobi/azw3 要能给一句人话而不是红字报错 */
+                readKind: (function () {
+                    const e = path.extname(novel.filePath).toLowerCase();
+                    if (e === '.pdf') return 'pdf';
+                    if (e === '.mobi' || e === '.azw3' || e === '.azw') return 'text';
+                    return 'text';
+                })(),
                 isEpub: !!content.isEpub,
                 totalChapters: content.chapters.length,
                 currentChapter: progress.chapter,
@@ -599,6 +613,53 @@ router.get('/:id/info', (req, res) => {
         });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
+    }
+});
+
+/**
+ * 直出 PDF 原文件（round117）
+ * ------------------------------------------------------------------
+ * 小说库里有 433 本 PDF（实测），原来 getNovelContent 对 .pdf 直接返回
+ * `chapters: []` ⇒ 阅读器拿到 totalChapters=0 ⇒ 满屏「无法读取小说内容」。
+ * 这个接口把文件吐给前端，由 novel-reader.html 里的 pdf.js 逐页渲染
+ * （和漫画阅读器同一套做法，pdf.js 已在 node_modules / public/pdfjs 就位）。
+ *
+ * 写法对齐 routes/comic.js 的同名接口：先 stat 给确定的状态码，再给流挂
+ * error/close —— 老式 createReadStream().pipe(res) 在文件读不到时会抛未捕获
+ * 错误，客户端只能看到断流（表现为「PDF 加载失败」）。
+ */
+router.get('/:id/pdf', (req, res) => {
+    try {
+        const novel = getMovieById.get(req.params.id);
+        if (!novel) return res.status(404).json({ code: -1, msg: '小说不存在' });
+
+        const ext = path.extname(novel.filePath || '').toLowerCase();
+        if (ext !== '.pdf') return res.status(400).json({ code: -1, msg: '该条目不是 PDF' });
+
+        let stat = null;
+        try {
+            stat = fs.statSync(novel.filePath);
+        } catch (e) {
+            return res.status(404).json({ code: -1, msg: `PDF 文件不可访问（${e.code || e.message}）：${novel.filePath}` });
+        }
+        if (!stat.isFile() || stat.size === 0) {
+            return res.status(422).json({ code: -1, msg: 'PDF 文件为空或不是普通文件' });
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline');
+        res.setHeader('Content-Length', String(stat.size));
+        res.setHeader('Accept-Ranges', 'none');   // 我们只做整文件直出，避免 pdf.js 发 Range 后拿到 200 半截
+
+        const stream = fs.createReadStream(novel.filePath);
+        stream.on('error', (e) => {
+            if (!res.headersSent) res.status(500).json({ code: -1, msg: '读取 PDF 失败: ' + (e.code || e.message) });
+            else try { res.destroy(); } catch (_) { }
+        });
+        res.on('close', () => { try { stream.destroy(); } catch (_) { } });
+        return stream.pipe(res);
+    } catch (e) {
+        res.status(500).json({ code: -1, msg: '读取失败: ' + e.message });
     }
 });
 
@@ -630,6 +691,28 @@ router.get('/:id/asset/*', (req, res) => {
     }
 });
 
+/**
+ * 读取 MOBI / AZW3 内嵌图片资源
+ */
+router.get('/:id/mobi-image/:idx', (req, res) => {
+    try {
+        const novel = getMovieById.get(req.params.id);
+        if (!novel) return res.status(404).send('小说不存在');
+        const ext = path.extname(novel.filePath || '').toLowerCase();
+        if (ext !== '.mobi' && ext !== '.azw3' && ext !== '.azw') return res.status(404).send('非 MOBI/AZW3');
+        const idx = parseInt(req.params.idx, 10);
+        if (!idx || idx < 1) return res.status(400).send('无效索引');
+        const { readMobiImage } = require('../utils/mobi-reader');
+        const img = readMobiImage(novel.filePath, idx);
+        if (!img || !img.buffer) return res.status(404).send('图片不存在');
+        res.setHeader('Content-Type', img.mime || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        res.send(img.buffer);
+    } catch (e) {
+        res.status(500).send(e.message);
+    }
+});
+
 // 获取小说章节内容
 router.get('/:id/chapter/:chapterIndex', (req, res) => {
     try {
@@ -656,6 +739,80 @@ router.get('/:id/chapter/:chapterIndex', (req, res) => {
                 totalChapters: content.chapters.length
             }
         });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+/* ========== r153 · C2：小说 AI 伴读（前情提要 / 人物卡 / 机翻润色）==========
+ * 只读「截至当前进度」的文本，人物卡模式显式禁止剧透后文。
+ * 结果按 (书, 章, 模式) 在进程内缓存，续读时重复点不再烧 token。
+ */
+const companionCache = new Map();
+
+router.post('/:id/ai-companion', async (req, res) => {
+    try {
+        const novel = getMovieById.get(req.params.id);
+        if (!novel) return res.json({ code: -1, msg: '小说不存在' });
+        const mode = String((req.body && req.body.mode) || 'recap');
+        if (!['recap', 'characters', 'polish'].includes(mode)) {
+            return res.json({ code: -1, msg: '未知的伴读模式' });
+        }
+        const content = getNovelContent(novel.filePath, novel.id);
+        if (!content.chapters.length) return res.json({ code: -1, msg: '这本书没有解析出章节' });
+        const cur = Math.max(0, Math.min(
+            parseInt(req.body && req.body.chapterIndex, 10) || 0,
+            content.chapters.length - 1
+        ));
+        const cacheKey = `${novel.id}:${cur}:${mode}`;
+        if (companionCache.has(cacheKey)) {
+            return res.json({ code: 0, data: { ...companionCache.get(cacheKey), cached: true } });
+        }
+
+        const plain = (ch) => String(ch.text || ch.content || '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const from = mode === 'characters' ? 0 : Math.max(0, cur - 2);
+        const to = mode === 'polish' ? cur + 1 : cur + 1;
+        const parts = [];
+        let budget = 26000;
+        for (let i = from; i < to && budget > 0; i++) {
+            const ch = content.chapters[i];
+            if (!ch) continue;
+            let t = plain(ch);
+            if (mode === 'polish' && t.length > 7000) t = t.slice(0, 7000) + '…';
+            if (t.length > budget) t = t.slice(0, budget);
+            budget -= t.length;
+            parts.push(`【${ch.title || '第 ' + (i + 1) + ' 章'}】\n${t}`);
+        }
+
+        const sourceForPolish = mode === 'polish' ? plain(content.chapters[cur]) : '';
+        const prompts = {
+            recap: '请用 200 字以内总结以上章节的核心剧情，只讲已经发生的事，结尾点出当前悬念。不要剧透后文。',
+            characters: '请提取截至当前进度已经登场的人物，输出 3~6 条：姓名 / 身份 / 与主角关系 / 一句性格特征。严格只用以上文本，不要推测或剧透后文。',
+            polish: '以上只有一章原文。请只改写这一章，输出自然流畅的中文（保留情节、人名、专有名词和章节标题不变，去掉机翻腔）。严禁改写成其它章节、严禁续写、严禁概括。直接输出同一章正文，不要解释。'
+        };
+        const { callAI } = require('../utils/ai-service');
+        const text = await callAI(
+            `书名：${novel.title || novel.cleanName || ''}\n阅读进度：第 ${cur + 1} / ${content.chapters.length} 章\n\n${parts.join('\n\n')}\n\n${prompts[mode]}`,
+            '你是小说阅读器的伴读助手，只依据用户提供的原文回答，绝不编造后文。'
+        );
+        const polished = String(text || '').trim();
+        /* 小模型会把「润色」答成另一章/整本书：这种结果绝不能进阅读器。
+         * 润色只改表达，篇幅不应爆炸或缩水成摘要；异常直接拒绝且不写缓存。 */
+        if (mode === 'polish') {
+            const srcLen = sourceForPolish.length;
+            const tooLong = polished.length > Math.max(1200, srcLen * 2.5);
+            const tooShort = srcLen > 200 && polished.length < srcLen * 0.3;
+            if (!polished || tooLong || tooShort) {
+                return res.json({ code: -1, msg: '本次润色结果异常（可能答非所问），已丢弃。请重试或更换 AI 模型。' });
+            }
+        }
+        const data = { text: polished, mode, chapter: cur, cached: false };
+        if (companionCache.size > 120) companionCache.clear();
+        companionCache.set(cacheKey, data);
+        res.json({ code: 0, data });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

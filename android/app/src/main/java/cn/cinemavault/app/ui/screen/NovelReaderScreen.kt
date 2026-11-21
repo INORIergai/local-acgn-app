@@ -39,6 +39,10 @@ fun NovelReaderScreen(book: Movie, onClose: () -> Unit) {
     var info by remember { mutableStateOf<ReaderRepository.NovelInfo?>(null) }
     var chapterIndex by remember { mutableIntStateOf(0) }
     var content by remember { mutableStateOf("") }
+    var contentIsHtml by remember { mutableStateOf(false) }
+    var polishOpen by remember { mutableStateOf(false) }
+    var polishText by remember { mutableStateOf("") }
+    var polishLoading by remember { mutableStateOf(false) }
     var textSize by remember { mutableFloatStateOf(18f) }
     var loading by remember { mutableStateOf(true) }
     var showCatalog by remember { mutableStateOf(false) }
@@ -63,11 +67,9 @@ fun NovelReaderScreen(book: Movie, onClose: () -> Unit) {
         loading = true
         try {
             val c = repo.chapter(cur.id, i)
-            // HTML 净化文本 → 纯文本显示（图片章节在原生降级为提示）
-            content = if (c.isHtml) {
-                val spanned = Html.fromHtml(c.content, Html.FROM_HTML_MODE_COMPACT)
-                spanned.toString()
-            } else c.content
+            // EPUB 富文本交给 WebView 渲染；普通 TXT 继续走 Compose 文本
+            contentIsHtml = c.isHtml
+            content = c.content
             repo.saveNovelProgress(cur.id, i, cur.totalChapters)
         } catch (e: Exception) {
             error = e.message ?: "章节加载失败"
@@ -114,7 +116,17 @@ fun NovelReaderScreen(book: Movie, onClose: () -> Unit) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = onClose) { Text("返回") }
             }
-            else -> {
+            else -> if (contentIsHtml) {
+                // 扫描版 EPUB：保留图片与原始段落结构，横滑翻章、单击工具栏仍然可用
+                // EPUB 自己带章节标题，不再由原生层重复画一遍
+                RichNovelContent(
+                    html = content,
+                    textSize = textSize,
+                    onTap = { showToolbar = !showToolbar },
+                    onSwipe = { dir -> scope.launch { loadChapter(chapterIndex + dir) } },
+                    modifier = Modifier.fillMaxSize().padding(top = 64.dp)
+                )
+            } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize()
                         .pointerInput(Unit) {
@@ -158,6 +170,22 @@ fun NovelReaderScreen(book: Movie, onClose: () -> Unit) {
                 )
                 TextButton(onClick = { textSize = (textSize - 2f).coerceAtLeast(12f) }) { Text("A−") }
                 TextButton(onClick = { textSize = (textSize + 2f).coerceAtMost(32f) }) { Text("A+") }
+                TextButton(onClick = {
+                    if (!polishLoading) {
+                        polishLoading = true
+                        scope.launch {
+                            try {
+                                polishText = repo.polishNovel(book.id, chapterIndex)
+                                if (polishText.isNotBlank()) polishOpen = true
+                                else Toast.makeText(cnv, "没有拿到润色内容", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(cnv, "润色失败：${e.message?.take(40)}", Toast.LENGTH_LONG).show()
+                            } finally { polishLoading = false }
+                        }
+                    }
+                }, enabled = !polishLoading) {
+                    Text(if (polishLoading) "润色中" else "润色")
+                }
                 IconButton(onClick = {
                     val ctx = cnv
                     if (ttsActive) {
@@ -198,6 +226,26 @@ fun NovelReaderScreen(book: Movie, onClose: () -> Unit) {
                         )
                     )
                 }
+            }
+        }
+    }
+
+    if (polishOpen) {
+        ModalBottomSheet(onDismissRequest = { polishOpen = false }) {
+            Column(modifier = Modifier.fillMaxHeight(0.85f).padding(16.dp)) {
+                Text("机翻润色 · 第 ${chapterIndex + 1} 章", style = MaterialTheme.typography.titleLarge)
+                Text("只改变本次阅读显示，不修改原书", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    item { Text(polishText, fontSize = textSize.sp, lineHeight = (textSize * 1.7f).sp) }
+                }
+                Button(onClick = {
+                    content = polishText
+                    contentIsHtml = false
+                    polishOpen = false
+                    Toast.makeText(cnv, "已切换到润色版，翻章后恢复原文", Toast.LENGTH_SHORT).show()
+                }, modifier = Modifier.fillMaxWidth()) { Text("使用润色版阅读") }
             }
         }
     }
