@@ -1,4 +1,4 @@
-import os, hashlib, datetime
+import os, hashlib, datetime, io, zipfile, json
 
 def _sha256(path):
     h = hashlib.sha256()
@@ -47,3 +47,37 @@ def verify_payload(payload, sig_b64, pubkey):
         return True
     except Exception:
         return False
+
+# patch.json 中参与签名的字段（顺序无关；客户端按同样字段拼 canonical JSON 验签）。
+_SIGN_FIELDS = ('version', 'added', 'modified', 'removed', 'sha256')
+
+
+def _canonical(payload):
+    """客户端一致的 canonical JSON：键字母序、无空格、UTF-8。"""
+    return json.dumps(payload, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=False).encode('utf-8')
+
+
+def build_patch(root, diff, target_version, sign_key):
+    added = diff.get('added', [])
+    modified = diff.get('modified', [])
+    removed = diff.get('removed', [])
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for rel in added + modified:
+            z.write(os.path.join(root, rel.replace('/', os.sep)), 'changed/' + rel)
+        z.writestr('removed.json', json.dumps(removed, ensure_ascii=False))
+        meta = {
+            'version': target_version,
+            'added': added,
+            'modified': modified,
+            'removed': removed,
+            'sha256': {rel: _sha256(os.path.join(root, rel.replace('/', os.sep)))
+                       for rel in added + modified},
+            'signature': '',
+        }
+        if sign_key:
+            meta['signature'] = sign_payload(
+                _canonical({k: meta[k] for k in _SIGN_FIELDS}), sign_key)
+        z.writestr('patch.json', json.dumps(meta, ensure_ascii=False))
+    return buf.getvalue()

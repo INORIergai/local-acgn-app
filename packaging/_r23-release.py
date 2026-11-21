@@ -25,11 +25,38 @@ ASSETS = [
     ('CinemaVault-Portable-%s.exe' % VER, ['便携版', 'dist']),
 ]
 
+# 增量热更新产物：发布者在跑本脚本前手动执行
+#   python _cv_patch.py gen-manifest --root <root> --version <VER> --out out/cv-manifest-<VER>.json
+#   python _cv_patch.py gen-patch --root <root> --baseline ... --target ... --out out/cv-patch-<from>-<to>.zip
+# 脚本只识别并上传已生成的文件，不自动跑生成器（避免误发半成品）。
+_OUT = os.path.join(_HERE, 'out')
+
+
+def _extra_assets():
+    """已生成的 manifest / patch 才加入上传清单（沿用下方上传/重试/跳过逻辑）。"""
+    extra = []
+    manifest = 'cv-manifest-%s.json' % VER
+    if os.path.exists(os.path.join(_OUT, manifest)):
+        extra.append((manifest, ['out']))
+    if os.path.isdir(_OUT):
+        for name in sorted(os.listdir(_OUT)):
+            if name.startswith('cv-patch-') and name.endswith('.zip') \
+                    and os.path.isfile(os.path.join(_OUT, name)):
+                extra.append((name, ['out']))
+    return extra
+
+
+ASSETS += _extra_assets()
+
 
 def asset_path(name, subs):
     for sub in subs:
-        p = (os.path.join(_HERE, 'dist', name) if sub == 'dist'
-             else os.path.join(EXE, sub, name))
+        if sub == 'dist':
+            p = os.path.join(_HERE, 'dist', name)
+        elif sub == 'out':
+            p = os.path.join(_OUT, name)
+        else:
+            p = os.path.join(EXE, sub, name)
         if os.path.exists(p):
             return p
     # 兼容根目录 exe/ 下直接命名的文件
