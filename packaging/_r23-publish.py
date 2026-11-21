@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
+TAG = 'v6.8.1'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -34,10 +35,22 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v4.5.4：局域网访问修复（手机打不开）
+COMMIT_MSG = """v6.8.1：桌面端托盘/快捷键与首屏性能
 
-- 修复 IP 探测误选 Hyper-V 虚拟网卡导致手机无法访问：优先取默认路由出口网卡，兜底枚举排除虚拟网卡名。
-- 修复设置页二维码 fallback 内联样式 display 重复声明导致的「加载失败」常显。"""
+桌面壳
+- 系统托盘：关闭到托盘、托盘菜单、首次提示；全局快捷键 Space 被占用时回退 F12
+- 窗口位置/大小/最大化/缩放持久化，副屏拔插保护
+- 播放时阻止显示器息屏，暂停/关窗恢复
+- 后端崩溃自愈（退避重启、稳定 10 分钟重置额度、失败弹窗可手动重启）
+- 可选开机自启（--hidden 驻留托盘）
+
+前端
+- 首屏 CSS 83→2、JS 45→2 请求合并，内容哈希缓存
+- 统一请求层、XSS 收敛、请求竞态保护
+- 隐藏页面暂停高频轮询，回前台补刷
+- 卡片点击/悬停事件委托
+
+版本：6.8.1"""
 
 
 def get_token():
@@ -198,10 +211,15 @@ if s not in (200, 201):
 tree_sha = res['sha']
 print('  tree = %s' % tree_sha)
 
-# ---------------------------------------------------------------- 建孤儿 commit
-print('\n创建 commit（无父提交 → 旧提交从分支不可达）...')
-s, res = api('POST', '/repos/%s/%s/git/commits' % (OWNER, REPO),
-             {'message': COMMIT_MSG, 'tree': tree_sha}, timeout=120)
+# ---------------------------------------------------------------- 建 commit
+# ★round152：原来是「无父提交的孤儿 commit」，当初是为了把含 config.json 的旧提交
+# 从 main 上彻底抹掉（一次性清理）。现在历史已经干净了，再砍父提交等于每次发布都把
+# main 的历史清零 —— 改成「接在远端 main 后面」，保留完整提交历史。
+print('\n创建 commit（父提交 = 远端 main %s）...' % (old_sha or '(无)'))
+_commit_body = {'message': COMMIT_MSG, 'tree': tree_sha}
+if old_sha:
+    _commit_body['parents'] = [old_sha]
+s, res = api('POST', '/repos/%s/%s/git/commits' % (OWNER, REPO), _commit_body, timeout=120)
 if s not in (200, 201):
     print('✗ 建 commit 失败：%s %s' % (s, res))
     sys.exit(1)
@@ -217,8 +235,23 @@ if s not in (200, 201):
     sys.exit(1)
 print('  ✅ %s 已指向 %s' % (BRANCH, res.get('object', {}).get('sha', new_sha)))
 
+# ---------------------------------------------------------------- 打 tag
+print('\n创建 tag %s ...' % TAG)
+s, res = api('GET', '/repos/%s/%s/git/ref/tags/%s' % (OWNER, REPO, TAG))
+if s == 200:
+    print('  tag 已存在，改为指向新 commit ...')
+    s, res = api('PATCH', '/repos/%s/%s/git/refs/tags/%s' % (OWNER, REPO, TAG),
+                 {'sha': new_sha, 'force': True}, timeout=60)
+else:
+    s, res = api('POST', '/repos/%s/%s/git/refs' % (OWNER, REPO),
+                 {'ref': 'refs/tags/' + TAG, 'sha': new_sha}, timeout=60)
+if s in (200, 201):
+    print('  ✅ tag %s -> %s' % (TAG, new_sha))
+else:
+    print('  ! tag 创建失败：%s %s' % (s, res))
+
 print('\n' + '=' * 66)
 print('✅ 仓库内容推送完成')
 print('   https://github.com/%s/%s' % (OWNER, REPO))
-print('   旧提交 %s 已不在 %s 分支上' % (old_sha or '?', BRANCH))
+print('   上一条 main: %s' % (old_sha or '?'))
 print('=' * 66)

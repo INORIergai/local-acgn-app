@@ -1,6 +1,6 @@
 {
     "name": "local-movie-library",
-    "version": "4.5.4",
+    "version": "6.8.1",
     "description": "本地影片媒体库管理系统",
     "main": "server.js",
     "dependencies": {
@@ -23,6 +23,7 @@
         "playwright-extra-plugin-stealth": "^0.0.1",
         "playwright-stealth": "^0.0.1",
         "puppeteer-extra-plugin-stealth": "^2.11.2",
+        "qrcode": "^1.5.4",
         "undici": "^7.29.0"
     }
 }
