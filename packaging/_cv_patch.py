@@ -13,9 +13,10 @@ def cmd_gen_patch(args):
     target = json.load(open(args.target, encoding='utf-8'))
     d = diff_manifest(base, target)
     key = None
-    if args.sign_key:
+    sign_key = os.environ.get('CV_UPDATE_SIGNING_KEY', '')
+    if sign_key:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(args.sign_key))
+        key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(sign_key))
     blob = build_patch(args.root, d, target['version'], key)
     open(args.out, 'wb').write(blob)
     print('patch ->', args.out, 'bytes=', len(blob), 'diff=', d)
@@ -28,6 +29,6 @@ if __name__ == '__main__':
     gm.set_defaults(func=cmd_gen_manifest)
     gp = sub.add_parser('gen-patch')
     gp.add_argument('--root', required=True); gp.add_argument('--baseline', required=True); gp.add_argument('--target', required=True)
-    gp.add_argument('--out', required=True); gp.add_argument('--sign-key', default=os.environ.get('CV_UPDATE_SIGNING_KEY', ''))
+    gp.add_argument('--out', required=True)
     gp.set_defaults(func=cmd_gen_patch)
     args = ap.parse_args(); args.func(args)
