@@ -4,6 +4,7 @@
  * GET  /api/update/status     当前版本 + 上次检查结果 + 下载进度（前端轮询这个）
  * POST /api/update/check      立即查 GitHub（body: {force:1} 跳过缓存）
  * POST /api/update/download   下载指定安装包（body: {assetName}，缺省用推荐项）
+ * POST /api/update/incremental 增量 patch 下载+校验（M2，不切换；失败回退全量）
  * POST /api/update/cancel     取消下载
  * POST /api/update/install    拉起安装程序（便携版改为打开下载目录）
  * POST /api/update/open-folder 打开更新包所在目录
@@ -44,6 +45,35 @@ router.post('/download', async (req, res) => {
         res.json({ code: 0, data: r });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
+    } finally {
+        busy = false;
+    }
+});
+
+/**
+ * POST /api/update/incremental — M2：增量 patch 下载 + 校验（不切换）。
+ * 增量失败一律回退 A 方案全量下载（兼容 A 方案，controller 裁定）。
+ */
+router.post('/incremental', async (req, res) => {
+    if (busy) return res.json({ code: -1, msg: '已有下载任务在进行中' });
+    busy = true;
+    try {
+        const r = await updater.startIncremental(req.body || {});
+        res.json({ code: 0, data: r });
+    } catch (e) {
+        // 增量失败 → 自动回退全量下载（A 方案）
+        try {
+            const name = (req.body && req.body.assetName) || '';
+            const full = await updater.startDownload(name);
+            res.json({
+                code: 0,
+                data: Object.assign({ mode: 'full' }, full, {
+                    incrementalError: (e && e.message) || '增量更新失败',
+                }),
+            });
+        } catch (e2) {
+            res.json({ code: -1, msg: (e && e.message || '增量失败') + '；全量回退也失败: ' + (e2 && e2.message) });
+        }
     } finally {
         busy = false;
     }

@@ -571,6 +571,31 @@ async function checkUpdate(force = false) {
     base.recommended = recommended;
     base.hasUpdate = cmpVersion(latest, current) > 0;
 
+    /* M2：附带下载该 Release 的 cv-manifest-<ver>.json，统一字段名为 camelCase 后
+     * 存入 lastCheck.result.manifest。下载走同一个 request（内含 assertSafeUrl 校验），
+     * 失败只记 manifestError，不影响「检查更新」主流程与 A 方案全量下载。 */
+    base.manifest = null;
+    base.manifestError = null;
+    {
+        const mName = manifestAssetName(latest);
+        const mUrl = assetDownloadUrl(cfg, latest, rel, mName);
+        if (mUrl) {
+            try {
+                const mr = await request(mUrl, { timeout: 15000 }, false);
+                if (mr.status === 200) {
+                    const raw = JSON.parse(mr.body);
+                    base.manifest = Object.assign(normalizeManifest(raw), { downloadUrl: mUrl, assetName: mName });
+                } else {
+                    base.manifestError = 'manifest 下载返回 HTTP ' + mr.status;
+                }
+            } catch (e) {
+                base.manifestError = 'manifest 下载失败: ' + (e && e.message);
+            }
+        } else {
+            base.manifestError = '该 Release 未提供 manifest 直链';
+        }
+    }
+
     // round34 批次B：发现新版本 → 站内通知（同一版本只提醒一次）
     if (base.hasUpdate) {
         try {
@@ -643,6 +668,40 @@ function candidateDownloadUrls(cfg, asset) {
         add(p.replace(/\/+$/, '') + '/' + asset.downloadUrl, '加速镜像 ' + ph);
     }
     return out;
+}
+
+/* ======================================================== 增量更新（M2）辅助 */
+
+/** Release 资产直链：优先用 GitHub API 给的真实 URL，否则按命名约定拼。 */
+function assetDownloadUrl(cfg, tag, rel, name) {
+    const found = ((rel && rel.assets) || []).find(a => (a.name || '') === name);
+    if (found) return found.browser_download_url || found.downloadUrl || '';
+    return `https://github.com/${cfg.repo}/releases/download/${tag}/${name}`;
+}
+
+/** 发布端 manifest 文件名：cv-manifest-<ver>.json（ver 去掉 v 前缀）。 */
+function manifestAssetName(tag) {
+    const ver = String(tag || '').replace(/^[vV]/, '');
+    return 'cv-manifest-' + ver + '.json';
+}
+
+/**
+ * 字段名转换：发布端 manifest 为 snake_case 风格字段（`files[rel].sha256/size`、
+ * `generated_at`/`binary_dirs`/`full_fallback` 等变体），统一归一化为
+ * camelCase 结构写入 checkUpdate 结果，避免下游读不到（controller 裁定）。
+ */
+function normalizeManifest(m) {
+    const files = {};
+    for (const [rel, meta] of Object.entries((m && m.files) || {})) {
+        files[rel] = { sha256: meta.sha256 || '', size: meta.size || 0 };
+    }
+    return {
+        version: (m && m.version) || '',
+        generatedAt: (m && (m.generated_at || m.generatedAt)) || '',
+        files,
+        binaryDirs: (m && (m.binary_dirs || m.binaryDirs)) || [],
+        fullFallback: (m && (m.full_fallback || m.fullFallback)) || {},
+    };
 }
 
 /** 单个源的下载尝试：成功 resolve(true)，失败/被取消 resolve(false)。 */
@@ -765,6 +824,85 @@ async function startDownload(assetName) {
     throw new Error(msg);
 }
 
+/**
+ * M2：增量 patch 下载 + 验签 + 写 staging / pending-switch.json（不切换）。
+ *
+ * 流程：取 baseline manifest（opts.baseline 或 opts.baselinePath 指向本地
+ * cv-manifest-<ver>.json；未传则退到本地版本文件）→ 算 from→to →
+ * 下载 cv-patch-<from>-<to>.zip（多源，复用 assertSafeUrl/candidateDownloadUrls/request）→
+ * verifyPatch（验签公钥来自 CV_UPDATE_PUBLIC_KEY env，zip-slip + sha256）→
+ * stagePatch（用 baseline 检测本地改动，只写 staging 与 pending-switch.json）。
+ *
+ * 任何一步失败都 throw，交给路由层回退 A 方案全量下载（不覆盖任何运行文件）。
+ */
+async function startIncremental(opts = {}) {
+    const iu = require('./incremental-updater');   // 惰性 require，避免循环依赖
+    const chk = lastCheck && lastCheck.result;
+    if (!chk || !chk.release) throw new Error('请先执行一次「检查更新」');
+
+    const target = String(chk.release.version || chk.release.tag || '').replace(/^[vV]/, '');
+
+    /* baseline = 本地当前版本的 manifest（用于 from→to 命名 + 本地改动检测）。
+     * checkUpdate.result.manifest 是「目标版本」的 manifest，只用于 target 侧参考，
+     * 不能当 baseline（否则 from==to、本地改动全被误报），故必须从本地读取：
+     *   opts.baseline  >  opts.baselinePath > <DATA_ROOT>/updates/baseline-manifest.json */
+    let baseline = opts.baseline || null;
+    if (!baseline) {
+        const bp = opts.baselinePath || path.join(updateDir(), 'baseline-manifest.json');
+        try {
+            if (fs.existsSync(bp)) baseline = normalizeManifest(JSON.parse(fs.readFileSync(bp, 'utf8')));
+        } catch (e) { baseline = null; }
+    }
+    if (!baseline || !baseline.files || !Object.keys(baseline.files).length) {
+        throw new Error('缺少本地 baseline manifest，改走全量');
+    }
+
+    const cfg = updaterConfig();
+    const fromVer = baseline.version || localVersion();
+    const patchName = 'cv-patch-' + String(fromVer).replace(/^[vV]/, '') + '-' + target + '.zip';
+    const patchUrl = assetDownloadUrl(cfg, chk.release.tag || chk.release.version, relForCheck(chk), patchName);
+    if (!patchUrl) throw new Error('该版本未提供 patch 资产');
+
+    const pubkeyPem = process.env.CV_UPDATE_PUBLIC_KEY || opts.publicKey || '';
+    if (!pubkeyPem) throw new Error('未配置验签公钥（CV_UPDATE_PUBLIC_KEY）');
+
+    const patchBytes = await iu.downloadPatchBytes(cfg, { downloadUrl: patchUrl });
+    const updatesDir = updateDir();
+    const stagingDir = path.join(updatesDir, 'staging-' + target);
+
+    // 先清掉残留 staging（只删我们自己的 staging-* 目录，绝不碰运行文件）
+    try { if (fs.existsSync(stagingDir)) fs.rmSync(stagingDir, { recursive: true, force: true }); } catch (e) { /* 忽略 */ }
+
+    const staged = iu.stagePatch(patchBytes, {
+        pubkeyPem,
+        stagingDir,
+        updatesDir,
+        target,
+        runtimeDir: opts.runtimeDir || path.join(__dirname, '..'),
+        verifyAgainst: baseline,
+    });
+    if (!staged.ok) throw new Error(staged.error || 'patch 校验失败');
+
+    downloadState = {
+        state: 'incremental-ready',
+        target,
+        stagingPath: staged.stagingPath,
+        file: staged.stagingPath,
+        received: 0,
+        total: 0,
+        percent: 100,
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        error: null,
+    };
+    return { ok: true, mode: 'incremental', target, stagingPath: staged.stagingPath };
+}
+
+/** 把 checkUpdate 结果里够用的字段拼回轻量 rel（供 assetDownloadUrl 用）。 */
+function relForCheck(chk) {
+    return { assets: (chk.assets || []).map(a => ({ name: a.name, browser_download_url: a.downloadUrl })) };
+}
+
 function cancelDownload() {
     if (!downloadState || downloadState.state !== 'downloading') return false;
     try { if (downloadState._abort) downloadState._abort(); } catch (e) { /* 忽略 */ }
@@ -856,4 +994,7 @@ module.exports = {
     assertSafeUrl,  // 导出供单测与复用：SSRF 目标校验
     isBlockedIp,    // 纯函数，便于测试私网/保留地址判定
     candidateDownloadUrls, // 导出供单测：多源 URL 构造
+    startIncremental,       // M2：增量 patch 下载 + 校验（不切换）
+    normalizeManifest,      // M2：snake_case → camelCase 字段转换
+    manifestAssetName,      // M2：cv-manifest-<ver>.json 命名
 };
