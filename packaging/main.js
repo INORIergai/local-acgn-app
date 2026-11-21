@@ -32,6 +32,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');   // buildStamp 算代码指纹用（round80）
+const incrementalSwitch = require('./incremental-switch');   // M3：主进程原子切换 + 回滚（不占 runtime 源码文件）
 
 /* ---------------------------------------------------------------- 启动日志
  * 桌面版最难查的就是「双击没反应」：GUI 子系统没有控制台，Electron 主进程一抛异常
@@ -304,6 +305,46 @@ async function restartBackend() {
     } finally {
         _restartingBackend = false;
     }
+}
+
+/* restartBackend() 内部把 waitServer 失败只记日志、不抛出（菜单重启可以容忍
+ * 暂时不可用），但增量切换必须把「新后端没起来」当成失败并回滚 —— 否则会留下
+ * 一套已覆盖、却跑不起来的 runtime。这里包一层：重启后独立 ping 后端健康接口，
+ * 不通就 throw，checkAndApply 收到异常即回滚。 */
+async function verifiedRestartForSwitch() {
+    await restartBackend();
+    if (!BASE) throw new Error('重启后端后无可用 BASE');
+    const t0 = Date.now();
+    while (Date.now() - t0 < 40000) {
+        if (await pingOnce(BASE + '/api/auth/status')) {
+            blog('[switch] 新后端重启后健康应答正常');
+            return;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+    }
+    throw new Error('增量切换：新后端重启后 40s 内未就绪');
+}
+
+/* ------------------------------------- M3：增量热更新（主进程原子切换 + 回滚）
+ * pending-switch.json 由后端 Task3 写出；后端不能覆盖自己正在执行的 runtime 文件，
+ * 所以由主进程轮询并通过 verifiedRestartForSwitch() 停旧起新。
+ * 只在启动流程走完（后端就绪、窗口已建）后才真正检查一次，避免与启动期
+ * 自己的 startServer()/waitServer() 抢后端。 */
+const UPDATES_DIR = path.join(DATA_ROOT, 'updates');
+let switchTimer = null;
+function checkPendingSwitch() {
+    return incrementalSwitch.checkAndApply({
+        runtimeDir: RUNTIME,
+        updatesDir: UPDATES_DIR,
+        restart: verifiedRestartForSwitch,
+        blog,
+    }).catch((e) => blog('!!! 增量切换未捕获异常: ' + (e && (e.stack || e.message || e))));
+}
+function startSwitchPolling() {
+    if (switchTimer) return;
+    checkPendingSwitch();                       // 启动时检查一次
+    switchTimer = setInterval(checkPendingSwitch, 15000);
+    if (switchTimer && typeof switchTimer.unref === 'function') switchTimer.unref();
 }
 
 function buildTrayMenu() {
@@ -1517,6 +1558,10 @@ if (!app.requestSingleInstanceLock()) {
             Menu.setApplicationMenu(buildMenu(() => (readJson(CONFIG_FILE) || {}).auth || {}));
             blog('窗口已创建');
 
+            /* M3：启动期后端已就绪、窗口已建 → 现在可以安全检查待切换 patch 了。
+             * 之后每 15s 轮询一次（后端经 /api/update/incremental 写 pending 信号）。 */
+            startSwitchPolling();
+
             /* 代码同步不完整 → 弹个**非阻塞**提示（不卡启动动画，也不阻断使用）。
                round80：以前这种情况是直接崩掉，用户只看到一串 EBUSY 堆栈。 */
             if (!START_HIDDEN && syncRes && (syncRes.locked && syncRes.locked.length || syncRes.failed)) {
@@ -1593,6 +1638,7 @@ if (!app.requestSingleInstanceLock()) {
         quitting = true;
         unregisterGlobalShortcuts();
         destroyTray();
+        if (switchTimer) { clearInterval(switchTimer); switchTimer = null; }   // M3：停止增量切换轮询
         blog('事件 before-quit');
         killServer();
     });
