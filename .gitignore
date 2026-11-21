@@ -23,6 +23,7 @@ browser-profile/
 # ===== 敏感配置：含登录口令与 API Key，绝不入库 =====
 config.docker.json
 config.json
+config.test.json
 .env
 .env.*
 !.env.example
@@ -71,6 +72,7 @@ android/keystore.properties
 android/keystore/
 *.jks
 *.keystore
+*.apk
 
 # 构建产物与工具运行态（不入库）
 android/.mimosa/

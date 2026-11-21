@@ -74,7 +74,17 @@
             android:textColor="@color/bg_dark"
             android:backgroundTint="@color/accent_gold"
             android:textStyle="bold"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/btnEnterStandalone"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="进入独立掌上模式 (本地阅读与在线)"
+            android:textColor="@color/accent_gold"
+            android:backgroundTint="#232936"
+            android:textStyle="bold"
+            android:layout_marginBottom="10dp" />
 
         <Button
             android:id="@+id/btnSwitchAddress"
@@ -142,7 +152,17 @@
             android:textColor="@color/bg_dark"
             android:backgroundTint="@color/accent_gold"
             android:textStyle="bold"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/btnStandaloneFromSetup"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:text="稍后连接 · 先进入独立模式"
+            android:textColor="@color/text_secondary"
+            android:backgroundTint="#1E232E"
+            android:textSize="14sp" />
 
         <TextView
             android:layout_width="wrap_content"

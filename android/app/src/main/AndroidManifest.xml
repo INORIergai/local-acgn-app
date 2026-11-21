@@ -10,10 +10,17 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 实体按键与触觉微震动 -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- AI 伴侣语音输入（系统 SpeechRecognizer，音频不上传，仅本地识别成文字） -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- TTS 听书前台服务（锁屏后台播放） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- 应用内安装更新包权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
+        android:name=".CvApplication"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
@@ -25,25 +32,44 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="31">
+        <!-- v5.0.0 全 Compose 原生入口 -->
         <activity
-            android:name=".MainActivity"
+            android:name=".NativeActivity"
             android:exported="true"
-            android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.CinemaVault.Fullscreen">
+            android:theme="@style/Theme.CinemaVault">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- 深度链接 cinemavault:// 打开指定漫画/小说/影片 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.BROWSER" />
                 <data android:scheme="cinemavault" />
             </intent-filter>
         </activity>
+
+        <!-- 旧 WebView 壳（保留待场景迁移完成后删除，不再作为入口） -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/Theme.CinemaVault.Fullscreen" />
+
+        <!-- 独立全屏视频播放（横屏沉浸，bug3 修复） -->
+        <activity
+            android:name=".ui.screen.VideoPlayerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.CinemaVault.Fullscreen" />
+
+        <!-- TTS 听书前台播放服务（锁屏后台播放） -->
+        <service
+            android:name=".playback.TtsPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- 应用内更新 APK 安装文件提供器 -->
         <provider

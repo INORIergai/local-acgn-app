@@ -53,6 +53,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import cn.cinemavault.app.capabilities.CapabilityHost;
+import cn.cinemavault.app.capabilities.CapabilityRegistry;
+import cn.cinemavault.app.capabilities.CapabilityRegistrations;
+import cn.cinemavault.app.cvnative.CVNativeBridge;
+
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -67,7 +72,7 @@ import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements CapabilityHost {
 
     private static final String PREFS_NAME = "CinemaVaultPrefs";
     private static final String KEY_SERVER_URL = "server_url";
@@ -95,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean hasCheckedUpdateThisSession = false;
     private volatile boolean isInReaderMode = false;
     private File pendingApkToInstall = null;
+    private boolean isStandaloneMode = false;
 
     // ── v4.6.0 安全加固相关 ──
     /** 文件选择回调（<input type=file> 用） */
@@ -105,6 +111,18 @@ public class MainActivity extends AppCompatActivity {
     private final AndroidBridge bridge = new AndroidBridge();
     private boolean bridgeAttached = false;
     private AudioManager audioManager;
+
+    // ── 规范化能力层（渐进式全原生地基）──
+    /** 能力注册表：WebView 桥与未来原生 ViewModel 共用同一批能力实现 */
+    private CapabilityRegistry capabilityRegistry;
+    /** WebView 适配层：把 JS 调用转成能力 dispatch */
+    private CVNativeBridge cvNativeBridge;
+    /** H5 是否接管返回键（由前端经 nav.setBackHandler 上报） */
+    private volatile boolean webHandlesBack = false;
+    /** 原生默认返回动作（setupEvents 中赋值，供 nav.releaseBack 复用） */
+    private Runnable defaultBackAction = null;
+    /** 当前 UI 模式（normal/comic/novel/player/tts），取代单一 isInReaderMode 布尔 */
+    private volatile String uiMode = "normal";
 
     // JavaScript 与原生 Android 通信桥
     public class AndroidBridge {
@@ -169,6 +187,110 @@ public class MainActivity extends AppCompatActivity {
         public void triggerUpdate(String downloadUrl, String versionName, String sha256) {
             mainHandler.post(() -> downloadAndInstallApk(downloadUrl, versionName, sha256));
         }
+
+        @JavascriptInterface
+        public void reconnectHost() {
+            mainHandler.post(() -> {
+                isStandaloneMode = false;
+                String saved = prefs.getString(KEY_SERVER_URL, "");
+                if (saved != null && !saved.trim().isEmpty()) {
+                    loadServerUrl(normalizeUrl(saved));
+                } else {
+                    promptChangeServer();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean isStandalone() {
+            return isStandaloneMode;
+        }
+    }
+
+    // ── CapabilityHost 实现：能力层通过这个窄接口操作宿主 ──
+    @Override
+    public void showToast(String message) {
+        mainHandler.post(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());
+    }
+
+    @Override
+    public void vibrateTap() {
+        mainHandler.post(() -> {
+            if (webView != null) {
+                webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            }
+        });
+    }
+
+    @Override
+    public void setUiMode(String mode) {
+        final String safeMode = mode == null ? "normal" : mode;
+        mainHandler.post(() -> {
+            uiMode = safeMode;
+            // 兼容旧语义：阅读/播放相关模式一律视为"沉浸态"
+            boolean immersive = !"normal".equals(safeMode);
+            isInReaderMode = immersive;
+            if (btnFloatingSettings != null) {
+                btnFloatingSettings.setVisibility(immersive ? View.GONE : View.VISIBLE);
+            }
+            if (swipeRefresh != null) {
+                swipeRefresh.setEnabled(!immersive);
+            }
+            if (immersive) hideSystemUI(); else showSystemUI();
+        });
+    }
+
+    @Override
+    public void setReaderMode(boolean inReader) {
+        setUiMode(inReader ? "novel" : "normal");
+    }
+
+    @Override
+    public int getVersionCode() {
+        try {
+            PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return pInfo.versionCode;
+        } catch (Exception e) {
+            return 1;
+        }
+    }
+
+    @Override
+    public String getVersionName() {
+        try {
+            PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return pInfo.versionName;
+        } catch (Exception e) {
+            return BuildConfig.VERSION_NAME;
+        }
+    }
+
+    @Override
+    public void triggerUpdate(String url, String versionName, String sha256) {
+        mainHandler.post(() -> downloadAndInstallApk(url, versionName, sha256));
+    }
+
+    @Override
+    public void setBackHandler(boolean canHandle) {
+        webHandlesBack = canHandle;
+    }
+
+    @Override
+    public boolean consumeBack() {
+        // 由前端接管时，向 H5 发 'back' 事件；H5 处理完自行决定是否释放。
+        // 这里只负责投递，是否真正吞掉由 webHandlesBack 决定。
+        if (!webHandlesBack) return false;
+        if (cvNativeBridge != null) {
+            cvNativeBridge.emit("nav.back", "{}");
+        }
+        return true;
+    }
+
+    @Override
+    public void releaseBack() {
+        mainHandler.post(() -> {
+            if (defaultBackAction != null) defaultBackAction.run();
+        });
     }
 
     @Override
@@ -194,7 +316,12 @@ public class MainActivity extends AppCompatActivity {
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
 
+        // 能力层先于 WebView 初始化：setupWebView → attachBridge 需要 cvNativeBridge
+        capabilityRegistry = CapabilityRegistrations.build(this);
+
         initViews();
+        // WebView 已就位，创建规范化桥适配层（能力注册表在 initViews 前已构建）
+        cvNativeBridge = new CVNativeBridge(webView, capabilityRegistry);
         setupWebView();
         setupEvents();
 
@@ -328,6 +455,10 @@ public class MainActivity extends AppCompatActivity {
                     return !isTrustedUrl(target);
                 }
                 if (isTrustedUrl(target)) return false;
+                if (isStandaloneMode && (target.startsWith("http://") || target.startsWith("https://"))) {
+                    // 独立掌上模式：允许在内置 WebView 直接观看在线视频与漫画，享受沉浸全屏
+                    return false;
+                }
                 openExternally(target);
                 return true;
             }
@@ -527,15 +658,18 @@ public class MainActivity extends AppCompatActivity {
 
     // ─────────────────── v4.6.0 安全 / 健壮性 helper ───────────────────
 
-    /** 挂载或摘除 JS 桥：只有受信任来源（影库服务本身）才看得到 AndroidBridge */
+    /** 挂载或摘除 JS 桥：只有受信任来源（影库服务本身）才看得到桥 */
     private void attachBridge(boolean attach) {
         if (attach) {
             if (!bridgeAttached) {
                 webView.addJavascriptInterface(bridge, "AndroidBridge");
+                // 规范化能力桥（与旧桥并列，前端按能力探测选择使用）
+                webView.addJavascriptInterface(cvNativeBridge, "CVNative");
                 bridgeAttached = true;
             }
         } else if (bridgeAttached) {
             webView.removeJavascriptInterface("AndroidBridge");
+            webView.removeJavascriptInterface("CVNative");
             bridgeAttached = false;
         }
     }
@@ -596,6 +730,8 @@ public class MainActivity extends AppCompatActivity {
                 : new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         parent.addView(fresh, index >= 0 ? index : 0);
         webView = fresh;
+        // 规范化桥必须重建以持有新 WebView 引用，否则事件回写会打到已销毁的旧实例
+        cvNativeBridge = new CVNativeBridge(webView, capabilityRegistry);
         setupWebView();
     }
 
@@ -768,10 +904,35 @@ public class MainActivity extends AppCompatActivity {
 
         btnSwitchAddress.setOnClickListener(v -> promptChangeServer());
 
+        Button btnEnterStandalone = findViewById(R.id.btnEnterStandalone);
+        if (btnEnterStandalone != null) {
+            btnEnterStandalone.setOnClickListener(v -> enterStandaloneMode());
+        }
+
+        Button btnStandaloneFromSetup = findViewById(R.id.btnStandaloneFromSetup);
+        if (btnStandaloneFromSetup != null) {
+            btnStandaloneFromSetup.setOnClickListener(v -> enterStandaloneMode());
+        }
+
         // 智能拦截 Android 物理返回键（抽屉/播放器/阅读器/详情弹窗优先依次关闭）
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
+                // 0. 规范化能力层：若 H5 已通过 nav.setBackHandler 注册返回接管，
+                //    投递 nav.back 事件交给前端统一栈处理（替代硬编码 JS 戳 DOM）。
+                if (consumeBack()) {
+                    return;
+                }
+                performDefaultBack();
+            }
+        });
+
+        // 供 nav.releaseBack 能力复用的默认返回动作
+        defaultBackAction = this::performDefaultBack;
+    }
+
+    /** 原生默认返回链路（全屏→覆盖层→Web 弹窗→goBack→双击退出）。 */
+    private void performDefaultBack() {
                 // 1. 全屏原生视频退出全屏
                 if (customVideoView != null) {
                     onHideCustomViewInternal();
@@ -813,6 +974,12 @@ public class MainActivity extends AppCompatActivity {
                         + "  if (typeof window.closeModal === 'function') { window.closeModal(); return 'MODAL'; }"
                         + "  dm.classList.remove('show'); return 'MODAL';"
                         + "}"
+                        + "var lrm = document.getElementById('localReaderModal');"
+                        + "if (lrm && lrm.classList.contains('open')) {"
+                        + "  lrm.classList.remove('open');"
+                        + "  if (window.AndroidBridge) window.AndroidBridge.setReaderMode(false);"
+                        + "  return 'MODAL';"
+                        + "}"
                         + "var anyModal = document.querySelector('.modal.show');"
                         + "if (anyModal) { anyModal.classList.remove('show'); return 'MODAL'; }"
                         + "return 'NONE';"
@@ -836,8 +1003,6 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 });
-            }
-        });
     }
 
     // 监听物理音量键：在漫画或小说阅读器中直接映射为上下翻页，带触觉震动
@@ -914,7 +1079,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void enterStandaloneMode() {
+        isStandaloneMode = true;
+        setupOverlay.setVisibility(View.GONE);
+        errorOverlay.setVisibility(View.GONE);
+        swipeRefresh.setVisibility(View.VISIBLE);
+        swipeRefresh.setRefreshing(false);
+        trustedOrigin = "";
+        currentLoadingUrl = "file:///android_asset/offline/standalone.html";
+        webView.loadUrl(currentLoadingUrl);
+    }
+
     private void loadServerUrl(String url) {
+        isStandaloneMode = false;
         currentLoadingUrl = url;
         // 影库地址即受信任来源：只有这个 origin 能留在 WebView 内并持有 JS 桥
         String origin = originOf(url);
