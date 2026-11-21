@@ -1,6 +1,10 @@
 // ========== 全局状态 ==========
 let currentView = 'home';
 let currentSort = 'hot';
+// ★ P0：视图/搜索代次 —— 切走后返回的慢请求据此丢弃，避免旧列表覆盖新视图。
+let viewToken = 0;
+let searchSeq = 0;
+let searchAbort = null;
 let currentMovies = [];
 let scanTimer = null;
 let scanStatusTimer = null;
@@ -18,6 +22,8 @@ let galleryMovies = [];
 // 标签弹窗方块用的糖果色池（与 av-board CANDY 同源）
 const TAG_CANDY = ['#ffdbfd', '#FAED8F', '#DDFCFC', '#CAF7C8', '#fbb663', '#f49978', '#feb6fa', '#c2b4eb', '#997ade', '#00ecef'];
 let currentPlayerMovie = null;
+// round182 P0-1：追番在线播放当前集 id（关闭播放器时补写进度用）
+let currentPlayerEpisode = 0;
 // 当前详情弹窗中的影片（用于详情弹窗内的按钮操作，不依赖列表缓存）
 let currentDetailMovie = null;
 // 当前列表筛选上下文（标签/女优筛选），用于数据变更后原地刷新保持状态
@@ -77,6 +83,8 @@ function formatTime(seconds) {
 const POSTER_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225"><rect width="400" height="225" fill="#241f18"/><text x="200" y="118" text-anchor="middle" font-size="64">🎬</text><text x="200" y="158" text-anchor="middle" fill="#9c9282" font-size="16">未找到封面</text></svg>'
 );
+// 内联 onerror 里要用到，挂到 window 上确保稳定可见
+window.POSTER_PLACEHOLDER = POSTER_PLACEHOLDER;
 
 function getPosterUrl(movie) {
     // 优先用posterPath（缓存文件），其次用localPosterPath
@@ -212,159 +220,208 @@ window.getCurrentPage = () => currentPage;
 window.getCurrentTotalPages = () => currentTotalPages;
 
 // ========== API 封装 ==========
+/* ★ P0：统一请求层 —— 401 拉起门禁、超时、JSON 异常、HTTP 错误都走同一条路。
+   业务方法不再各自裸 fetch + res.json()，避免会话过期时「静默空列表」。 */
+async function request(url, options = {}) {
+    const { timeout = 15000, signal, viewBound = false, ...init } = options;
+    const tokenAtStart = viewBound ? viewToken : null;
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if (signal) {
+        if (signal.aborted) ctrl.abort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    }
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+        const res = await fetch(url, { ...init, signal: ctrl.signal });
+        /* ★ P0：视图已切走 → 丢弃这次结果，避免慢请求把旧列表渲染进新视图。 */
+        if (viewBound && tokenAtStart !== viewToken) {
+            const stale = new Error('视图已切换');
+            stale.code = 'STALE';
+            stale.isRequestError = true;
+            throw stale;
+        }
+        if (res.status === 401) {
+            if (window.Gate && window.Gate.onUnauthorized) window.Gate.onUnauthorized();
+            throw new Error('会话已过期，请重新验证');
+        }
+        const text = await res.text();
+        let data = {};
+        if (text) {
+            try { data = JSON.parse(text); }
+            catch (e) { throw new Error('服务器响应格式异常'); }
+        }
+        if (!res.ok) throw new Error((data && data.msg) || `请求失败（${res.status}）`);
+        return data;
+    } catch (e) {
+        if (e && e.name === 'AbortError') {
+            const err = new Error('请求已取消');
+            err.code = 'ABORTED';
+            err.isRequestError = true;
+            throw err;
+        }
+        if (e) e.isRequestError = true;
+        throw e;
+    } finally {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+    }
+}
+
+/* code<0（HTTP 200 的业务错误）也要显式失败，避免「静默空列表」。 */
+function apiData(data, fallback) {
+    if (data && data.code !== undefined && data.code < 0) {
+        throw new Error(data.msg || '请求失败');
+    }
+    return data && data.data !== undefined ? data.data : fallback;
+}
+
 const api = {
     async getMovies(sort = 'hot', filter = 'all', type = 'all', page = 1, pageSize = 50, privacy = '') {
         const pz = privacy ? `&privacy=${privacy}` : '';
-        const res = await fetch(`/api/movie?sort=${sort}&filter=${filter}&type=${type}&page=${page}&pageSize=${pageSize}${pz}`);
-        const data = await res.json();
+        const data = await request(`/api/movie?sort=${sort}&filter=${filter}&type=${type}&page=${page}&pageSize=${pageSize}${pz}`, { viewBound: true });
+        if (data.code !== undefined && data.code < 0) throw new Error(data.msg || '加载影片失败');
         currentTotal = data.total || 0;
         currentTotalPages = data.totalPages || 0;
         currentPage = data.page || 1;
         return data.data || [];
     },
-    
-    async searchMovies(q) {
+
+    async searchMovies(q, signal) {
         // round41 #4：搜索结果排序；round42：下拉移到顶栏搜索框旁，全季/年份筛选已取消
+        // r126：顶栏 🔒 总开关处于隐藏态时，搜索结果同步剔除隐私内容（后端 privacy=exclude）
         const [sortKey, orderKey] = (localStorage.getItem('searchSort') || 'name:asc').split(':');
         const params = new URLSearchParams();
         params.set('q', q);
         params.set('sort', sortKey || 'name');
         params.set('order', orderKey || 'asc');
-        const res = await fetch(`/api/movie/search?${params.toString()}`);
-        const data = await res.json();
-        return data.data || [];
+        if (typeof isAdultNavHidden === 'function' && isAdultNavHidden()) params.set('privacy', 'exclude');
+        const data = await request(`/api/movie/search?${params.toString()}`, { signal, viewBound: true });
+        return apiData(data, []);
     },
-    
+
+    async semanticSearch(q, privacy) {
+        const data = await request('/api/ai/semantic-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q, privacy: privacy || '' })
+        });
+        if (data.code !== 0) throw new Error(data.msg || 'AI 搜索失败');
+        return { items: data.data || [], source: data.source || 'recall' };
+    },
+
     async getMovieDetail(id) {
-        const res = await fetch(`/api/movie/${id}`);
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/movie/${id}`, { viewBound: true });
+        return apiData(data, null);
     },
-    
+
     async playMovie(id) {
-        await fetch(`/api/movie/play/${id}`, { method: 'POST' });
+        await request(`/api/movie/play/${id}`, { method: 'POST' });
     },
-    
+
     async toggleFavorite(id) {
-        const res = await fetch(`/api/movie/favorite/${id}`, { method: 'POST' });
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/movie/favorite/${id}`, { method: 'POST' });
+        return apiData(data, null);
     },
-    
+
     async toggleWatched(id) {
-        const res = await fetch(`/api/movie/watched/${id}`, { method: 'POST' });
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/movie/watched/${id}`, { method: 'POST' });
+        return apiData(data, null);
     },
-    
+
     async rateMovie(id, rating) {
-        await fetch(`/api/movie/rating/${id}`, {
+        await request(`/api/movie/rating/${id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ rating })
         });
     },
-    
+
     // round34 切片器：type 可选 all/jav/anime/film/cartoon
     async getActresses(type) {
         const qs = (type && type !== 'all') ? `?type=${encodeURIComponent(type)}` : '';
-        const res = await fetch('/api/actress' + qs);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request('/api/actress' + qs, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getActressMovies(id) {
-        const res = await fetch(`/api/actress/${id}/movies`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/actress/${id}/movies`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async toggleActressFollow(id) {
-        const res = await fetch(`/api/actress/${id}/follow`, { method: 'POST' });
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/actress/${id}/follow`, { method: 'POST' });
+        return apiData(data, null);
     },
-    
+
     // round34 切片器：type 可选 all/jav/anime/film/cartoon
     async getTags(type) {
         const qs = (type && type !== 'all') ? `?type=${encodeURIComponent(type)}` : '';
-        const res = await fetch('/api/tags' + qs);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request('/api/tags' + qs, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getTagMovies(id) {
-        const res = await fetch(`/api/tags/${id}/movies`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/tags/${id}/movies`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getSimilarMovies(id, limit = 12, privacy = '') {
-        const res = await fetch(`/api/recommend/similar/${id}?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/similar/${id}?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getRandomMovies(limit = 24, type = 'all', privacy = '') {
-        const res = await fetch(`/api/recommend/random?limit=${limit}&type=${type}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/random?limit=${limit}&type=${type}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
 
     async getHotMovies(limit = 24, privacy = '') {
-        const res = await fetch(`/api/recommend/hot?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/hot?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
 
     async getGuessMovies(limit = 24, privacy = '') {
-        const res = await fetch(`/api/recommend/guess?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/guess?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
 
     async getUnwatchedMovies(limit = 50, privacy = '') {
-        const res = await fetch(`/api/recommend/unwatched?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/unwatched?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getStats(type) {
-        const res = await fetch('/api/stats/overview' + (type ? `?type=${type}` : ''));
-        const data = await res.json();
-        return data.data;
+        const data = await request('/api/stats/overview' + (type ? `?type=${type}` : ''), { viewBound: true });
+        return apiData(data, null);
     },
-    
+
     async getScanStatus(module = 'movie') {
-        const res = await fetch(`/api/scanner/status?module=${module}`);
-        const data = await res.json();
+        const data = await request(`/api/scanner/status?module=${module}`);
         return data.data;
     },
-    
+
     async startScan() {
-        await fetch('/api/scanner/start', { method: 'POST' });
+        await request('/api/scanner/start', { method: 'POST' });
     },
 
     // ===== 目录监控（round28）=====
     // 状态里含实时轮询间隔：没扫到新增时后端会逐次翻倍（上限 1 小时）
     async getWatchStatus() {
-        const res = await fetch('/api/scanner/watch-status');
-        const data = await res.json();
+        const data = await request('/api/scanner/watch-status');
         return data.data || {};
     },
 
     async watchNow() {
-        const res = await fetch('/api/scanner/watch-now', { method: 'POST' });
-        return await res.json();
+        return await request('/api/scanner/watch-now', { method: 'POST' });
     },
 
     async watchToggle(enabled) {
-        const res = await fetch('/api/scanner/watch-toggle', {
+        return await request('/api/scanner/watch-toggle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled: !!enabled })
         });
-        return await res.json();
     },
 
     // 视频文件流
@@ -375,45 +432,37 @@ const api = {
 
     // 播放列表
     async getPlaylists() {
-        const res = await fetch('/api/playlist');
-        const data = await res.json();
-        return data.data || [];
+        const data = await request('/api/playlist');
+        return apiData(data, []);
     },
-    
+
     async getPlaylistDetail(id) {
-        const res = await fetch(`/api/playlist/${id}`);
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/playlist/${id}`, { viewBound: true });
+        return apiData(data, null);
     },
-    
+
     async createPlaylist(name, description) {
-        const res = await fetch('/api/playlist/create', {
+        return await request('/api/playlist/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, description })
         });
-        const data = await res.json();
-        return data;
     },
-    
+
     async addToPlaylist(playlistId, movieId) {
-        const res = await fetch(`/api/playlist/${playlistId}/add`, {
+        return await request(`/api/playlist/${playlistId}/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ movieId })
         });
-        const data = await res.json();
-        return data;
     },
-    
+
     async removeFromPlaylist(playlistId, movieId) {
-        const res = await fetch(`/api/playlist/${playlistId}/remove`, {
+        return await request(`/api/playlist/${playlistId}/remove`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ movieId })
         });
-        const data = await res.json();
-        return data;
     }
 };
 
@@ -421,6 +470,14 @@ const api = {
 // round79：「精选推荐」从「单张 full-bleed 大图 flip 轮播」改为
 // 挤压式轮播（4 列 + 右侧 slat 尾巴，hover 挤压）。原生移植 SqueezeCarousel。
 let gallerySq = null;                                   // SqueezeCarousel 实例
+/* ★ round128：精选推荐按视图缓存一批，**同一个视图不再重抽**。
+ *   旧行为：每次 switchView 进来都重新 getRandomMovies(40) 再洗牌 ⇒ 10 张封面整批换掉，
+ *   用户看到的是「推荐区像被重刷新了一遍」（他说「每次点下一张，整个页面就被重刷新」）。
+ *   现在：视图首次进入才拉一次，之后回到同一视图原样复用；真正的换一批要刷新整页。
+ *   页面刷新 = Map 随模块重置 ⇒ 「每次刷新都是新的随机组合」这条老需求仍然成立。 */
+const gallerySets = new Map();          // view → movies[]
+let galleryViewKey = '';                // 当前轮播实例对应的视图
+
 async function initGallery(view = 'movies') {
     try {
         let type = 'all';
@@ -430,16 +487,41 @@ async function initGallery(view = 'movies') {
         else if (view === 'novel') type = 'novel';
         else if (view === 'movies-adult') { type = 'adult'; privacy = 'adult'; }   // 隐私组版：轮播只放 AV/里番
 
+        /* ① 就站在同一个视图上（点导航回本视图、或别处顺手重进）：一个字节都不动。
+              重建 = 轮播跳回第 0 张 + 背景重糊一遍，正是「像重刷新」的来源。 */
+        if (galleryViewKey === view && gallerySq && galleryMovies.length >= 3) {
+            showGallery();
+            startGalleryAutoPlay();
+            return;
+        }
+        /* ② 这个视图以前来过：复用那一批（不再重抽） */
+        const cached = gallerySets.get(view);
+        if (cached && cached.length >= 3) {
+            galleryMovies = cached.slice();
+            galleryViewKey = view;
+            showGallery();
+            renderGallery();
+            startGalleryAutoPlay();
+            return;
+        }
+
         // 2026-09-22：用户反馈「推荐只有两部」——原来只请求 8 部再过滤掉无封面的，
         // 随机 8 部里有 6 部没海报就只剩 2 部了。现在多拿一些（后端本来就会 ×4 随机池），
         // 过滤有封面的后洗牌，固定输出 10 部；每次刷新都是新的随机组合。
         const pool = await api.getRandomMovies(40, type, privacy);
         const withPoster = pool.filter(m => m.localPosterPath || m.posterPath);
-        galleryMovies = withPoster.sort(() => 0.5 - Math.random()).slice(0, 10);
-        if (galleryMovies.length < 3) {
+        const picked = withPoster.sort(() => 0.5 - Math.random()).slice(0, 10);
+        if (picked.length < 3) {
+            if (currentView === view) hideGallery();
+            return;
+        }
+        gallerySets.set(view, picked.slice());
+        if (currentView !== view || !['movies', 'movies-adult'].includes(currentView)) {
             hideGallery();
             return;
         }
+        galleryMovies = picked;
+        galleryViewKey = view;
 
         showGallery();
         renderGallery();
@@ -496,8 +578,12 @@ function renderGallery() {
 
     const prevBtn = document.getElementById('galleryPrev');
     const nextBtn = document.getElementById('galleryNext');
-    if (prevBtn) prevBtn.onclick = (e) => { e.stopPropagation(); if (gallerySq) { gallerySq.prev(); gallerySq.startAuto(); } };
-    if (nextBtn) nextBtn.onclick = (e) => { e.stopPropagation(); if (gallerySq) { gallerySq.next(); gallerySq.startAuto(); } };
+    /* ★ round128：箭头点击一律 preventDefault + stopPropagation。
+       它们是 <div>，本该什么都不做，但一旦将来被包进 <a> / 按钮表单，
+       默认行为（导航 / 提交）就会表现为「点下一张＝整页重刷新」。
+       这两行成本为零，直接把那条路堵死。 */
+    if (prevBtn) prevBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (gallerySq) { gallerySq.prev(); gallerySq.startAuto(); } };
+    if (nextBtn) nextBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (gallerySq) { gallerySq.next(); gallerySq.startAuto(); } };
 }
 
 function updateGallery() {
@@ -610,6 +696,8 @@ function formatAddedDate(ts) {
 // window.CV_SHOW_ORIG 在 init 解锁后加载，saveSettings 保存时同步。
 function prefTitle(movie) {
     if (window.CV_SHOW_ORIG && movie.originalTitle) return movie.originalTitle;
+    // round144：显示层剥掉标题里重复的番号前缀（aipc-title-clean.js）
+    if (window.cvDisplayTitle) return window.cvDisplayTitle(movie);
     return movie.title || movie.fileName;
 }
 
@@ -640,31 +728,110 @@ function renderMovieCard(movie) {
         ? addedDate.slice(5) : '';   // MM-DD
 
     // 副信息行：番号 + 体积（等宽字体，扫读对齐）
-    const metaLine = [avid, movie.fileSize ? formatSize(movie.fileSize) : ''].filter(Boolean).join(' · ');
+    const isBookMedia = movie.type === 'novel' || movie.type === 'comic';
+    const typeLabel = movie.type === 'novel' ? '📖 典藏小说' : (movie.type === 'comic' ? '✒️ 典藏漫画' : (movie.type === 'cartoon' ? '🌸 动漫' : '🎬 影视'));
+    const bookSub = (isBookMedia && typeof window.cvExtractBookSubLabel === 'function')
+        ? window.cvExtractBookSubLabel(movie, displayTitle, movie.type === 'novel')
+        : avid;
+    const sizeStr = movie.fileSize ? formatSize(movie.fileSize) : '';
+    const metaLine = [bookSub, sizeStr].filter(Boolean).join(' · ');
+    /* ★ P0-安全：标题/副标题来自刮削站或文件名，进 HTML 前一律转义。
+       posterUrl 既进 src 属性也进 style 的 CSS url()，分别做属性转义和 CSS 转义。 */
+    const safeTitle = escapeHtml(displayTitle);
+    const safeBookSub = escapeHtml(bookSub);
+    const safeMeta = escapeHtml(metaLine);
+    const safeAddedDate = escapeHtml(addedDate);
+    const safePoster = escapeHtml(posterUrl || POSTER_PLACEHOLDER);
+    const bookBgStyle = (isBookMedia && posterUrl)
+        ? ` style="--book-cover-url:${cssUrl(posterUrl)};"`
+        : '';
 
     return `
-        <div class="movie-card movie-card-compact ${isFav ? 'favorite' : ''} ${isWatched ? 'watched' : ''} ${isSelected ? 'selected' : ''}" data-id="${movie.id}" data-added="${movie.addedTime || ''}" data-added-date="${addedDate}" data-type="${movie.type || ''}" title="${displayTitle}">
+        <div class="movie-card movie-card-compact ${isBookMedia ? 'is-book-media' : ''} ${isFav ? 'favorite' : ''} ${isWatched ? 'watched' : ''} ${isSelected ? 'selected' : ''}" data-id="${movie.id}" data-added="${movie.addedTime || ''}" data-added-date="${addedDate}" data-type="${movie.type || ''}" title="${safeTitle}">
             <i class="am-glow" aria-hidden="true"></i>
             ${isFav ? '<span class="badge-fav">⭐</span>' : ''}
             ${isWatched ? '<span class="badge-watched">✓</span>' : ''}
-            <div class="movie-poster-wrap">
+            <div class="movie-poster-wrap${isBookMedia ? ' is-book-media' : ''}"${bookBgStyle}>
                 ${isNew ? '<span class="movie-badge-new">NEW</span>' : ''}
-                ${addedBadge ? `<span class="movie-badge-added" title="入库日期 ${addedDate}">📥 ${addedBadge}</span>` : ''}
-                <img class="movie-poster" src="${posterUrl || POSTER_PLACEHOLDER}" onerror="this.onerror=null;this.src=POSTER_PLACEHOLDER" alt="${displayTitle}" loading="lazy" decoding="async">
-                <div class="movie-avid-overlay">${avid}</div>
+                ${addedBadge ? `<span class="movie-badge-added" title="入库日期 ${safeAddedDate}">📥 ${addedBadge}</span>` : ''}
+                <img class="movie-poster" src="${safePoster}" onerror="this.onerror=null;this.src=POSTER_PLACEHOLDER" alt="${safeTitle}" loading="lazy" decoding="async">
+                <div class="movie-avid-overlay">${safeBookSub}</div>
                 <div class="movie-hover-info">
-                    <div class="movie-hover-title">${displayTitle}</div>
+                    <div class="movie-hover-title">${safeTitle}</div>
                     <div class="movie-hover-meta">
                         <span>${formatDuration(movie.duration)}</span>
                         <span>${formatSize(movie.fileSize)}</span>
                     </div>
                 </div>
             </div>
-            <div class="movie-title-below">${displayTitle}${metaLine ? `<span class="mtb-meta">${metaLine}</span>` : ''}</div>
+            <div class="movie-title-below">
+                <div class="mtb-kicker-row">
+                    <span class="mtb-type-pill">${typeLabel}</span>
+                    ${addedBadge ? `<span class="mtb-date">${addedBadge}</span>` : ''}
+                </div>
+                <div class="mtb-main-title">${safeTitle}</div>
+                ${metaLine ? `<span class="mtb-meta">${safeMeta}</span>` : ''}
+                <div class="mtb-placard-foot">
+                    ${bookSub ? `<span class="mtb-author-chip">${safeBookSub}</span>` : ''}
+                    ${sizeStr ? `<span class="mtb-size-chip">${sizeStr}</span>` : ''}
+                    <span class="mtb-cta-link">${isBookMedia ? '翻阅藏书 →' : '立即播放 →'}</span>
+                </div>
+            </div>
             ${pct > 0 ? `<div class="card-progress" style="--p:${pct}%"></div>` : ''}
         </div>
     `;
 }
+
+// V5 书籍/综合网格三态版式控制：portrait（3:4 竖版精装书架）| placard（左书右笺展签横卡）| stage（16:9 宽幅景深）
+window.cvApplyBookLayoutMode = function (mode, moviesList) {
+    const grid = document.getElementById('movieGrid');
+    if (!grid) return;
+    const list = Array.isArray(moviesList) ? moviesList : (window.currentMovies || []);
+    const isAdult = ['movies-adult', 'jav', 'anime', 'recent-adult', 'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult'].includes(currentView);
+    if (isAdult) {
+        grid.removeAttribute('data-book-layout');
+        return;
+    }
+    let saved = mode || '';
+    if (!saved) {
+        try { saved = localStorage.getItem('cvBookLayoutMode') || 'auto'; } catch (e) { saved = 'auto'; }
+    }
+    let effective = saved;
+    if (effective === 'auto') {
+        const bookCount = list.filter(m => m && (m.type === 'novel' || m.type === 'comic')).length;
+        // 当列表里超过一半是书籍/漫画时，自动启用 3:4 满幅精装竖版书架，告别 16:9 居中缩图
+        effective = (list.length > 0 && bookCount / list.length >= 0.5) ? 'portrait' : 'stage';
+    }
+    const prevLayout = grid.getAttribute('data-book-layout');
+    const isManualSwitch = !!mode && prevLayout && prevLayout !== effective;
+    if (isManualSwitch && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+        grid.classList.remove('cv-rack-settle');
+        grid.classList.add('cv-rack-burst');
+        setTimeout(() => {
+            grid.setAttribute('data-book-layout', effective);
+            grid.classList.remove('cv-rack-burst');
+            grid.classList.add('cv-rack-settle');
+            setTimeout(() => grid.classList.remove('cv-rack-settle'), 320);
+        }, 90);
+    } else {
+        grid.setAttribute('data-book-layout', effective);
+    }
+    const bar = document.getElementById('facetFilterBar');
+    if (bar) {
+        const grp = bar.querySelector('.facet-group[data-dim="layout"]');
+        if (grp) {
+            let targetBtn = null;
+            grp.querySelectorAll('.f-pill').forEach(btn => {
+                const on = btn.dataset.val === effective;
+                btn.classList.toggle('active', on);
+                if (on) targetBtn = btn;
+            });
+            if (targetBtn && typeof window.mvSlidePillTo === 'function') {
+                try { window.mvSlidePillTo(targetBtn); } catch (e) {}
+            }
+        }
+    }
+};
 
 // 渲染影片网格
 function renderMovies(movies, fromFilter = false) {
@@ -672,6 +839,11 @@ function renderMovies(movies, fromFilter = false) {
     window.currentMovies = movies;
     if (!fromFilter) {
         window._rawViewMovies = movies;
+        /* round127 · bug2 修复：快照必须记住「它属于哪个视图」。
+           以前 _rawViewMovies 是个全局单槽，小说/漫画/隐私内容互相覆盖，
+           facet-filter 还原全量时就把上一个视图的数据渲进当前板块
+           （隐私内容里冒出小说、漫画的直接原因）。 */
+        window._rawViewMoviesView = currentView;
     }
     const grid = document.getElementById('movieGrid');
     const emptyTip = document.getElementById('emptyTip');
@@ -743,6 +915,7 @@ function renderMovies(movies, fromFilter = false) {
 
     // 绑定点击事件
     bindMovieCardClicks(grid);
+    if (typeof window.cvApplyBookLayoutMode === 'function') window.cvApplyBookLayoutMode(null, movies);
 
     // round78：系列胶囊/摞卡点击 —— 走 Page side-by-side 转场，不再重渲染整个网格
     if (seriesMap && seriesMap.size) {
@@ -2140,9 +2313,9 @@ async function refreshCurrentList() {    const scrollY = window.scrollY;
             await loadRandom();
             break;
         case 'guess':
-            // Aardvark 展台下「刷新」＝再挑一批；魔术视图下＝再抽一批
+            // Aardvark 展台下原地刷新保持当前片单；魔术视图下保持原样
             if (window.AvBoard) {
-                window.AvBoard.openGuess();
+                window.AvBoard.openGuess('exclude');
             } else if (window.MagicLikes && window.MagicLikes.state.movies.length) {
                 await window.MagicLikes.refresh();
             } else {
@@ -2166,13 +2339,41 @@ async function refreshCurrentList() {    const scrollY = window.scrollY;
             await loadRandom('adult');
             break;
         case 'guess-adult':
-            await loadGuess('adult');
+            // 修复：必须优先走 AvBoard 展台，绝不能无故回落到上下瀑布流长廊
+            if (window.AvBoard) {
+                window.AvBoard.openGuess('adult');
+            } else {
+                await loadGuess('adult');
+            }
             break;
         case 'unwatched-adult':
             await loadUnwatched('adult');
             break;
         case 'recent':
             await loadRecent();
+            break;
+        /* round127 · bug3 修复：以下视图以前没有分支，全部掉进 default ⇒ loadMovies()，
+         * 表现就是「换完海报 / 刮完封面后莫名跳回『全部内容』页」。
+         * 这里逐个补上，保证原地刷新只刷新当前视图。 */
+        case 'movies-adult':
+            await loadAdultMovies(page);
+            break;
+        case 'recent-adult':
+            await loadAdultRecent();
+            break;
+        case 'film':
+            await loadFilmMovies(page);
+            break;
+        case 'cartoon':
+            await loadCartoonMovies(page);
+            break;
+        case 'home':
+            if (window.Home && window.Home.showHome) window.Home.showHome();
+            else await loadMovies(page);
+            break;
+        case 'acg-rank':
+            if (window.Home && window.Home.showAcgBoard) window.Home.showAcgBoard();
+            else await loadMovies(page);
             break;
         case 'favhub':
         case 'playlists':
@@ -2410,6 +2611,13 @@ async function openTagById(tagId, tagName) {
     document.getElementById('sortSelect').parentElement.style.display = 'block';
     hideGallery();
     renderMoviesChunked(movies, `标签筛选 - ${tagName}`);
+    // round168：补「进得去出不来」——侧栏归属高亮 + 结果页返回条
+    document.querySelectorAll('.nav-item.active').forEach(n => n.classList.remove('active'));
+    const navTag = document.querySelector('.nav-item[data-view="tags"]');
+    if (navTag) navTag.classList.add('active');
+    if (window.TagsUI && typeof window.TagsUI.showBackBar === 'function') {
+        window.TagsUI.showBackBar(`标签筛选 - ${tagName}`, movies.length);
+    }
     if (window.Features && window.Features.renderProfile) {
         window.Features.renderProfile('tag', tagName, movies);
     }
@@ -2670,15 +2878,40 @@ async function fillLibraryCounts() {
     if (adultEl && (javN || animeN)) adultEl.textContent = javN + animeN;
 }
 
-// 更新工具栏标题
+// 更新工具栏标题（★ P0：默认转义；需要插图标的少数入口走 updateToolbarTitleHtml）
 function updateToolbarTitle(title, count) {
     const toolbar = document.getElementById('toolbarTitle');
+    if (!toolbar) return;
+    const safe = escapeHtml(title == null ? '' : title);
     if (count !== undefined) {
-        toolbar.innerHTML = `${title} <span class="toolbar-count" id="movieCount">共 ${count} 部</span>`;
+        toolbar.innerHTML = `${safe} <span class="toolbar-count" id="movieCount">共 ${Number(count) || 0} 部</span>`;
     } else {
         // 不带数量时保留 movieCount 元素，避免后续 getElementById('movieCount') 为空
-        toolbar.innerHTML = `${title} <span class="toolbar-count" id="movieCount" style="display:none;"></span>`;
+        toolbar.innerHTML = `${safe} <span class="toolbar-count" id="movieCount" style="display:none;"></span>`;
     }
+}
+
+/* 仅限内部硬编码的图标 HTML（ttIcon）。用户输入永远不要走这里。 */
+function updateToolbarTitleHtml(html, count) {
+    const toolbar = document.getElementById('toolbarTitle');
+    if (!toolbar) return;
+    if (count !== undefined) {
+        toolbar.innerHTML = `${html} <span class="toolbar-count" id="movieCount">共 ${Number(count) || 0} 部</span>`;
+    } else {
+        toolbar.innerHTML = `${html} <span class="toolbar-count" id="movieCount" style="display:none;"></span>`;
+    }
+}
+
+function updateToolbarTitleIcon(iconId, label, count) {
+    updateToolbarTitleHtml(ttIcon(iconId) + ' ' + escapeHtml(label), count);
+}
+
+/* ★ round129：页头图标 —— 隐私组六个板块原来页头都用同一个 🔞，
+ *   用户原话「点进去左上角的图标全都是同一个」。这里改成直接插入各自的 96px 图标，
+ *   与侧栏同一份资源（img/nav-icons/adult-*.png），不会出现两边长相不一致。 */
+function ttIcon(id) {
+    if (!id) return '';
+    return `<img class="tt-ic" src="img/nav-icons/${id}.png" alt="" draggable="false">`;
 }
 
 // ========== 收藏夹（round53：原「播放列表」升级而来） ==========
@@ -2983,6 +3216,11 @@ async function loadComic(page = 1) {
     updateToolbarTitle('📚 漫画库');
     currentView = 'comic';
     currentPage = page;
+    const prevGuess = document.getElementById('avGuessBoard');
+    if (prevGuess) {
+        const g = document.getElementById('movieGrid');
+        if (g) g.innerHTML = '';
+    }
     
     // 增加切换按钮
     const toolbarRight = document.querySelector('.toolbar-right');
@@ -3298,6 +3536,69 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
+/* ★ P0-安全：简介/描述这类允许少量富文本的字段，走白名单清洗后再进 innerHTML。
+   刮削来源的简介可能带 <script>、on* 事件属性或 javascript: 链接；这里剥掉危险节点与属性，
+   保留 <b>/<i>/<br>/<p> 等基础排版，详情页的观感不变。 */
+function sanitizeHtml(input) {
+    if (!input) return '';
+    const tpl = document.createElement('template');
+    tpl.innerHTML = String(input);
+    const BLOCK = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM']);
+    tpl.content.querySelectorAll('*').forEach((el) => {
+        if (BLOCK.has(el.tagName)) { el.remove(); return; }
+        for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith('on') || name === 'srcdoc') {
+                el.removeAttribute(attr.name);
+            } else if ((name === 'href' || name === 'src' || name === 'xlink:href') &&
+                /^\s*(?:javascript|vbscript|data:text\/html)/i.test(attr.value)) {
+                el.removeAttribute(attr.name);
+            }
+        }
+    });
+    return tpl.innerHTML;
+}
+
+/* ★ P0-安全：src/href 只允许 http(s)、blob、data:image 和站内相对路径，其它协议一律丢弃。 */
+function safeAssetUrl(u) {
+    const s = String(u == null ? '' : u).trim();
+    if (!s) return '';
+    if (/^(?:https?:|blob:|data:image\/)/i.test(s)) return s;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return '';
+    return s;
+}
+
+/* ★ P0-安全：把 URL 放进 CSS url("...") 时转义引号/反斜杠/换行，避免从 style 属性里逃逸。 */
+function cssUrl(u) {
+    const s = String(u == null ? '' : u).replace(/["\\\n\r\f]/g, (ch) => '\\' + ch.charCodeAt(0).toString(16) + ' ');
+    return `url("${s}")`;
+}
+
+/* ★ P0：统一请求失败提示 —— 只提示一次，避免同一错误在多个并发请求里刷屏。 */
+let _lastRequestErrorAt = 0;
+let _lastRequestErrorMsg = '';
+function reportRequestError(e, where) {
+    if (!e || e.code === 'ABORTED' || e.name === 'AbortError') return;
+    const msg = e.message || String(e);
+    const now = Date.now();
+    if (msg === _lastRequestErrorMsg && now - _lastRequestErrorAt < 3000) return;
+    _lastRequestErrorAt = now;
+    _lastRequestErrorMsg = msg;
+    console.warn(`[${where || 'request'}] ${msg}`);
+    if (typeof showNotification === 'function') showNotification('加载失败', msg, 'error');
+}
+
+/* ★ P0：统一兜住请求层抛出的未处理异常。
+   - STALE（视图已切换）/ ABORTED（主动取消）静默丢弃；
+   - 其余网络/业务错误提示一次，避免页面「点了没反应但控制台有红字」。 */
+window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    if (!r || !r.isRequestError) return;
+    e.preventDefault();
+    if (r.code === 'STALE' || r.code === 'ABORTED') return;
+    reportRequestError(r, 'async');
+});
 
 // 切换小说视图（本地/网盘/全部）— round91 起支持三态
 // round99：切片器切换动效 —— 新激活的按钮做一次弹性回弹（动效库 toggle-flip 理念）
@@ -5315,15 +5616,15 @@ function renderCloudComics(comics) {
     }
 
     grid.innerHTML = comics.map(comic => `
-        <div class="movie-card" onclick="showCloudComicDetail('${comic.url}')">
+        <div class="movie-card" data-cloud-url="${escapeHtml(comic.url)}" onclick="showCloudComicDetail(this.dataset.cloudUrl)">
             <div class="movie-poster">
-                <img src="${kmoeImg(comic.cover)}" alt="${comic.title}" loading="lazy" decoding="async">
+                <img src="${escapeHtml(kmoeImg(comic.cover))}" alt="${escapeHtml(comic.title || '')}" loading="lazy" decoding="async">
                 <div class="poster-overlay">
                     <div class="play-btn">▶</div>
                 </div>
             </div>
             <div class="movie-info">
-                <div class="movie-title">${comic.title}</div>
+                <div class="movie-title">${escapeHtml(comic.title || '')}</div>
                 <div class="movie-meta">
                     <span class="source-tag">KOOB.ONE</span>
                 </div>
@@ -5370,13 +5671,13 @@ function showCloudComicModal(comic, kb, kbRaw) {
 
             <div class="detail-poster">
 
-                <img src="${kmoeImg(comic.cover)}" alt="${comic.title}">
+                <img src="${escapeHtml(kmoeImg(comic.cover))}" alt="${escapeHtml(comic.title || '')}">
 
             </div>
 
             <div class="detail-info">
 
-                <div class="detail-title">${comic.title || ''}</div>
+                <div class="detail-title">${escapeHtml(comic.title || '')}</div>
 
                 <span class="detail-avid">KOOB.ONE</span>
 
@@ -5428,7 +5729,7 @@ function showCloudComicModal(comic, kb, kbRaw) {
 
         
 
-        ${comic.description ? `<div class="detail-overview" style="margin-top:12px;">${comic.description}</div>` : ''}
+        ${comic.description ? `<div class="detail-overview" style="margin-top:12px;">${sanitizeHtml(comic.description)}</div>` : ''}
     `;
 
     document.getElementById('detailBody').innerHTML = html;
@@ -5623,6 +5924,11 @@ async function loadNovel(page = 1) {
     updateToolbarTitle('📖 小说库');
     currentView = 'novel';
     currentPage = page;
+    const prevGuess = document.getElementById('avGuessBoard');
+    if (prevGuess) {
+        const g = document.getElementById('movieGrid');
+        if (g) g.innerHTML = '';
+    }
     
     // 增加切换按钮
     const toolbarRight = document.querySelector('.toolbar-right');
@@ -5788,8 +6094,8 @@ async function loadReadingStatsBanner(type) {
                     <span class="reading-stats-sub">🎯 阅读排行</span>
                     <div class="reading-top-list">
                         ${top.map((t, i) => `
-                            <span class="reading-top-item" onclick="openReaderByType(${t.movieId}, '${type}')" title="${t.title}">
-                                <b>${i + 1}</b> ${t.title} <em>${formatDurationHMS(t.seconds)}</em>
+                            <span class="reading-top-item" onclick="openReaderByType(${t.movieId}, '${type}')" title="${escapeHtml(t.title)}">
+                                <b>${i + 1}</b> ${escapeHtml(t.title)} <em>${formatDurationHMS(t.seconds)}</em>
                             </span>
                         `).join('')}
                     </div>
@@ -6514,6 +6820,7 @@ function switchSettingsGroup(name) {
     // r60：进入 Cookie 分组时检测夸克登录脚本位置
     if (name === 'cookies') { loadQuarkBatInfo(); loadOAuthStatus(); }   // round91：+ 网盘 OAuth 状态
     if (name === 'cloudsync') loadCloudSyncPanel();   // round92：数据同步面板
+    if (name === 'bangumi' && window.BangumiPanel) window.BangumiPanel.render();   // round173e：Bangumi 同步面板
     // round91：进入「扫描路径」时渲染网盘目录绑定
     if (name === 'paths') renderCloudDirBindings();
     // 进入「个性化」时刷新动画卡缩略图（round38）+ 动效库面板（round49）
@@ -6526,6 +6833,11 @@ function switchSettingsGroup(name) {
     if (name === 'ai') loadAIConfig();
     // r89：进入「语音朗读」时刷新 TTS 状态与面板
     if (name === 'tts' && window.TtsPanel) window.TtsPanel.refresh();
+    /* round142：进入「数据源」时自检浏览器环境 —— 用户不必点按钮就能知道
+       自己的 hanime 源能不能用（无头/无浏览器 → CF 必被拦）。 */
+    if (name === 'sources' || name === 'datasource') {
+        try { refreshBrowserStatus(); } catch (e) { }
+    }
 }
 
 /* ==========================================================================
@@ -6535,14 +6847,18 @@ function switchSettingsGroup(name) {
    ========================================================================== */
 const UI_CUSTOM_KEY = 'uiCustom';
 
+/* round131：界面毛玻璃透明度（%）。30 = 面板底 30% 不透明，即"透出 70% 背景"。
+   太透会让文字压在海报上难以辨认，因此下限 10、上限 85，默认 30。 */
+const GLASS_ALPHA_DEFAULT = 30;
+
 function getUiCustom() {
     try {
         return Object.assign(
-            { posterScale: 1, posterRatio: 'wide', playerSize: 'md', playerPos: 'center', pageBgVeil: 72 },
+            { posterScale: 1, posterRatio: 'wide', playerSize: 'md', playerPos: 'center', pageBgVeil: 72, glassAlpha: GLASS_ALPHA_DEFAULT },
             JSON.parse(localStorage.getItem(UI_CUSTOM_KEY) || '{}')
         );
     } catch (e) {
-        return { posterScale: 1, posterRatio: 'wide', playerSize: 'md', playerPos: 'center', pageBgVeil: 72 };
+        return { posterScale: 1, posterRatio: 'wide', playerSize: 'md', playerPos: 'center', pageBgVeil: 72, glassAlpha: GLASS_ALPHA_DEFAULT };
     }
 }
 
@@ -6564,6 +6880,97 @@ function toggleUiFlag(btn, key) {
     if (key === 'glassOff') btn.textContent = next ? '已关闭' : '✓ 开启中';
 }
 
+/* ================================================================
+ * r137 · 首页左栏展示模式（AI 对话框 ↔ Live2D 形象）
+ * - 偏好存 uiCustom.homePaneMode（'chat' 默认 | 'l2d'），与皮肤/毛玻璃同一机制
+ * - l2d 生效前提：CVCompanion 已启用（否则自动回落 chat，面板不出现）
+ * - stage 搬运：companion 的 #companionStage 是 body 级 fixed 浮层，
+ *   l2d 模式 + 首页活跃时搬进 #homeL2dPane 并加 .embedded（CSS 改绝对定位填满）；
+ *   离开首页/切回 chat 时搬回 body。搬运后必须 CVCompanion.refit() 重算画布。
+ * ================================================================ */
+function homePaneModeWanted() {
+    return String(getUiCustom().homePaneMode || '') === 'l2d';
+}
+
+function applyHomePaneMode() {
+    const view = document.getElementById('homeView');
+    const pane = document.getElementById('homeL2dPane');
+    const chatCol = view ? view.querySelector('.home-chat') : null;
+    if (!pane || !chatCol) return;
+    const homeActive = view.classList.contains('active');
+    const companionOn = !!(window.CVCompanion && window.CVCompanion.enabled);
+    const active = homePaneModeWanted() && companionOn && homeActive;
+    chatCol.classList.toggle('home-l2d-mode', active);
+    const stage = document.getElementById('companionStage');
+    if (!stage) return;                   // 伴侣从未启用：没有 stage，面板保持隐藏
+    if (active) {
+        pane.style.display = '';
+        if (stage.parentElement !== pane) pane.appendChild(stage);
+        stage.classList.add('embedded');
+        stage.style.display = '';         // 用户曾点 × 隐藏浮层的，切到形象模式时复活
+        requestAnimationFrame(() => { try { window.CVCompanion.refit(); } catch (e) { } });
+    } else {
+        pane.style.display = 'none';
+        if (stage.classList.contains('embedded')) {
+            stage.classList.remove('embedded');
+            if (stage.parentElement !== document.body) document.body.appendChild(stage);
+            if (homeActive) stage.style.display = '';
+            requestAnimationFrame(() => { try { window.CVCompanion.refit(); } catch (e) { } });
+        }
+    }
+}
+
+/** 离开首页时调用：stage 搬回 body 右下角，其它视图恢复常驻浮层 */
+function unmountHomePane() {
+    const stage = document.getElementById('companionStage');
+    const pane = document.getElementById('homeL2dPane');
+    if (pane) pane.style.display = 'none';
+    if (stage && stage.classList.contains('embedded')) {
+        stage.classList.remove('embedded');
+        if (stage.parentElement !== document.body) document.body.appendChild(stage);
+        stage.style.display = '';
+        requestAnimationFrame(() => { try { window.CVCompanion.refit(); } catch (e) { } });
+    }
+}
+
+/** 设置 → 外观 → 首页展示：二选一按钮 */
+function setHomePaneMode(mode) {
+    setUiCustom({ homePaneMode: (mode === 'l2d') ? 'l2d' : 'chat' });
+    applyHomePaneMode();
+    const bChat = document.getElementById('homePaneChatBtn');
+    const bL2d = document.getElementById('homePaneL2dBtn');
+    const on = homePaneModeWanted();
+    if (bChat) bChat.classList.toggle('btn-secondary', on);
+    if (bL2d) bL2d.classList.toggle('btn-secondary', !on);
+}
+
+/* companion 模型就位钩子（companion.js start() 里两处触发：stage 建好 / 模型加载完） */
+window.onCVCompanionReady = function () {
+    try { applyHomePaneMode(); } catch (e) { /* 静默 */ }
+};
+
+/**
+ * round131 · 界面毛玻璃透明度
+ * 口径：pct = 面板底"不透明度"百分比（30 ⇒ 透出 70% 背景）。
+ * 只写 CSS 变量，样式规则不动 ⇒ 拖动滑块即时生效，无需重渲染。
+ */
+function applyGlassAlpha(pct) {
+    const raw = (pct === undefined || pct === null || isNaN(Number(pct))) ? GLASS_ALPHA_DEFAULT : Number(pct);
+    const clamped = Math.min(85, Math.max(10, raw));
+    document.documentElement.style.setProperty('--cv-glass-alpha', (clamped / 100).toFixed(2));
+    return clamped;
+}
+
+/** 设置页滑块：即时应用 + 即时落盘（localStorage），不依赖"保存"按钮 */
+function setGlassAlpha(v) {
+    const pct = Math.min(85, Math.max(10, Number(v) || GLASS_ALPHA_DEFAULT));
+    setUiCustom({ glassAlpha: pct });
+    const out = document.getElementById('glassAlphaVal');
+    if (out) out.textContent = pct + '%';
+    const range = document.getElementById('glassAlphaRange');
+    if (range && Number(range.value) !== pct) range.value = pct;
+}
+
 function applyUiCustom() {
     const c = getUiCustom();
     const h = document.documentElement;
@@ -6580,6 +6987,8 @@ function applyUiCustom() {
     if (c.hideCharts) h.setAttribute('data-hide-charts', ''); else h.removeAttribute('data-hide-charts');
     // 玻璃特效（round41 #1：低性能设备可关）
     if (document.body) document.body.classList.toggle('glass-off', !!c.glassOff);
+    // round131：毛玻璃透明度（%→0~1）。玻璃实际强度 = CSS 变量，改这里即全站生效
+    applyGlassAlpha(c.glassAlpha);
 
     // 海报
     h.style.setProperty('--card-w-scale', c.posterScale || 1);
@@ -7487,9 +7896,9 @@ function renderSettings(config) {
     const authHasPwd = !!(config.auth && config.auth.hasPassword);
 
     const groups = [
-        { id: 'appearance', icon: 'spark', name: '外观' },
+        { id: 'appearance', icon: 'film', name: '外观' },
         { id: 'customize', icon: 'settings', name: '个性化' },
-        { id: 'fxsettings', icon: 'spark', name: '动效设置' },
+        { id: 'fxsettings', icon: 'flame', name: '动效设置' },
         { id: 'paths', icon: 'frame', name: '扫描路径' },
         { id: 'sources', icon: 'watch', name: '数据源' },
         { id: 'player', icon: 'reel', name: '播放' },
@@ -7501,6 +7910,7 @@ function renderSettings(config) {
         { id: 'tools', icon: 'clock', name: '工具维护' },
         { id: 'cookies', icon: 'bookmark', name: '授权 Cookie' },
         { id: 'cloudsync', icon: 'shuffle', name: '数据同步' },
+        { id: 'bangumi', icon: 'reel', name: 'Bangumi 同步' },   // round173e：追番进度云同步
         { id: 'version', icon: 'chart', name: '版本' },
         { id: 'about', icon: 'home', name: '关于' }
     ];
@@ -7547,18 +7957,72 @@ function renderSettings(config) {
                                     <div style="font-size: 12px; color: var(--text-muted);">暖黑底 · 纸白字 · 琥珀灯</div>
                                 </div>
                             </div>
+                            <div class="theme-card ${getV4Skin() === 'whale' ? 'active' : ''}" data-v4skin="whale" onclick="pickV4Skin('whale')">
+                                <div class="theme-dot" style="background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);"></div>
+                                <div class="theme-card-info">
+                                    <div style="font-weight: 600; font-size: 14px;">🐋 鲸 · Deep Whale</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">深海生物光 · 月光金 · 鲸鱼娘陪伴</div>
+                                </div>
+                            </div>
+                            <div class="theme-card ${getV4Skin() === 'ink' ? 'active' : ''}" data-v4skin="ink" onclick="pickV4Skin('ink')">
+                                <div class="theme-dot" style="background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);"></div>
+                                <div class="theme-card-info">
+                                    <div style="font-weight: 600; font-size: 14px;">墨 · Ink</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">墨黑底 · 纸灰字 · 一点朱红</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
+                    <!-- round131：毛玻璃透明度（AI 工作台 + 详情弹窗 + 通用弹窗共用同一变量） -->
                     <div class="settings-group">
-                        <div class="settings-item settings-item-row">
-                            <div>
-                                <div style="font-size: 14px; font-weight: 600;">深色模式</div>
-                                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">影院风暗色视觉</div>
+                        <div class="settings-group-title">界面毛玻璃</div>
+                        <div class="settings-item settings-item-row" style="align-items:flex-start;">
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-size: 14px; font-weight: 600;">玻璃不透明度</div>
+                                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                                    AI 助手与详情弹窗的底色浓度。30% = 透出 70% 背景，越大越实、文字越好读
+                                </div>
                             </div>
-                            <button id="darkModeToggle" class="btn btn-sm" onclick="toggleDarkMode()">
-                                ${isDarkMode() ? '☀️ 浅色' : '🌙 深色'}
-                            </button>
+                        </div>
+                        <div class="customize-row" style="margin-top:2px;">
+                            <div class="cr-info">
+                                <b>拖动即时生效</b>
+                                <span>同时作用于 AI 工作台、详情弹窗、上传/快捷键等弹层</span>
+                            </div>
+                            <div class="cr-ctrl">
+                                <input type="range" id="glassAlphaRange" min="10" max="85" step="5"
+                                       value="${getUiCustom().glassAlpha ?? GLASS_ALPHA_DEFAULT}"
+                                       style="width:170px;" oninput="setGlassAlpha(this.value)">
+                                <span style="font-family:var(--font-mono);font-size:12px;min-width:38px;text-align:right;" id="glassAlphaVal">${getUiCustom().glassAlpha ?? GLASS_ALPHA_DEFAULT}%</span>
+                            </div>
+                        </div>
+                        <div class="customize-row">
+                            <div class="cr-info">
+                                <b>预设</b>
+                                <span>按使用场景快速切换</span>
+                            </div>
+                            <div class="cr-ctrl">
+                                <button class="btn btn-sm btn-secondary" onclick="setGlassAlpha(22)">轻薄 22%</button>
+                                <button class="btn btn-sm btn-secondary" onclick="setGlassAlpha(30)">标准 30%</button>
+                                <button class="btn btn-sm btn-secondary" onclick="setGlassAlpha(45)">厚实 45%</button>
+                                <button class="btn btn-sm btn-secondary" onclick="setGlassAlpha(70)">近实底 70%</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- r137：首页左栏展示模式（AI 对话框 / Live2D 形象） -->
+                    <div class="settings-group">
+                        <div class="settings-group-title">首页展示</div>
+                        <div class="customize-row">
+                            <div class="cr-info">
+                                <b>首页左栏内容</b>
+                                <span>选「Live2D 形象」时，首页左侧变为看板娘展示区（尺寸与右侧热度情报齐平）；需先在 AI 设置 → 伴侣看板 启用，未启用时自动回落为 AI 对话框</span>
+                            </div>
+                            <div class="cr-ctrl">
+                                <button class="btn btn-sm ${homePaneModeWanted() ? 'btn-secondary' : ''}" id="homePaneChatBtn" onclick="setHomePaneMode('chat')">AI 对话框</button>
+                                <button class="btn btn-sm ${homePaneModeWanted() ? '' : 'btn-secondary'}" id="homePaneL2dBtn" onclick="setHomePaneMode('l2d')">Live2D 形象</button>
+                            </div>
                         </div>
                     </div>
 
@@ -8035,6 +8499,17 @@ function renderSettings(config) {
                             新入库 AV 自动重命名为「番号 标题」（如 ABC-123 标题.mp4）
                         </label>
                         <p class="settings-tip" style="margin-top:6px;">仅对扫描新入库且成功刮到番号+标题的 AV 生效；手动重刮不触发，源文件不会被移动到其他目录。多分片保留 CD 标记，NFO 与同名封面一并改名。开启后对之后入库的文件生效。</p>
+
+                        <!-- round132：编辑保存同步到原文件 -->
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:10px;">
+                            <input type="checkbox" id="editSyncFiles" ${(config.editSync ? config.editSync.syncToDisk !== false : true) ? 'checked' : ''}>
+                            编辑保存后同步改写原文件（推荐）
+                        </label>
+                        <p class="settings-tip" style="margin-top:6px;">
+                            开启后，在详情里编辑标题并保存，会按「番号 标题」把磁盘上的视频文件改名，
+                            并把简介/片商/日期/女优/标签一并写回同名 .nfo。关掉则只改数据库，
+                            <b>下次扫描有可能把手改的标题按文件名推回去</b>。
+                        </p>
                     </div>
 
                     <div class="settings-save-bar">
@@ -8654,9 +9129,23 @@ function renderSettings(config) {
                     </div>
 
                     <div class="settings-group">
-                        <div class="settings-group-title">hanime1.me（里番海报源）</div>
+                        <div class="settings-group-title">hanime1.me（里番海报源 · 兜底）</div>
+
+                        <!-- round142：把「前提」讲清楚。此前用户只会看到刮削失败，
+                             完全不知道 hanime 依赖真实浏览器过 Cloudflare，也无从知道要装 ego-lite。 -->
+                        <div style="font-size:12.5px;line-height:1.75;color:var(--text-muted);
+                                    background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35);
+                                    border-radius:10px;padding:10px 13px;margin-bottom:12px;">
+                            <div style="color:var(--gold-primary,#f59e0b);font-weight:700;margin-bottom:6px;">⚠️ 使用前提（必读）</div>
+                            · <b>AniList 才是里番竖版海报的主力源</b>（官方 GraphQL，<b>不需要</b>浏览器、不受 Cloudflare 影响）。<br>
+                            · hanime 只是<b>最后兜底</b>，且它只能给 <b>640×360 横版视频截图</b>，<b>不是</b>官方竖版海报。<br>
+                            · hanime 被 Cloudflare 保护，<b>无头浏览器一律被拦</b>；必须用<b>真实浏览器</b>过验证，
+                              即安装 <b>ego-lite</b> 或有头 Chrome，并先手动登录一次。<br>
+                            · <b>没有 ego-lite 也不影响竖版海报</b>——AniList 照常工作，只是极冷门条目会拿不到图。
+                        </div>
+
                         <div class="settings-item">
-                            <label>Cookie（可选，配合 CDP 浏览器模式取官方竖版封面）</label>
+                            <label>Cookie（可选，配合真实浏览器模式取封面）</label>
                             <textarea class="settings-input" id="hanimeCookie" style="height:80px;resize:vertical;" placeholder="粘贴 hanime1.me 的 Cookie（可不填）"></textarea>
                         </div>
                         <div class="settings-btn-row">
@@ -8665,6 +9154,34 @@ function renderSettings(config) {
                             <button class="btn btn-sm" style="background:var(--primary);" onclick="saveCookie('hanime')">💾 保存Cookie</button>
                         </div>
                         <div id="hanimeCookieStatus" style="font-size:12px;color:var(--text-muted);margin-top:8px;">状态：未检测</div>
+
+                        <details style="margin-top:10px;font-size:12.5px;">
+                            <summary style="cursor:pointer;color:var(--primary);font-weight:600;">📖 没有 ego-lite 怎么办？（点开看两种免费替代方案）</summary>
+                            <div style="line-height:1.95;margin-top:8px;color:var(--text);">
+                                <b>方案 A：用本机 Chrome / Edge（最简单，无需装任何东西）</b><br>
+                                ① 关掉所有 Chrome/Edge 窗口；<br>
+                                ② 用「带调试端口」的方式启动一次（本应用支持自动拉起，见下方按钮）；<br>
+                                ③ 在弹出的浏览器里<b>手动打开 hanime1.me 并登录一次</b>，之后 CF 验证会被记住。<br>
+                                <div style="margin:8px 0;">
+                                    <button class="btn btn-sm" onclick="openHanimeVerifier()">🛡️ 打开浏览器并登录 hanime（过 CF 验证）</button>
+                                </div>
+                                <b>方案 B：安装 ego-lite（开发者向，最省心）</b><br>
+                                ego-lite 是一个可被 Agent 直接调用的 Chromium，天然带真实浏览器指纹，
+                                过 Cloudflare 后登录态可复用。装好后本应用会优先检测到它。<br>
+                                <div style="opacity:.8;margin-top:6px;">
+                                    本机检测：<code id="egoDetectStatus">检测中…</code>
+                                </div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                                    <button class="btn btn-sm" onclick="refreshBrowserStatus()">🔍 重新检测浏览器</button>
+                                    <button class="btn btn-sm" onclick="openHanimeVerifier()">🛡️ 打开浏览器并登录 hanime</button>
+                                </div>
+                                <div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);">
+                                    <b>两种方案都不做会怎样？</b><br>
+                                    刮削会<b>自动跳过 hanime</b> 并回退到 AniList —— 竖版海报照常能拿到，
+                                    只是极冷门、AniList 也没收录的条目会<b>留空</b>（不会给你一张错的横版截图）。
+                                </div>
+                            </div>
+                        </details>
                     </div>
 
                     <div class="settings-group">
@@ -8872,6 +9389,11 @@ function renderSettings(config) {
                     </div>
                 </section>
 
+                <!-- ☁️ Bangumi 云同步（round173e） -->
+                <section class="settings-section" data-group="bangumi" style="display:none;" id="bangumiSection">
+                    <div id="bangumiPanel"><div style="padding:24px;color:var(--text-muted);">加载中…</div></div>
+                </section>
+
                 <!-- 🆙 版本与更新 -->
                 <section class="settings-section" data-group="version" style="display:none;">
                     <div class="settings-section-head">
@@ -9042,25 +9564,22 @@ async function runNetCheck(verbose = true) {
     }
 }
 
-// P0-6：启动自检提示条（有不可达源时在顶栏显示，点击查看详情）
+// P0-6：启动自检提示（静默走右下角状态胶囊，不抢占顶栏视口）
 async function startupNetBanner() {
     try {
         const r = await fetch('/api/health/network').then(r => r.json());
         if (r.code !== 0) return;
         const dead = r.data.dead || [];
         if (!dead.length) return;
-        if (document.getElementById('netWarnBanner')) return;
-        const banner = document.createElement('div');
-        banner.id = 'netWarnBanner';
-        banner.style.cssText = 'position:sticky;top:0;z-index:800;display:flex;align-items:center;gap:10px;padding:8px 16px;background:rgba(245,166,35,.14);border-bottom:1px solid rgba(245,166,35,.4);color:var(--text);font-size:12.5px;cursor:pointer;';
-        banner.innerHTML = `<span>⚠️</span><span style="flex:1;">网络自检：${dead.join('、')} 当前不可达，相关刮削/在线观看可能失败。</span><span style="color:var(--text-muted);">查看详情</span>`;
-        banner.onclick = () => {
-            banner.remove();
-            switchView('settings');
-            setTimeout(() => switchSettingsGroup('about'), 300);
-        };
-        document.body.prepend(banner);
-        setTimeout(() => banner.remove(), 30000);
+        const pop = document.getElementById('scanPop');
+        const txt = document.getElementById('scanPopText');
+        if (pop && txt && pop.style.display === 'none') {
+            txt.textContent = `数据源提示：${dead.join('、')} 暂不可达（本地馆藏不受影响）`;
+            pop.style.display = 'flex';
+            setTimeout(() => {
+                if (txt.textContent.startsWith('数据源提示：')) pop.style.display = 'none';
+            }, 5000);
+        }
     } catch (e) { /* 静默：自检失败不打扰 */ }
 }
 
@@ -9204,6 +9723,12 @@ async function saveSettings() {
             // round47：新入库 AV 自动重命名开关
             rename: {
                 autoRename: !!document.getElementById('autoRenameFiles')?.checked
+            },
+            // round132：编辑保存 → 落盘同步（改名 + 写 NFO）
+            editSync: {
+                syncToDisk: !!document.getElementById('editSyncFiles')?.checked,
+                renameFile: true,
+                writeNfo: true
             },
             sources: {}
         };
@@ -10279,6 +10804,67 @@ async function saveCookie(source) {
     }
 }
 
+/* ============================================================================
+ * round142：Cloudflare 验证辅助（配合设置页「没有 ego-lite 怎么办？」）
+ * ----------------------------------------------------------------------------
+ * 背景：hanime 被 CF 保护，无头浏览器必被拦。用户需要知道「要做什么」，
+ * 而不是只看到一句「刮削失败」。这两个函数负责：自检本机浏览器环境 + 拉起
+ * 有头浏览器让用户手动过一次验证。
+ * ========================================================================== */
+
+/** 检测本机可用浏览器，把结论写进设置页的 #egoDetectStatus */
+async function refreshBrowserStatus() {
+    const el = document.getElementById('egoDetectStatus');
+    try {
+        const r = await (await fetch('/api/config/browser-status')).json();
+        if (!el) return r.data;
+        if (r.code !== 0) { el.textContent = '检测失败：' + (r.msg || '未知'); return null; }
+        const d = r.data;
+        const names = (d.browsers || []).map(b => b.name).join(' / ') || '无';
+        el.innerHTML = `已装浏览器：<b>${escapeHtml(names)}</b>`
+            + ` · 调试端口 ${d.debugPort}：${d.debugPortListening ? '已就绪' : '未启动'}`
+            + `<br><span style="color:${d.hasRealBrowser && !d.headless ? 'var(--gold-primary,#f59e0b)' : 'var(--text-muted)'};">${escapeHtml(d.advice)}</span>`;
+        return d;
+    } catch (e) {
+        if (el) el.textContent = '检测失败：' + e.message;
+        return null;
+    }
+}
+
+/** 拉起有头浏览器打开 hanime，让用户手动过 CF 并登录 */
+async function openHanimeVerifier() {
+    const el = document.getElementById('egoDetectStatus');
+    if (el) el.textContent = '正在启动浏览器…（首次可能弹窗，请稍候）';
+    try {
+        const r = await (await fetch('/api/config/hanime-verify', { method: 'POST' })).json();
+        if (r.code === 0) {
+            showNotification(r.msg, 'success');
+            if (el) el.textContent = '浏览器已打开，请在窗口里完成验证并登录 hanime1.me';
+        } else {
+            showNotification(r.msg || '启动失败', 'error');
+            if (el) el.textContent = r.msg || '启动失败';
+        }
+    } catch (e) {
+        showNotification('启动失败：' + e.message, 'error');
+        if (el) el.textContent = '启动失败：' + e.message;
+    }
+}
+window.refreshBrowserStatus = refreshBrowserStatus;
+window.openHanimeVerifier = openHanimeVerifier;
+
+
+/** round142：跳到「设置 → 数据源」并自检浏览器环境。
+    注意：项目里没有 openSettings() 这个函数（曾误用，点了会静默失败），
+    正确入口是 switchView('settings') + switchSettingsGroup('sources')。 */
+function gotoSourcesSettings() {
+    try { switchView('settings'); } catch (e) { }
+    setTimeout(() => {
+        try { switchSettingsGroup('sources'); } catch (e) { }
+        try { refreshBrowserStatus(); } catch (e) { }
+    }, 300);
+}
+window.gotoSourcesSettings = gotoSourcesSettings;
+
 // ========== NFO 导出 ==========
 
 // 开始导出NFO
@@ -10468,7 +11054,7 @@ function renderPosterHealth(d) {
                     <span style="opacity:.6;min-width:78px;">${sz}</span>
                     <span style="opacity:.6;min-width:46px;">${kb}</span>
                     <span style="color:var(--danger);min-width:104px;">${x.reason}</span>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(x.title || x.fileName || '').slice(0, 40)}</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((x.title || x.fileName || '').slice(0, 40))}</span>
                     ${x.locked ? '<span style="opacity:.6;">🔒</span>' : ''}
                 </div>`;
             }).join('');
@@ -10679,6 +11265,137 @@ async function fetchJsonWithDbHeal(url, options) {
     return out.json;
 }
 
+// ==========================================
+// 女优头像管理助手（编辑弹窗 / 更换海报 / 详情页通用）
+// ==========================================
+window.ActressAvatarManager = {
+    async scrapeAvatar(actressId, actressName, callback) {
+        try {
+            showNotification('开始刮削', `正在查询女优「${actressName}」的头像…`);
+            const url = actressId ? `/api/actress/${actressId}/scrape-avatar` : `/api/actress/by-name/${encodeURIComponent(actressName)}/scrape-avatar`;
+            const res = await fetch(url, { method: 'POST' });
+            const data = await res.json();
+            if (data.code === 0 && data.data && data.data.avatar) {
+                showNotification('刮削成功', `女优「${actressName}」头像已更新`);
+                if (typeof callback === 'function') callback(data.data.avatar, data.data);
+                this.updateAvatarInDom(actressId, actressName, data.data.avatar);
+                return data.data;
+            } else {
+                showNotification('刮削未找到', data.msg || `未在网络找到「${actressName}」的头像`);
+                return null;
+            }
+        } catch (e) {
+            showNotification('刮削失败', e.message);
+            return null;
+        }
+    },
+
+    async uploadAvatar(actressId, actressName, callback) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) { input.remove(); return; }
+            const reader = new FileReader();
+            reader.onload = async () => {
+                input.remove();
+                try {
+                    showNotification('正在上传', `正在上传「${actressName}」头像…`);
+                    const url = actressId ? `/api/actress/${actressId}/set-avatar` : `/api/actress/by-name/${encodeURIComponent(actressName)}/set-avatar`;
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ avatarBase64: reader.result })
+                    });
+                    const data = await res.json();
+                    if (data.code === 0 && data.data) {
+                        showNotification('上传成功', `女优「${actressName}」头像已更换`);
+                        if (typeof callback === 'function') callback(data.data.avatar, data.data);
+                        this.updateAvatarInDom(actressId, actressName, data.data.avatar);
+                    } else {
+                        showNotification('上传失败', data.msg || '未知错误');
+                    }
+                } catch (err) {
+                    showNotification('上传失败', err.message);
+                }
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    },
+
+    async setFromUrl(actressId, actressName, presetUrl, callback) {
+        let imgUrl = presetUrl;
+        if (!imgUrl) {
+            imgUrl = prompt(`请输入女优「${actressName}」的图片链接（JPG/PNG/WebP）：`);
+        }
+        if (!imgUrl || !imgUrl.trim()) return;
+        imgUrl = imgUrl.trim();
+        try {
+            showNotification('正在设置', `正在下载并设置「${actressName}」头像…`);
+            const url = actressId ? `/api/actress/${actressId}/set-avatar` : `/api/actress/by-name/${encodeURIComponent(actressName)}/set-avatar`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ avatarUrl: imgUrl })
+            });
+            const data = await res.json();
+            if (data.code === 0 && data.data) {
+                showNotification('设置成功', `女优「${actressName}」头像已更换`);
+                if (typeof callback === 'function') callback(data.data.avatar, data.data);
+                this.updateAvatarInDom(actressId, actressName, data.data.avatar);
+            } else {
+                showNotification('设置失败', data.msg || '无法下载该图片');
+            }
+        } catch (e) {
+            showNotification('设置失败', e.message);
+        }
+    },
+
+    updateAvatarInDom(actressId, actressName, avatarUrl) {
+        if (!avatarUrl) return;
+        const selector = actressId
+            ? `[data-actress-id="${actressId}"]`
+            : `[data-actress-name="${actressName}"]`;
+        document.querySelectorAll(selector).forEach(el => {
+            const img = el.querySelector('img');
+            if (img) {
+                img.src = avatarUrl;
+                img.style.display = '';
+            } else {
+                const avatarWrap = el.querySelector('.detail-actress-avatar') || el.querySelector('.actress-avatar');
+                if (avatarWrap) {
+                    avatarWrap.innerHTML = `<img src="${avatarUrl}" alt="${actressName}" loading="lazy">`;
+                }
+            }
+        });
+        document.querySelectorAll(`[data-poster-actress-id="${actressId}"] img`).forEach(img => {
+            img.src = avatarUrl;
+            img.style.display = '';
+        });
+        if (window.currentDetailMovie && Array.isArray(window.currentDetailMovie.actresses)) {
+            const hit = window.currentDetailMovie.actresses.find(a => (actressId && String(a.id) === String(actressId)) || a.name === actressName);
+            if (hit) hit.avatar = avatarUrl;
+        }
+    }
+};
+
+window.showActressAvatarMenu = function(e, actressId, actressName) {
+    if (e) e.stopPropagation();
+    const action = prompt(`女优「${actressName}」头像设置：\n1 - 联网自动刮削头像\n2 - 上传本地图片作为头像\n3 - 输入网络图片 URL\n请输入数字 (1/2/3)：`, '1');
+    if (!action) return;
+    if (action.trim() === '1') {
+        window.ActressAvatarManager.scrapeAvatar(actressId, actressName);
+    } else if (action.trim() === '2') {
+        window.ActressAvatarManager.uploadAvatar(actressId, actressName);
+    } else if (action.trim() === '3') {
+        window.ActressAvatarManager.setFromUrl(actressId, actressName);
+    }
+};
+
 // 把候选渲染进 posterGrid：既用于「先回来的先画」，也用于最终态
 function renderPosterOptions(grid, movieId, scraped, frames, cfg, state) {
     state = state || {};
@@ -10686,12 +11403,23 @@ function renderPosterOptions(grid, movieId, scraped, frames, cfg, state) {
     const shots = (frames && frames.code === 0 && frames.data) || [];
     const proxyOn = !!(cfg && cfg.data && cfg.data.network && cfg.data.network.proxyServer);
 
+    const movie = (currentDetailMovie && currentDetailMovie.id === movieId)
+        ? currentDetailMovie
+        : (currentMovies && currentMovies.find(m => m.id === movieId)) || {};
+    const actresses = Array.isArray(movie.actresses) ? movie.actresses : [];
+
     const card = (p) => `
-        <div class="poster-option" onclick="changePoster(${movieId}, '${p.url}')">
-            <img src="${p.display || p.url}" alt="${p.title || ''}" loading="lazy" decoding="async">
+        <div class="poster-option">
+            <img src="${escapeHtml(safeAssetUrl(p.display || p.url))}" alt="${escapeHtml(p.title || '')}" loading="lazy" decoding="async">
             <div class="poster-option-info">
                 <span class="poster-option-source">${String(p.source || '').toUpperCase()}</span>
-                ${p.title ? `<span class="poster-option-title">${p.title}</span>` : ''}
+                ${p.title ? `<span class="poster-option-title">${escapeHtml(p.title)}</span>` : ''}
+            </div>
+            <div style="display:flex;gap:4px;padding:5px 6px;background:var(--bg-elev-1, rgba(0,0,0,0.45));border-top:1px solid var(--border-color);border-radius:0 0 8px 8px;">
+                <button class="btn btn-sm" style="flex:1;padding:2px 4px;font-size:11px;" onclick="changePoster(${movieId}, '${p.url}')">选为封面</button>
+                ${actresses.length > 0 ? `
+                    <button class="btn btn-sm btn-secondary" style="padding:2px 6px;font-size:11px;" title="将此图设为女优头像" onclick="event.stopPropagation();window.ActressAvatarManager.setFromUrl(${actresses[0].id}, '${escapeHtml(actresses[0].name)}', '${p.url}')">设为女优头像</button>
+                ` : ''}
             </div>
         </div>`;
 
@@ -10701,6 +11429,34 @@ function renderPosterOptions(grid, movieId, scraped, frames, cfg, state) {
         </div>`;
 
     let html = '';
+
+    // —— 0. 本片女优头像（可在换海报时顺带挂上头像） ——
+    if (actresses.length > 0) {
+        html += `
+            <div class="poster-actress-banner" style="grid-column:1/-1;padding:12px 14px;margin-bottom:12px;background:var(--bg-elev-1, rgba(255,255,255,0.04));border:1px solid var(--border-color);border-radius:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <span style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;">👩 本片女优头像（共 ${actresses.length} 位）</span>
+                    <span style="font-size:12px;color:var(--text-muted);">可在更换封面时顺便设置女优头像</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:12px;">
+                    ${actresses.map(a => `
+                        <div style="display:flex;align-items:center;gap:10px;padding:6px 12px;background:var(--bg-primary, rgba(0,0,0,0.25));border:1px solid var(--border-color);border-radius:8px;" data-poster-actress-id="${a.id}">
+                            <div style="width:40px;height:40px;border-radius:50%;overflow:hidden;background:#333;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;flex-shrink:0;">
+                                ${a.avatar ? `<img src="${a.avatar}" alt="${escapeHtml(a.name)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';this.parentElement.textContent='${(a.name||'?').charAt(0)}'">` : (a.name ? a.name.charAt(0) : '?')}
+                            </div>
+                            <div>
+                                <div style="font-size:12.5px;font-weight:600;margin-bottom:4px;">${escapeHtml(a.name)}</div>
+                                <div style="display:flex;gap:6px;">
+                                    <button class="btn btn-sm btn-secondary" style="padding:2px 8px;font-size:11px;height:22px;" onclick="event.stopPropagation();window.ActressAvatarManager.scrapeAvatar(${a.id}, '${escapeHtml(a.name)}')">🔍 刮削</button>
+                                    <button class="btn btn-sm btn-secondary" style="padding:2px 8px;font-size:11px;height:22px;" onclick="event.stopPropagation();window.ActressAvatarManager.uploadAvatar(${a.id}, '${escapeHtml(a.name)}')">📷 上传</button>
+                                    <button class="btn btn-sm btn-secondary" style="padding:2px 8px;font-size:11px;height:22px;" onclick="event.stopPropagation();window.ActressAvatarManager.setFromUrl(${a.id}, '${escapeHtml(a.name)}')">🔗 URL</button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+    }
 
     // —— 1. 刮削结果 ——
     if (!scraped) {
@@ -10719,10 +11475,20 @@ function renderPosterOptions(grid, movieId, scraped, frames, cfg, state) {
         reasons.push(proxyOn
             ? '代理已开启；若仍是空，多为站点本身没有该条目，或站点被 Cloudflare 拦截'
             : '当前未配置代理，境外刮削源大概率连不上 —— 可到「设置 → 数据源 → 代理设置」填好代理后重试');
+        /* round142：把「Cloudflare 需要真实浏览器」这条前提讲人话。
+           此前用户只会反复点重刮、完全不知道 hanime 依赖有头浏览器 + 登录态。 */
+        reasons.push('<b>里番/动漫库注意</b>：竖版海报的正规来源是 <b>AniList</b>（不需要浏览器）；'
+            + '若这条在 AniList 也没收录，兜底的 <b>hanime / 91动漫 会被 Cloudflare 拦截</b>，'
+            + '必须用<b>真实浏览器</b>（ego-lite 或有头 Chrome）过一次验证，无头模式一律被拦。');
         html += `
             <div class="poster-empty-diagnosis">
                 <div style="font-weight:600;color:var(--text);margin-bottom:6px;">未刮削到任何封面</div>
                 <ul style="margin:0;padding:0 0 0 18px;line-height:1.7;">${reasons.map(r => `<li>${r}</li>`).join('')}</ul>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                    <button class="btn btn-sm" onclick="gotoSourcesSettings()">⚙️ 去设置看浏览器状态</button>
+                    <button class="btn btn-sm" onclick="openHanimeVerifier()">🛡️ 拉起浏览器过一次验证</button>
+                    <button class="btn btn-sm" onclick="refreshBrowserStatus&&refreshBrowserStatus()">🔍 检测本机浏览器</button>
+                </div>
             </div>`;
     }
 
@@ -10816,6 +11582,53 @@ function closePosterModal() {
 }
 
 // 更换海报
+/* ★ round127 · bug3：换海报成功后的「就地打补丁」
+ *   老逻辑 closePosterModal(); showMovieDetail(id); refreshCurrentList();
+ *   refreshCurrentList() 会整块重建 #movieGrid —— 既会跳走视图，也会让卡片 FLIP 动效错位。
+ *   这里改为：把内存里的 currentMovies/_rawViewMovies 与网格里那张卡的 <img> 直接换成新海报，
+ *   网格结构完全不动，弹窗照旧开着。 */
+function patchMoviePosterInPlace(movieId, posterUrl, respData) {
+    const id = Number(movieId);
+    const posterPath = (respData && respData.posterPath) || '';
+    const localPosterPath = (respData && respData.localPosterPath) || (posterPath ? 'cache/posters/' + posterPath : '');
+
+    const applyTo = (list) => {
+        if (!Array.isArray(list)) return;
+        for (const m of list) {
+            if (!m || Number(m.id) !== id) continue;
+            if (posterPath) m.posterPath = posterPath;
+            if (localPosterPath) m.localPosterPath = localPosterPath;
+            if (posterUrl && /^https?:\/\//i.test(posterUrl) && !posterPath) m.posterPath = posterUrl;
+        }
+    };
+    applyTo(currentMovies);
+    applyTo(window.currentMovies);
+    applyTo(window._rawViewMovies);
+
+    // DOM：只换这张卡的图，不动布局
+    try {
+        const card = document.querySelector(`.movie-card[data-id="${id}"]`);
+        const img = card && card.querySelector('img.movie-poster');
+        if (img) {
+            const fresh = posterPath ? `/api/movie/poster/${posterPath}` : posterUrl;
+            if (fresh) {
+                img.removeAttribute('srcset');
+                img.src = fresh;
+            }
+        }
+    } catch (e) { }
+}
+
+/* ★ round127 · bug3：哪些视图在换完海报后**必须**重新取数（列表本身就是服务端算好的聚合结果）。
+ *   其余视图（全部影片/全部内容/影视/动漫/漫画/小说/收藏/隐私四件套…）就地打补丁即可，
+ *   刷新列表只会让用户丢失滚动位置、并触发不必要的卡片重排。 */
+function needsListRefreshAfterPoster(view) {
+    return ['hot', 'random', 'guess', 'guess-magic', 'guess-grid', 'unwatched',
+        'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult',
+        'recent', 'recent-adult', 'home', 'acg-rank',
+        'scrape-failures', 'poster-health', 'new-releases'].includes(view);
+}
+
 async function changePoster(movieId, posterUrl) {
     try {
         const res = await fetch(`/api/movie/${movieId}/change-poster`, {
@@ -10832,9 +11645,22 @@ async function changePoster(movieId, posterUrl) {
                 window.posterFixAdvance(true);
             } else {
                 closePosterModal();
+                // round127 · bug3 修复：以前这里直接 refreshCurrentList()，
+                // 而 refreshCurrentList 对没有分支的视图会落到 default ⇒ loadMovies()，
+                // 于是「换完海报就跳回全部内容页」。
+                // 现在：① 先把内存与 DOM 里的这张卡就地换成新海报（不重建网格，避免 FLIP 错位）；
+                //       ② 再把详情弹窗重新打开 —— 用户看到的仍是刚才那个「弹窗操作页」；
+                //       ③ 只有确实需要重新取数的特性视图才真正刷新列表。
+                patchMoviePosterInPlace(movieId, posterUrl, data.data);
+                /* 重开详情是同一次操作的续场，不该再飞一遍封面转场：
+                   把 FLIP 源判成过期（enter 会走淡入），退出转场不受影响。 */
+                if (window.MotionFLIP && typeof window.MotionFLIP.invalidate === 'function') {
+                    window.MotionFLIP.invalidate();
+                }
                 showMovieDetail(movieId);
-                // 原地刷新列表（保持页码与视窗位置）
-                refreshCurrentList();
+                if (needsListRefreshAfterPoster(currentView)) {
+                    refreshCurrentList();
+                }
             }
         } else {
             showNotification(data.msg || '更换失败', 'error');
@@ -10977,9 +11803,9 @@ function renderAISkillDeck() {
     const skills = getRandomSkills(4);
     deck.innerHTML = `
         <div class="ai-skill-header">
-            <span>💡 推荐技能指令 (Skills)</span>
+            <span>${uiIcon('spark', 13)} 推荐技能指令 (Skills)</span>
             <button type="button" class="ai-skill-refresh-btn" onclick="renderAISkillDeck()" title="换一批技能">
-                <span>🎲 换一批</span>
+                <span>${uiIcon('refresh', 12)} 换一批</span>
             </button>
         </div>
         <div class="ai-skill-chips">
@@ -10990,7 +11816,7 @@ function renderAISkillDeck() {
                 </div>
             `).join('')}
         </div>
-        <div class="ai-skill-hint">👆 点击任意技能指令，可直接跟 AI 对话</div>
+        <div class="ai-skill-hint">点击任意技能指令，可直接跟 AI 对话</div>
     `;
 }
 
@@ -11006,11 +11832,52 @@ let dsnCurrentSessionId = 'main';
 let dsnShowArchived = false;
 let dsnSessionsCache = [];
 
+/* 双入口共用会话：首页对话框与右侧 AI 工作台读写同一个 sessionId。
+ * 任何一处切换对话，另一处必须跟着切换，否则历史会再次分叉。 */
+window.getAISessionId = function () { return dsnCurrentSessionId || 'main'; };
+window.setAISessionId = function (sid) {
+    dsnCurrentSessionId = sid || 'main';
+    window.__aiHistory = [];
+};
+window.syncAIChatViews = function (sid) {
+    if (!sid) return;
+    if (sid !== dsnCurrentSessionId) dsnCurrentSessionId = sid;
+    if (window.Home && typeof window.Home.syncFromSession === 'function') {
+        try { window.Home.syncFromSession(sid); } catch (e) { }
+    }
+    if (window.Home && typeof window.Home.refreshSessions === 'function') {
+        try { window.Home.refreshSessions(); } catch (e) { }
+    }
+    const modal = document.getElementById('aiModal');
+    if (modal && modal.classList.contains('show')) {
+        try { loadAIHistory(sid); } catch (e) { }
+        try { loadDsnSessions(); } catch (e) { }
+    }
+};
+
 function dsnHandleInputKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendAIMessage();
     }
+}
+
+// r126：updatedAt（秒级时间戳）→ 相对时间，列表第二行用
+function dsnRelTime(sec) {
+    if (!sec) return '';
+    const diff = Date.now() / 1000 - Number(sec);
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    if (diff < 86400 * 30) return Math.floor(diff / 86400) + ' 天前';
+    const d = new Date(Number(sec) * 1000);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function dsnFindRow(sid) {
+    if (!sid) return null;
+    const sel = '.dsn-session-item[data-sid="' + (window.CSS && CSS.escape ? CSS.escape(sid) : sid) + '"]';
+    return document.querySelector(sel);
 }
 
 async function loadDsnSessions() {
@@ -11023,24 +11890,46 @@ async function loadDsnSessions() {
         dsnSessionsCache = res.data || [];
 
         if (statsEl) {
-            statsEl.textContent = dsnShowArchived ? `📦 归档箱 (${dsnSessionsCache.length})` : `💬 活跃会话 (${dsnSessionsCache.length})`;
+            const ic = uiIcon(dsnShowArchived ? 'download' : 'chat', 12);
+            statsEl.innerHTML = `${ic} ${dsnShowArchived ? '归档箱' : '活跃会话'} (${dsnSessionsCache.length})`;
         }
 
         if (!dsnSessionsCache.length) {
-            listEl.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:24px 8px;font-size:12px;">${dsnShowArchived ? '归档箱是空的' : '暂无其他会话'}</div>`;
+            listEl.innerHTML = `
+                <div class="dsn-list-empty">
+                    <span class="dsn-list-empty-ic">${uiIcon(dsnShowArchived ? 'download' : 'chat', 22)}</span>
+                    <div class="dsn-list-empty-t">${dsnShowArchived ? '归档箱是空的' : '还没有其他对话'}</div>
+                    <div class="dsn-list-empty-d">${dsnShowArchived ? '归档的会话会收进这里' : '点上方「新建对话」开启独立话题'}</div>
+                </div>`;
             return;
         }
 
-        listEl.innerHTML = dsnSessionsCache.map(s => {
+        listEl.innerHTML = dsnSessionsCache.map((s, i) => {
             const isActive = s.id === dsnCurrentSessionId;
+            const deletable = s.id !== 'main';
+            const metaBits = [];
+            if (typeof s.messageCount === 'number') metaBits.push(s.messageCount > 0 ? `${s.messageCount} 条消息` : '空对话');
+            const rel = dsnRelTime(s.updatedAt);
+            if (rel) metaBits.push(rel);
             return `
-                <div class="dsn-session-item ${isActive ? 'active' : ''}" data-sid="${escapeHtml(s.id)}" onclick="dsnSwitchSession('${escapeHtml(s.id)}')">
-                    <span style="font-size:13px;opacity:.8;">${s.archived ? '📁' : '💬'}</span>
-                    <span class="dsn-session-title" title="${escapeHtml(s.title || '')}">${escapeHtml(s.title || '新对话')}</span>
+                <div class="dsn-session-item ${isActive ? 'active' : ''}" data-sid="${escapeHtml(s.id)}" style="--row-i:${Math.min(i, 12)}" onclick="dsnSwitchSession('${escapeHtml(s.id)}')">
+                    <span class="dsn-si-ic">${uiIcon(s.archived ? 'folder' : 'chat', 14)}</span>
+                    <span class="dsn-si-body">
+                        <span class="dsn-session-title" title="${escapeHtml(s.title || '新对话')}">${escapeHtml(s.title || '新对话')}</span>
+                        ${metaBits.length ? `<span class="dsn-si-meta">${escapeHtml(metaBits.join(' · '))}</span>` : ''}
+                    </span>
                     <div class="dsn-session-actions" onclick="event.stopPropagation()">
-                        <button type="button" class="dsn-act-btn" onclick="dsnRenameSessionPrompt('${escapeHtml(s.id)}', '${escapeHtml(s.title || '')}')" title="重命名">✏️</button>
-                        <button type="button" class="dsn-act-btn" onclick="dsnToggleArchive('${escapeHtml(s.id)}', ${s.archived ? 0 : 1})" title="${s.archived ? '还原' : '归档'}">${s.archived ? '📤' : '📦'}</button>
-                        ${s.id !== 'main' ? `<button type="button" class="dsn-act-btn" onclick="dsnDeleteSession('${escapeHtml(s.id)}')" title="删除">🗑️</button>` : ''}
+                        <span class="dsn-act-set dsn-act-normal">
+                            <button type="button" class="dsn-act-btn" onclick="dsnBeginInlineRename('${escapeHtml(s.id)}')" title="重命名">${uiIcon('edit', 13)}</button>
+                            <button type="button" class="dsn-act-btn" onclick="dsnToggleArchive('${escapeHtml(s.id)}', ${s.archived ? 0 : 1})" title="${s.archived ? '还原' : '归档'}">${uiIcon(s.archived ? 'upload' : 'download', 13)}</button>
+                            ${deletable ? `<button type="button" class="dsn-act-btn dsn-del-btn" onclick="dsnDeleteSession('${escapeHtml(s.id)}')" title="删除">${uiIcon('trash', 13)}</button>` : ''}
+                        </span>
+                        ${deletable ? `
+                        <span class="dsn-act-set dsn-act-confirm">
+                            <span class="dsn-del-label">删除对话？</span>
+                            <button type="button" class="dsn-act-btn dsn-del-yes" onclick="dsnDeleteSessionConfirm('${escapeHtml(s.id)}')" title="确认删除">${uiIcon('check', 13)}</button>
+                            <button type="button" class="dsn-act-btn" onclick="dsnDeleteSessionDisarm('${escapeHtml(s.id)}')" title="取消">${uiIcon('close', 13)}</button>
+                        </span>` : ''}
                     </div>
                 </div>
             `;
@@ -11053,15 +11942,17 @@ async function loadDsnSessions() {
         const curId = (typeof dsnCurrentSessionId !== 'undefined' && dsnCurrentSessionId) ? dsnCurrentSessionId : 'main';
         listEl.innerHTML = `
             <div class="dsn-session-item active" data-sid="${escapeHtml(curId)}" onclick="dsnSwitchSession('${escapeHtml(curId)}')">
-                <span style="font-size:13px;opacity:.8;">💬</span>
-                <span class="dsn-session-title" title="默认对话">默认对话</span>
+                <span class="dsn-si-ic">${uiIcon('chat', 14)}</span>
+                <span class="dsn-si-body">
+                    <span class="dsn-session-title" title="默认对话">默认对话</span>
+                </span>
             </div>`;
     }
 }
 
 async function dsnSwitchSession(sid) {
     if (!sid) return;
-    dsnCurrentSessionId = sid;
+    window.setAISessionId(sid);
     const cur = dsnSessionsCache.find(s => s.id === sid);
     const topEl = document.getElementById('dsnTopicText');
     if (topEl) topEl.textContent = cur ? cur.title : (sid === 'main' ? '默认对话' : '会话 ' + sid.slice(0, 6));
@@ -11071,6 +11962,9 @@ async function dsnSwitchSession(sid) {
     });
 
     await loadAIHistory(sid);
+    if (window.Home && typeof window.Home.syncFromSession === 'function') {
+        try { window.Home.syncFromSession(sid); } catch (e) { }
+    }
 }
 
 async function dsnNewSession() {
@@ -11122,30 +12016,108 @@ function dsnArchiveCurrentSession() {
 function dsnToggleArchiveView() {
     dsnShowArchived = !dsnShowArchived;
     const btn = document.getElementById('dsnArchiveToggleBtn');
-    if (btn) btn.textContent = dsnShowArchived ? '💬 活跃箱' : '📦 归档箱';
+    if (btn) btn.innerHTML = dsnShowArchived ? `${uiIcon('chat', 12)} 活跃箱` : `${uiIcon('download', 12)} 归档箱`;
     loadDsnSessions();
 }
 
-async function dsnRenameSessionPrompt(sid, curTitle) {
-    const t = prompt('重命名会话：', curTitle || '');
-    if (t === null || !t.trim()) return;
+// ========== r126：会话行内重命名 / 两段式删除 ==========
+// 旧实现用 prompt()，Electron 里直接抛「prompt() is and will not be supported」，
+// 重命名按钮在桌面端是死的；删除按钮则压根没有函数体。这里一并重写：
+// 重命名走行内输入框（Enter 存 / Esc 取消 / 失焦也存），删除走行内两段确认。
+
+function dsnBeginInlineRename(sid) {
+    if (!sid) return;
+    const row = dsnFindRow(sid);
+    if (!row || row.querySelector('.dsn-rename-input')) return;
+    const cur = dsnSessionsCache.find(s => s.id === sid);
+    if (!cur) { showNotification('提示', '会话尚未同步，无法重命名'); return; }
+    const titleEl = row.querySelector('.dsn-session-title');
+    if (!titleEl) return;
+
+    row.classList.add('editing');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'dsn-rename-input';
+    input.maxLength = 40;
+    input.value = cur.title || '';
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = (save) => {
+        if (done) return;
+        done = true;
+        const val = input.value.trim();
+        row.classList.remove('editing');
+        input.replaceWith(titleEl);          // 无论存不存，先把标题还原回列表
+        if (save && val && val !== (cur.title || '')) dsnRenameSession(sid, val);
+        else loadDsnSessions();
+    };
+    input.addEventListener('keydown', (e) => {
+        e.stopPropagation();                 // 别让按键漏进全局快捷键
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('click', (e) => e.stopPropagation());
+}
+
+async function dsnRenameSession(sid, title) {
     try {
-        await fetch(`/api/ai/sessions/${encodeURIComponent(sid)}/rename`, {
+        const res = await (await fetch(`/api/ai/sessions/${encodeURIComponent(sid)}/rename`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: t.trim() })
-        });
+            body: JSON.stringify({ title })
+        })).json();
+        if (res.code !== 0) throw new Error(res.msg || '重命名失败');
+        const cur = dsnSessionsCache.find(s => s.id === sid);
+        if (cur) cur.title = title;
         await loadDsnSessions();
         if (sid === dsnCurrentSessionId) {
             const topEl = document.getElementById('dsnTopicText');
-            if (topEl) topEl.textContent = t.trim();
+            if (topEl) topEl.textContent = title;
         }
-    } catch(e) {}
+    } catch (e) {
+        showNotification('重命名失败', e.message, 4000, 'error');
+        loadDsnSessions();
+    }
 }
 
 function dsnRenameCurrentSession() {
-    const cur = dsnSessionsCache.find(s => s.id === dsnCurrentSessionId);
-    dsnRenameSessionPrompt(dsnCurrentSessionId, cur ? cur.title : '');
+    dsnBeginInlineRename(dsnCurrentSessionId);
+}
+
+// ---- 两段式删除：点垃圾桶先武装（行内变「删除对话？」），4 秒内点 ✓ 才真删 ----
+function dsnDeleteSession(sid) {
+    if (sid === 'main') { showNotification('提示', '默认对话不能删除'); return; }
+    const row = dsnFindRow(sid);
+    if (!row) return;
+    row.classList.add('confirming');
+    clearTimeout(row._dsnArmTimer);
+    row._dsnArmTimer = setTimeout(() => row.classList.remove('confirming'), 4000);
+}
+
+function dsnDeleteSessionDisarm(sid) {
+    const row = dsnFindRow(sid);
+    if (!row) return;
+    row.classList.remove('confirming');
+    clearTimeout(row._dsnArmTimer);
+}
+
+async function dsnDeleteSessionConfirm(sid) {
+    if (sid === 'main') return;
+    try {
+        const res = await (await fetch(`/api/ai/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' })).json();
+        if (res.code !== 0) throw new Error(res.msg || '删除失败');
+        showNotification('会话已删除', '对话历史已彻底清除');
+        dsnSessionsCache = dsnSessionsCache.filter(s => s.id !== sid);
+        if (sid === dsnCurrentSessionId) await dsnSwitchSession('main');
+        await loadDsnSessions();
+    } catch (e) {
+        showNotification('删除失败', e.message, 4000, 'error');
+        dsnDeleteSessionDisarm(sid);
+    }
 }
 
 // ========== DSN 顶部快捷浮层面板 (MCP / 技能 / 伴侣音色) ==========
@@ -11171,22 +12143,22 @@ async function dsnTogglePopover(kind) {
             const servers = (r.data && r.data.servers) || [];
             pop.innerHTML = `
                 <div class="dsn-pop-head">
-                    <span>🔌 MCP 外部扩展服务器 (${servers.length})</span>
-                    <button type="button" class="dsn-act-btn" onclick="document.getElementById('dsnPopover').style.display='none'">✕</button>
+                    <span>${uiIcon('server', 13)} MCP 外部扩展服务器 (${servers.length})</span>
+                    <button type="button" class="dsn-act-btn" onclick="document.getElementById('dsnPopover').style.display='none'" title="关闭">${uiIcon('close', 11)}</button>
                 </div>
                 ${servers.map(s => `
                     <div class="dsn-pop-item">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                            <span style="font-weight:700;font-size:13px;color:#fff;">${escapeHtml(s.name)}</span>
-                            <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(34,197,94,0.18);color:#22c55e;font-weight:700;">CONNECTED</span>
+                            <span style="font-weight:700;font-size:13px;color:var(--text);">${escapeHtml(s.name)}</span>
+                            <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(34,197,94,0.18);color:#16a34a;font-weight:700;">CONNECTED</span>
                         </div>
                         <div style="font-size:11.5px;color:var(--text-muted);line-height:1.4;">${escapeHtml(s.desc)}</div>
-                        <div style="font-size:10.5px;color:var(--gold-primary);margin-top:4px;font-family:var(--font-mono);">⚡ 挂载可用工具: ${s.toolsCount} 项</div>
+                        <div style="font-size:10.5px;color:var(--primary,var(--text));margin-top:4px;font-family:var(--font-mono);display:flex;align-items:center;gap:4px;">${uiIcon('tool', 11)} 挂载可用工具: ${s.toolsCount} 项</div>
                     </div>
                 `).join('')}
             `;
         } catch(e) {
-            pop.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:8px;">MCP 状态读取失败</div>';
+            pop.innerHTML = '<div style="color:var(--danger);font-size:12px;padding:8px;">MCP 状态读取失败</div>';
         }
     } else if (kind === 'skills') {
         try {
@@ -11194,14 +12166,14 @@ async function dsnTogglePopover(kind) {
             const skills = (r.data && r.data.skills) || [];
             pop.innerHTML = `
                 <div class="dsn-pop-head">
-                    <span>⚡ Agent 当前已装载技能 (${skills.length})</span>
-                    <button type="button" class="dsn-act-btn" onclick="document.getElementById('dsnPopover').style.display='none'">✕</button>
+                    <span>${uiIcon('spark', 13)} Agent 当前已装载技能 (${skills.length})</span>
+                    <button type="button" class="dsn-act-btn" onclick="document.getElementById('dsnPopover').style.display='none'" title="关闭">${uiIcon('close', 11)}</button>
                 </div>
                 <div style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
                     ${skills.map(sk => `
                         <div class="dsn-pop-item">
                             <div style="display:flex;justify-content:space-between;align-items:center;">
-                                <strong style="font-size:12.5px;color:#fff;">${escapeHtml(sk.label)}</strong>
+                                <strong style="font-size:12.5px;color:var(--text);">${escapeHtml(sk.label)}</strong>
                                 <span class="ai-step-priv priv-${sk.privilege}">${sk.privilege}</span>
                             </div>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.4;">${escapeHtml(sk.description)}</div>
@@ -11210,7 +12182,7 @@ async function dsnTogglePopover(kind) {
                 </div>
             `;
         } catch(e) {
-            pop.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:8px;">技能列表读取失败</div>';
+            pop.innerHTML = '<div style="color:var(--danger);font-size:12px;padding:8px;">技能列表读取失败</div>';
         }
     } else if (kind === 'tts') {
         try {
@@ -11223,8 +12195,8 @@ async function dsnTogglePopover(kind) {
             const vList = voiceR.data?.voices || [];
             pop.innerHTML = `
                 <div class="dsn-pop-head">
-                    <span>🔊 伴侣快速声线切换</span>
-                    <button type="button" class="dsn-act-btn" onclick="document.getElementById('dsnPopover').style.display='none'">✕</button>
+                    <span>${uiIcon('waveform', 13)} 伴侣快速声线切换</span>
+                    <button type="button" class="dsn-act-btn" onclick="document.getElementById('dsnPopover').style.display='none'" title="关闭">${uiIcon('close', 11)}</button>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:10px;">
                     <div>
@@ -11247,7 +12219,7 @@ async function dsnTogglePopover(kind) {
                 </div>
             `;
         } catch(e) {
-            pop.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:8px;">TTS 配置读取失败</div>';
+            pop.innerHTML = '<div style="color:var(--danger);font-size:12px;padding:8px;">TTS 配置读取失败</div>';
         }
     }
 }
@@ -11301,13 +12273,15 @@ function showAIAssistant() {
     safe('loadAIHistory', () => {
         if (typeof loadAIHistory === 'function') loadAIHistory(typeof dsnCurrentSessionId !== 'undefined' ? dsnCurrentSessionId : 'main');
     });
+    // round136：后台作业轮询（端点纯内存，开销可忽略）
+    safe('dsnStartJobsPoll', () => { if (typeof dsnStartJobsPoll === 'function') dsnStartJobsPoll(); });
 }
 
 // ==================== v3.0-c/d：Alife 式记忆引擎（前端） ====================
 
 const AI_GREETING_HTML = `
     <div style="text-align:center;color:var(--text-muted);padding:36px 20px;">
-        <div style="font-size:36px;margin-bottom:10px;">👋</div>
+        <div class="dsn-greet-mark" style="font-size:36px;margin-bottom:10px;">👋</div>
         <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px;">我是你的影库全栈智能管家</div>
         <span style="font-size:12.5px;opacity:.8;">支持自然语言搜片、直接播放、切板块、生成智能播单，或随时语音对话</span>
     </div>
@@ -11334,7 +12308,7 @@ async function loadAIHistory(sessionId = 'main') {
 /* 历史消息渲染：先转义，再把 [[ID|标题]] 换成可点击引用（r61：气泡 class 化，玻璃态 CSS 统一渲染） */
 function renderAIHistoryMessage(m) {
     const text = mdLite(escapeHtml(m.content || '')).replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (match, id, title) =>
-        `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${title}</span>`);
+        `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${escapeHtml(title)}</span>`);
     if (m.role === 'user') {
         return `<div class="ai-msg user"><div class="bubble">${text}</div></div>`;
     }
@@ -11616,6 +12590,8 @@ async function saveCompanionConfig() {
         if (r.code !== 0) throw new Error(r.msg || '保存失败');
         // 立即应用到运行中的角色
         if (window.CVCompanion) await window.CVCompanion.applyConfig(r.data);
+        /* r137：伴侣启停影响首页「Live2D 形象」模式的有效性，重评估一次 */
+        try { applyHomePaneMode(); } catch (e) { }
         if (st) st.textContent = '✅ 已应用';
         showNotification('陪伴角色已更新', r.data.enabled ? ('当前模型：' + (COMPANION_NAMES[r.data.model] || r.data.model)) : '已隐藏');
     } catch (e) {
@@ -11627,6 +12603,125 @@ async function saveCompanionConfig() {
 // 关闭AI助手
 function closeAIModal() {
     document.getElementById('aiModal').classList.remove('show');
+    dsnStopJobsPoll();
+}
+
+/* ================================================================
+ * round136 · 最近任务（后台作业面板）
+ * 作业比对话活得更久：用户关了抽屉、作业还在跑。所以查询口不挂在
+ * 某次 run 上，而是 GET /api/ai/agent/jobs（内存 + JSONL 日志）。
+ * 打开抽屉就轮询（端点极轻，纯内存）；顶栏按钮挂运行中作业数角标。
+ * ================================================================ */
+const JOBS_POLL_MS = 2500;
+let jobsPanelTimer = 0;
+const JOB_TYPE_NAMES = { poster_repair: '批量海报修复' };
+const JOB_STATUS_NAMES = { queued: '排队中', running: '进行中', done: '已完成', cancelled: '已取消', failed: '失败' };
+
+function dsnJobsDur(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    if (sec < 60) return sec + ' 秒';
+    if (sec < 3600) return Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
+    return Math.floor(sec / 3600) + ' 小时 ' + Math.floor((sec % 3600) / 60) + ' 分';
+}
+
+function dsnToggleJobsPanel() {
+    const panel = document.getElementById('dsnJobsPanel');
+    const btn = document.getElementById('dsnJobsBtn');
+    if (!panel) return;
+    const opening = panel.style.display === 'none' || !panel.style.display;
+    panel.style.display = opening ? 'block' : 'none';
+    if (btn) btn.classList.toggle('active', opening);
+    if (opening) {
+        dsnJobsRender();
+        if (jobsPanelTimer) clearInterval(jobsPanelTimer);
+        jobsPanelTimer = setInterval(dsnJobsRender, JOBS_POLL_MS);
+    } else if (jobsPanelTimer) {
+        clearInterval(jobsPanelTimer);
+        jobsPanelTimer = 0;
+    }
+}
+
+function dsnStartJobsPoll() {
+    if (jobsPanelTimer) return;
+    jobsPanelTimer = setInterval(dsnJobsRender, JOBS_POLL_MS);
+}
+
+function dsnStopJobsPoll() {
+    if (jobsPanelTimer) { clearInterval(jobsPanelTimer); jobsPanelTimer = 0; }
+    const panel = document.getElementById('dsnJobsPanel');
+    const btn = document.getElementById('dsnJobsBtn');
+    if (panel) panel.style.display = 'none';
+    if (btn) btn.classList.remove('active');
+}
+
+function dsnJobsBadge(jobs) {
+    const badge = document.getElementById('dsnJobsBadge');
+    if (!badge) return;
+    const active = (jobs || []).filter(j => j.status === 'running' || j.status === 'queued').length;
+    badge.textContent = active > 9 ? '9+' : String(active);
+    badge.style.display = active > 0 ? '' : 'none';
+}
+
+function dsnJobsEscape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function dsnJobsRender() {
+    const panel = document.getElementById('dsnJobsPanel');
+    if (!panel) return;
+    let jobs = [];
+    try {
+        const r = await (await fetch('/api/ai/agent/jobs?limit=20')).json();
+        if (r.code === 0) jobs = r.data || [];
+    } catch (e) {
+        return; // 网络抖动：保留上一次渲染，不刷白
+    }
+    dsnJobsBadge(jobs);
+    const panelOpen = panel.style.display !== 'none';
+    if (!panelOpen) return;
+    if (!jobs.length) {
+        panel.innerHTML = '<div class="djp-empty">暂时没有后台作业。<br>对我说「把缺失的海报补一下」就能启动一个。</div>';
+        return;
+    }
+    panel.innerHTML = jobs.map(j => {
+        const pct = j.percent || 0;
+        const typeName = JOB_TYPE_NAMES[j.type] || j.type || '作业';
+        const stName = JOB_STATUS_NAMES[j.status] || j.status;
+        const eta = (j.status === 'running' && j.etaSec) ? (' · 剩余约 ' + dsnJobsDur(j.etaSec)) : '';
+        const running = j.status === 'running' || j.status === 'queued';
+        const recent = (j.recent || []).slice(-3).map(it => {
+            const r2 = it.result || '';
+            const ic = r2 === 'repaired' ? '✅' : (r2 === 'dry-run' ? '🔍' : (r2 === 'locked' ? '🔒' : '⚠️'));
+            return '<div class="djp-recent-row">' + ic + ' ' + dsnJobsEscape(it.title || ('#' + it.id)) +
+                (r2 && r2 !== 'repaired' ? ' <span class="djp-recent-tag">' + dsnJobsEscape(r2) + '</span>' : '') + '</div>';
+        }).join('');
+        return '<div class="djp-job" data-status="' + dsnJobsEscape(j.status) + '">' +
+            '<div class="djp-job-head">' +
+            '<span class="djp-job-type">' + dsnJobsEscape(typeName) + '</span>' +
+            '<span class="djp-job-status djp-st-' + dsnJobsEscape(j.status) + '">' + dsnJobsEscape(stName) + '</span>' +
+            (running ? '<button class="djp-cancel" onclick="dsnJobsCancel(\'' + dsnJobsEscape(j.id) + '\')" title="当前这一条跑完就停">取消</button>' : '') +
+            '</div>' +
+            '<div class="djp-bar"><div class="djp-bar-fill" style="width:' + pct + '%"></div></div>' +
+            '<div class="djp-job-meta">' + j.processed + ' / ' + j.total + ' 条' +
+            (j.ok ? ' · ✅ ' + j.ok : '') + (j.failed ? ' · ❌ ' + j.failed : '') + (j.skipped ? ' · ⏭️ ' + j.skipped : '') + eta + '</div>' +
+            (j.current ? '<div class="djp-current">正在处理：' + dsnJobsEscape(j.current) + '</div>' : '') +
+            (recent ? '<div class="djp-recent">' + recent + '</div>' : '') +
+            (j.error ? '<div class="djp-error">' + dsnJobsEscape(j.error) + '</div>' : '') +
+            '</div>';
+    }).join('');
+}
+
+async function dsnJobsCancel(jobId) {
+    if (!confirm('确定取消这个作业吗？\n当前正在处理的那一条会跑完，不会留下半个文件。')) return;
+    try {
+        const r = await (await fetch('/api/ai/agent/jobs/' + encodeURIComponent(jobId) + '/cancel', { method: 'POST' })).json();
+        if (typeof showNotification === 'function') {
+            showNotification(r.code === 0 ? '已请求取消' : (r.msg || '取消失败'), r.code === 0 ? '' : 'error');
+        }
+        dsnJobsRender();
+    } catch (e) {
+        if (typeof showNotification === 'function') showNotification('取消失败', e.message, 'error');
+    }
 }
 
 /* r61：agent 任务分解步骤条（AI 抽屉版）—— 与首页聊天同一套 class，玻璃态 CSS 统一渲染 */
@@ -11650,9 +12745,129 @@ function appendAIStepsBlock(messagesDiv, steps) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
+/* ================================================================
+ * round135 · Agent 执行时间线（可追溯）
+ * 每次 run 一个容器，每一步一行：图标 / 工具名 / 参数摘要 / 耗时。
+ * 工具开始（step）插入行，结束（step_patch）原地更新 —— 不重建整块，
+ * 避免流式过程中把用户正在看的行刷没。
+ * ================================================================ */
+const AGENT_STEP_ICONS = {
+    waiting_approval: '🛡️', waiting: '🛡️', running: '⏳',
+    done: '✅', failed: '❌', rejected: '⛔', skipped: '⏭️'
+};
+
+function agentTimelineEnsure(messagesDiv, runId) {
+    let box = messagesDiv.querySelector('.agtl[data-run="' + runId + '"]');
+    if (box) return agentTimelineApi(box);
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai';
+    wrap.innerHTML =
+        '<div class="agtl" data-run="' + escapeHtml(runId) + '">' +
+        '<div class="agtl-head">' +
+        '<span class="agtl-title">🗂 执行过程</span>' +
+        '<span class="agtl-count">0 步</span>' +
+        '<span class="agtl-toggle" title="折叠/展开">⌄</span>' +
+        '</div>' +
+        '<div class="agtl-body"></div>' +
+        '</div>';
+    messagesDiv.appendChild(wrap);
+    const agtl = wrap.querySelector('.agtl');
+    agtl.querySelector('.agtl-toggle').addEventListener('click', () => {
+        agtl.classList.toggle('collapsed');
+    });
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return agentTimelineApi(agtl);
+}
+
+function agentTimelineApi(agtl) {
+    const body = agtl.querySelector('.agtl-body');
+    const cnt = agtl.querySelector('.agtl-count');
+    const refreshCount = () => {
+        const n = body.querySelectorAll('.agtl-row').length;
+        cnt.textContent = n + ' 步';
+    };
+    return {
+        upsert(step) {
+            if (!step) return;
+            const seq = String(step.seq || '');
+            let row = seq ? body.querySelector('.agtl-row[data-seq="' + seq + '"]') : null;
+            if (!row) {
+                row = document.createElement('div');
+                row.className = 'agtl-row';
+                if (seq) row.dataset.seq = seq;
+                row.innerHTML =
+                    '<span class="agtl-ic"></span>' +
+                    '<span class="agtl-label"></span>' +
+                    '<span class="agtl-sum"></span>' +
+                    '<span class="agtl-cost"></span>';
+                body.appendChild(row);
+            }
+            const st = step.status || (step.ok === false ? 'failed' : 'done');
+            row.dataset.status = st;
+            row.querySelector('.agtl-ic').textContent = AGENT_STEP_ICONS[st] || '•';
+            row.querySelector('.agtl-label').textContent = step.label || step.name || '执行操作';
+            const sum = step.summary || step.argsBrief || '';
+            row.querySelector('.agtl-sum').textContent = sum;
+            row.querySelector('.agtl-cost').textContent = step.costMs ? (step.costMs + 'ms') : '';
+            refreshCount();
+            const host = agtl.closest('#aiMessages');
+            if (host) host.scrollTop = host.scrollHeight;
+        },
+        patch(seq, patch) {
+            const row = body.querySelector('.agtl-row[data-seq="' + seq + '"]');
+            if (!row) return;
+            const st = (patch && patch.status) || row.dataset.status;
+            row.dataset.status = st;
+            row.querySelector('.agtl-ic').textContent = AGENT_STEP_ICONS[st] || '•';
+            if (patch && patch.summary) row.querySelector('.agtl-sum').textContent = patch.summary;
+            if (patch && patch.costMs) row.querySelector('.agtl-cost').textContent = patch.costMs + 'ms';
+            const host = agtl.closest('#aiMessages');
+            if (host) host.scrollTop = host.scrollHeight;
+        },
+        element: agtl
+    };
+}
+
+/**
+ * 单步审批卡片：参数摊开给用户看，允许/拒绝只影响这一次调用（不重发消息）。
+ */
+function appendAgentApproval(messagesDiv, approval) {
+    if (!approval || !approval.id) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai';
+    const riskTag = approval.risk === 'high' ? '<span class="aab-risk high">高危</span>' : '<span class="aab-risk">需确认</span>';
+    wrap.innerHTML =
+        '<div class="aab" data-apr="' + escapeHtml(approval.id) + '">' +
+        '<div class="aab-head">🛡️ 需要你授权 · ' + escapeHtml(approval.label || approval.tool) + riskTag + '</div>' +
+        '<div class="aab-warn">' + escapeHtml(approval.warning || '该操作会修改数据或文件') + '</div>' +
+        '<div class="aab-args"><code>' + escapeHtml(JSON.stringify(approval.args || {}, null, 1)) + '</code></div>' +
+        '<div class="aab-actions">' +
+        '<button class="btn btn-sm btn-secondary aab-no">✕ 拒绝</button>' +
+        '<button class="btn btn-sm btn-primary aab-yes">✓ 允许这次</button>' +
+        '</div>' +
+        '<div class="aab-tip">只对这一次调用生效；拒绝后 AI 会停下来说明原因</div>' +
+        '</div>';
+    messagesDiv.appendChild(wrap);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    const card = wrap.querySelector('.aab');
+    const finish = (text, cls) => {
+        card.classList.add('settled');
+        card.querySelector('.aab-actions').innerHTML = '<div class="aab-result ' + (cls || '') + '">' + escapeHtml(text) + '</div>';
+    };
+    card.querySelector('.aab-yes').addEventListener('click', async () => {
+        finish('已允许，正在执行…');
+        const r = await (window.decideAgentApproval ? window.decideAgentApproval(approval.id, true) : { code: -1 });
+        finish(r && r.code === 0 ? '✓ 已允许，执行中' : ('裁决失败：' + ((r && r.msg) || '网络异常')), r && r.code === 0 ? 'ok' : 'bad');
+    });
+    card.querySelector('.aab-no').addEventListener('click', async () => {
+        finish('已拒绝，未做任何修改');
+        await (window.decideAgentApproval ? window.decideAgentApproval(approval.id, false) : null);
+    });
+}
+
 // r87：抽屉对话区渲染沙箱高危审批卡片
-function appendAIApprovalBlock(messagesDiv, approval, origMsg) {
-    if (!approval || !messagesDiv) return;
+function appendAIApprovalBlock(messagesDiv, approval, origMsg) {    if (!approval || !messagesDiv) return;
     const cid = 'appr_drawer_' + Date.now();
     const wrap = document.createElement('div');
     wrap.className = 'ai-msg ai';
@@ -11697,12 +12912,23 @@ function appendAIApprovalBlock(messagesDiv, approval, origMsg) {
 /* r75：轻量 Markdown 渲染（粗体 + 表格行转一行）—— 必须在 escapeHtml 之后跑 */
 function mdLite(s) {
     return String(s || '')
-        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+        .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*\*/g, '')
+        .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+        .replace(/^\s*[-*_]{3,}\s*$/gm, '<hr class="md-hr">')
+        .replace(/^\s*####\s+(.+)$/gm, '<div class="md-h4">$1</div>')
+        .replace(/^\s*###\s+(.+)$/gm, '<div class="md-h3">$1</div>')
+        .replace(/^\s*##\s+(.+)$/gm, '<div class="md-h2">$1</div>')
+        .replace(/^\s*#\s+(.+)$/gm, '<div class="md-h1">$1</div>')
+        .replace(/^\s*[-*•]\s+(.+)$/gm, '<div class="md-li"><span class="md-bullet">◆</span><span>$1</span></div>')
+        .replace(/^\s*(\d+)\.\s+(.+)$/gm, '<div class="md-li md-oli"><span class="md-num">$1.</span><span>$2</span></div>')
         .replace(/^\s*\|(.+)\|\s*$/gm, (m, row) => {
             const cells = row.split('|').map(c => c.trim()).filter(c => c);
             if (!cells.length || cells.every(c => /^[-: ]*$/.test(c))) return '';
-            return cells.join(' · ');
-        });
+            return '<div class="md-tr">' + cells.map(c => '<span class="md-td">' + c + '</span>').join('<span class="md-sep">·</span>') + '</div>';
+        })
+        .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
+        .replace(/\n{3,}/g, '\n\n');
 }
 
 // 发送AI消息
@@ -11733,19 +12959,64 @@ async function sendAIMessage() {
     
     let streamBubble = null;
     let streamText = '';
+    let timeline = null;          // round135：本次 run 的步骤时间线
+    let runId = '';
+    let cardSeen = false;         // round140：本轮是否已画过卡片（避免 done 时重复）
+    if (window.resetAIPlayCardsSeen) window.resetAIPlayCardsSeen();   // 新的一轮，去重记忆清零
 
-    await window.fetchAIStream(message, { sessionId: dsnCurrentSessionId || 'main' }, {
+    // round135：多轮上下文（只保留近 6 轮，避免把整段对话塞进请求）
+    const hist = Array.isArray(window.__aiHistory) ? window.__aiHistory : [];
+    hist.push({ role: 'user', content: message });
+    window.__aiHistory = hist.slice(-12);
+
+    await window.fetchAIStream(message, { sessionId: dsnCurrentSessionId || 'main', history: hist.slice(-12) }, {
         onStart: () => {},
+        onRun: (ev) => {
+            runId = ev.runId || '';
+            timeline = agentTimelineEnsure(messagesDiv, runId);
+            const t = document.getElementById(typingId);
+            if (t) t.querySelector('.bubble').textContent = '正在思考…';
+        },
+        onPhase: (ev) => {
+            const t = document.getElementById(typingId);
+            if (t) t.querySelector('.bubble').textContent = ev.text || '思考中…';
+        },
         onStep: (step) => {
-            appendAIStepsBlock(messagesDiv, [step]);
+            document.getElementById(typingId)?.remove();
+            if (!timeline) timeline = agentTimelineEnsure(messagesDiv, runId || 'local');
+            timeline.upsert(step);
+        },
+        onStepPatch: (ev) => {
+            if (timeline) timeline.patch(ev.seq, ev.patch || {});
+            // 审批卡跟着更新：批准后那一步跑完，卡片不该一直停在「执行中」
+            if (ev.approvalId) {
+                const card = document.querySelector('.aab[data-apr="' + ev.approvalId + '"]');
+                const res = card && card.querySelector('.aab-result');
+                if (res) {
+                    const st = (ev.patch && ev.patch.status) || '';
+                    const okDone = st === 'done' || (ev.patch && ev.patch.ok === true);
+                    const bad = st === 'failed' || st === 'rejected' || (ev.patch && ev.patch.ok === false);
+                    res.textContent = okDone ? '✓ 已执行完成' : bad ? '✕ 执行未成功' : res.textContent;
+                    res.className = 'aab-result ' + (okDone ? 'ok' : bad ? 'bad' : '');
+                }
+            }
         },
         onApproval: (approval) => {
-            appendAIApprovalBlock(messagesDiv, approval, message);
+            appendAgentApproval(messagesDiv, approval);
+        },
+        onCards: (ev) => {
+            /* round140：工具一跑完就下发卡片 —— 抽屉里立刻出现可点击的播放卡片。 */
+            if (!ev || !Array.isArray(ev.cards) || !ev.cards.length) return;
+            cardSeen = true;
+            document.getElementById(typingId)?.remove();
+            window.insertAIPlayCards(ev.cards, ev.kind || 'movie', { container: messagesDiv });
         },
         onAction: (act) => {
             if (window.executeAIUiActions) window.executeAIUiActions([act]);
         },
         onToken: (token) => {
+            // 纯空白开头（模型先吐 \n 再决定调工具）不建气泡，否则会留一个空壳
+            if (!streamBubble && !String(token || '').trim()) { streamText += token; return; }
             document.getElementById(typingId)?.remove();
             if (!streamBubble) {
                 const wrap = document.createElement('div');
@@ -11766,6 +13037,14 @@ async function sendAIMessage() {
 
             if (data.context) updateAICtxBar(data.context);
             if (window.CVCompanion) window.CVCompanion.aiEvent('reply', reply);
+            // round135：把回答补进上下文，并留下可追溯的 runId（可到「最近任务」回放）
+            try {
+                window.__aiHistory = (window.__aiHistory || []).concat([{ role: 'assistant', content: String(reply).slice(0, 1500) }]).slice(-12);
+            } catch (e) { }
+            if (data.runId && timeline && timeline.element) {
+                const meta = timeline.element.querySelector('.agtl-title');
+                if (meta) meta.title = '运行 ID：' + data.runId + '（可在最近任务里回放每一步）';
+            }
             loadDsnSessions(); // r90：回答完成后自动刷新左侧会话列表与标题摘要
 
             if (!streamBubble) {
@@ -11778,9 +13057,17 @@ async function sendAIMessage() {
             }
 
             let formattedReply = mdLite(escapeHtml(reply)).replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (match, id, title) => {
-                return `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${title}</span>`;
+                return `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${escapeHtml(title)}</span>`;
             });
             streamBubble.innerHTML = formattedReply;
+
+            /* round140：兜底补画卡片。SSE 的 cards 事件已画过就不重复；
+               没收到（旧接口降级 / 分段丢失）时用 done 的全量补一次。
+               这是「只给名字不给卡片」的最终保险。 */
+            if (!cardSeen && Array.isArray(data.cards) && data.cards.length) {
+                cardSeen = true;
+                window.insertAIPlayCards(data.cards, 'movie', { container: messagesDiv });
+            }
 
             // 生成相关影片卡片HTML
             if (movieRefs.length > 0) {
@@ -11799,10 +13086,10 @@ async function sendAIMessage() {
                                 return `
                                     <div class="ai-movie-card" onclick="jumpToMovieFromAI(${movie.id})" style="width:120px;cursor:pointer;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--border);transition:all var(--mv2-d2, 0.2s) var(--mv2-snap, ease);">
                                         <div style="width:100%;aspect-ratio:2/3;background:var(--bg-elevated);overflow:hidden;">
-                                            ${posterUrl ? `<img src="${posterUrl}" style="width:100%;height:100%;object-fit:cover;" alt="${movie.title}">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:0.3;">🎬</div>`}
+                                            ${posterUrl ? `<img src="${escapeHtml(safeAssetUrl(posterUrl))}" style="width:100%;height:100%;object-fit:cover;" alt="${escapeHtml(movie.title || '')}">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:0.3;">🎬</div>`}
                                         </div>
                                         <div style="padding:6px;">
-                                            <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${movie.title || movie.avid || '未知'}</div>
+                                            <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(movie.title || movie.avid || '未知')}</div>
                                             ${movie.avid ? `<div style="font-size:10px;color:var(--accent);margin-top:2px;">${movie.avid}</div>` : ''}
                                             ${actressesHtml}
                                             <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">${tagsHtml}</div>
@@ -11816,6 +13103,7 @@ async function sendAIMessage() {
                 streamBubble.innerHTML += cardsHtml;
             }
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            if (window.syncAIChatViews) window.syncAIChatViews(dsnCurrentSessionId);
         },
         onError: (err) => {
             document.getElementById(typingId)?.remove();
@@ -11828,7 +13116,10 @@ async function sendAIMessage() {
     });
 }
 
-// 从AI回答跳转到影片详情
+    // round140：卡片里点「播放」的默认落点（insertAIPlayCards 可以覆盖）
+    window._aiCardPlay = function (id) { playMovieInline(id); };
+    window._aiCardDetail = function (id) { jumpToMovieFromAI(id); };
+    // 从AI回答跳转到影片详情
 function jumpToMovieFromAI(movieId) {
     // 关闭AI弹窗
     closeAIModal();
@@ -12040,14 +13331,14 @@ function renderAIMovieCards(movies) {
         return `
             <div class="ai-movie-card" style="width:110px;cursor:pointer;border-radius:10px;overflow:hidden;background:var(--card-bg);border:1px solid var(--border);transition:all var(--mv2-d2, 0.2s) var(--mv2-snap, ease);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="jumpToMovieFromAI(${movie.id})">
                 <div style="width:100%;aspect-ratio:2/3;background:var(--bg-elevated);overflow:hidden;position:relative;">
-                    ${posterUrl ? `<img src="${posterUrl}" style="width:100%;height:100%;object-fit:cover;" alt="${movie.title}" onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;\\'>🎬</div>'">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>`}
+                    ${posterUrl ? `<img src="${escapeHtml(safeAssetUrl(posterUrl))}" style="width:100%;height:100%;object-fit:cover;" alt="${escapeHtml(movie.title || '')}" onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;\\'>🎬</div>'">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>`}
                     <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));padding:16px 6px 6px;display:flex;gap:4px;">
                         <button style="flex:1;padding:4px 0;background:rgba(255,255,255,0.9);border:none;border-radius:6px;font-size:10px;cursor:pointer;font-weight:600;" onclick="event.stopPropagation();closeAIModal();setTimeout(()=>openWithPotPlayer(${movie.id}),300)">▶ 播放</button>
                         <button style="flex:1;padding:4px 0;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);border-radius:6px;font-size:10px;cursor:pointer;color:white;" onclick="event.stopPropagation();jumpToMovieFromAI(${movie.id})">详情</button>
                     </div>
                 </div>
                 <div style="padding:6px 8px;">
-                    <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${movie.title || '未命名'}</div>
+                    <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(movie.title || '未命名')}</div>
                     ${movie.avid ? `<div style="font-size:10px;color:var(--accent);margin-top:2px;font-weight:500;">${movie.avid}</div>` : ''}
                 </div>
             </div>
@@ -12153,8 +13444,8 @@ async function showRelationGraph(movieId) {
                     <div class="similar-grid">
                         ${sameActressMovies.map(s => `
                             <div class="similar-card" onclick="showMovieDetail(${s.id})">
-                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
-                                <div class="similar-title">${s.title || s.avid || ''}</div>
+                                <img class="similar-poster" src="${escapeHtml(safeAssetUrl(getPosterUrl(s)))}" alt="${escapeHtml(s.title || '')}" loading="lazy" decoding="async">
+                                <div class="similar-title">${escapeHtml(s.title || s.avid || '')}</div>
                             </div>
                         `).join('')}
                     </div>
@@ -12167,8 +13458,8 @@ async function showRelationGraph(movieId) {
                     <div class="similar-grid">
                         ${sameTagMovies.map(s => `
                             <div class="similar-card" onclick="showMovieDetail(${s.id})">
-                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
-                                <div class="similar-title">${s.title || s.avid || ''}</div>
+                                <img class="similar-poster" src="${escapeHtml(safeAssetUrl(getPosterUrl(s)))}" alt="${escapeHtml(s.title || '')}" loading="lazy" decoding="async">
+                                <div class="similar-title">${escapeHtml(s.title || s.avid || '')}</div>
                             </div>
                         `).join('')}
                     </div>
@@ -12271,13 +13562,20 @@ function hideGallery() {
 
 // ========== 视图切换 ==========
 function switchView(view) {
+    // ★ P0：切换代次 +1，所有 viewBound 请求在返回时会发现自己已过期。
+    viewToken++;
     // 切换视图时坚决重置可能残余的长任务等待遮罩与加载器
     if (window.NVX_LONG && typeof window.NVX_LONG.reset === 'function') {
         window.NVX_LONG.reset();
     }
+    /* r153b：离开随机推荐时卸载无限画布，别让 56 个 tile 和 rAF 继续在隐藏视图里跑。 */
+    if (window.CVFolia && window.CVFolia.isMounted()
+        && view !== 'random' && view !== 'random-adult') {
+        window.CVFolia.destroy();
+    }
     /* round42c 隐私分割器：隐私入口在总开关隐藏时一律拦截（防止 hash 恢复等路径绕过）
      * round43：+ 隐私组同款四功能块 */
-    if (['jav', 'anime', 'movies-adult', 'recent-adult', 'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult', 'actresses', 'tags', 'watch', 'watch-hanime'].includes(view)
+    if (['jav', 'anime', 'movies-adult', 'recent-adult', 'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult', 'actresses', 'tags', 'watch', 'watch-hanime', 'watch-origin', 'watch-origin-hanime'].includes(view)
         && typeof isAdultNavHidden === 'function' && isAdultNavHidden()) {
         view = 'movies';
         showNotification('已隐藏', '该入口属于隐私内容，当前处于隐藏状态。可在 设置→隐私内容 里开启，或点顶栏 🔒 解锁');
@@ -12294,7 +13592,9 @@ function switchView(view) {
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
         if (item.dataset.view === view ||
-            ((view === 'guess-grid' || view === 'guess-magic') && item.dataset.view === 'guess')) {
+            ((view === 'guess-grid' || view === 'guess-magic') && item.dataset.view === 'guess') ||
+            (view === 'watch-origin' && item.dataset.view === 'watch') ||
+            (view === 'watch-origin-hanime' && item.dataset.view === 'watch-hanime')) {
             item.classList.add('active');
         }
     });
@@ -12329,6 +13629,8 @@ function switchView(view) {
     document.getElementById('statsPanel').style.display = 'none';
     document.getElementById('emptyTip').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    // round173b：离开追番页时收起独立视图 + 卸载事件监听（避免点别的视图还触发追番的委托）
+    if (view !== 'series' && window.SeriesView && typeof window.SeriesView.hide === 'function') window.SeriesView.hide();
     const featureView = document.getElementById('featureView');
     if (featureView) featureView.style.display = 'none';
     const profileStrip = document.getElementById('profileStrip');
@@ -12377,8 +13679,8 @@ function switchView(view) {
         hideTreeBreadcrumb();
     }
     
-    // 首页/动漫/漫画/小说显示画廊；round43：隐私组「全部内容」也带精选轮播（AV/里番口径）
-    const galleryViews = ['movies', 'anime', 'comic', 'novel', 'movies-adult'];
+    // 仅在全部影片 / 隐私全部内容显示顶部挤压画廊（防止异步返回后把画廊漏进设置页或书库）
+    const galleryViews = ['movies', 'movies-adult'];
     if (galleryViews.includes(view)) {
         showGallery();
         initGallery(view);
@@ -12430,7 +13732,7 @@ function switchView(view) {
         case 'guess-adult':
             document.getElementById('sortSelect').parentElement.style.display = 'none';
             hideGallery();
-            updateToolbarTitle('🔞 猜你喜欢');
+            updateToolbarTitleIcon('adult-guess', '猜你喜欢');
             if (window.AvBoard) {
                 document.getElementById('movieGrid').style.display = 'grid';
                 window.AvBoard.openGuess('adult');
@@ -12458,6 +13760,13 @@ function switchView(view) {
             document.getElementById('movieGrid').style.display = 'grid';
             hideGallery();
             loadCartoonMovies();
+            break;
+        // round173b：追番（新番加追 + 分集进度看板）
+        case 'series':
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle('📺 追番');
+            if (window.SeriesView && window.SeriesView.show) window.SeriesView.show();
             break;
         case 'favorites':
             document.getElementById('movieGrid').style.display = 'grid';
@@ -12499,6 +13808,7 @@ function switchView(view) {
             document.getElementById('sortSelect').parentElement.style.display = 'block';
             hideGallery();
             loadAnime();
+            setTimeout(() => { if (currentView === 'anime') { try { maybeShowScraperGuide(); } catch (e) {} } }, 600);
             break;
         case 'comic':
             document.getElementById('movieGrid').style.display = 'grid';
@@ -12576,23 +13886,67 @@ function switchView(view) {
             break;
         // ★ 四个在线观看板块（第 16 轮）：共用同一套 macOS 窗口与交互，只是站点集合不同。
         //   板块归属由 Features 里的 BOARD_OF_VIEW 决定，这里只负责把 view 名透传过去。
+        // r154：AV / 里番默认走原生流（源站只当数据库，播放用自带播放器）；
+        // 整站内嵌窗口保留为「原站排障」兜底，见下面 watch-origin 系列。
         case 'watch':
-        case 'watch-anime':
-        case 'watch-comic':
-        case 'watch-novel':
         case 'watch-hanime': {
             document.getElementById('movieGrid').style.display = 'none';
             document.getElementById('sortSelect').parentElement.style.display = 'none';
             hideGallery();
+            updateToolbarTitle(currentView === 'watch-hanime' ? '🔞 里番在线观看' : '📺 AV在线观看');
+            if (window.MediaSource && window.MediaSource.show) {
+                window.MediaSource.show('stream', { board: currentView === 'watch-hanime' ? 'hanime' : 'av' });
+            } else if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView);
+            }
+            break;
+        }
+        case 'watch-comic':
+        case 'watch-novel': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            const isNovel = currentView === 'watch-novel';
+            updateToolbarTitle(isNovel ? '📖 小说在线阅读' : '📚 漫画在线观看');
+            if (window.MediaSource && window.MediaSource.show) {
+                window.MediaSource.show('read', { adapter: isNovel ? 'esjzone' : 'dm5', kind: isNovel ? 'novel' : 'manga' });
+            } else if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView);
+            }
+            break;
+        }
+        case 'watch-origin-comic':
+        case 'watch-origin-novel': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle(currentView === 'watch-origin-novel' ? '📖 小说 · 原站排障' : '📚 漫画 · 原站排障');
+            if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView === 'watch-origin-novel' ? 'watch-novel' : 'watch-comic');
+            }
+            break;
+        }
+        case 'watch-anime': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
             const watchTitles = {
-                watch: '📺 AV在线观看',
-                'watch-anime': '🌸 动漫在线观看',
-                'watch-comic': '📚 漫画在线观看',
-                'watch-novel': '📖 小说在线阅读',
-                'watch-hanime': '🔞 里番在线观看'
+                'watch-anime': '🌸 动漫在线观看'
             };
             updateToolbarTitle(watchTitles[currentView] || '📺 在线观看');
             if (window.Features && window.Features.showWatch) window.Features.showWatch(currentView);
+            break;
+        }
+        // 原站排障：整站反代 / iframe 窗口（过 CF 盾、解析器全挂时用）
+        case 'watch-origin':
+        case 'watch-origin-hanime': {
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle(currentView === 'watch-origin-hanime' ? '🔞 里番 · 原站排障' : '📺 AV · 原站排障');
+            if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView === 'watch-origin-hanime' ? 'watch-hanime' : 'watch');
+            }
             break;
         }
         // round51：聚合在线搜索 —— 我们自己的结果墙（一次搜遍所有在线源，点海报直接播）。
@@ -12641,14 +13995,14 @@ function switchView(view) {
 // ========== 数据加载 ==========
 async function loadMovies(page = 1) {
     currentPage = page;
-    // round42c 隐私分割器：公开「全部影片」默认不展示 AV/里番（privacy=exclude）
-    const movies = await api.getMovies(currentSort, 'all', 'all', page, currentPageSize, 'exclude');
+    /* round42c 隐私分割器：仅当顶栏 🔒 处于「隐藏成人内容」时才排除 AV/里番。
+       r153b：之前无条件 exclude，导致 2865 条全 AV 的库在「全部影片」永远是 0。 */
+    const hasAdultVisible = typeof isAdultNavHidden === 'function' && !isAdultNavHidden();
+    const movies = await api.getMovies(currentSort, 'all', 'all', page, currentPageSize,
+        hasAdultVisible ? '' : 'exclude');
     renderMovies(movies);
     renderPagination();
     updateToolbarTitle('全部影片', currentTotal);
-    // 侧栏「全部影片」计数同步为过滤后的口径
-    const countAllEl = document.getElementById('countAll');
-    if (countAllEl) countAllEl.textContent = currentTotal;
 }
 
 async function loadJavMovies(page = 1) {
@@ -12769,6 +14123,11 @@ async function loadActresses(type) {
 
 async function loadTags(type) {
     if (type !== undefined) slicerState.tagType = type;
+    // round168：标签库交给 tags-ui.js（五库 / 大卡 / 思维空间 / 合并）；老实现保留为回退
+    if (window.TagsUI && typeof window.TagsUI.enter === 'function') {
+        await window.TagsUI.enter(type === undefined ? slicerState.tagType : type);
+        return;
+    }
     updateToolbarTitle('🏷️ 标签库');
     renderSlicerTabs('tagSlicer', slicerState.tagType, (t) => loadTags(t));
     const tags = await api.getTags(slicerState.tagType);
@@ -12777,16 +14136,89 @@ async function loadTags(type) {
 }
 
 async function loadHot(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? '🔞 热门排行' : '🔥 热门排行');
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-hot', '热门排行');
+    else updateToolbarTitle('🔥 热门排行');
     // 第 15 轮：48 → 100，榜单行铺满整页；round43：公开版排除 AV/里番
-    const movies = await api.getHotMovies(100, privacy);
+    let movies = await api.getHotMovies(100, privacy);
+    /* round127 · bug2：隐私内容板块只允许出现 AV/里番。
+       推荐接口按 privacy 过滤是「尽力而为」，脏数据仍可能漏进来，这里再兜一遍。 */
+    if (privacy === 'adult') movies = onlyAdultItems(movies);
     renderHotRanking(movies);
 }
 
-async function loadRandom(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? '🔞 随机推荐' : '🎲 随机推荐');
-    const movies = await api.getRandomMovies(48, 'all', privacy);
-    renderRandomDeckView(movies);
+const RANDOM_CATS = [
+    ['film', '🎬 影视'],
+    ['cartoon', '🌸 动漫'],
+    ['comic', '✒️ 漫画'],
+    ['novel', '📖 小说'],
+    ['anime', '🔞 里番'],
+    ['all', '🌐 全部混排']
+];
+let _randomCat = null;
+let _randomPrivacy = 'exclude';
+let _randomCounts = null;
+/* round153：随机推荐展示模式（无限画布 / 3D 牌堆），默认画布。 */
+let _randomMode = (function () {
+    try { return localStorage.getItem('randomMode') === 'deck' ? 'deck' : 'canvas'; }
+    catch (e) { return 'canvas'; }
+})();
+
+function setRandomMode(mode) {
+    _randomMode = mode === 'deck' ? 'deck' : 'canvas';
+    try { localStorage.setItem('randomMode', _randomMode); } catch (e) { }
+    loadRandom(_randomPrivacy, _randomCat);
+}
+
+async function ensureRandomCategories() {
+    if (_randomCounts) return _randomCounts;
+    try {
+        const r = await (await fetch('/api/recommend/random-categories')).json();
+        if (r.code === 0 && r.data) _randomCounts = r.data;
+    } catch (e) { }
+    return _randomCounts || {};
+}
+
+async function loadRandom(privacy = 'exclude', cat) {
+    _randomPrivacy = privacy;
+    const counts = await ensureRandomCategories();
+    if (cat) _randomCat = cat;
+    /* 默认落在库里真正有内容的分类，而不是永远空着的「影视」。
+       没有分类条件时按馆藏规模挑：小说 > 漫画 > 影视 > 动漫。 */
+    if (!_randomCat) {
+        const order = ['novel', 'comic', 'film', 'cartoon'];
+        _randomCat = order.find(k => (counts[k] || 0) > 0) || 'all';
+    }
+    if (privacy === 'adult' && _randomCat !== 'anime' && _randomCat !== 'all') _randomCat = 'anime';
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-random', '随机推荐');
+    else updateToolbarTitle('🎲 随机推荐');
+    const wantCount = _randomMode === 'canvas' ? 180 : 48;
+    let movies = await api.getRandomMovies(wantCount, _randomCat, privacy);
+    if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
+    renderRandomDeckView(movies, _randomCat);
+}
+
+function randomToolbarHtml(cat, privacy) {
+    const counts = _randomCounts || {};
+    const cats = RANDOM_CATS.filter(([k]) => {
+        if (privacy === 'adult' && !['anime', 'jav', 'all'].includes(k)) return false;
+        if (k === 'all') return true;
+        return (counts[k] || 0) > 0;
+    });
+    return `
+        <div class="random-filter-bar" role="toolbar" aria-label="随机推荐分类">
+            <div class="rfb-pills">
+                ${cats.map(([k, label]) => `<button type="button" class="rfb-pill ${k === cat ? 'active' : ''}" data-random-cat="${k}">${label}</button>`).join('')}
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div class="r153-mode-switch" role="group" aria-label="随机推荐展示模式">
+                    <button type="button" class="r153-mode-btn ${_randomMode === 'canvas' ? 'on' : ''}" data-random-mode="canvas" title="海报磁贴无限画布流：拖拽漫游、滚轮缩放">🧱 无限画布</button>
+                    <button type="button" class="r153-mode-btn ${_randomMode === 'deck' ? 'on' : ''}" data-random-mode="deck" title="3D 轮播牌堆：自动巡航">🎴 3D 牌堆</button>
+                </div>
+                <button type="button" class="rfb-dice" id="randomDiceBtn" title="掷骰换一批">
+                    <span class="rfb-dice-face">🎲</span><span class="rfb-dice-label">掷骰换一批</span>
+                </button>
+            </div>
+        </div>`;
 }
 
 // ========== 随机推荐 3D 轮播卡牌堆（自动巡航 + 3D 视差 + 浮空呼吸） ==========
@@ -12808,26 +14240,47 @@ function _stopDeckAuto() {
     }
 }
 
-function renderRandomDeckView(movies) {
+function renderRandomDeckView(movies, cat) {
+    const category = cat || _randomCat || 'film';
+    const isBookCat = category === 'novel' || category === 'comic';
     _deckMovies = movies || [];
     const grid = document.getElementById('movieGrid');
     const emptyTip = document.getElementById('emptyTip');
     grid.classList.remove('tree-mode');
+    /* 非书籍分类不套竖版书架；书籍分类必须显式打开 3:4 立绘，
+       否则随机推荐里的小说/漫画会被 16:9 卡片裁掉，只剩封面正中一条。 */
+    if (isBookCat) grid.setAttribute('data-book-layout', 'portrait');
+    else grid.removeAttribute('data-book-layout');
     _stopDeckAuto();
 
+    const toolbar = randomToolbarHtml(category, _randomPrivacy);
     if (!_deckMovies.length) {
-        grid.innerHTML = '';
+        grid.innerHTML = toolbar + '<div class="random-empty">这一类暂时没有可推荐的内容，换个分类或掷一次骰子。</div>';
+        bindRandomToolbar();
         emptyTip.style.display = 'block';
         return;
     }
     emptyTip.style.display = 'none';
 
+    /* round153：无限画布流（Folia 式）。48 个槽位环形环绕，拖拽/滚轮/惯性。 */
+    if (_randomMode === 'canvas' && window.CVFolia) {
+        grid.innerHTML = toolbar + '<div id="randomCanvasHost"></div>';
+        bindRandomToolbar();
+        const host = document.getElementById('randomCanvasHost');
+        if (host) window.CVFolia.mount(host, _deckMovies);
+        return;
+    }
+
     // 取前 7 部作为 3D 轮播牌堆展示，其余进入下方网格
     const deckCount = Math.min(7, _deckMovies.length);
     _deckCenterIdx = Math.floor(deckCount / 2);
+    /* 混合分类时按前 7 张的多数决定牌堆比例：书多就用竖版立绘，
+       否则 16:9 的宽幅舞台会把竖版封面裁成中间一条。 */
+    const deckIsPortrait = isBookCat ||
+        (_deckMovies.slice(0, deckCount).filter(m => m.type === 'novel' || m.type === 'comic').length >= Math.ceil(deckCount / 2));
 
-    let html = `
-        <div class="deck-carousel-stage" id="deckStage" style="grid-column:1/-1;margin-bottom:28px;">
+    let html = toolbar + `
+        <div class="deck-carousel-stage ${deckIsPortrait ? 'deck-portrait' : 'deck-wide'}" id="deckStage" style="grid-column:1/-1;margin-bottom:28px;">
             <div class="deck-stage-title">
                 <span class="dst-tag">${uiIcon('spark', 15)} 3D 灵感选片 · 封面流动</span>
                 <span class="dst-hint">自动巡航流转 · 鼠标悬停暂停 · 点击中心卡看详情</span>
@@ -12841,6 +14294,7 @@ function renderRandomDeckView(movies) {
     `;
 
     grid.innerHTML = html;
+    bindRandomToolbar();
     updateDeckCards();
 
     const deckWrap = document.getElementById('deckWrap');
@@ -12884,7 +14338,11 @@ function renderRandomDeckView(movies) {
     const remaining = _deckMovies.slice(deckCount);
     if (remaining.length) {
         const subWrap = document.createElement('div');
-        subWrap.style.cssText = 'grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:16px;';
+        subWrap.className = 'random-subgrid' + (isBookCat ? ' is-portrait' : '');
+        subWrap.style.cssText = 'grid-column:1/-1;display:grid;' +
+            (isBookCat
+                ? 'grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:20px;'
+                : 'grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:18px;');
         subWrap.innerHTML = remaining.map(renderMovieCard).join('');
         grid.appendChild(subWrap);
         // round70：下方网格与主列表共用同一份点击绑定（原来漏绑 → 点了没反应）
@@ -13032,6 +14490,36 @@ function shiftDeck(dir) {
     updateDeckCards();
 }
 
+function bindRandomToolbar() {
+    const grid = document.getElementById('movieGrid');
+    if (!grid) return;
+    grid.querySelectorAll('[data-random-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.randomMode === _randomMode) return;
+            setRandomMode(btn.dataset.randomMode);
+        });
+    });
+    grid.querySelectorAll('[data-random-cat]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.randomCat === _randomCat) return;
+            loadRandom(_randomPrivacy, btn.dataset.randomCat);
+        });
+    });
+    const dice = document.getElementById('randomDiceBtn');
+    if (!dice) return;
+    dice.addEventListener('click', () => {
+        if (dice.classList.contains('is-rolling')) return;
+        dice.classList.add('is-rolling');
+        /* 骰子转 480ms 再换批：视觉上「这一次真的掷了」，而不是瞬间刷屏。 */
+        setTimeout(() => {
+            loadRandom(_randomPrivacy).finally(() => {
+                const fresh = document.getElementById('randomDiceBtn');
+                if (fresh) setTimeout(() => fresh.classList.remove('is-rolling'), 60);
+            });
+        }, 480);
+    });
+}
+
 function handleDeckCardClick(idx) {
     if (idx === _deckCenterIdx) {
         const m = _deckMovies[idx];
@@ -13047,8 +14535,10 @@ function handleDeckCardClick(idx) {
 }
 
 async function loadGuess(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? '🔞 猜你喜欢' : '✨ 猜你喜欢');
-    const movies = await api.getGuessMovies(48, privacy);
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-guess', '猜你喜欢');
+    else updateToolbarTitle('✨ 猜你喜欢');
+    let movies = await api.getGuessMovies(48, privacy);
+    if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
     renderGuessRail(movies, privacy);
 }
 
@@ -13100,8 +14590,10 @@ function renderGuessRail(movies, privacy) {
 }
 
 async function loadUnwatched(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? '🔞 未观看' : '📺 未观看');
-    const movies = await api.getUnwatchedMovies(50, privacy);
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-unwatched', '未观看');
+    else updateToolbarTitle('📺 未观看');
+    let movies = await api.getUnwatchedMovies(50, privacy);
+    if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
     renderUnwatchedView(movies);
 }
 
@@ -13116,19 +14608,30 @@ async function loadRecent() {
 /* ========== round42c 隐私内容组专属视图 ==========
  * 与公开「全部影片/最近观看」完全同构，只是取数范围=AV/里番（type=adult）。
  * 导航项在侧栏媒体库组 AV/里番之后（data-adult=1，受隐私内容设置管理）。 */
+/* round127 · bug2：成人视图的客户端二次兜底。
+   后端 type='adult' 已经把范围收窄到 jav/anime，但历史脏数据（type 为空、
+   或早期导入时写成了别的值）会被 `m.type || 'jav'` 误判成 AV 收进来，
+   于是在「隐私内容」里看到小说/漫画。这里再筛一遍，双保险。 */
+function onlyAdultItems(list) {
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (m) {
+        return ['jav', 'anime'].indexOf(String((m && m.type) || 'jav').toLowerCase()) >= 0;
+    });
+}
+
 async function loadAdultMovies(page = 1) {
     currentPage = page;
-    const movies = await api.getMovies(currentSort, 'all', 'adult', page, currentPageSize);
+    const movies = onlyAdultItems(await api.getMovies(currentSort, 'all', 'adult', page, currentPageSize));
     renderMovies(movies);
     renderPagination();
-    updateToolbarTitle('🔞 全部内容', currentTotal);
+    updateToolbarTitleIcon('adult-all', '全部内容', currentTotal);
     const el = document.getElementById('countAdult');
     if (el) el.textContent = currentTotal;
 }
 
 async function loadAdultRecent() {
-    updateToolbarTitle('🔞 观看历史');
-    const movies = await api.getMovies('lastplay', 'all', 'adult', 1, 300);
+    updateToolbarTitleIcon('adult-history', '观看历史');
+    const movies = onlyAdultItems(await api.getMovies('lastplay', 'all', 'adult', 1, 300));
     renderRecentView(movies);
 }
 
@@ -13173,9 +14676,9 @@ async function showMovieDetail(id) {
     
     currentDetailMovie = movie;
     const posterUrl = getPosterUrl(movie);
-    // round43：相似推荐按当前影片口径——公开片详情不出 AV/里番，AV/里番详情正常出同类
+    // round43：相似推荐按当前影片口径——公开片详情不出 AV/里番，AV/里番详情正常出同类；多梯队召回 12 部
     const detailIsAdult = ['jav', 'anime'].includes(String(movie.type || 'jav').toLowerCase());
-    const similar = await api.getSimilarMovies(id, 8, detailIsAdult ? '' : 'exclude');
+    const similar = await api.getSimilarMovies(id, 12, detailIsAdult ? '' : 'exclude');
     
     // 计算上一部/下一部
     const currentIndex = currentMovies.findIndex(m => m.id === id);
@@ -13203,8 +14706,8 @@ async function showMovieDetail(id) {
                 ${posterUrl ? `<span class="poster-zoom-hint">🔍 单击放大</span>` : ''}
             </div>
             <div class="detail-head-main">
-                <div class="detail-title">${movie.title || movie.fileName}</div>
-                ${movie.avid ? `<span class="detail-avid">${movie.avid}</span>` : ''}
+                <div class="detail-title">${escapeHtml(prefTitle(movie))}</div>
+                ${movie.avid ? `<span class="detail-avid">${escapeHtml(movie.avid)}</span>` : ''}
                 <div class="detail-head-meta dm-blocks" id="detailMetaBlocks">
                     ${metaBlocks(movie).map((b, i) => `
                         <div class="dm-block" style="--di:${i};--dc:${b.color}" title="${escapeHtml(b.label)}：${escapeHtml(String(b.value))}">
@@ -13227,6 +14730,7 @@ async function showMovieDetail(id) {
         </div>
 
         <div class="detail-scroll">
+            <div id="detailAIGuide" class="detail-ai-guide" hidden></div>
             ${bookNavHtml}
 
             <div class="detail-path">
@@ -13241,11 +14745,12 @@ async function showMovieDetail(id) {
                     ${movie.actresses.map(a => `
                         <div class="detail-actress" data-actress-id="${a.id}" data-actress-name="${escapeHtml(a.name)}">
                             <div class="detail-actress-avatar">
-                                ${a.avatar ? `<img src="${a.avatar}" alt="${escapeHtml(a.name)}" loading="lazy"
-                                    onerror="this.style.display='none';this.parentElement.textContent='${(a.name || '?').charAt(0)}'">`
-                                    : (a.name ? a.name.charAt(0) : '?')}
+                                ${a.avatar ? `<img src="${escapeHtml(safeAssetUrl(a.avatar))}" alt="${escapeHtml(a.name)}" loading="lazy"
+                                    onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='flex'">` : ''}
+                                <span class="detail-actress-fallback" style="display:${a.avatar ? 'none' : 'flex'};align-items:center;justify-content:center;">${escapeHtml((a.name || '?').charAt(0))}</span>
                             </div>
                             <span class="detail-actress-name">${escapeHtml(a.name)}</span>
+                            <div class="detail-actress-quick-edit" title="设置/更换女优头像" onclick="window.showActressAvatarMenu(event, ${a.id}, '${escapeHtml(a.name)}')">📷</div>
                         </div>
                     `).join('')}
                 </div>
@@ -13259,7 +14764,7 @@ async function showMovieDetail(id) {
                     ${movie.tags.map((t, i) => `
                         <span class="detail-tag tag-slicer" data-tag-id="${t.id}" data-tag-name="${escapeHtml(t.name)}" title="点击进入「${escapeHtml(t.name)}」筛选结果">
                             <span class="dt-name">${escapeHtml(t.name)}</span>
-                            <span class="dt-x" title="删除该标签" onclick="event.stopPropagation();removeTagFromMovie(${movie.id}, ${t.id}, '${t.name}')">×</span>
+                            <span class="dt-x" title="删除该标签" onclick="event.stopPropagation();removeTagFromMovie(${movie.id}, ${t.id}, this.parentElement.dataset.tagName)">×</span>
                         </span>
                     `).join('')}
                 </div>
@@ -13269,7 +14774,7 @@ async function showMovieDetail(id) {
             ${movie.overview ? `
             <div class="detail-section">
                 <h4 style="display:flex;align-items:center;gap:6px;">${uiIcon('file', 15)} 简介</h4>
-                <div class="detail-overview">${movie.overview}</div>
+                <div class="detail-overview">${sanitizeHtml(movie.overview)}</div>
             </div>
             ` : ''}
 
@@ -13310,8 +14815,8 @@ async function showMovieDetail(id) {
                 <div class="similar-grid">
                     ${similar.map(s => `
                         <div class="similar-card" data-similar-id="${s.id}" onclick="showMovieDetail(${s.id})">
-                            <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
-                            <div class="similar-title">${s.title || s.avid || ''}</div>
+                            <img class="similar-poster" src="${getPosterUrl(s) || ''}" alt="${escapeHtml(s.title || '')}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 160 100\\'%3E%3Crect width=\\'160\\' height=\\'100\\' fill=\\'%23222\\'/%3E%3Ctext x=\\'80\\' y=\\'55\\' fill=\\'%23888\\' font-size=\\'12\\' text-anchor=\\'middle\\'%3E暂无封面%3C/text%3E%3C/svg%3E'">
+                            <div class="similar-title">${escapeHtml(s.title || s.avid || '')}</div>
                         </div>
                     `).join('')}
                 </div>
@@ -13320,7 +14825,14 @@ async function showMovieDetail(id) {
         </div>
     `;
     document.getElementById('detailBody').innerHTML = html;
+    loadDetailAIGuide(movie);
     const dm = document.getElementById('detailModal');
+    // round126：把「作品类型」写到弹窗根节点，供排版分流用 ——
+    // 视频类（jav / anime / movie…）海报多为横版，左栏塞竖条会失真 ⇒ 走原始排版
+    // （海报整幅居中、信息在下，见 polish.css .detail-head）；
+    // 小说 / 漫画是竖长海报（2:3 / 3:4），左右分栏更省高度 ⇒ 仍走 round119 的两栏。
+    // 类型写在 DOM 上而不是用 :has() 猜按钮文案：换渲染路径也不会失配。
+    dm.dataset.dtype = movie.type || 'video';
     // round109：持久滚动容器的 scrollTop 不会因 innerHTML 替换而清零——桌面抽屉/经典
     // 弹窗的滚动容器是 .modal-content（polish r65 让它 overflow-y:auto），手机全屏详情
     // 是 .detail-body（round20），经典弹窗内部还有 .detail-scroll。上次看完滚到中段，
@@ -13451,6 +14963,33 @@ function resumePreviewVideos() {
         try { const p = v.play(); if (p && p.catch) p.catch(() => { }); } catch (e) { }
     });
     __previewVideosPaused = [];
+}
+
+/* r153 · C3：详情抽屉的 AI 观前导览签（异步、失败静默隐藏） */
+let __guideToken = 0;
+async function loadDetailAIGuide(movie) {
+    const host = document.getElementById('detailAIGuide');
+    if (!host || !movie) return;
+    const my = ++__guideToken;
+    host.hidden = true;
+    host.innerHTML = '';
+    let d;
+    try {
+        const r = await fetch(`/api/ai/guide/${movie.id}`);
+        d = await r.json();
+    } catch (e) {
+        return;
+    }
+    if (my !== __guideToken || !host.isConnected) return;
+    if (!d || d.code !== 0 || !d.data) return;
+    const g = d.data;
+    if (!g.why && !g.mood && !g.pair) return;
+    host.innerHTML = `
+        <div class="dag-head"><span class="dag-kicker">✨ AI 观前导览</span><span class="dag-src">${g.cached ? '策展记忆' : '为本片即时生成'}</span></div>
+        ${g.why ? `<div class="dag-row"><span class="dag-ico">🫶</span><div><b>为什么适合你</b><p>${escapeHtml(g.why)}</p></div></div>` : ''}
+        ${g.mood ? `<div class="dag-row"><span class="dag-ico">🌡️</span><div><b>节奏与雷点</b><p>${escapeHtml(g.mood)}</p></div></div>` : ''}
+        ${g.pair ? `<div class="dag-row"><span class="dag-ico">🎞️</span><div><b>氛围同频</b><p>${escapeHtml(g.pair)}</p></div></div>` : ''}`;
+    host.hidden = false;
 }
 
 function closeModal() {
@@ -13745,7 +15284,7 @@ async function playMovieInline(id) {
     const videoUrl = `/api/movie/stream?path=${encodeURIComponent(movie.filePath)}`;
     video.src = videoUrl;
 
-    document.getElementById('playerTitle').textContent = movie.title || movie.fileName;
+    document.getElementById('playerTitle').textContent = prefTitle(movie);
     const av = document.getElementById('playerAvid');
     if (av) av.textContent = movie.avid || '';
     updatePlayerLoopBtn();
@@ -14235,6 +15774,14 @@ function closePlayer() {
     }
     const video = document.getElementById('videoPlayer');
     const playedMovie = currentPlayerMovie;
+    // round182 P0-1：关闭时补写一次在线追番进度（兜住最后 <10 秒未节流上报的部分）
+    if (currentPlayerEpisode && video.duration > 0) {
+        fetch('/api/series/episode/progress', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ episodeId: currentPlayerEpisode, position: Math.floor(video.currentTime), duration: Math.floor(video.duration) })
+        }).then(r => r.json()).catch(() => {});
+    }
+    currentPlayerEpisode = 0;
     playerSeq++;   // v4.6.0：作废还在路上的 hls.js 挂载回调
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
     if (window.Danmaku) window.Danmaku.stop();
@@ -14251,8 +15798,29 @@ function closePlayer() {
 }
 
 // 通用视频播放函数（kind='hls' 时用 hls.js 播 m3u8）
-function showVideoPlayer(videoUrl, title = '视频播放', kind = '') {
+/**
+ * round185 A4：从展示标题派生「可用于匹配」的媒体名。
+ * 在线追番播放时标题是「冰之城墙 · 第1集」：人看着舒服，但弹弹play 的 matchMode=fileNameOnly
+ * 和本地字幕库都是按**文件名**匹配的，带「·」和单位数集号命中率很低。
+ * 这里统一成「冰之城墙 第01话」这种更接近真实文件名的形态。
+ */
+function cleanMediaTitle(t) {
+    return String(t || '')
+        .replace(/\s*[·•|｜]\s*/g, ' ')
+        .replace(/第\s*(\d+)\s*集/g, (m, n) => '第' + String(n).padStart(2, '0') + '话')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0, episodeId = 0) {
     const video = document.getElementById('videoPlayer');
+    // round182 P0-1：追番在线播放时把进度写回 episode（此前只更新 UI，追番"继续看"永不动）
+    currentPlayerEpisode = Number(episodeId) || 0;
+    window.__epLastSave = 0;
+    if (startAt > 1) {
+        const seek = () => { try { video.currentTime = startAt; } catch (e) { /* 忽略 */ } };
+        video.addEventListener('loadedmetadata', seek, { once: true });
+    }
     playerSeq++;   // v4.6.0：作废上一次还在路上的 hls.js 挂载（含换片到普通 mp4 的情况）
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
 
@@ -14287,7 +15855,12 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '') {
     }
 
     // round36：弹幕（网络流按标题匹配）
-    if (window.Danmaku) window.Danmaku.start(title, video);
+    // round185 A4：传清洗后的匹配串，别把「· 第1集」这种展示用装饰喂给弹弹play 的文件名解析
+    const matchTitle = cleanMediaTitle(title);
+    if (window.Danmaku) window.Danmaku.start(matchTitle || title, video);
+
+    // round173g：播放器增强（外挂字幕 / 跳过 OP-ED / 缓冲条 / 画中画）
+    if (window.PlayerEnhance) window.PlayerEnhance.onPlay(videoUrl, title, matchTitle || title);
 
     // 播放进度更新
     video.ontimeupdate = () => {
@@ -14295,8 +15868,17 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '') {
         document.getElementById('playerProgressFill').style.width = progress + '%';
         document.getElementById('playerTime').textContent =
             `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        // round182 P0-1：在线追番进度回写（10 秒节流，换片/关闭时 ontimeupdate 不会再触发，故靠节流兜底）
+        if (currentPlayerEpisode && video.duration > 0 && Date.now() - window.__epLastSave > 10000) {
+            window.__epLastSave = Date.now();
+            const epIdNow = currentPlayerEpisode;
+            fetch('/api/series/episode/progress', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ episodeId: epIdNow, position: Math.floor(video.currentTime), duration: Math.floor(video.duration) })
+            }).then(r => r.json()).catch(() => {});
+        }
     };
-    
+
     // 点击进度条跳转
     document.getElementById('playerProgress').onclick = (e) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -14680,7 +16262,10 @@ async function confirmUploadPoster() {
         const data = await res.json();
         
         if (data.code === 0) {
-            showNotification('上传成功', '封面已更新并保存到数据库');
+            // round141：后端会把这部片子女优里缺头像的排队后台补，顺带告诉用户一句
+            const avQ = (data.data && data.data.avatarQueue) || 0;
+            showNotification('上传成功', '封面已更新并保存到数据库' +
+                (avQ ? ` · 顺手为 ${avQ} 位女优补头像中` : ''));
             closeUploadPosterModal();
             // 刷新详情页
             showMovieDetail(currentUploadPosterId);
@@ -14717,38 +16302,71 @@ async function toggleWatch(id) {
 }
 
 // ========== 批量操作 ==========
+function syncCardSelectionDOM() {
+    document.querySelectorAll('#movieGrid .movie-card[data-id], #movieGrid [data-mid]').forEach(el => {
+        const id = parseInt(el.dataset.id || el.dataset.mid, 10);
+        if (!id) return;
+        el.classList.toggle('selected', selectedMovies.has(id));
+    });
+    if (typeof window.__syncMobileBatchUI === 'function') {
+        window.__syncMobileBatchUI();
+    }
+}
+
 function toggleSelect(id) {
+    id = parseInt(id, 10);
+    if (!id) return;
     if (selectedMovies.has(id)) {
         selectedMovies.delete(id);
     } else {
         selectedMovies.add(id);
     }
     updateBatchToolbar();
-    // 重新渲染当前列表
-    if (currentView === 'movies' || currentView === 'favorites' ||
-        currentView === 'hot' || currentView === 'random' ||
-        currentView === 'guess' || currentView === 'unwatched' ||
-        currentView === 'recent' || currentView === 'movies-adult' || currentView === 'recent-adult') {
-        renderMovies(currentMovies);
+    syncCardSelectionDOM();
+}
+
+function selectAllCurrent() {
+    const cards = Array.from(document.querySelectorAll('#movieGrid .movie-card[data-id], #movieGrid [data-mid]'));
+    const ids = cards.map(el => parseInt(el.dataset.id || el.dataset.mid, 10)).filter(Boolean);
+    if (!ids.length && Array.isArray(currentMovies)) {
+        currentMovies.forEach(m => { if (m && m.id) ids.push(m.id); });
     }
+    const allPicked = ids.length > 0 && ids.every(id => selectedMovies.has(id));
+    if (allPicked) {
+        ids.forEach(id => selectedMovies.delete(id));
+    } else {
+        ids.forEach(id => selectedMovies.add(id));
+    }
+    updateBatchToolbar();
+    syncCardSelectionDOM();
 }
 
 function updateBatchToolbar() {
     const toolbar = document.getElementById('batchToolbar');
-    document.getElementById('batchCount').textContent = `已选 ${selectedMovies.size} 部`;
+    const countEl = document.getElementById('batchCount');
+    if (countEl) countEl.textContent = `已选 ${selectedMovies.size} 部`;
     
-    if (selectedMovies.size > 0) {
-        toolbar.classList.add('show');
-    } else {
-        toolbar.classList.remove('show');
+    if (toolbar) {
+        if (selectedMovies.size > 0 || window._mobileSelectMode) {
+            toolbar.classList.add('show');
+        } else {
+            toolbar.classList.remove('show');
+        }
     }
 }
 
 function clearSelection() {
     selectedMovies.clear();
+    window._mobileSelectMode = false;
+    document.body.classList.remove('m-select-mode');
     updateBatchToolbar();
-    renderMovies(currentMovies);
+    syncCardSelectionDOM();
 }
+window.selectedMovies = selectedMovies;
+window.toggleSelect = toggleSelect;
+window.clearSelection = clearSelection;
+window.selectAllCurrent = selectAllCurrent;
+window.updateBatchToolbar = updateBatchToolbar;
 
 async function batchAction(action) {
     if (selectedMovies.size === 0) return;
@@ -15020,8 +16638,13 @@ var V4_SKIN_KEY = 'v4Skin';
      matinee = 夜 · Night（暖黑 + 纸白 + 琥珀）
    aurora / ambient 下线：它们是另一套语法（紫蓝极光 / 中性炭黑），
    且组件级硬编码没跟上（统计条写死橙色、告警条写死暖橙），留 4 套等于每个组件写 4 遍。 */
-var V4_SKINS = ['classic', 'matinee'];
-var V4_SKIN_NAMES = { classic: '纸 · Paper', matinee: '夜 · Night' };
+var V4_SKINS = ['classic', 'matinee', 'whale', 'ink'];
+var V4_SKIN_NAMES = {
+    classic: '纸 · Paper',
+    matinee: '夜 · Night',
+    whale: '鲸 · Deep Whale',
+    ink: '墨 · Ink'
+};
 /* 老用户的偏好平滑迁移：两套已下线的暗色皮肤都落到「夜」 */
 var V4_SKIN_ALIAS = { aurora: 'matinee', ambient: 'matinee' };
 
@@ -15069,12 +16692,15 @@ function applyAmbientGlow(root) {
 function applyV4Skin(skin) {
     if (V4_SKINS.indexOf(skin) < 0) skin = 'classic';
     document.documentElement.setAttribute('data-v4skin', skin);
+    document.body.classList.toggle('skin-whale', skin === 'whale');
 
     /* round115：皮肤与明暗绑定。
        实测发现 matinee 默认是**浅色暖纸**（theme-matinee.css 的 body:not(.dark) 分支），
        只有 body.dark 才是暖黑夜色 —— 所以「夜 · Night」必须同时给 body 挂 .dark，
        否则点「夜」看到的还是浅色，用户会以为没生效。 */
-    var wantDark = (skin === 'matinee');
+    /* round153：whale 是深海暗场，同样挂 .dark；它自己的深海令牌在
+       round153-whale-theme.css 里以 html[data-v4skin="whale"] 覆盖。 */
+    var wantDark = (skin === 'matinee' || skin === 'whale' || skin === 'ink');
     document.body.classList.toggle('dark', wantDark);
     try { localStorage.setItem('darkMode', wantDark ? 'true' : 'false'); } catch (e) { }
     var tb = document.getElementById('themeToggle');
@@ -15095,15 +16721,146 @@ function applyV4Skin(skin) {
         // 网格是异步渲染的，稍后再补一次
         setTimeout(function () { applyAmbientGlow(document); }, 600);
     }
+
+    applyWhaleSkinBits(skin);
+}
+
+/* round153：鲸鱼娘皮肤的环境层与立绘位。
+   只做三件事：挂/摘环境层、换首屏角色图、把 AI 头像换成她的特写；
+   环境层是独立 fixed 元素，粒子 10 颗，页面隐藏时暂停。 */
+var _whaleAmbience = null;
+var _whaleVisibilityBound = false;
+
+function applyWhaleSkinBits(skin) {
+    var on = skin === 'whale';
+
+    if (on && !_whaleAmbience) {
+        var amb = document.createElement('div');
+        amb.id = 'whaleAmbience';
+        amb.setAttribute('aria-hidden', 'true');
+        var svg = '<div class="wa-shaft s1"></div><div class="wa-shaft s2"></div><div class="wa-shaft s3"></div>';
+        /* 蓝鲸剪影直接引 SVG 文件，避免内联 6KB 字符串进 JS */
+        svg += '<img class="wa-whale" src="/img/whale/whale.svg" alt="">';
+        for (var i = 0; i < 10; i++) {
+            var left = 6 + i * 9.4;
+            var drift = (i % 2 ? 1 : -1) * (10 + i * 3);
+            svg += '<i class="wa-mote" style="left:' + left + '%;bottom:' + (4 + (i % 4) * 7) + '%;--drift:' + drift + 'px;animation-delay:' + (i * 1.7) + 's"></i>';
+        }
+        amb.innerHTML = svg;
+        document.body.insertBefore(amb, document.body.firstChild);
+        _whaleAmbience = amb;
+
+        if (!_whaleVisibilityBound) {
+            _whaleVisibilityBound = true;
+            document.addEventListener('visibilitychange', function () {
+                if (!_whaleAmbience) return;
+                _whaleAmbience.style.animationPlayState = document.hidden ? 'paused' : '';
+                _whaleAmbience.querySelectorAll('.wa-mote').forEach(function (m) {
+                    m.style.animationPlayState = document.hidden ? 'paused' : '';
+                });
+            });
+        }
+    } else if (!on && _whaleAmbience) {
+        _whaleAmbience.remove();
+        _whaleAmbience = null;
+    }
+
+    /* round159：纸 / 夜也各有自己的拟人形象，和鲸鱼娘共用同一位看板娘的位置。 */
+    var themeArt = {
+        classic: '/img/paper/closeup-v2.webp',
+        matinee: '/img/night/closeup-v2.webp',
+        whale: '/img/whale/closeup-v2.webp',
+        ink: '/img/ink/closeup-1.webp'
+    };
+    var mascot = document.getElementById('homeMascotStatic');
+    if (mascot) mascot.src = themeArt[skin] || 'img/mascot.png';
+
+    var customIdle = !!(animState && animState.urls && animState.urls.idle
+        && String(animState.urls.idle).indexOf('/custom/') === 0);
+    document.body.classList.toggle('persona-static', !!themeArt[skin] && !customIdle);
+
+    pickThemeHero(skin, false);
+    applyInkCloseup();
+    startHeroRotation();
+}
+
+/* round163：每个主题 3 张首屏图，进入/切换主题随机取一张，之后每 90 秒淡入换一张。 */
+var V4_HERO_ART = {
+    classic: ['/img/paper/hero-1.webp', '/img/paper/hero-2.webp', '/img/paper/hero-3.webp'],
+    matinee: ['/img/night/hero-1.webp', '/img/night/hero-2.webp', '/img/night/hero-3.webp'],
+    whale: ['/img/whale/hero-1-v3.webp', '/img/whale/hero-2-v3.webp', '/img/whale/hero-3-v3.webp'],
+    ink: ['/img/ink/hero-1.webp', '/img/ink/hero-2.webp', '/img/ink/hero-3.webp']
+};
+var V4_HERO_SEL = {
+    classic: '.pp-hero .th-hero-art',
+    matinee: '.nt-hero .th-hero-art',
+    whale: '.wh-hero-art',
+    ink: '.ik-hero .th-hero-art'
+};
+var V4_INK_CLOSEUPS = ['/img/ink/closeup-1.webp', '/img/ink/closeup-2.webp'];
+var _heroRotateTimer = null;
+var _inkCloseupIndex = -1;
+
+function pickThemeHero(skin, fade) {
+    var list = V4_HERO_ART[skin];
+    var sel = V4_HERO_SEL[skin];
+    if (!list || !sel) return;
+    var node = document.querySelector(sel);
+    if (!node) return;
+    var i = Math.floor(Math.random() * list.length);
+    if (list.length > 1 && i === Number(node.getAttribute('data-hero-i'))) i = (i + 1) % list.length;
+    node.setAttribute('data-hero-i', i);
+    if (!fade) { node.src = list[i]; return; }
+    node.classList.add('hero-swapping');
+    setTimeout(function () { node.src = list[i]; }, 180);
+    node.onload = function () { node.classList.remove('hero-swapping'); };
+}
+
+function startHeroRotation() {
+    if (_heroRotateTimer) clearInterval(_heroRotateTimer);
+    _heroRotateTimer = setInterval(function () {
+        if (!document.hidden) pickThemeHero(getV4Skin(), true);
+    }, 90000);
+}
+
+function applyInkCloseup() {
+    var i = Math.floor(Math.random() * V4_INK_CLOSEUPS.length);
+    if (V4_INK_CLOSEUPS.length > 1 && i === _inkCloseupIndex) i = (i + 1) % V4_INK_CLOSEUPS.length;
+    _inkCloseupIndex = i;
+    document.documentElement.style.setProperty('--ink-closeup', 'url("' + V4_INK_CLOSEUPS[i] + '")');
 }
 
 function setV4Skin(skin) {
     if (V4_SKINS.indexOf(skin) < 0) return;
     try { localStorage.setItem(V4_SKIN_KEY, skin); } catch (e) { /* 隐私模式忽略 */ }
     applyV4Skin(skin);
+    syncWhalePersona(skin);
     if (typeof showNotification === 'function') {
         showNotification('风格已切换', V4_SKIN_NAMES[skin] || skin);
     }
+}
+
+/* round153：皮肤 ↔ AI 人格联动。
+   只在用户没有自定义人格时自动切换（默认管家 → 深寻；离开鲸皮肤且当前仍是深寻 → 回默认管家），
+   一旦用户自己选过爱弥斯/达妮雅/自定义，就不再碰他的选择。 */
+function syncWhalePersona(skin) {
+    fetch('/api/ai/persona').then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || j.code !== 0 || !j.data) return;
+        var cur = (j.data.current && j.data.current.presetId) || 'butler';
+        var next = null;
+        if (skin === 'whale' && cur === 'butler') next = 'deep_whale';
+        else if (skin !== 'whale' && cur === 'deep_whale') next = 'butler';
+        if (!next) return;
+        return fetch('/api/ai/persona', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ presetId: next })
+        }).then(function (r2) { return r2.json(); }).then(function (j2) {
+            if (j2 && j2.code === 0 && typeof showNotification === 'function') {
+                showNotification('AI 人格已联动', next === 'deep_whale' ? '鲸鱼娘 · 深寻 已上线' : '已恢复默认管家');
+            }
+        });
+    }).catch(function () { /* 未配置 AI 或离线时静默 */ });
 }
 
 function initV4Skin() {
@@ -15629,7 +17386,10 @@ function initDirWatchUi() {
 let searchTimeout = null;
 function handleSearch(e) {
     const q = e.target.value.trim();
-    clearTimeout(searchTimeout);    
+    clearTimeout(searchTimeout);
+    /* ★ P0：搜索代次 + 取消上一请求 —— 慢的旧查询不会覆盖新结果。 */
+    const seq = ++searchSeq;
+    if (searchAbort) { searchAbort.abort(); searchAbort = null; }
     if (!q) {
         currentSearchQuery = '';
         // 清空搜索词：原地刷新当前列表，保持页码与视窗位置
@@ -15641,7 +17401,20 @@ function handleSearch(e) {
     currentSearchQuery = q;
     rememberViewState(currentView, q);      // round26 #1：搜索词写进 hash，F5 后能恢复
     searchTimeout = setTimeout(async () => {
-        const movies = await api.searchMovies(q);
+        const ac = new AbortController();
+        searchAbort = ac;
+        let movies;
+        try {
+            movies = await api.searchMovies(q, ac.signal);
+        } catch (err) {
+            if (seq !== searchSeq) return;
+            if (err && (err.code === 'ABORTED' || err.code === 'STALE')) return;
+            reportRequestError(err, 'search');
+            return;
+        } finally {
+            if (searchAbort === ac) searchAbort = null;
+        }
+        if (seq !== searchSeq) return;
         // round37 #2：用户在首页/榜单视图直接用顶栏搜索时，结果原来渲染进
         // 被首页覆盖层挡住的 movieGrid → 看起来「没反应」。这里收起覆盖层、
         // 恢复排序条，并把视图状态切到 movies，让结果真正可见。
@@ -15659,9 +17432,74 @@ function handleSearch(e) {
         document.getElementById('actressGrid').style.display = 'none';
         document.getElementById('tagCloud').style.display = 'none';
         hideGallery();
-        renderMovies(movies);
-        updateToolbarTitle(`搜索: ${q}`, movies.length);
+        if (!movies.length) {
+            updateToolbarTitle(`搜索: ${q}`, 0);
+            renderAISearchFallback(q, seq);
+        } else {
+            renderMovies(movies);
+            updateToolbarTitle(`搜索: ${q}`, movies.length);
+        }
     }, 300);
+}
+
+/* r153 · C1：字面 0 结果 → 「AI 帮我找」兜底墙。
+   粗召回永远可用；AI 只负责重排和写一句命中理由，失败也不空屏。 */
+async function renderAISearchFallback(q, seq) {
+    const grid = document.getElementById('movieGrid');
+    if (!grid) return;
+    if (seq !== undefined && seq !== searchSeq) return;
+    const emptyTip = document.getElementById('emptyTip');
+    if (emptyTip) emptyTip.style.display = 'none';
+    grid.style.display = 'block';
+    grid.innerHTML = `
+        <div class="ai-ss" id="aiSemanticBox">
+            <div class="ai-ss-head">
+                <span class="ai-ss-kicker">✨ AI 语义选片</span>
+                <b>「${escapeHtml(q)}」没有字面结果</b>
+                <span class="ai-ss-hint">正在按标签、简介和你的口味理解这句话…</span>
+            </div>
+            <div class="ai-ss-grid"><div class="ai-ss-load"><i></i><i></i><i></i></div></div>
+        </div>`;
+    const box = document.getElementById('aiSemanticBox');
+    const privacy = (typeof isAdultNavHidden === 'function' && isAdultNavHidden()) ? 'exclude' : '';
+    let r;
+    try {
+        r = await api.semanticSearch(q, privacy);
+        if (seq !== undefined && seq !== searchSeq) return;
+    } catch (e) {
+        if (seq !== undefined && seq !== searchSeq) return;
+        if (box) box.querySelector('.ai-ss-grid').innerHTML = `<div class="ai-ss-empty">AI 搜索暂不可用：${escapeHtml(e.message)}</div>`;
+        return;
+    }
+    const items = r.items || [];
+    if (!box) return;
+    if (!items.length) {
+        box.querySelector('.ai-ss-hint').textContent = privacy === 'exclude'
+            ? '当前处于「隐藏成人内容」状态，语义召回也只搜公开片库'
+            : '本地语义召回 0 条';
+        box.querySelector('.ai-ss-grid').innerHTML = '<div class="ai-ss-empty">连语义召回也没找到。换个说法试试，比如「雨夜看的致郁系老番」。</div>';
+        return;
+    }
+    box.querySelector('.ai-ss-hint').textContent = r.source === 'ai'
+        ? 'AI 已从候选里重排，每张都写了命中理由'
+        : '本地语义召回（AI 未启用或超时，仍按标签/简介命中）';
+    box.querySelector('.ai-ss-grid').innerHTML = items.map((m) => `
+        <article class="ai-ss-card" data-ai-id="${m.id}" tabindex="0" role="button" aria-label="${escapeHtml(m.title || '')}">
+            <div class="ai-ss-poster"><img src="${escapeHtml(safeAssetUrl(getPosterUrl(m)))}" alt="" loading="lazy" onerror="this.parentElement.classList.add('noimg')"></div>
+            <div class="ai-ss-body">
+                <div class="ai-ss-title">${escapeHtml(prefTitle(m))}</div>
+                <div class="ai-ss-meta">${escapeHtml(String(m.type || '').toUpperCase())}${m.releaseDate ? ' · ' + escapeHtml(String(m.releaseDate).slice(0, 4)) : ''}</div>
+                ${m.aiWhy ? `<div class="ai-ss-why">${escapeHtml(m.aiWhy)}</div>` : (m.overview ? `<div class="ai-ss-why">${escapeHtml(String(m.overview).replace(/<[^>]+>/g, '').slice(0, 58))}…</div>` : '')}
+                <span class="ai-ss-go">查看详情 ▸</span>
+            </div>
+        </article>`).join('');
+    box.querySelectorAll('.ai-ss-card').forEach((el) => {
+        const open = () => showMovieDetail(parseInt(el.dataset.aiId, 10));
+        el.addEventListener('click', open);
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    if (emptyTip) emptyTip.style.display = 'none';
+    updateToolbarTitle(`✨ AI 语义: ${q}`, items.length);
 }
 
 // ========== 初始化 ==========
@@ -15820,6 +17658,11 @@ function bindEvents() {
 
     // round42：侧栏自由拖动（条目排序/跨组移动/分组重命名，localStorage 持久化）
     initSidebarDnd();
+    /* ★ round127 · bug1 补刀：initSidebarDnd 会按 sidebarLayout 把分组恢复成折叠态，
+     * 而 init() 里的那次 applyAdultNav() 跑在它**之前**（那时还没有 sb-collapsed 类），
+     * 于是「隐私内容」若曾折叠过，刷新后依旧是「解锁了但功能栏是空的」。
+     * 这里在布局恢复之后重跑一次，才能把折叠态真正清掉。 */
+    applyAdultNav();
 
     // v1.3 #4：侧栏可隐藏（收起成细栏只留图标，主视窗自然放大；Ctrl+B 切换）
     applySidebarRail();
@@ -15926,7 +17769,30 @@ function initSidebarDnd() {
     });
 
     let saved = null;
-    try { saved = JSON.parse(localStorage.getItem('sidebarLayout') || 'null'); } catch (e) { saved = null; }
+    /* ★ round134：来源优先级 = 服务端注入（server.js 写进 window.__cvSidebarLayout）
+     *                > localStorage（首屏缓存）> 无。
+     * 之前只读 localStorage，一旦 Chromium profile 变化（多实例回退到 *.tmp profile、
+     * 异常退出没 flush、换数据目录）整块布局就丢，用户看到的就是「挪动了但不记录」。
+     * 现在 localStorage 只当快速回显，服务端那份才是权威；取 updatedAt 更新的那一份。 */
+    let savedAt = 0;
+    try {
+        const localRaw = localStorage.getItem('sidebarLayout');
+        const localAt = Number(localStorage.getItem('sidebarLayoutAt') || 0);
+        if (localRaw) { saved = JSON.parse(localRaw); savedAt = localAt; }
+    } catch (e) { saved = null; }
+    try {
+        const inj = window.__cvSidebarLayout;
+        if (inj && inj.layout && Array.isArray(inj.layout.sections)) {
+            if (!saved || Number(inj.updatedAt || 0) >= savedAt) {
+                saved = inj.layout;
+                savedAt = Number(inj.updatedAt || 0);
+                try {
+                    localStorage.setItem('sidebarLayout', JSON.stringify(saved));
+                    localStorage.setItem('sidebarLayoutAt', String(savedAt));
+                } catch (e) { /* 配额/隐私模式忽略 */ }
+            }
+        }
+    } catch (e) { /* 注入内容异常就当没有 */ }
     if (saved && Array.isArray(saved.sections)) {
         /* v1.3：先补建「自定义空白分组」——用户新建的分组初始没有条目，
          * DOM 里不存在，直接恢复会把它弄丢；按保存记录重建后再填条目。 */
@@ -15960,21 +17826,60 @@ function initSidebarDnd() {
         sections.forEach(sec => { if (!usedSec.has(sec)) sidebar.appendChild(sec); });
     }
 
-    /* —— r44：隐私内容六项强制归组 ——
-     * 隐私六项是固定产品归属（独立「隐私内容」组），历史保存的布局里它们可能还挂在
-     * 媒体库等组下，恢复后必须拉回隐私组；组本身的位置只在没有用户意志时归位到媒体库后。 */
+    /* —— r44：隐私内容六项强制归组（r137 修订：尊重用户排序）——
+     * 隐私六项是固定产品归属（独立「隐私内容」组）。但组内顺序与去留必须尊重用户拖动：
+     * 保存的布局里已有「隐私内容」条目时，上面的恢复循环刚按用户保存的顺序归位完，
+     * 不能再按固定顺序 appendChild 打回 —— 用户报「拖动后重开恢复旧排序」的真因就在这
+     * （appendChild 对已存在节点 = 移动节点，把恢复好的顺序直接覆盖）。
+     * 强制归组只用于「保存布局里没有隐私组条目」的历史布局兜底（round44 之前存过、
+     * 六项还挂在媒体库等组下的情形）。 */
     const privacySec = sidebar.querySelector('.sidebar-section[data-privacy-group]');
     if (privacySec) {
-        PRIVACY_GROUP_VIEWS.forEach(v => {
-            const el = keyEls.get('v:' + v);
-            if (el) privacySec.appendChild(el);
-        });
-        const savedHasPrivacy = saved && Array.isArray(saved.sections) && saved.sections.some(en => en.k === '隐私内容');
+        const savedHasPrivacy = saved && Array.isArray(saved.sections)
+            && saved.sections.some(en => en && en.k === '隐私内容');
         if (!savedHasPrivacy) {
+            PRIVACY_GROUP_VIEWS.forEach(v => {
+                const el = keyEls.get('v:' + v);
+                if (el) privacySec.appendChild(el);
+            });
             const libSec = sections.find(s => s.dataset.secKey === '媒体库');
             if (libSec) libSec.after(privacySec);
         }
     }
+
+    /* —— round141：「猜你喜欢」归位到「媒体库」——
+     * 用户反馈「媒体库板块里压根看不到猜你喜欢这条入口」。真因不是漏写 DOM，
+     * 而是**旧布局把它挪走了**：library.html 里原来「推荐」组和「媒体库」组各有一条
+     * data-view="guess"（同 key → keyEls 只记住后一条），而旧保存布局的「推荐」组
+     * 条目里写着 v:guess ⇒ 恢复循环把媒体库那条搬进推荐，媒体库就空了。
+     * 现在：DOM 里只留一条（放在媒体库），并做一次性迁移把旧布局里的 v:guess 挪回来，
+     * 否则下次恢复又会把它搬去推荐。 */
+    let needSaveAfterMigrate = false;
+    try {
+        if (!localStorage.getItem('sidebarMig141GuessHome')) {
+            const guessEl = keyEls.get('v:guess');
+            const libSec = sections.find(s => s.dataset.secKey === '媒体库');
+            if (guessEl && libSec && guessEl.parentElement !== libSec) {
+                libSec.appendChild(guessEl);
+                if (saved && Array.isArray(saved.sections)) {
+                    saved.sections.forEach(en => {
+                        if (Array.isArray(en.items)) en.items = en.items.filter(k => k !== 'v:guess');
+                    });
+                    const libEn = saved.sections.find(en => en && en.k === '媒体库');
+                    if (libEn) {
+                        libEn.items = Array.isArray(libEn.items) ? libEn.items : [];
+                        libEn.items.push('v:guess');
+                    }
+                    try {
+                        localStorage.setItem('sidebarLayout', JSON.stringify(saved));
+                        localStorage.setItem('sidebarLayoutAt', String(Date.now()));
+                    } catch (e) { /* 配额忽略 */ }
+                }
+                needSaveAfterMigrate = true;
+            }
+            localStorage.setItem('sidebarMig141GuessHome', '1');
+        }
+    } catch (e) { /* 迁移失败不影响侧栏使用 */ }
 
     const saveLayout = () => {
         const layout = { sections: [...sidebar.querySelectorAll(':scope > .sidebar-section')].map(sec => ({
@@ -15983,8 +17888,29 @@ function initSidebarDnd() {
             c: sec.classList.contains('sb-collapsed') ? 1 : 0,
             items: [...sec.querySelectorAll('.nav-item')].map(sidebarItemKey),
         })) };
-        try { localStorage.setItem('sidebarLayout', JSON.stringify(layout)); } catch (e) { /* 忽略 */ }
+        const now = Date.now();
+        try {
+            localStorage.setItem('sidebarLayout', JSON.stringify(layout));
+            localStorage.setItem('sidebarLayoutAt', String(now));
+        } catch (e) { /* 忽略 */ }
+        /* ★ round134：同时写服务端（权威副本）。防抖 400ms，失败静默 ——
+         * 本地那份已经写好了，服务端写不进去不该打断用户拖动。 */
+        try {
+            clearTimeout(saveLayout.__t);
+            saveLayout.__t = setTimeout(() => {
+                fetch('/api/config/ui-layout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ layout })
+                }).catch(() => { });
+            }, 400);
+        } catch (e) { /* 忽略 */ }
     };
+
+    /* round141：一次性迁移完成后立刻把新布局写回（localStorage 已写，这里补服务端那份） */
+    if (needSaveAfterMigrate) {
+        try { saveLayout(); } catch (e) { /* 写不进去也不影响本次显示 */ }
+    }
 
     /* —— v1.3：分组折叠 ——
      * 标题左侧加折叠按钮；折叠状态存 sidebarLayout.sections[].c。
@@ -16087,6 +18013,14 @@ function initSidebarDnd() {
             e.preventDefault();
             if (!confirm('恢复侧栏默认布局？\n\n（当前的拖动排序、跨组移动、分组重命名与自建分组都会还原）')) return;
             try { localStorage.removeItem('sidebarLayout'); } catch (err) { /* 忽略 */ }
+            // round134：服务端那份也要清掉，否则刷新后又被注入回来（白点一次）
+            try {
+                fetch('/api/config/ui-layout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ layout: { sections: [] } })
+                }).catch(() => { });
+            } catch (err) { /* 忽略 */ }
             location.reload();
         });
     };
@@ -16231,6 +18165,11 @@ async function savePrivacySettings() {
         (changed ? '；分入口密码已更新' : '；分入口密码无改动'));
 }
 
+/* ★ round127 · bug1：本次 applyAdultNav 是否由「刚点 🔒 解锁」触发。
+ * 只有这种场景才允许强行补齐六项勾选 / 展开折叠分组；
+ * 页面刷新时的常规 applyAdultNav 必须尊重用户在设置里的勾选与折叠状态。 */
+let _adultJustUnlocked = false;
+
 function applyAdultNav() {
     const hidden = isAdultNavHidden();
     document.body.classList.toggle('adult-hidden', hidden);
@@ -16241,29 +18180,136 @@ function applyAdultNav() {
     });
     const btn = document.getElementById('adultToggle');
     if (btn) {
-        btn.textContent = hidden ? '🔒' : '🔓';
+        /* r126：改 use href 切换锁形图标 —— 旧代码 btn.textContent='🔒' 会把按钮里的
+         * SVG 连根顶掉，退化成系统 emoji，且顶栏按钮从此失去矢量图标 */
+        const use = btn.querySelector('use');
+        if (use) use.setAttribute('href', hidden ? '#ic-lock' : '#ic-unlock');
+        btn.classList.toggle('adult-unlocked', !hidden);
         btn.title = hidden ? '显示成人内容入口（AV库、里番库、演员库、标签库、AV/里番在线）'
                            : '隐藏成人内容入口';
     }
-    // r44：隐私内容独立组——总开关隐藏或六项全被勾掉时整组消失（不留空标题）
+    /* ★ round127 · bug1 修复
+     * 老逻辑：`anyShown = !hidden && PRIVACY_GROUP_VIEWS.some(v => prefs[v] !== 0)`
+     * 只要设置页里把六项全勾掉过（prefs 全是 0），这组就永远不出现 ——
+     * 顶栏 🔒 解锁后「只看见 AV库/里番库，看不见隐私内容功能栏」，必须再进设置手动勾回来。
+     * 现在：🔒 是**总开关**，解锁即代表「要看隐私内容」，因此解锁时若六项被全勾掉，
+     * 直接视为全显示（并把 stale 的 prefs 修回），保证解锁 = 功能栏同步出现。 */
     const pSec = document.querySelector('.sidebar-section[data-privacy-group]');
     if (pSec) {
-        const anyShown = !hidden && PRIVACY_GROUP_VIEWS.some(v => prefs[v] !== 0);
+        let anyShown = false;
+        if (!hidden) {
+            const allOff = PRIVACY_GROUP_VIEWS.every(v => prefs[v] === 0);
+            /* 只有「刚刚点了 🔒 解锁」才强行把六项勾选补齐并展开分组；
+             * 普通刷新时若用户是在设置里主动把六项全关掉的，必须尊重该设置，
+             * 否则每次刷新都会把隐私功能栏硬塞回来。 */
+            if (allOff && _adultJustUnlocked) {
+                // 解锁态 + 六项全关 ⇒ 顶栏解锁优先，落盘为全显示，避免下次刷新又消失
+                try {
+                    PRIVACY_GROUP_VIEWS.forEach(v => { prefs[v] = 1; });
+                    localStorage.setItem('adultNavItems', JSON.stringify(prefs));
+                } catch (e) { /* 忽略 */ }
+                document.querySelectorAll('.nav-item[data-adult="1"]').forEach(item => {
+                    item.classList.remove('adult-item-off');
+                });
+                anyShown = true;
+            } else {
+                anyShown = PRIVACY_GROUP_VIEWS.some(v => prefs[v] !== 0);
+            }
+        }
+        /* 显隐口径：显示时写 '' 让它回落到样式表默认（flex），隐藏时写 'none'。
+         * 隐藏侧仍受 body.adult-hidden 的 !important 兜底，双保险不会互相打架。 */
         pSec.style.display = anyShown ? '' : 'none';
+        /* 折叠态也要一起展开：分组被折叠（sb-collapsed）时标题在、条目全无，
+         * 用户看到的仍然是「解锁了但功能栏是空的」。 */
+        if (anyShown && _adultJustUnlocked) {
+            try {
+                if (pSec.classList.contains('sb-collapsed')) {
+                    pSec.classList.remove('sb-collapsed');
+                    const raw = localStorage.getItem('sidebarLayout');
+                    if (raw) {
+                        const lay = JSON.parse(raw);
+                        if (lay && Array.isArray(lay.sections)) {
+                            let dirty = false;
+                            lay.sections.forEach(en => {
+                                if (en && en.k === '隐私内容' && en.c) { en.c = 0; dirty = true; }
+                            });
+                            if (dirty) localStorage.setItem('sidebarLayout', JSON.stringify(lay));
+                        }
+                    }
+                }
+            } catch (e) { /* 忽略 */ }
+        }
     }
     // 已隐藏时若正停在成人视图，退回全部影片
     if (hidden && currentView && ['jav', 'anime', 'movies-adult', 'recent-adult', 'actresses', 'tags', 'watch', 'watch-hanime'].includes(currentView)) {
         switchView('movies');
     }
+    if (typeof window.__syncMobileAdultUI === 'function') {
+        try { window.__syncMobileAdultUI(); } catch (e) { /* 忽略 */ }
+    }
+}
+window.isAdultNavHidden = isAdultNavHidden;
+window.toggleAdultNav = toggleAdultNav;
+
+/* ★ round127 · bug1：解锁后把隐私内容功能栏「显式地」摆到用户眼前 ——
+ * 仅仅让它 display 出来还不够，用户可能根本没注意到侧栏多了一组，
+ * 于是以为「没生效，还得进设置」。这里滚到可视区并闪一下高亮。 */
+function revealPrivacyGroup() {
+    const pSec = document.querySelector('.sidebar-section[data-privacy-group]');
+    if (!pSec || pSec.style.display === 'none') return;
+    try {
+        if (typeof pSec.scrollIntoView === 'function') {
+            pSec.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        pSec.classList.remove('privacy-flash');
+        // 强制重排后再加类，保证动画可重放
+        void pSec.offsetWidth;
+        pSec.classList.add('privacy-flash');
+        setTimeout(() => pSec.classList.remove('privacy-flash'), 1600);
+    } catch (e) { /* 忽略 */ }
 }
 
+/* r126：解锁改两段式行内确认 —— 原生 confirm 在桌面端观感差，取消时又毫无反馈，
+ * 用户感知就是「点了没反应」。第一次点击先武装（按钮点亮 + 通知说明），4 秒内再点一次
+ * 才真正解锁；隐藏方向不涉及暴露风险，点了立即生效并给出反馈。 */
+let _adultArmTimer = null;
 function toggleAdultNav() {
     const hidden = isAdultNavHidden();
+    const btn = document.getElementById('adultToggle');
     if (hidden) {
-        if (!confirm('将显示成人内容入口（AV库、里番库、演员库、标签库、AV/里番在线观看）。\n\n确认显示？')) return;
+        if (!btn || !btn.classList.contains('adult-arm')) {
+            if (btn) {
+                btn.classList.add('adult-arm');
+                clearTimeout(_adultArmTimer);
+                _adultArmTimer = setTimeout(() => btn.classList.remove('adult-arm'), 4000);
+            }
+            showNotification('再点一次确认显示', '将显示成人内容入口（AV库、里番库、演员库、标签库、在线观看）');
+            return;
+        }
+        btn.classList.remove('adult-arm');
+        clearTimeout(_adultArmTimer);
+        showNotification('成人内容入口已显示', '再次点击 🔒 可随时全部隐藏');
+    } else {
+        showNotification('已隐藏成人内容入口', '导航入口与搜索结果不再展示隐私内容');
     }
     try { localStorage.setItem('adultNavHidden', hidden ? '0' : '1'); } catch (e) { /* 忽略 */ }
-    applyAdultNav();
+    /* 解锁这一下必须让「隐私内容功能栏」同步出现（bug1）：
+     * 用户可能早在设置里把六项勾掉过、或把分组折叠过，此时只把 body 类摘掉
+     * 仍然是「看得见 AV库/里番库，看不见隐私内容」⇒ 还得进设置手动开。
+     * 用一次性标记放行强制补齐，常规刷新不走这条路。 */
+    _adultJustUnlocked = !!hidden;
+    try {
+        applyAdultNav();
+    } finally {
+        _adultJustUnlocked = false;
+    }
+    /* ★ round127 · bug1：解锁后立刻把隐私内容功能栏亮出来，
+     * 而不是让用户自己去侧栏里找、或者以为「还得进设置手动开」。 */
+    if (hidden) setTimeout(revealPrivacyGroup, 60);
+    // r126：正停在搜索结果页时，按新口径原地重搜（锁定 → 剔除隐私内容，反之恢复）
+    if (currentSearchQuery) {
+        try { refreshCurrentList(); } catch (e) { /* 忽略 */ }
+    }
 }
 
 /* ---------- round41：首启功能导览（一次性，启动动画/门禁之后出现） ---------- */
@@ -16282,6 +18328,63 @@ function maybeShowTour() {
     document.getElementById('tourDoneBtn')?.addEventListener('click', done);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) done(); });
 }
+
+/* ============================================================================
+ * round142：首次「里番海报源」告知（一次性）
+ * ----------------------------------------------------------------------------
+ * 为什么需要：用户完全不知道 hanime/91动漫 依赖真实浏览器过 Cloudflare，
+ * 也不知道 AniList 才是竖版海报正规源。只在**首次**告知一次，之后不再打扰。
+ * 浏览器环境本身可用时就不弹 —— 没必要给一个没问题的用户弹提示。
+ * ========================================================================== */
+async function maybeShowScraperGuide() {
+    let seen = false;
+    try { seen = localStorage.getItem('scraperGuideDone') === '1'; } catch (e) { }
+    if (seen) return;
+    if (document.querySelector('.modal.show')) return;
+    if (document.getElementById('scraperGuideMask')) return;
+
+    // 先探一下浏览器环境；已经是「有头 + 有真实浏览器」就不打扰
+    let st = null;
+    try { st = (await (await fetch('/api/config/browser-status')).json()).data; } catch (e) { return; }
+    if (st && st.hasRealBrowser && !st.headless) {
+        try { localStorage.setItem('scraperGuideDone', '1'); } catch (e) { }
+        return;
+    }
+
+    const mask = document.createElement('div');
+    mask.id = 'scraperGuideMask';
+    mask.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.62);'
+        + 'display:flex;align-items:center;justify-content:center;padding:20px;';
+    mask.innerHTML = `
+      <div style="max-width:560px;width:100%;background:var(--bg-elevated,#1c1c1e);border:1px solid var(--border,#333);
+                  border-radius:16px;padding:22px 24px;color:var(--text,#eee);line-height:1.8;
+                  box-shadow:0 20px 60px rgba(0,0,0,.5);">
+        <div style="font-size:16px;font-weight:700;margin-bottom:10px;">🎬 关于里番海报，你需要知道一件事</div>
+        <div style="font-size:13px;opacity:.92;">
+          · <b>竖版官方海报</b>（460×650 那种）来自 <b>AniList</b>，它<b>不需要浏览器</b>，正常联网即可。<br>
+          · <b>hanime / 91动漫 只是兜底</b>，且被 <b>Cloudflare</b> 保护 —— <b>无头浏览器一律被拦</b>。<br>
+          · 想用兜底源，需要一个<b>真实浏览器</b>过一次验证：<b>ego-lite</b>，或本机 <b>Chrome / Edge</b>。<br>
+          · <b>不装也没关系</b>：竖版海报照常能刮，只是极冷门条目会留空（不会给你错图）。
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+          <button class="btn btn-sm btn-primary" onclick="openHanimeVerifier();closeScraperGuide();">🛡️ 现在就过一次验证</button>
+          <button class="btn btn-sm" onclick="gotoSourcesSettings();closeScraperGuide();">⚙️ 去设置里看</button>
+          <button class="btn btn-sm" onclick="closeScraperGuide();">知道了，以后再说</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;opacity:.7;cursor:pointer;">
+          <input type="checkbox" id="scraperGuideNever"> 不再提示
+        </label>
+      </div>`;
+    document.body.appendChild(mask);
+    window.closeScraperGuide = function () {
+        try {
+            localStorage.setItem('scraperGuideDone', '1');
+        } catch (e) { }
+        mask.remove();
+    };
+    mask.addEventListener('click', (e) => { if (e.target === mask) window.closeScraperGuide(); });
+}
+window.maybeShowScraperGuide = maybeShowScraperGuide;
 
 /* ---------- v4.6.0 启动门（round88 改造：从「等语音」改成「等片库」） ----------
  * 旧版（round88）：全屏遮罩轮询 /api/tts/status 等语音引擎就绪，45s 后才出「跳过」按钮，
@@ -16388,13 +18491,23 @@ function startTtsWarmup() {
     }).catch(() => { /* 配置都拿不到就别预热了，首屏不受影响 */ });
 }
 
-/* 轮询引擎状态，只负责更新角标；ready / error 后自动停。 */
+/* 轮询引擎状态，只负责更新角标；ready / error / 冷启动落空 / 硬超时后自动停。
+ * ★ round127：角标「语音加载中 1683s」永不消失的根因就在这里 ——
+ *   旧版只要既不是 ready 也不是 error，就无条件写「语音加载中 Ns」并无限轮询。
+ *   而引擎状态可能是 cold/stopped（没装模型、autoStartEngine=false、/api/tts/start 被吞掉），
+ *   这种状态下**根本没有任何东西在加载**，状态也不会自己变成 ready
+ *   ⇒ 角标从开机挂到关机，计时器一路数到四位数。
+ *   现在：非活动状态先静默收起角标，连续几轮还不起来就停止轮询；另加 3 分钟硬上限。 */
+const TTS_COLD_LIMIT = 4;          // 连续 4 轮（约 9~12s）都是 cold/stopped ⇒ 认定引擎没在起
+const TTS_MAX_WAIT_MS = 180000;    // 硬上限 3 分钟：再等下去只是挂一个骗人的角标
 function pollTtsUntilReady(engine) {
     if (_ttsPolling) return;
     _ttsPolling = true;
     const t0 = Date.now();
+    let coldHits = 0;
+    const stop = () => { _ttsPolling = false; };
     const tick = async () => {
-        if (_ttsWarm.ready || _ttsWarm.failed) { _ttsPolling = false; return; }
+        if (_ttsWarm.ready || _ttsWarm.failed) { stop(); return; }
         const el = Math.round((Date.now() - t0) / 1000);
         try {
             // all=1 拿四引擎状态：写盘 engine 与真正在跑的引擎可能不一致，别把自己等死
@@ -16408,19 +18521,33 @@ function pollTtsUntilReady(engine) {
             }
             if (d.state === 'ready') {
                 _ttsWarm.ready = true;
-                _ttsPolling = false;
+                stop();
                 ttsBadge('🎙 语音就绪');
                 hideTtsBadge(1200);
                 return;
             }
             if (d.state === 'error') {
                 _ttsWarm.failed = true;
-                _ttsPolling = false;
+                stop();
                 ttsBadge('🎙 语音不可用');
                 hideTtsBadge(5000);   // 静默降级：不弹窗、不挡路，只在设置里重试
                 return;
             }
-            ttsBadge('🎙 语音加载中 ' + el + 's');
+            if (TTS_ACTIVE_STATES[d.state]) {
+                coldHits = 0;
+                ttsBadge('🎙 语音加载中 ' + el + 's');
+            } else {
+                /* cold / stopped：没有任何加载在进行。别把「没开始」说成「加载中」。 */
+                coldHits++;
+                hideTtsBadge(0);
+                if (coldHits >= TTS_COLD_LIMIT) { stop(); return; }
+            }
+            if (Date.now() - t0 >= TTS_MAX_WAIT_MS) {
+                stop();
+                ttsBadge('🎙 语音加载超时');
+                hideTtsBadge(4000);
+                return;
+            }
         } catch (e) {
             /* 网络抖动不算失败，等下一轮 */
         }
@@ -16999,7 +19126,7 @@ function renderNotifications() {
             <div class="notification-item-actions">
                 <button class="notification-item-action" onclick="event.stopPropagation();deleteNotification(${n.id})" title="删除">✕</button>
             </div>
-            <div class="notification-item-title">${n.title}</div>
+            <div class="notification-item-title">${escapeHtml(n.title || '')}</div>
             ${n.content ? `<div class="notification-item-content">${n.content}</div>` : ''}
             <div class="notification-item-time">${formatTime(n.createdAt)}</div>
         </div>
@@ -17107,7 +19234,8 @@ function showEditModal(id) {
         return;
     }
     // round47：女优回显。详情接口返回 actresses 数组（[{id,name,...}]）；列表数据可能没有 → 空
-    const actressNames = Array.isArray(movie.actresses) ? movie.actresses.map(a => a.name || a).join(', ') : '';
+    const movieActresses = Array.isArray(movie.actresses) ? movie.actresses : [];
+    const actressNames = movieActresses.map(a => a.name || a).join(', ');
     editingOriginalActresses = actressNames;
     // round50：标签回显基准
     const tagNames = Array.isArray(movie.tags) ? movie.tags.map(t => t.name || t).join(', ') : '';
@@ -17152,26 +19280,26 @@ function showEditModal(id) {
             <div style="display:flex;flex-direction:column;gap:16px;">
                 <div>
                     <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">标题</label>
-                    <input type="text" id="editTitle" class="select-input" style="width:100%;height:40px;" value="${movie.title || ''}">
+                    <input type="text" id="editTitle" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.title || '')}">
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">发行日期</label>
-                        <input type="text" id="editRelease" class="select-input" style="width:100%;height:40px;" value="${movie.releaseDate || ''}">
+                        <input type="text" id="editRelease" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.releaseDate || '')}">
                     </div>
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">片商</label>
-                        <input type="text" id="editProducer" class="select-input" style="width:100%;height:40px;" value="${movie.producer || ''}">
+                        <input type="text" id="editProducer" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.producer || '')}">
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">系列</label>
-                        <input type="text" id="editSerial" class="select-input" style="width:100%;height:40px;" value="${movie.serial || ''}">
+                        <input type="text" id="editSerial" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.serial || '')}">
                     </div>
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">导演</label>
-                        <input type="text" id="editDirector" class="select-input" style="width:100%;height:40px;" value="${movie.director || ''}">
+                        <input type="text" id="editDirector" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.director || '')}">
                     </div>
                 </div>
                 <div>
@@ -17181,12 +19309,34 @@ function showEditModal(id) {
                             ${uiIcon('actress', 12)} 点选库中女优
                         </button>
                     </div>
-                    <input type="text" id="editActresses" class="select-input" style="width:100%;height:40px;" value="${actressNames.replace(/"/g, '&quot;')}" placeholder="如：葵司, 三上悠亜">
+                    <input type="text" id="editActresses" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(actressNames)}" placeholder="如：葵司, 三上悠亜">
                     <div id="editActressPicker" style="display:none;margin-top:8px;padding:10px;background:var(--bg-elev-1, rgba(255,255,255,0.04));border:1px solid var(--line, var(--border, rgba(255,255,255,.1)));border-radius:8px;">
                         <div style="display:flex;gap:6px;margin-bottom:8px;">
                             <input type="text" id="editActressFilter" placeholder="输入名字过滤女优…" class="select-input" style="height:30px;font-size:12px;flex:1;" oninput="filterActressPicker(this.value)">
                         </div>
                         <div id="editActressChips" style="display:flex;flex-wrap:wrap;gap:6px;max-height:140px;overflow-y:auto;"></div>
+                    </div>
+                    <!-- 女优头像管理条 -->
+                    <div id="editActressAvatarsBar" style="margin-top:8px;padding:8px 12px;background:var(--bg-elev-1, rgba(255,255,255,0.03));border:1px solid var(--border-color);border-radius:8px;${movieActresses.length ? '' : 'display:none;'}">
+                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600;">👩 当前女优头像（可在此直接刮削或上传新头像）：</div>
+                        <div id="editActressAvatarList" style="display:flex;flex-wrap:wrap;gap:10px;">
+                            ${movieActresses.map(a => `
+                                <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg-primary, rgba(0,0,0,0.25));border:1px solid var(--border-color);border-radius:6px;" data-actress-id="${a.id}" data-actress-name="${escapeHtml(a.name)}">
+                                    <div class="detail-actress-avatar" style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:#333;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">
+                                        ${a.avatar ? `<img src="${escapeHtml(safeAssetUrl(a.avatar))}" alt="${escapeHtml(a.name)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='flex'">` : ''}
+                                        <span style="display:${a.avatar ? 'none' : 'flex'};align-items:center;justify-content:center;">${escapeHtml((a.name || '?').charAt(0))}</span>
+                                    </div>
+                                    <div>
+                                        <div style="font-size:12px;font-weight:600;margin-bottom:2px;">${escapeHtml(a.name)}</div>
+                                        <div style="display:flex;gap:4px;">
+                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.scrapeAvatar(${a.id}, this.closest('[data-actress-name]').dataset.actressName)">🔍 刮削</button>
+                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.uploadAvatar(${a.id}, this.closest('[data-actress-name]').dataset.actressName)">📷 上传</button>
+                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.setFromUrl(${a.id}, this.closest('[data-actress-name]').dataset.actressName)">🔗 URL</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 </div>
                 <div>
@@ -17196,14 +19346,14 @@ function showEditModal(id) {
                             ${uiIcon('tag', 12)} 常用标签点选
                         </button>
                     </div>
-                    <input type="text" id="editTags" class="select-input" style="width:100%;height:40px;" value="${tagNames.replace(/"/g, '&quot;')}" placeholder="如：熟女, 中出">
+                    <input type="text" id="editTags" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(tagNames)}" placeholder="如：熟女, 中出">
                     <div id="editTagPicker" style="display:none;margin-top:8px;padding:10px;background:var(--bg-elev-1, rgba(255,255,255,0.04));border:1px solid var(--line, var(--border, rgba(255,255,255,.1)));border-radius:8px;">
                         <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow-y:auto;"></div>
                     </div>
                 </div>
                 <div>
                     <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">简介</label>
-                    <textarea id="editOverview" class="select-input" style="width:100%;height:100px;padding:10px;resize:vertical;">${movie.overview || ''}</textarea>
+                    <textarea id="editOverview" class="select-input" style="width:100%;height:100px;padding:10px;resize:vertical;">${escapeHtml(movie.overview || '')}</textarea>
                 </div>
             </div>
             <div style="display:flex;gap:12px;margin-top:24px;justify-content:flex-end;align-items:center;">
@@ -17233,6 +19383,7 @@ function showEditModal(id) {
             </div>
             <div id="editScrapeFoot" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);font-size:12px;color:var(--text-muted);line-height:1.6;">
                 🔍 刮削并填入：按番号去指定源拉数据，只填到这里让你确认，<b>不会直接改库</b>；确认无误再点保存。<br>
+                💾 <b>保存会同步到原文件</b>：按「番号 标题」改写磁盘文件名，并把字段写回同名 NFO（设置里可关闭）。<br>
                 🔄 重新挖掘：重新联网刮削并<b>直接写库</b>（增量补正，已编辑的字段会保留）。
             </div>
         </div>
@@ -17615,10 +19766,25 @@ async function saveEdit() {
         });
 
         if (data.code === 0) {
-            // ★ round26 #2：原来只弹一句「元数据已更新」，而卡片标题在部分视图下
-            // 并不会立刻重画，用户无从确认到底改没改。现在：明确报出新标题 +
-            // 原地刷新列表 + 详情面板若开着则一并刷新。
-            showNotification('保存成功', `显示标题已更新为「${title || '（空）'}」`);
+            // ★ round132：保存不再只是「库里改了」。后端会把改动落回原文件（改名 + 写 NFO），
+            //   这里必须把落盘结果如实告诉用户 —— 之前磁盘没变却弹「保存成功」，等于骗人。
+            const disk = (data.data && data.data.disk) || null;
+            let title2 = `显示标题已更新为「${title || '（空）'}」`;
+            let detail = '';
+            if (disk) {
+                if (disk.renamed) {
+                    detail = `磁盘文件已同步改名：${disk.oldFileName} → ${disk.newFileName}`;
+                    if (disk.nfoPath) detail += '；NFO 已同步';
+                } else if (disk.error) {
+                    detail = `⚠️ 数据库已更新，但${disk.error}（可稍后重试）`;
+                } else if (Array.isArray(disk.skipped) && disk.skipped.length) {
+                    detail = `数据库已更新；磁盘未改动：${disk.skipped[0]}`;
+                } else {
+                    detail = '磁盘文件名无需变更';
+                }
+            }
+            showNotification('保存成功', title2 + (detail ? ' · ' + detail : '') +
+                ((data.data && data.data.avatarQueue) ? ` · 顺手为 ${data.data.avatarQueue} 位女优补头像中` : ''));
             const detailWasOpen = document.getElementById('detailModal').classList.contains('show');
             closeModal();
             await refreshCurrentList();

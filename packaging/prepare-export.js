@@ -46,8 +46,22 @@ const EXTRA_SKIP = [
     'config.json', 'config.docker.json',
 ];
 
+/**
+ * 健壮删除：Windows 上杀毒/Windows Search/刚关的 EXE 会瞬时占用文件，
+ * fs.rmSync 直接抛 EPERM 导致整个导出中断（实测「立刻重跑就好」）。
+ * 这里对 EPERM/EBUSY 做有限退避重试，其它错误照抛（不吞真实故障）。
+ */
 function rm_rf(p) {
-    fs.rmSync(p, { recursive: true, force: true });
+    const MAX = 6;
+    for (let i = 0; i < MAX; i++) {
+        try { fs.rmSync(p, { recursive: true, force: true }); return; }
+        catch (e) {
+            if (!['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY'].includes(e.code) || i === MAX - 1) throw e;
+            const ms = 120 * (i + 1);
+            try { require('child_process').execSync(`ping -n ${Math.ceil(ms / 1000) + 1} 127.0.0.1 >nul 2>&1`, { stdio: 'ignore' }); }
+            catch (_) { /* 退避失败也继续重试 */ }
+        }
+    }
 }
 
 /** 清空目录但保留指定项（node_modules 要留着：里面的原生模块是按 Electron ABI 编的，
@@ -60,10 +74,12 @@ function cleanExcept(dst, keep) {
     }
 }
 
-/* 不该进安装包的文件名：编辑器/手工备份、临时文件、系统垃圾。
+/* 不该进安装包的文件名：编辑器/手工备份、临时文件、系统垃圾、开发期验证台。
  * 实测踩过：public/js/app.js.bak-nr（改代码前留的档）被顺手复制进了 payload，
- * 于是 316KB 的旧源码跟着 exe 发到了用户机器上。 */
-const JUNK_RE = /(^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$|\.(bak|old|orig|swp|swo|tmp|log|repair)$|\.bak-[\w.-]+$|~$)/i;
+ * 于是 316KB 的旧源码跟着 exe 发到了用户机器上。
+ * 2026-11：public/ 下的备份与 lab 页面已迁到 archive/public-cleanup/，
+ * 这里再兜一层，防止以后又把 -backup / .backup- / _lab 之类的文件塞回 public。 */
+const JUNK_RE = /(^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$|\.(bak|old|orig|swp|swo|tmp|log|repair)$|\.bak-[\w.-]+$|\.v\d+-backup\.[a-z]+$|^\.backup-[\w.-]+$|^_[\w-]+-lab\.html$|^_magic-preview\.html$|~$)/i;
 
 function copyDir(src, dst, skip) {
     fs.mkdirSync(dst, { recursive: true });

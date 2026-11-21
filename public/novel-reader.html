@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>小说阅读器</title>
     <style>
         * {
@@ -23,6 +23,21 @@
         body.night-mode {
             background: #1a1a1a;
             color: #999;
+        }
+
+        /* round117：阅读器自己的强调色
+           ------------------------------------------------------------
+           这个文件里原来散着 10 处 #d5187d（桃红）+ #a81266。
+           主应用在 round116 已经把「洋红」换成墨 #26211A，但阅读器是独立页面、
+           自己写了一套色，于是底栏那个「下一页」还是荧光粉 —— 全屏最跳的东西。
+           这里收成两个变量：纸上是墨，夜间反过来用暖白（深底黑字等于看不见）。 */
+        :root {
+            --nr-accent: #26211A;
+            --nr-accent-hover: #3A322A;
+        }
+        body.night-mode {
+            --nr-accent: #F1E8D8;
+            --nr-accent-hover: #FFFFFF;
         }
         
         .reader-container {
@@ -102,13 +117,15 @@
         }
         
         .btn-primary {
-            background: #d5187d;
-            color: white;
+            background: var(--nr-accent);
+            color: #fff;
         }
-        
+        body.night-mode .btn-primary { color: #1B1510; }
+
         .btn-primary:hover {
-            background: #a81266;
+            background: var(--nr-accent-hover);
         }
+        body.night-mode .btn-primary:hover { color: #1B1510; }
         
         /* 阅读区域：衬线正文 + 居中阅读列（参照纸质书排印） */
         .reader-area {
@@ -330,7 +347,49 @@
             #pagedText.page-in { animation: none; }
         }
         @media (max-width: 860px) {
-            .paged-content { padding: 66px 16px 84px; }
+            .reader-area {
+                /* 2026-11-13 修复：原值 calc(14px + safe-area) 严重不足。
+                   .toolbar 是 position:fixed，其实际占位已达 calc(50px + safe-area)，
+                   正文顶部因此被工具栏压住约 36px（刘海机型）。现让位与工具栏等高。 */
+                padding: calc(52px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+                font-size: 17px;
+            }
+            .paged-content {
+                /* 2026-11-13 修复：本元素位于 .reader-area 内部，外层已让出
+                   calc(52px + safe-area)，此处再叠加会让顶部留白翻倍。顶部归零。 */
+                padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px));
+            }
+            .catalog-sidebar, .settings-panel {
+                width: min(85vw, 320px);
+            }
+            .toolbar {
+                /* 2026-11-13 修复：原 height:50px 与 padding-top:calc(4px + safe-area) 在
+                   box-sizing:border-box 下相加超限——刘海机型(47px)内容盒 = 50-51-4 = -5px，
+                   按钮被压出可视区。改为高度随安全区自适应，安全区只经这一处传递。 */
+                height: auto !important;
+                min-height: calc(50px + env(safe-area-inset-top, 0px)) !important;
+                padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px !important;
+                flex-wrap: nowrap !important;
+                background: rgba(18, 16, 14, 0.94) !important;
+                backdrop-filter: blur(20px) !important;
+            }
+            .toolbar-title {
+                max-width: 160px;
+                font-size: 13px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .toolbar-right {
+                flex-wrap: nowrap;
+                gap: 6px;
+            }
+            .progress-bar {
+                padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+                height: auto;
+                background: rgba(18, 16, 14, 0.94) !important;
+                backdrop-filter: blur(20px) !important;
+            }
         }
         
         /* 加载提示 */
@@ -351,14 +410,14 @@
             width: 40px;
             height: 40px;
             border: 3px solid rgba(0, 0, 0, 0.1);
-            border-top-color: #d5187d;
+            border-top-color: var(--nr-accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
         
         body.night-mode .spinner {
             border-color: rgba(255, 255, 255, 0.1);
-            border-top-color: #d5187d;
+            border-top-color: var(--nr-accent);
         }
         
         @keyframes spin {
@@ -417,7 +476,8 @@
         
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #F9A220, #d5187d);
+            /* 原来是一条 琥珀→桃红 的渐变；母题只留一个强调色，改平色 */
+            background: var(--nr-accent);
             border-radius: 2px;
             width: 0%;
             transition: width 0.25s cubic-bezier(.32, .72, 0, 1);
@@ -505,13 +565,14 @@
         }
         
         .setting-option.active {
-            background: #d5187d;
-            color: white;
-            border-color: #d5187d;
+            background: var(--nr-accent);
+            color: #fff;
+            border-color: var(--nr-accent);
         }
+        body.night-mode .setting-option.active { color: #1B1510; }
         
         .setting-option:hover {
-            border-color: #d5187d;
+            border-color: var(--nr-accent);
         }
         
         /* 背景色选择 */
@@ -530,7 +591,7 @@
         }
         
         .bg-color.active {
-            border-color: #d5187d;
+            border-color: var(--nr-accent);
             transform: scale(1.1);
         }
         
@@ -593,9 +654,10 @@
         }
         
         .catalog-item.current {
-            background: rgba(213, 24, 125, 0.1);
-            border-left-color: #d5187d;
-            color: #d5187d;
+            /* 原来写死 rgba(213,24,125,.1)（桃红 10%），换成"当前墨色的 10%" */
+            background: color-mix(in srgb, var(--nr-accent) 10%, transparent);
+            border-left-color: var(--nr-accent);
+            color: var(--nr-accent);
         }
         
         /* 遮罩层 */
@@ -679,9 +741,120 @@
         }
     </style>
     <!-- round74：小说朗读 -->
-    <link rel="stylesheet" href="css/round74-reader.css?v=1">
+    <link rel="stylesheet" href="css/round74-reader.css">
     <!-- round81：阅读器设置面板（小说 / 漫画共用） -->
-    <link rel="stylesheet" href="css/reader-settings.css?v=1">
+    <link rel="stylesheet" href="css/reader-settings.css">
+    <!-- round117：PDF 逐页阅读（小说库里的 .pdf） -->
+    <style>
+        body.pdf-mode .reader-area { overflow: hidden; padding: 0; }
+        body.pdf-mode .page-nav { z-index: 30; }
+        /* PDF 没有可取的文字，朗读条在这一页毫无意义（点了只会读空） */
+        body.pdf-mode .nv-tts-bar { display: none !important; }
+        #pdfContent {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 14px 0 96px;
+            -webkit-overflow-scrolling: touch;
+            background: #e9e4da;
+        }
+        body.night-mode #pdfContent { background: #141414; }
+        .pdf-page {
+            width: min(94%, 1180px);
+            margin: 0 auto 14px;
+            background: #fff;
+            border-radius: 3px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, .14);
+            position: relative;
+        }
+        body.night-mode .pdf-page { background: #222; box-shadow: 0 2px 12px rgba(0, 0, 0, .6); }
+        .pdf-page > canvas { display: block; width: 100%; height: auto; }
+        .pdf-ph {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            color: #b3aa9a; font-size: 13px; letter-spacing: .04em;
+        }
+        body.night-mode .pdf-ph { color: #5b554c; }
+        .pdf-err { color: #b3261e; font-size: 13px; padding: 24px; text-align: center; }
+
+        /* r153 · C2：AI 伴读侧栏 */
+        .ai-reader-panel {
+            position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 92vw);
+            background: #fdfaf3; border-left: 1px solid rgba(120, 92, 48, .2);
+            box-shadow: -18px 0 46px rgba(40, 28, 10, .18);
+            transform: translateX(102%); transition: transform .28s cubic-bezier(.32,.72,0,1);
+            z-index: 120; display: flex; flex-direction: column;
+        }
+        .ai-reader-panel.open { transform: translateX(0); }
+        body.night-mode .ai-reader-panel {
+            background: #191919; border-left-color: rgba(255, 233, 190, .14);
+            box-shadow: -18px 0 46px rgba(0, 0, 0, .55); color: #e9e2d4;
+        }
+        .acp-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 10px; }
+        .acp-head b { font-family: "Songti SC", "Noto Serif SC", serif; font-size: 16px; letter-spacing: .04em; }
+        .acp-head button { margin-left: auto; border: 0; background: transparent; font-size: 18px; cursor: pointer; color: inherit; }
+        .acp-tabs { display: flex; gap: 6px; padding: 0 18px 12px; border-bottom: 1px solid rgba(120, 92, 48, .12); }
+        body.night-mode .acp-tabs { border-bottom-color: rgba(255, 233, 190, .1); }
+        .acp-tab {
+            flex: 1; padding: 7px 8px; border-radius: 8px; cursor: pointer;
+            border: 1px solid rgba(120, 92, 48, .18); background: transparent;
+            color: #6d604e; font-size: 12.5px; font-weight: 600;
+        }
+        body.night-mode .acp-tab { border-color: rgba(255, 233, 190, .16); color: #b8ae9e; }
+        .acp-tab.on { background: #8a5a12; border-color: #8a5a12; color: #fff; }
+        .acp-body { flex: 1; overflow-y: auto; padding: 18px; font-size: 14px; line-height: 1.85; white-space: pre-wrap; }
+        .acp-body .acp-empty { color: #8a7d68; font-size: 13px; line-height: 1.7; }
+        .acp-body .acp-load { color: #8a7d68; font-size: 13px; }
+        .acp-foot { padding: 10px 18px 16px; border-top: 1px solid rgba(120, 92, 48, .12); display: flex; gap: 8px; }
+        body.night-mode .acp-foot { border-top-color: rgba(255, 233, 190, .1); }
+    </style>
+    <!-- round173：与主站四皮肤同源（只跟随，不新增开关；阅读器自己的夜间模式仍然优先） -->
+    <script>
+        (function () {
+            try {
+                var s = localStorage.getItem('v4skin') || 'classic';
+                document.documentElement.setAttribute('data-v4skin', s);
+            } catch (e) { /* 隐私模式读不到就用默认 */ }
+        })();
+    </script>
+    <style>
+        html[data-v4skin="matinee"] { --nr-accent: #D99A43; --nr-accent-hover: #F2BC5E; }
+        html[data-v4skin="whale"] { --nr-accent: #7FB6E8; --nr-accent-hover: #A9D2F5; }
+        html[data-v4skin="ink"] { --nr-accent: #C8443C; --nr-accent-hover: #E15A50; }
+
+        html[data-v4skin="matinee"] body:not(.night-mode) { background: #131110; color: #EFE9DC; }
+        html[data-v4skin="whale"] body:not(.night-mode) { background: #050C18; color: #E6EEF9; }
+        html[data-v4skin="ink"] body:not(.night-mode) { background: #08080A; color: #EDE9E1; }
+        html[data-v4skin="whale"] body.night-mode { background: #050C18; color: #E6EEF9; }
+        html[data-v4skin="ink"] body.night-mode { background: #08080A; color: #EDE9E1; }
+
+        html[data-v4skin="matinee"] .toolbar { background: rgba(19, 17, 16, .94); border-bottom-color: rgba(229, 166, 60, .18); }
+        html[data-v4skin="whale"] .toolbar { background: rgba(5, 12, 24, .94); border-bottom-color: rgba(127, 182, 232, .20); }
+        html[data-v4skin="ink"] .toolbar { background: rgba(8, 8, 10, .94); border-bottom-color: rgba(200, 68, 60, .28); }
+        html[data-v4skin="matinee"] .btn { background: rgba(255, 233, 190, .08); }
+        html[data-v4skin="whale"] .btn { background: rgba(127, 182, 232, .10); }
+        html[data-v4skin="ink"] .btn { background: rgba(237, 233, 225, .07); }
+
+        /* 手机端：正文列不再用 20% 大边距；工具栏更紧凑，给正文留高度 */
+        @media (max-width: 860px) {
+            .reader-area { padding: 60px 16px 92px; }
+            body.read-mode-page .reader-area { padding: 0; }
+            #chapterContent { max-width: 100%; }
+            .toolbar {
+                padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px;
+                gap: 8px;
+            }
+            .toolbar-left { gap: 10px; min-width: 0; }
+            .toolbar-title { max-width: 44vw; font-size: 13px; }
+            .toolbar-right { gap: 8px; }
+            .btn { padding: 7px 12px; min-height: 36px; font-size: 12.5px; }
+            .chapter-title { font-size: 20px; margin-bottom: 20px; padding-bottom: 14px; }
+            .paged-content { padding: 62px 16px 86px; }
+            .paged-inner { max-width: 100%; }
+        }
+    </style>
 </head>
 <body>
     <div class="reader-container">
@@ -696,6 +869,7 @@
                 <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;">下一本 ▶</button>
                 <button class="btn" id="btnReadMode" onclick="toggleReadMode()" title="切换 滚动 / 翻页 阅读">📖 翻页</button>
                 <button class="btn" onclick="toggleCatalog()">📑 目录</button>
+                <button class="btn" onclick="toggleAICompanion()" title="AI 伴读：前情提要 / 人物卡 / 润色">✨ 伴读</button>
                 <button class="btn" onclick="toggleSettings()">⚙️ 设置</button>
                 <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
             </div>
@@ -731,6 +905,8 @@
                     <button class="paged-btn" onclick="event.stopPropagation(); pageTurn(1,true)">转下一章 »</button>
                 </div>
             </div>
+            <!-- round117：PDF 逐页（pdf.js 渲染，滚动翻阅；沿用底部进度条当页码指示） -->
+            <div id="pdfContent" style="display:none;"></div>
         </div>
         
         <!-- 目录侧边栏 -->
@@ -746,19 +922,35 @@
         <div class="settings-panel" id="settingsPanel">
             <div id="rsNovelRoot"></div>
         </div>
+
+        <!-- r153 · C2：AI 伴读 -->
+        <div class="ai-reader-panel" id="aiCompanionPanel">
+            <div class="acp-head"><b>✨ AI 伴读</b><button onclick="closeAllPanels()" aria-label="关闭">✕</button></div>
+            <div class="acp-tabs">
+                <button class="acp-tab on" data-acp-mode="recap">前情提要</button>
+                <button class="acp-tab" data-acp-mode="characters">人物卡</button>
+                <button class="acp-tab" data-acp-mode="polish">润色本章</button>
+            </div>
+            <div class="acp-body" id="acpBody">
+                <div class="acp-empty">读取<strong>截至当前阅读进度</strong>的原文：前情提要用 200 字补回记忆，人物卡绝不剧透后文，润色把机翻腔改成自然中文。</div>
+            </div>
+            <div class="acp-foot" id="acpFoot" style="display:none;">
+                <button class="btn" onclick="copyCompanionText()">📋 复制结果</button>
+            </div>
+        </div>
         
         <!-- 遮罩层 -->
         <div class="overlay" id="overlay" onclick="closeAllPanels()"></div>
         
         <!-- 底部进度栏 -->
         <div class="progress-bar" id="progressBar">
-            <button class="btn" onclick="prevChapter()">‹ 上一章</button>
+            <button class="btn" id="btnPrevUnit" onclick="prevChapter()">‹ 上一章</button>
             <div class="chapter-info" id="chapterInfo">0 / 0</div>
             <div class="progress-slider" id="progressSlider" onclick="seekChapter(event)">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
             <div class="reading-time" id="readingTime">00:00</div>
-            <button class="btn btn-primary" onclick="nextChapter()">下一章 ›</button>
+            <button class="btn btn-primary" id="btnNextUnit" onclick="nextChapter()">下一章 ›</button>
         </div>
     </div>
     
@@ -767,9 +959,9 @@
 
     <!-- round79：纸张卷曲翻页（PaperCurl，默认动效）
          ⚠️ 必须在内联脚本之前：内联脚本在 DOMContentLoaded 时就会 initPageCurl() -->
-    <script src="js/paper-curl.js?v=3"></script>
+    <script src="js/paper-curl.js"></script>
     <!-- round81：设置面板引擎（必须在内联脚本之前，loadSettings 会用到） -->
-    <script src="js/reader-settings.js?v=1"></script>
+    <script src="js/reader-settings.js"></script>
 
     <script>
         // 全局状态
@@ -789,6 +981,19 @@
         let siblings = [];
         let currentBookIndex = -1;
         let toastTimer = null;
+
+        /* round117：PDF 逐页模式
+           小说库里有 433 本 .pdf，后端 getNovelContent 对 pdf 只会返回空章节
+           ⇒ 以前一打开就是满屏「无法读取小说内容」。这里用 pdf.js 逐页画，
+           和漫画阅读器同一套（同一个 pdfjs 补丁、同一个懒渲染思路）。
+           进度沿用既有的 chapter 字段：chapter = 页码，total = 总页数。 */
+        let pdfMode = false;
+        let pdfDoc = null;
+        let pdfTotal = 0;
+        let pdfPage = 0;
+        let pdfObs = null;
+        let pdfRendering = new Set();
+        let pdfSaveTimer = null;
 
         /* ===== 2026-09-25（round25 #2）：翻页阅读模式状态 =====
            思路：不预先把文字切成固定块（字号/行距/窗口一变就全错），
@@ -835,6 +1040,17 @@
             
             loadNovelInfo();
             setupKeyboardControls();
+            setupTouchGestures();
+
+            // 移动端：默认完全隐藏工具栏与状态条，进入 100% 纯净全屏
+            if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+                isToolbarVisible = false;
+                document.getElementById('toolbar').classList.add('hidden');
+                document.getElementById('progressBar').classList.add('hidden');
+            }
+            if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+                window.AndroidBridge.setReaderMode(true);
+            }
 
             // 翻页模式下：窗口尺寸变化 / 字号行距变化都要重新分页（否则一页内容对不上屏）
             let rzTimer = null;
@@ -918,11 +1134,30 @@
                     // 渲染目录
                     renderCatalog();
                     
+                    if (novelInfo.readKind === 'pdf') {
+                        enterPdfMode();
+                        return;
+                    }
+                    if (novelInfo.readKind === 'unsupported') {
+                        /* mobi / azw3：给一句人话 + 文件路径，别再只丢一行红字 */
+                        document.getElementById('loading').innerHTML =
+                            '<div style="max-width:560px;text-align:center;line-height:1.9;">' +
+                            '<div style="font-size:15px;color:inherit;margin-bottom:10px;">这本是 <b>' +
+                            escapeHtmlText(novelInfo.format) + '</b> 格式</div>' +
+                            '<div style="font-size:13px;opacity:.72;">在线阅读目前支持 EPUB / TXT / PDF。' +
+                            'MOBI / AZW3 需要先转成 EPUB 再导入。</div>' +
+                            '<div style="font-size:11.5px;opacity:.5;margin-top:14px;word-break:break-all;">' +
+                            escapeHtmlText(novelInfo.filePath || '') + '</div></div>';
+                        return;
+                    }
                     if (totalChapters > 0) {
                         loadChapter(currentChapter);
                         startReadingTimer();
                     } else {
-                        document.getElementById('loading').innerHTML = '<div style="color:#ef4444;">无法读取小说内容</div>';
+                        document.getElementById('loading').innerHTML =
+                            '<div style="max-width:560px;text-align:center;line-height:1.9;">' +
+                            '<div style="font-size:15px;margin-bottom:8px;">这本书里没有可读的章节</div>' +
+                            '<div style="font-size:12.5px;opacity:.7;">文件可能只含图片，或被识别为空。</div></div>';
                     }
                 } else {
                     document.getElementById('loading').innerHTML = `<div style="color:#ef4444;">加载失败: ${data.msg}</div>`;
@@ -1084,6 +1319,7 @@
 
         // 下一页 / 上一页；atEnd=true 时到章末自动去下一章
         function pageTurn(dir, atEnd) {
+            if (pdfMode) { pdfStep(dir); return; }
             if (readMode !== 'page') {
                 // 滚动模式：点侧边箭头仍按「上一本/下一本」处理
                 if (dir < 0) prevBook(); else nextBook();
@@ -1309,14 +1545,19 @@
             }
         }
 
-        // 阅读区单击：翻页模式下点右侧翻下页、点左侧翻上页；滚动模式仍是切工具栏
+        // 阅读区单击：两边各 28% 翻页，中间 44% 切换工具栏显隐
         function handleReaderClick(e) {
-            if (readMode === 'page') {
-                const r = document.getElementById('readerArea').getBoundingClientRect();
-                const x = e.clientX - r.left;
-                if (x > r.width * 0.55) { pageTurn(1); return; }
-                if (x < r.width * 0.22) { pageTurn(-1); return; }
-                toggleToolbar();
+            if (e.target.closest('.catalog-sidebar, .settings-panel, .btn, button, #btnReadMode')) return;
+            const r = document.getElementById('readerArea').getBoundingClientRect();
+            const xRatio = (e.clientX - r.left) / r.width;
+            if (xRatio < 0.28) {
+                if (readMode === 'page') pageTurn(-1);
+                else prevChapter();
+                return;
+            }
+            if (xRatio > 0.72) {
+                if (readMode === 'page') pageTurn(1);
+                else nextChapter();
                 return;
             }
             toggleToolbar();
@@ -1324,6 +1565,7 @@
         
         // 上一章
         function prevChapter() {
+            if (pdfMode) { pdfStep(-1); return; }
             if (currentChapter > 0) {
                 loadChapter(currentChapter - 1);
             }
@@ -1331,6 +1573,7 @@
         
         // 下一章
         function nextChapter() {
+            if (pdfMode) { pdfStep(1); return; }
             if (currentChapter < totalChapters - 1) {
                 loadChapter(currentChapter + 1);
             }
@@ -1341,6 +1584,10 @@
             const slider = document.getElementById('progressSlider');
             const rect = slider.getBoundingClientRect();
             const percent = (event.clientX - rect.left) / rect.width;
+            if (pdfMode) {
+                pdfGoTo(Math.max(0, Math.min(pdfTotal - 1, Math.round(percent * (pdfTotal - 1)))));
+                return;
+            }
             const targetChapter = Math.floor(percent * totalChapters);
             loadChapter(Math.max(0, Math.min(totalChapters - 1, targetChapter)));
         }
@@ -1411,6 +1658,7 @@
         function toggleCatalog() {
             const sidebar = document.getElementById('catalogSidebar');
             const overlay = document.getElementById('overlay');
+            document.getElementById('aiCompanionPanel').classList.remove('open');
             const isOpen = sidebar.classList.toggle('open');
             overlay.classList.toggle('visible', isOpen);
             
@@ -1423,6 +1671,7 @@
         function toggleSettings() {
             const panel = document.getElementById('settingsPanel');
             const overlay = document.getElementById('overlay');
+            document.getElementById('aiCompanionPanel').classList.remove('open');
             const isOpen = panel.classList.toggle('open');
             overlay.classList.toggle('visible', isOpen);
             
@@ -1435,8 +1684,69 @@
         function closeAllPanels() {
             document.getElementById('catalogSidebar').classList.remove('open');
             document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('aiCompanionPanel').classList.remove('open');
             document.getElementById('overlay').classList.remove('visible');
         }
+
+        /* ========== r153 · C2：AI 伴读 ========== */
+        let acpMode = 'recap';
+        let acpText = '';
+        let acpToken = 0;
+
+        function toggleAICompanion() {
+            const panel = document.getElementById('aiCompanionPanel');
+            const open = !panel.classList.contains('open');
+            document.getElementById('catalogSidebar').classList.remove('open');
+            document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('visible');
+            panel.classList.toggle('open', open);
+            if (open) runCompanion(acpMode);
+        }
+
+        function runCompanion(mode) {
+            acpMode = mode || 'recap';
+            document.querySelectorAll('.acp-tab').forEach((b) => b.classList.toggle('on', b.dataset.acpMode === acpMode));
+            const body = document.getElementById('acpBody');
+            const foot = document.getElementById('acpFoot');
+            foot.style.display = 'none';
+            const labels = { recap: '正在回溯前三章…', characters: '正在整理当前进度的人物关系…', polish: '正在润色当前章节（可能需要十几秒）…' };
+            body.innerHTML = '<div class="acp-load">' + labels[acpMode] + '</div>';
+            const my = ++acpToken;
+            fetch(`/api/novel/${novelId}/ai-companion`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: acpMode, chapterIndex: currentChapter })
+            }).then((r) => r.json()).then((d) => {
+                if (my !== acpToken) return;
+                if (!d || d.code !== 0) throw new Error((d && d.msg) || 'AI 暂不可用');
+                acpText = d.data.text || '';
+                body.textContent = acpText || '（AI 没有返回内容）';
+                foot.style.display = acpText ? 'flex' : 'none';
+            }).catch((e) => {
+                if (my !== acpToken) return;
+                body.innerHTML = '<div class="acp-empty">' + escapeReaderHtml(e.message || 'AI 暂不可用') +
+                    '<br><br>检查：设置 → AI 助手是否已配置可用模型。</div>';
+            });
+        }
+
+        function copyCompanionText() {
+            if (!acpText) return;
+            navigator.clipboard.writeText(acpText).then(() => {
+                const t = document.getElementById('toast');
+                t.textContent = '已复制伴读结果';
+                t.classList.add('show');
+                setTimeout(() => t.classList.remove('show'), 1400);
+            }).catch(() => {});
+        }
+
+        function escapeReaderHtml(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        document.addEventListener('click', (e) => {
+            const tab = e.target && e.target.closest && e.target.closest('[data-acp-mode]');
+            if (tab) runCompanion(tab.dataset.acpMode);
+        });
         
         /* ============================================================
            round81：设置面板改由 js/reader-settings.js 驱动
@@ -1660,9 +1970,65 @@
                 }
             });
         }
+
+        // 移动端触控手势（翻页模式下左右横滑翻页，滚动模式下大幅横滑切换章节）
+        function setupTouchGestures() {
+            const area = document.getElementById('readerArea');
+            if (!area) return;
+
+            let touchStartX = 0;
+            let touchStartY = 0;
+            let touchStartTime = 0;
+            let isSwiping = false;
+
+            area.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    touchStartTime = Date.now();
+                    isSwiping = false;
+                }
+            }, { passive: true });
+
+            area.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1) {
+                    const dx = e.touches[0].clientX - touchStartX;
+                    const dy = e.touches[0].clientY - touchStartY;
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 14) {
+                        isSwiping = true;
+                    }
+                }
+            }, { passive: true });
+
+            area.addEventListener('touchend', (e) => {
+                if (isSwiping && e.changedTouches.length === 1) {
+                    const dx = e.changedTouches[0].clientX - touchStartX;
+                    const dt = Date.now() - touchStartTime;
+                    if (Math.abs(dx) > 40 && dt < 650) {
+                        if (readMode === 'page') {
+                            if (dx < -40) {
+                                pageTurn(1);
+                            } else if (dx > 40) {
+                                pageTurn(-1);
+                            }
+                        } else {
+                            if (dx < -70) {
+                                nextChapter();
+                            } else if (dx > 70) {
+                                prevChapter();
+                            }
+                        }
+                    }
+                }
+                isSwiping = false;
+            }, { passive: true });
+        }
         
         // 关闭阅读器
         function closeReader() {
+            if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+                window.AndroidBridge.setReaderMode(false);
+            }
             stopReadingTimer();
             saveProgress();
             // 如果是在iframe中，通知父页面关闭
@@ -1680,9 +2046,209 @@
         
         // 页面关闭时保存进度
         window.addEventListener('beforeunload', () => {
+            if (window.AndroidBridge && typeof window.AndroidBridge.setReaderMode === 'function') {
+                window.AndroidBridge.setReaderMode(false);
+            }
             stopReadingTimer();
             saveProgress();
         });
+        /* ==================================================================
+           round117 · PDF 逐页阅读
+           ------------------------------------------------------------------
+           为什么要有这一段：小说库里有 433 本 .pdf、320 本 .mobi、118 本 .azw3。
+           后端 getNovelContent 对这三种都只会返回 `chapters: []`，
+           阅读器拿到 totalChapters=0 就直接写一行「无法读取小说内容」——
+           对 PDF 来说这是彻底打不开，不是"内容为空"。
+
+           PDF 现在这样读：
+             · /api/novel/:id/pdf 直出原文件（新增接口）
+             · pdf.js 逐页画到 canvas，IntersectionObserver 懒渲染（只画可见 ±900px）
+             · 底部进度条复用：chapter 字段存页码、total 存总页数
+               ⇒ 卡片上的「在读/读完」、书架角标、继续阅读全部自动生效，不用另造一套
+           mobi / azw3 没法在浏览器里解，改成一句能看懂的话（附文件路径）。
+           ================================================================== */
+        async function enterPdfMode() {
+            pdfMode = true;
+            document.body.classList.add('pdf-mode');
+            /* 文字向的控件在这一页没有意义：翻页模式 / 目录 */
+            const rb = document.getElementById('btnReadMode');
+            if (rb) rb.style.display = 'none';
+            const catBtn = document.querySelector('.toolbar-right button[onclick="toggleCatalog()"]');
+            if (catBtn) catBtn.style.display = 'none';
+            /* 底栏原来写的是「上一章 / 下一章」，PDF 里其实是翻页 —— 文案要跟着语义走 */
+            const pb = document.getElementById('btnPrevUnit');
+            const nb = document.getElementById('btnNextUnit');
+            if (pb) pb.textContent = '‹ 上一页';
+            if (nb) nb.textContent = '下一页 ›';
+
+            const loading = document.getElementById('loading');
+            loading.style.display = 'flex';
+            loading.innerHTML = '<div class="spinner"></div><div>正在解析 PDF...</div>';
+
+            try {
+                await initPdfDoc();
+                pdfTotal = pdfDoc.numPages;
+                totalChapters = pdfTotal;          /* 让底部进度条 / saveProgress 直接可用 */
+                await buildPdfPages();
+                loading.style.display = 'none';
+                document.getElementById('pdfContent').style.display = 'block';
+
+                const host = document.getElementById('pdfContent');
+                host.addEventListener('scroll', () => {
+                    if (pdfScrollTimer) return;
+                    pdfScrollTimer = setTimeout(() => { pdfScrollTimer = null; pdfSyncCurrent(); }, 100);
+                }, { passive: true });
+
+                /* 恢复上次读到的那一页（后端存的 chapter 就是页码） */
+                const saved = Math.max(0, Math.min(pdfTotal - 1, Number(novelInfo.currentChapter) || 0));
+                pdfPage = saved;
+                currentChapter = saved;
+                pdfUpdateBar();
+                if (saved > 0) setTimeout(() => pdfGoTo(saved), 80);
+                startReadingTimer();
+            } catch (e) {
+                loading.innerHTML = '<div style="max-width:600px;text-align:center;line-height:1.9;">' +
+                    '<div style="font-size:15px;color:#b3261e;margin-bottom:8px;">PDF 打开失败</div>' +
+                    '<div style="font-size:13px;opacity:.75;">' + escapeHtmlText(e && e.message || '未知错误') + '</div>' +
+                    '<div style="font-size:11.5px;opacity:.5;margin-top:12px;word-break:break-all;">' +
+                    escapeHtmlText((novelInfo && novelInfo.filePath) || '') + '</div></div>';
+            }
+        }
+
+        let pdfScrollTimer = null;
+
+        async function initPdfDoc() {
+            const lib = await import('/pdfjs/pdf.mjs');
+            lib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.mjs';
+            /* ★ 与 comic-reader.html 完全一致的内核补丁：
+               Electron33(Chrome130) 缺 ES2025 的 Uint8Array.toHex/fromBase64，
+               pdfjs 6.2 在 worker 里一解析就崩（hashOriginal.toHex is not a function）。
+               取 worker 源码前置 polyfill 再以 Blob 加载。别删，删了 PDF 全打不开。 */
+            try {
+                const _poly = "if(!Uint8Array.prototype.toHex){Uint8Array.prototype.toHex=function(){var s='';for(var i=0;i<this.length;i++)s+=this[i].toString(16).padStart(2,'0');return s;};}\n" +
+                    "if(!Uint8Array.fromHex){Uint8Array.fromHex=function(h){h=String(h);var a=new Uint8Array(h.length/2);for(var i=0;i<a.length;i++)a[i]=parseInt(h.substr(i*2,2),16);return a;};}\n" +
+                    "if(!Uint8Array.prototype.toBase64){Uint8Array.prototype.toBase64=function(){var s='';for(var i=0;i<this.length;i++)s+=String.fromCharCode(this[i]);return btoa(s);};}\n" +
+                    "if(!Uint8Array.fromBase64){Uint8Array.fromBase64=function(s){var bin=atob(String(s));var a=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return a;};}\n";
+                const _wcode = await (await fetch(lib.GlobalWorkerOptions.workerSrc)).text();
+                lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([_poly + _wcode], { type: 'text/javascript' }));
+            } catch (e) { /* 新内核无需补丁也能跑 */ }
+
+            const res = await fetch(`/api/novel/${novelId}/pdf`);
+            if (!res.ok) {
+                let msg = 'HTTP ' + res.status;
+                try { const j = await res.json(); if (j && j.msg) msg = j.msg; } catch (e) { /* 非 JSON */ }
+                throw new Error(msg);
+            }
+            const buf = await res.arrayBuffer();
+            if (!buf || buf.byteLength === 0) throw new Error('PDF 响应体为空（0 字节）');
+            pdfDoc = await lib.getDocument({ data: buf }).promise;
+        }
+
+        async function buildPdfPages() {
+            const host = document.getElementById('pdfContent');
+            host.innerHTML = '';
+            let ratio = 0.707;    /* 默认 A4 竖版，取不到第 1 页再兜底 */
+            try {
+                const p1 = await pdfDoc.getPage(1);
+                const vp = p1.getViewport({ scale: 1 });
+                ratio = vp.width / vp.height;
+            } catch (e) { /* 用默认值 */ }
+
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < pdfTotal; i++) {
+                const d = document.createElement('div');
+                d.className = 'pdf-page';
+                d.dataset.page = String(i);
+                d.style.aspectRatio = String(ratio);
+                d.innerHTML = '<div class="pdf-ph">第 ' + (i + 1) + ' 页</div>';
+                frag.appendChild(d);
+            }
+            host.appendChild(frag);
+
+            if (pdfObs) pdfObs.disconnect();
+            pdfObs = new IntersectionObserver((entries) => {
+                entries.forEach(en => {
+                    if (en.isIntersecting) renderPdfPage(Number(en.target.dataset.page));
+                });
+            }, { root: host, rootMargin: '900px 0px' });
+            host.querySelectorAll('.pdf-page').forEach(el => pdfObs.observe(el));
+        }
+
+        async function renderPdfPage(i) {
+            const host = document.getElementById('pdfContent');
+            const box = host.querySelector('.pdf-page[data-page="' + i + '"]');
+            if (!box || box.dataset.done === '1' || pdfRendering.has(i)) return;
+            pdfRendering.add(i);
+            try {
+                const page = await pdfDoc.getPage(i + 1);
+                const base = page.getViewport({ scale: 1 });
+                const availW = (host.clientWidth || 900) * 0.94;
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const scale = Math.max(0.2, Math.min((Math.min(availW, 1180) / base.width) * dpr, 4));
+                const vp = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(vp.width);
+                canvas.height = Math.round(vp.height);
+                canvas.style.width = '100%';
+                canvas.style.height = 'auto';
+                const ctx = canvas.getContext('2d', { alpha: false });
+                await page.render({ canvasContext: ctx, viewport: vp }).promise;
+                box.innerHTML = '';
+                box.style.aspectRatio = '';
+                box.appendChild(canvas);
+                box.dataset.done = '1';
+            } catch (e) {
+                box.innerHTML = '<div class="pdf-err">第 ' + (i + 1) + ' 页渲染失败：' + escapeHtmlText(e && e.message || '') + '</div>';
+                box.dataset.done = '1';
+            } finally {
+                pdfRendering.delete(i);
+            }
+        }
+
+        function pdfGoTo(i) {
+            const host = document.getElementById('pdfContent');
+            const box = host.querySelector('.pdf-page[data-page="' + i + '"]');
+            if (!box) return;
+            const top = box.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop - 8;
+            host.scrollTop = Math.max(0, top);
+        }
+
+        function pdfStep(dir) {
+            const host = document.getElementById('pdfContent');
+            const box = host.querySelector('.pdf-page[data-page="' + pdfPage + '"]');
+            const h = box ? box.getBoundingClientRect().height + 14 : host.clientHeight;
+            host.scrollTo({ top: host.scrollTop + dir * h, behavior: 'smooth' });
+        }
+
+        function pdfUpdateBar() {
+            const info = document.getElementById('chapterInfo');
+            if (info) info.textContent = (pdfPage + 1) + ' / ' + pdfTotal;
+            const fill = document.getElementById('progressFill');
+            if (fill && pdfTotal > 0) fill.style.width = (((pdfPage + 1) / pdfTotal) * 100) + '%';
+        }
+
+        function pdfSyncCurrent() {
+            const host = document.getElementById('pdfContent');
+            if (!host || !pdfTotal) return;
+            const hostTop = host.getBoundingClientRect().top;
+            const anchor = host.clientHeight * 0.3;
+            let best = pdfPage, bestD = Infinity;
+            const pages = host.querySelectorAll('.pdf-page');
+            for (let k = 0; k < pages.length; k++) {
+                const r = pages[k].getBoundingClientRect();
+                const d = Math.abs((r.top - hostTop) - anchor);
+                if (d < bestD) { bestD = d; best = k; }
+            }
+            if (best !== pdfPage) {
+                pdfPage = best;
+                currentChapter = best;       /* 复用既有进度语义 */
+                totalChapters = pdfTotal;
+                pdfUpdateBar();
+                if (pdfSaveTimer) clearTimeout(pdfSaveTimer);
+                pdfSaveTimer = setTimeout(() => { saveProgress(); }, 1200);
+            }
+        }
+
         /* ============================================================
            round76 · 朗读器导航接口
            currentChapter / pageStarts / currentPage 都是 let 顶层变量，不挂 window ——
@@ -1696,6 +2262,6 @@
             go: (i) => loadChapter(i),
         };
     </script>
-    <script src="js/novel-tts.js?v=9"></script>
+    <script src="js/novel-tts.js"></script>
 </body>
 </html>
