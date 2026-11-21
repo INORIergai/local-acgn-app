@@ -8,6 +8,11 @@ let searchAbort = null;
 let currentMovies = [];
 let scanTimer = null;
 let scanStatusTimer = null;
+let _lastScanPollAt = 0;
+/* ★ P1（2026-11-21）：页面隐藏（最小化 / 后台标签 / 切到别的应用）时，
+   所有高频轮询只走计时器、不发请求；回到前台立刻补一次最新状态。
+   见文件末尾 visibilitychange 监听与各 tick 函数入口的 isPageHidden() 早退。 */
+function isPageHidden() { return !!document.hidden; }
 let currentScanModule = 'movie';
 let selectedMovies = new Set();
 let galleryTimer = null;
@@ -189,6 +194,8 @@ function startNotifyPolling() {
     if (_pollingStarted) return;
     _pollingStarted = true;
     setInterval(async () => {
+        // 页面隐藏时不发请求（Electron 最小化后没有任何可见收益）
+        if (isPageHidden()) return;
         // 未解锁（密码门禁未过）时不弹，避免把成人库的情报泄露到锁屏前
         if (window.Gate && !Gate.isUnlocked()) return;
         try {
@@ -990,45 +997,59 @@ function renderMovies(movies, fromFilter = false) {
 // round70：卡片点击绑定抽成公共函数 —— 原来只有 renderMovies 绑，
 // 随机推荐下方网格（renderRandomDeckView 里直接 innerHTML 拼出来的）从没绑过，
 // 表现就是「随机推荐下半屏的影片点了没反应」。
+/* P1（2026-11-21）：卡片点击/悬停改为容器级事件委托。
+   原来 renderMovies 一次性 innerHTML 之后给每张卡绑 click + mouseenter，
+   500 张卡就是 1000 个监听，且每次重绘都要重绑；现在每个容器只有 2 个监听，
+   DOM 重绘后自动生效。
+   容器可能嵌套（随机推荐 subWrap 在 #movieGrid 里、系列展开页 page2 也在
+   #movieGrid 里），用「最近的委托容器」判定归属，避免一次点击被两层各处理一次。 */
 function bindMovieCardClicks(container) {
-    if (!container) return;
-    container.querySelectorAll('.movie-card').forEach(card => {
-        if (card.__clickBound) return;
-        card.__clickBound = true;
-        card.addEventListener('click', (e) => {
-            const id = parseInt(card.dataset.id);
-            // Ctrl+点击 多选
-            if (e.ctrlKey || e.metaKey) {
-                toggleSelect(id);
-                return;
-            }
-            showMovieDetail(id);
-        });
-        // round36 P0-4：影视/动漫卡 hover 剧照（有 tmdbId 才拉，一次缓存）
-        bindStillHover(card);
+    if (!container || container.__cvCardDelegate) return;
+    container.__cvCardDelegate = true;
+    container.setAttribute('data-cv-card-delegate', '');
+
+    function owns(card) {
+        const owner = card.parentElement && card.parentElement.closest('[data-cv-card-delegate]');
+        return owner === container;
+    }
+
+    container.addEventListener('click', (e) => {
+        const card = e.target && e.target.closest ? e.target.closest('.movie-card') : null;
+        if (!card || !owns(card)) return;
+        const id = parseInt(card.dataset.id, 10);
+        if (!id) return;
+        // Ctrl+点击 多选
+        if (e.ctrlKey || e.metaKey) { toggleSelect(id); return; }
+        showMovieDetail(id);
     });
+
+    /* mouseover 委托模拟 mouseenter：relatedTarget 仍在同一张卡内时忽略，
+       否则从海报挪到标题会反复触发。 */
+    container.addEventListener('mouseover', (e) => {
+        const card = e.target && e.target.closest ? e.target.closest('.movie-card') : null;
+        if (!card || !owns(card)) return;
+        if (e.relatedTarget && card.contains(e.relatedTarget)) return;
+        loadCardStill(card);
+    }, { passive: true });
 }
 
 // round36 P0-4：hover 时拉取 TMDB 剧照，垫在 hover-info 底层淡入
-function bindStillHover(card) {
+function loadCardStill(card) {
     const type = (card.dataset.type || '').toLowerCase();
     if (type !== 'film' && type !== 'cartoon') return;
-    let loaded = false;
-    card.addEventListener('mouseenter', () => {
-        if (loaded) return;
-        loaded = true;
-        const id = parseInt(card.dataset.id);
-        const hover = card.querySelector('.movie-hover-info');
-        if (!id || !hover) return;
-        fetch(`/api/movie/stills/${id}`).then(r => r.json()).then(j => {
-            if (j.code !== 0 || !j.data || !j.data.length) return;
-            const img = document.createElement('img');
-            img.className = 'movie-hover-still';
-            img.src = j.data[0];
-            img.alt = '';
-            hover.prepend(img);
-        }).catch(() => {});
-    }, { passive: true });
+    if (card.__stillRequested) return;
+    card.__stillRequested = true;
+    const id = parseInt(card.dataset.id, 10);
+    const hover = card.querySelector('.movie-hover-info');
+    if (!id || !hover) return;
+    fetch(`/api/movie/stills/${id}`).then(r => r.json()).then(j => {
+        if (j.code !== 0 || !j.data || !j.data.length) return;
+        const img = document.createElement('img');
+        img.className = 'movie-hover-still';
+        img.src = j.data[0];
+        img.alt = '';
+        hover.prepend(img);
+    }).catch(() => {});
 }
 
 /* ============================================================
@@ -2215,6 +2236,7 @@ function initStartupScanBanner() {
     };
 
     const tick = async () => {
+        if (isPageHidden()) return;
         let r = null;
         try {
             const res = await fetch('/api/scanner/startup-report');
@@ -7783,6 +7805,7 @@ function startUpdatePolling() {
     const wrap = document.getElementById('updProgressWrap');
     if (wrap) wrap.style.display = '';
     const tick = async () => {
+        if (isPageHidden()) return;
         try {
             const r = await fetch('/api/update/status');
             const j = await r.json();
@@ -11101,6 +11124,7 @@ function pollPosterRepair() {
     if (_posterRepairTimer) clearInterval(_posterRepairTimer);
     const el = document.getElementById('posterRepairStatus');
     _posterRepairTimer = setInterval(async () => {
+        if (isPageHidden()) return;
         try {
             const res = await fetch('/api/movie/poster-health/repair/status');
             const { data } = await res.json();
@@ -17212,7 +17236,14 @@ function renderScanStatusUI() {
         : scanState.hasResult ? 'ok' : 'idle');
 }
 
-async function checkScanStatus() {
+async function checkScanStatus(force = false) {
+    if (!force && isPageHidden()) return;
+    /* 扫描空闲时降频：定时器仍按 1.5s 跑，但真正发请求的 tick 限制在 10s 一次；
+       扫描中保持 1.5s，保证进度条流畅。force = true 用于启动扫描、回到前台时立即刷新。 */
+    const _now = Date.now();
+    const _minGap = (scanState && scanState.running) ? 1500 : 10000;
+    if (!force && _now - _lastScanPollAt < _minGap) return;
+    _lastScanPollAt = _now;
     try {
         const status = await api.getScanStatus(currentScanModule);
         const btn = document.getElementById('scanBtn');
@@ -17296,6 +17327,8 @@ async function startModuleScan(module) {
             if (!scanStatusTimer) {
                 scanStatusTimer = setInterval(checkScanStatus, 2000);
             }
+            // 空闲降频下最多要等 10s，这里强制立即刷一次，让按钮马上变成「扫描中」
+            if (typeof checkScanStatus === 'function') checkScanStatus(true);
         } else {
             showNotification('启动失败: ' + data.msg, 'error');
         }
@@ -17601,7 +17634,7 @@ function bindEvents() {
                 showNotification('扫描开始', '正在扫描影片库...');
                 currentScanModule = 'movie';
                 // 立刻刷一次并开始轮询，否则前端看不到进度和最终结果
-                if (typeof checkScanStatus === 'function') checkScanStatus();
+                if (typeof checkScanStatus === 'function') checkScanStatus(true);
                 if (!scanStatusTimer) scanStatusTimer = setInterval(checkScanStatus, 2000);
             } else {
                 showNotification('无法开始扫描', data.msg || '未知错误');
@@ -18677,7 +18710,7 @@ function init() {
     });
 
     updateStats();
-    checkScanStatus();
+    checkScanStatus(true);
     loadNotifications();
     startNotifyPolling();   // round34 批次B：即时 toast + 未读徽章轮询
 
@@ -18698,6 +18731,7 @@ function init() {
 
     // 扫描中每10秒刷新列表（保持页码与视窗位置）
     setInterval(async () => {
+        if (isPageHidden()) return;
         try {
             const status = await api.getScanStatus();
             if (status.running && (currentView === 'movies' || currentView === 'jav')) {
@@ -18706,6 +18740,17 @@ function init() {
             }
         } catch (e) {}
     }, 10000);
+
+    /* ★ P1：从最小化/后台回到前台时立即补一次状态，不用等下一个轮询周期。
+       扫描状态强制刷新（绕过空闲降频）；通知与续播进度一并补齐。 */
+    document.addEventListener('visibilitychange', () => {
+        if (isPageHidden()) return;
+        try { checkScanStatus(true); } catch (e) {}
+        try { loadNotifications(); } catch (e) {}
+        if (window.Features && window.Features.loadProgressMap) {
+            try { window.Features.loadProgressMap(); } catch (e) {}
+        }
+    });
 }
 
 // ========== 女优头像批量刮削 ==========
@@ -19089,6 +19134,7 @@ async function saveNotifyPrefs() {
 }
 
 async function loadNotifications() {
+    if (isPageHidden()) return;
     try {
         const res = await fetch('/api/notification');
         const data = await res.json();
