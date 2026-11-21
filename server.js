@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const configPath = process.env.CONFIG_FILE || './config.json';
 const config = require(configPath);
 
@@ -127,6 +128,192 @@ function gzipMiddleware() {
 }
 app.use(gzipMiddleware());
 
+// ====================== P0：静态资源构建戳 + 首屏 CSS/JS 合并 ======================
+/* 目标：
+ *   1. 去掉 128 处手工 `?v=N` —— 构建戳按文件 size+mtime 自动计算，改文件即换 URL；
+ *   2. library.html 的 83 个 CSS、46 个脚本合并成 1 个 CSS + 1 个 JS + 1 个 defer JS，
+ *      请求数从 ~129 降到个位数；
+ *   3. 带构建戳的资源走一年 immutable 缓存，HTML 仍然 no-cache。
+ *
+ * 安全阀：CV_NO_BUNDLE=1 时只做构建戳，不合并（用于逐行排查合并引入的问题）。
+ * 说明：只合并 library.html 引用的本地 css/js；带 id 的标签不合并（例如
+ *      #mv2-motion-css 需要被前端脚本单独 disable）。relative url() 在 /css 下
+ *      解析结果与原 /css/*.css 完全一致（当前 CSS 全是绝对路径或 data/http）。
+ */
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const CV_NO_BUNDLE = process.env.CV_NO_BUNDLE === '1';
+
+function computeAssetStamp() {
+    const h = crypto.createHash('md5');
+    for (const dirName of ['css', 'js']) {
+        const dir = path.join(PUBLIC_DIR, dirName);
+        if (!fs.existsSync(dir)) continue;
+        const names = fs.readdirSync(dir).filter((n) => /\.(?:css|js)$/i.test(n)).sort();
+        for (const name of names) {
+            try {
+                const st = fs.statSync(path.join(dir, name));
+                h.update(`${dirName}/${name}:${st.size}:${st.mtimeMs};`);
+            } catch (e) { /* 文件正在被替换：跳过这一轮 */ }
+        }
+    }
+    return h.digest('hex').slice(0, 12);
+}
+
+let _stampCache = { at: 0, stamp: '' };
+function assetStamp() {
+    const now = Date.now();
+    if (now - _stampCache.at < 1000) return _stampCache.stamp;
+    _stampCache = { at: now, stamp: computeAssetStamp() };
+    return _stampCache.stamp;
+}
+
+function applyAssetStamp(html, stamp) {
+    return String(html).replace(/\b(href|src)=(["'])((?:css|js)\/[^"']+?)\2/gi, (m, attr, q, url) => {
+        const clean = url.split('?')[0];
+        return `${attr}=${q}${clean}?v=${stamp}${q}`;
+    });
+}
+
+function bundleCss(files) {
+    const parts = [];
+    for (const rel of files) {
+        try {
+            const s = fs.readFileSync(path.join(PUBLIC_DIR, rel), 'utf8')
+                .replace(/^﻿/, '')
+                .replace(/@charset\s+["'][^"']*["'];\s*/gi, '');
+            parts.push(`\n/* ==== ${rel} ==== */\n${s}\n`);
+        } catch (e) {
+            console.warn(`[bundle] 跳过缺失 CSS: ${rel}`);
+        }
+    }
+    return parts.join('');
+}
+
+function bundleJs(files) {
+    const parts = [];
+    for (const rel of files) {
+        try {
+            const s = fs.readFileSync(path.join(PUBLIC_DIR, rel), 'utf8').replace(/^﻿/, '');
+            parts.push(`\n/* ==== ${rel} ==== */\n${s}\n;\n`);
+        } catch (e) {
+            console.warn(`[bundle] 跳过缺失 JS: ${rel}`);
+        }
+    }
+    return parts.join('');
+}
+
+/** 把 library.html 里的本地 CSS/JS 标签折叠成 3 个 bundle 引用；带 id 的标签保持原样。 */
+function transformLibraryHtml(html, stamp) {
+    let out = String(html);
+    if (!CV_NO_BUNDLE) {
+        let firstCss = true;
+        out = out.replace(/<link\b[^>]*>/gi, (tag) => {
+            if (!/\brel=["']stylesheet["']/i.test(tag)) return tag;
+            if (!/\bhref=["'](?:css\/[^"']+)["']/i.test(tag)) return tag;
+            if (/\bid=["'][^"']+["']/i.test(tag)) return tag;
+            if (firstCss) {
+                firstCss = false;
+                return `<link rel="stylesheet" href="css/__cv-bundle.css?v=${stamp}">`;
+            }
+            return '';
+        });
+
+        let firstJs = true;
+        let firstDefer = true;
+        out = out.replace(/<script\b[^>]*\bsrc=["'](js\/[^"']+)["'][^>]*>\s*<\/script>/gi, (tag) => {
+            if (/\bid=["'][^"']+["']/i.test(tag)) return tag;
+            if (/\bdefer\b/i.test(tag)) {
+                if (firstDefer) {
+                    firstDefer = false;
+                    return `<script src="js/__cv-bundle-defer.js?v=${stamp}" defer></script>`;
+                }
+                return '';
+            }
+            if (firstJs) {
+                firstJs = false;
+                return `<script src="js/__cv-bundle.js?v=${stamp}"></script>`;
+            }
+            return '';
+        });
+    }
+    return applyAssetStamp(out, stamp);
+}
+
+const _bundleCache = new Map();   // stamp -> { css, js, defer }
+function getBundles() {
+    const stamp = assetStamp();
+    if (_bundleCache.has(stamp)) return _bundleCache.get(stamp);
+
+    const html = fs.readFileSync(path.join(PUBLIC_DIR, 'library.html'), 'utf8');
+    const cssFiles = [];
+    const jsFiles = [];
+    const deferFiles = [];
+
+    for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+        const tag = m[0];
+        if (!/\brel=["']stylesheet["']/i.test(tag)) continue;
+        const href = tag.match(/\bhref=["'](css\/[^"']+)["']/i);
+        if (!href || /\bid=["'][^"']+["']/i.test(tag)) continue;
+        cssFiles.push(href[1].split('?')[0]);
+    }
+    for (const m of html.matchAll(/<script\b[^>]*\bsrc=["'](js\/[^"']+)["'][^>]*>\s*<\/script>/gi)) {
+        const tag = m[0];
+        if (/\bid=["'][^"']+["']/i.test(tag)) continue;
+        (/\bdefer\b/i.test(tag) ? deferFiles : jsFiles).push(m[1].split('?')[0]);
+    }
+
+    const out = {
+        css: bundleCss(cssFiles),
+        js: bundleJs(jsFiles),
+        defer: bundleJs(deferFiles),
+        fileCount: { css: cssFiles.length, js: jsFiles.length, defer: deferFiles.length }
+    };
+    _bundleCache.clear();          // 只保留当前构建戳，避免旧文件常驻内存
+    _bundleCache.set(stamp, out);
+    return out;
+}
+
+function sendBundle(req, res, body, contentType) {
+    const etag = '"' + crypto.createHash('md5').update(body).digest('hex') + '"';
+    res.setHeader('Content-Type', contentType + '; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('ETag', etag);
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    res.send(body);
+}
+
+app.get('/css/__cv-bundle.css', (req, res) => {
+    const stamp = assetStamp();
+    const b = getBundles();
+    res.setHeader('X-CV-Bundle-Stamp', stamp);
+    sendBundle(req, res, b.css, 'text/css');
+});
+app.get('/js/__cv-bundle.js', (req, res) => {
+    const stamp = assetStamp();
+    const b = getBundles();
+    res.setHeader('X-CV-Bundle-Stamp', stamp);
+    sendBundle(req, res, b.js, 'application/javascript');
+});
+app.get('/js/__cv-bundle-defer.js', (req, res) => {
+    const stamp = assetStamp();
+    const b = getBundles();
+    res.setHeader('X-CV-Bundle-Stamp', stamp);
+    sendBundle(req, res, b.defer, 'application/javascript');
+});
+
+// 带构建戳的 css/js：一年 immutable；没有戳的保持 no-cache（避免旧文件被长缓存）
+app.use(['/css', '/js'], (req, res, next) => {
+    if (req.query && req.query.v === assetStamp()) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+        res.setHeader('Cache-Control', 'no-cache');
+    }
+    next();
+});
+
+/* 说明：HTML 页面的构建戳/合并必须在 express.static 之前统一处理，
+ * 见下方「HTML 页面转换」中间件（放在 library.html 路由之后）。 */
+
 const { sessionMiddleware, isAuthEnabled, validateSession, isSectionProtected, isSectionUnlocked, COOKIE_NAME } = require('./utils/auth');
 
 // 兜底：任何未捕获异常都不要杀掉服务进程。
@@ -220,20 +407,23 @@ app.get('/', (req, res) => {
  * 前端初始化时同步就能拿到（不引入额外请求，也不改动初始化时序）。
  */
 app.get('/library.html', (req, res, next) => {
+    let cfg = null;
     try {
-        const cfg = JSON.parse(fs.readFileSync(path.resolve(configPath), 'utf8'));
-        const layout = (cfg.ui && cfg.ui.sidebarLayout) || null;
-        if (!layout) return next();
+        cfg = JSON.parse(fs.readFileSync(path.resolve(configPath), 'utf8'));
+    } catch (e) { /* 配置读不到也要能开首页 */ }
+    const layout = (cfg && cfg.ui && cfg.ui.sidebarLayout) || null;
+    try {
         const file = path.join(__dirname, 'public', 'library.html');
-        const html = fs.readFileSync(file, 'utf8');
-        const payload = JSON.stringify({
-            layout,
-            updatedAt: Number((cfg.ui && cfg.ui.sidebarLayoutAt) || 0)
-        }).replace(/</g, '\\u003c');
+        let html = fs.readFileSync(file, 'utf8');
+        if (layout) {
+            const payload = JSON.stringify({
+                layout,
+                updatedAt: Number((cfg.ui && cfg.ui.sidebarLayoutAt) || 0)
+            }).replace(/</g, '\\u003c');
+            html = html.replace('</head>', '<script>window.__cvSidebarLayout=' + payload + ';</script>\n</head>');
+        }
         res.setHeader('Cache-Control', 'no-cache');
-        res.type('html').send(
-            html.replace('</head>', '<script>window.__cvSidebarLayout=' + payload + ';</script>\n</head>')
-        );
+        res.type('html').send(transformLibraryHtml(html, assetStamp()));
     } catch (e) {
         next();   // 注入失败就回退静态文件，绝不能因为一个布局把首页打不开
     }
@@ -246,6 +436,27 @@ app.use((req, res, next) => {
         res.setHeader('Cache-Control', 'no-cache');
     }
     next();
+});
+// 其它 HTML 页面（阅读器/登录/连接页）不合并，只自动加构建戳并强制协商缓存。
+// 放在 library.html 路由之后、express.static 之前：显式路由优先，静态兜底仍可用。
+app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (!/\.html?$/i.test(req.path)) return next();
+    let rel;
+    try { rel = decodeURIComponent(req.path.replace(/^\/+/, '')); } catch (e) { return next(); }
+    const file = path.join(PUBLIC_DIR, rel);
+    if (!file.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(file)) return next();
+    try {
+        const stamp = assetStamp();
+        const html = fs.readFileSync(file, 'utf8');
+        const out = rel.replace(/\\/g, '/') === 'library.html'
+            ? transformLibraryHtml(html, stamp)
+            : applyAssetStamp(html, stamp);
+        res.setHeader('Cache-Control', 'no-cache');
+        res.type('html').send(out);
+    } catch (e) {
+        next();
+    }
 });
 app.use(express.static(path.join(__dirname, 'public')));
 

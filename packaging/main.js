@@ -24,7 +24,7 @@
  */
 'use strict';
 
-const { app, BrowserWindow, shell, dialog, Menu, screen } = require('electron');
+const { app, BrowserWindow, shell, dialog, Menu, screen, Tray, globalShortcut, nativeImage, powerSaveBlocker } = require('electron');
 const { spawn } = require('child_process');
 const http = require('http');
 const net = require('net');
@@ -75,6 +75,8 @@ const PAYLOAD = app.isPackaged
     : path.join(__dirname, 'payload');
 blog(`PAYLOAD=${PAYLOAD} exists=${fs.existsSync(PAYLOAD)}`);
 const IS_PORTABLE = !!process.env.PORTABLE_EXECUTABLE_DIR;   // electron-builder 便携版会注入
+/* 开机自启时带 --hidden：启动后停在托盘，不弹窗、不打断登录 */
+const START_HIDDEN = process.argv.includes('--hidden');
 
 /* Electron 的 app.getPath('userData') 默认取 package.json 的 name，也就是
  * `cinema-vault-desktop` —— 于是用户会在自己的 AppData 里看到一个 kebab-case
@@ -82,9 +84,15 @@ const IS_PORTABLE = !!process.env.PORTABLE_EXECUTABLE_DIR;   // electron-builder
  * （顶层加 productName 没用：打包后 resources/app/package.json 是 electron-builder
  *  自己生成的，只带 name / version / main。）
  * 所以直接改路径。必须在 app ready 之前调用，这里正好是最早的时机。
+ *
+ * CINEMAVAULT_USER_DATA 是排障/多实例用的覆盖项：单实例锁按 userData 目录区分，
+ * 指定一个独立目录就能和已安装版同时运行（也方便打包后做交互验证）。
  */
 try {
-    app.setPath('userData', path.join(app.getPath('appData'), 'CinemaVault'));
+    const uo = process.env.CINEMAVAULT_USER_DATA;
+    const userDataDir = uo ? path.resolve(uo) : path.join(app.getPath('appData'), 'CinemaVault');
+    app.setPath('userData', userDataDir);
+    if (uo) blog('userData 覆盖: ' + userDataDir);
 } catch (e) {
     blog('设置 userData 路径失败，沿用默认: ' + e.message);
 }
@@ -218,6 +226,340 @@ let serverRestarts = 0;
 const MAX_SERVER_RESTARTS = 5;
 let serverRestartTimer = null;
 
+/* ------------------------------------------------ 系统托盘
+ * Windows/Linux：Ctrl+Shift+Space 切换主窗口显隐（被占用时回退 Ctrl+Shift+F12）；
+ *               点窗口 × 最小化到托盘，托盘单击切换显隐、双击显示；
+ * macOS：Cmd+Shift+Space 切换；Dock 图标 activate 时恢复窗口；
+ * 托盘右键菜单：显示/隐藏、打开数据文件夹、重启后端、退出 */
+let tray = null;
+let quitting = false;   // 真正退出时置 true，绕过 close-to-tray
+
+function showMainWindow() {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+}
+
+function toggleMainWindow() {
+    if (!win || win.isDestroyed()) {
+        blog('切换窗口：窗口不存在（mainWinCreated=' + mainWinCreated + '）');
+        if (mainWinCreated) createWindow();
+        return;
+    }
+    blog('切换窗口：visible=' + win.isVisible() + ' focused=' + win.isFocused());
+    if (win.isVisible() && win.isFocused()) {
+        win.hide();
+    } else {
+        showMainWindow();
+    }
+}
+
+let _restartingBackend = false;
+let backendGaveUp = false;
+/* 自愈额度用完后的兜底：不能让用户对着一片打不开的界面干等 */
+function showBackendGaveUpDialog() {
+    const opts = {
+        type: 'error',
+        title: '后端服务已停止',
+        message: '后端多次异常退出，自动重启已暂停',
+        detail: '影片信息、扫描、播放等功能会暂时不可用。\n\n' +
+            '你可以先手动重启一次后端；若仍失败，查看日志并把最后几行反馈给开发者。',
+        buttons: ['重启后端', '打开日志', '稍后处理'],
+        defaultId: 0,
+        cancelId: 2,
+    };
+    const p = (win && !win.isDestroyed())
+        ? dialog.showMessageBox(win, opts)
+        : dialog.showMessageBox(opts);
+    (p || Promise.resolve({ response: 2 })).then(async ({ response }) => {
+        if (response === 0) {
+            blog('用户选择手动重启后端');
+            serverRestarts = 0;
+            backendGaveUp = false;
+            startServer();
+            try { await waitServer(40000); } catch (e) { blog('手动重启后端失败: ' + e.message); }
+            if (win && !win.isDestroyed()) {
+                try { win.reload(); } catch (e) { /* 忽略 */ }
+            }
+        } else if (response === 1) {
+            shell.openPath(SERVER_LOG).catch(() => {});
+        }
+    }).catch(() => {});
+}
+
+async function restartBackend() {
+    if (_restartingBackend) return;
+    _restartingBackend = true;
+    try {
+        blog('菜单/托盘触发：重启后端');
+        intentionalStop = true;
+        killServer();
+        serverRestarts = 0;
+        backendGaveUp = false;
+        startServer();
+        try { await waitServer(40000); } catch (e) { blog('重启后端后等待就绪失败: ' + e.message); }
+        intentionalStop = false;
+        if (win && !win.isDestroyed()) win.reload();
+    } finally {
+        _restartingBackend = false;
+    }
+}
+
+function buildTrayMenu() {
+    const visible = !!(win && !win.isDestroyed() && win.isVisible());
+    return Menu.buildFromTemplate([
+        {
+            label: visible ? '隐藏主窗口' : '显示主窗口',
+            click: () => toggleMainWindow(),
+        },
+        { type: 'separator' },
+        {
+            label: '打开数据文件夹',
+            click: () => shell.openPath(DATA_ROOT).catch(() => {}),
+        },
+        ...(autoLaunchSupported() ? [{
+            label: '开机自动启动',
+            type: 'checkbox',
+            checked: isAutoLaunchEnabled(),
+            click: (item) => { setAutoLaunch(item.checked); },
+        }] : []),
+        {
+            label: '重启后端服务',
+            click: () => { restartBackend(); },
+        },
+        { type: 'separator' },
+        {
+            label: '退出 Cinema Vault',
+            click: () => {
+                quitting = true;
+                app.quit();
+            },
+        },
+    ]);
+}
+
+function createTray() {
+    if (tray) return tray;
+    try {
+        const pngPath = path.join(__dirname, 'build', 'icon.png');
+        const icoPath = path.join(__dirname, 'build', 'icon.ico');
+        let icon = null;
+        if (process.platform === 'win32' && fs.existsSync(icoPath)) {
+            // Windows 下直接用 ICO：自带 16/24/32/48/256 多尺寸，托盘更清晰
+            icon = icoPath;
+        } else {
+            icon = nativeImage.createFromPath(pngPath);
+            if (icon.isEmpty()) {
+                blog('托盘图标加载失败: ' + pngPath);
+                return null;
+            }
+            if (process.platform === 'win32') icon = icon.resize({ width: 16, height: 16 });
+        }
+        tray = new Tray(icon);
+        tray.setToolTip('Cinema Vault');
+        tray.setContextMenu(buildTrayMenu());
+        tray.on('click', () => toggleMainWindow());
+        tray.on('double-click', () => showMainWindow());
+        blog('系统托盘已创建');
+        return tray;
+    } catch (e) {
+        blog('创建托盘失败: ' + (e && (e.stack || e.message || e)));
+        return null;
+    }
+}
+
+/* 第一次关闭到托盘时给一次系统气泡提示，避免用户以为「关了但进程还在」 */
+let trayHintShown = false;
+function maybeShowTrayHint() {
+    if (trayHintShown || process.platform !== 'win32' || !tray) return;
+    trayHintShown = true;
+    try {
+        tray.displayBalloon({
+            title: 'Cinema Vault 仍在运行',
+            content: '已最小化到系统托盘。点击托盘图标可恢复窗口，右键可选择「退出」。',
+        });
+    } catch (e) { /* 系统不支持气泡时忽略 */ }
+}
+
+function destroyTray() {
+    if (!tray) return;
+    try { tray.destroy(); } catch (e) { /* 忽略 */ }
+    tray = null;
+}
+
+function refreshTrayMenu() {
+    if (!tray) return;
+    try { tray.setContextMenu(buildTrayMenu()); } catch (e) { /* 忽略 */ }
+}
+
+/* ------------------------------------------------ 开机自启（可选，默认关）
+ * Windows 写当前用户的 Run 项，macOS 写登录项；只在打包版出现。
+ * 便携版必须用 PORTABLE_EXECUTABLE_FILE（原始 exe），否则会登记到临时解压目录。 */
+const LOGIN_ARGS = ['--hidden'];
+function loginExePath() {
+    if (IS_PORTABLE && process.env.PORTABLE_EXECUTABLE_FILE) {
+        return process.env.PORTABLE_EXECUTABLE_FILE;
+    }
+    return process.execPath;
+}
+function autoLaunchSupported() {
+    return app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin');
+}
+function isAutoLaunchEnabled() {
+    if (!autoLaunchSupported()) return false;
+    try {
+        return !!app.getLoginItemSettings({ path: loginExePath(), args: LOGIN_ARGS }).openAtLogin;
+    } catch (e) {
+        blog('读取开机自启状态失败: ' + e.message);
+        return false;
+    }
+}
+function setAutoLaunch(on) {
+    if (!autoLaunchSupported()) return false;
+    try {
+        app.setLoginItemSettings({
+            openAtLogin: !!on,
+            path: loginExePath(),
+            args: on ? LOGIN_ARGS : [],
+        });
+        blog('开机自启已' + (on ? '开启' : '关闭') + ': ' + loginExePath());
+        refreshTrayMenu();
+        refreshAppMenu();
+        return true;
+    } catch (e) {
+        blog('设置开机自启失败: ' + e.message);
+        dialog.showMessageBox(win, {
+            type: 'error',
+            title: '设置失败',
+            message: '无法修改开机自启设置',
+            detail: String(e.message || e),
+        }).catch(() => {});
+        return false;
+    }
+}
+function refreshAppMenu() {
+    try {
+        Menu.setApplicationMenu(buildMenu(() => (readJson(CONFIG_FILE) || {}).auth || {}));
+    } catch (e) { /* 忽略 */ }
+}
+
+/* ------------------------------------------------ 播放时阻止显示器休眠
+ * 桌面版用户经常全屏看片，默认电源计划 10~15 分钟息屏会打断播放。
+ * 用 webContents 的媒体事件判断，比轮询页面状态可靠，也不需要 preload/IPC。 */
+let powerBlockerId = null;
+function holdDisplayAwake(reason) {
+    if (powerBlockerId !== null) return;
+    try {
+        powerBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+        blog('阻止显示器休眠（' + reason + '）');
+    } catch (e) {
+        blog('阻止显示器休眠失败: ' + e.message);
+    }
+}
+function releaseDisplayAwake(reason) {
+    if (powerBlockerId === null) return;
+    try { powerSaveBlocker.stop(powerBlockerId); } catch (e) { /* 忽略 */ }
+    powerBlockerId = null;
+    blog('恢复显示器休眠（' + reason + '）');
+}
+
+const SHORTCUT_NOTICE_FILE = path.join(DATA_ROOT, 'shortcut-notice.json');
+/* 提示只在「第一次遇到」时弹：Space 组合被输入法占用很常见，每次启动都弹模态框会很烦。
+   菜单里始终显示实际生效的快捷键，日志也记录了回退过程。 */
+function shortcutNoticeShown() {
+    return !!readJson(SHORTCUT_NOTICE_FILE);
+}
+function markShortcutNoticeShown() {
+    try {
+        fs.writeFileSync(SHORTCUT_NOTICE_FILE, JSON.stringify({
+            at: new Date().toISOString(),
+            active: activeShortcut,
+        }, null, 2), 'utf8');
+    } catch (e) { /* 写不了就下次再提示 */ }
+}
+
+let globalShortcutWarned = false;
+/* 候选快捷键：Space 组合在部分输入法/效率工具下会被长期占用（实测本机
+   Ctrl+Shift+Space、Ctrl+Alt+Space 都注册失败），所以准备一个功能键回退，
+   避免「文档里写了快捷键，实际却永远不生效」。 */
+const SHORTCUT_CANDIDATES = [
+    'CommandOrControl+Shift+Space',
+    'CommandOrControl+Shift+F12',
+];
+let activeShortcut = SHORTCUT_CANDIDATES[0];
+
+function prettyShortcut(accel) {
+    return String(accel || '')
+        .replace(/CommandOrControl/, process.platform === 'darwin' ? 'Cmd' : 'Ctrl')
+        .replace(/\+/g, ' + ');
+}
+
+function showShortcutDialog(type, title, message, detail) {
+    if (START_HIDDEN) {
+        blog('--hidden 启动：跳过快捷键提示弹窗（菜单中仍显示实际生效键）');
+        return false;
+    }
+    setTimeout(() => {
+        try {
+            const opts = { type, title, message, detail };
+            const p = (win && !win.isDestroyed())
+                ? dialog.showMessageBox(win, opts)
+                : dialog.showMessageBox(opts);
+            if (p && p.catch) p.catch(() => {});
+        } catch (e) { /* 忽略提示失败 */ }
+    }, 1200);
+    return true;
+}
+
+function registerGlobalShortcuts() {
+    try {
+        for (const accelerator of SHORTCUT_CANDIDATES) {
+            let ok = false;
+            try { ok = globalShortcut.register(accelerator, () => toggleMainWindow()); }
+            catch (e) { blog('注册快捷键异常 ' + accelerator + ': ' + e.message); }
+            if (!ok) {
+                blog('全局快捷键被占用: ' + accelerator);
+                continue;
+            }
+            activeShortcut = accelerator;
+            blog('全局快捷键已注册: ' + accelerator);
+            if (accelerator !== SHORTCUT_CANDIDATES[0] && !shortcutNoticeShown()) {
+                const shown = showShortcutDialog(
+                    'info',
+                    '快捷键已调整',
+                    '默认快捷键被占用，已自动改用备用键',
+                    `「${prettyShortcut(SHORTCUT_CANDIDATES[0])}」被其他程序占用，` +
+                    `本次已改用「${prettyShortcut(accelerator)}」显示 / 隐藏主窗口。\n\n` +
+                    '你也可以随时点击系统托盘图标完成同样操作。'
+                );
+                if (shown) markShortcutNoticeShown();
+            }
+            return;
+        }
+        if (!globalShortcutWarned) {
+            globalShortcutWarned = true;
+            activeShortcut = null;   // 全部失败：菜单不显示一个实际无效的快捷键
+            if (!shortcutNoticeShown()) {
+                const shown = showShortcutDialog(
+                    'warning',
+                    '快捷键不可用',
+                    '全局快捷键注册失败',
+                    '候选快捷键都被其他程序占用。\n\n' +
+                    '你仍可通过系统托盘或菜单「显示 / 隐藏主窗口」切换窗口。'
+                );
+                if (shown) markShortcutNoticeShown();
+            }
+        }
+    } catch (e) {
+        blog('注册全局快捷键异常: ' + (e && (e.stack || e.message || e)));
+    }
+}
+
+function unregisterGlobalShortcuts() {
+    try { globalShortcut.unregisterAll(); } catch (e) { /* 忽略 */ }
+}
+
 function findCustomStartupAnim() {
     try {
         const dir = path.join(RUNTIME, 'data', 'custom');
@@ -230,6 +572,10 @@ function findCustomStartupAnim() {
 
 function maybeShowMain() {
     if (!splashDone) return;
+    if (START_HIDDEN) {
+        blog('--hidden 启动：主窗口保持隐藏，驻留托盘');
+        return;
+    }
     if (win && !win.isDestroyed() && !win.isVisible()) {
         blog('启动动画结束 → 显示主窗口');
         win.show();
@@ -237,6 +583,10 @@ function maybeShowMain() {
 }
 
 function createSplashWindow() {
+    if (START_HIDDEN) {
+        blog('--hidden 启动：跳过启动动画');
+        return;
+    }
     const cfg = readJson(CONFIG_FILE) || {};
     if (cfg.animations && cfg.animations.splashOff) {
         blog('启动动画已在设置中关闭 → 跳过');
@@ -574,6 +924,7 @@ function startServer() {
      * 这里只复位标记，否则 killServer()→startServer() 这条「用户点重启」路径会被
      * exit 回调误判成主动退出而不再自愈。 */
     intentionalStop = false;
+    backendGaveUp = false;
 
     /* ★★ 这里有一个非常隐蔽、但会让整个应用「双击没反应」的坑：
      *
@@ -635,6 +986,7 @@ function startServer() {
     }
 
     const thisProc = serverProc;
+    const spawnedAt = Date.now();
     serverProc.on('exit', (code, sig) => {
         blog(`后端进程退出 code=${code} sig=${sig}`);
         log(`后端进程退出 code=${code}`);
@@ -645,9 +997,19 @@ function startServer() {
         if (thisProc !== serverProc) return;
         if (intentionalStop) return;
         if (code === 0 && !sig) return;                 // 正常退出不重启
+        /* 稳定运行超过 10 分钟后再崩溃，视为新的故障周期，重置自愈额度；
+         * 否则跨天累计 5 次就把自愈永久关掉了。 */
+        if (Date.now() - spawnedAt > 10 * 60 * 1000) {
+            if (serverRestarts > 0) blog(`后端稳定运行超过 10 分钟 → 重置自愈计数（原 ${serverRestarts} 次）`);
+            serverRestarts = 0;
+        }
         if (serverRestarts >= MAX_SERVER_RESTARTS) {
             blog(`后端已连续重启 ${serverRestarts} 次，放弃自愈`);
             log(`后端连续崩溃 ${serverRestarts} 次，已停止自动重启。请查看 server.log`);
+            if (!backendGaveUp) {
+                backendGaveUp = true;
+                showBackendGaveUpDialog();
+            }
             return;
         }
         serverRestarts++;
@@ -708,14 +1070,84 @@ async function waitServer(timeoutMs = 75000) {
     throw new Error('后端启动超时');
 }
 
+/* ------------------------------------------------ 窗口位置/大小/缩放持久化
+ * round174（2026-11-21）：此前每次启动都是固定 1560×940，用户拖动、最大化、
+ * Ctrl+滚轮缩放后重开全部丢失 —— PC 端最常被抱怨的「不像原生应用」之一。
+ * 状态文件跟着 DATA_ROOT 走：便携版落在 CinemaVault-Data，安装版落在 %APPDATA%。
+ * 读取时做两层保护：最小尺寸夹紧 + 必须和某个显示器工作区有足够重叠，
+ * 防止拔掉副屏后窗口开在看不见的地方。 */
+const WIN_STATE_FILE = path.join(DATA_ROOT, 'window-state.json');
+const WIN_MIN_WIDTH = 1024;
+const WIN_MIN_HEIGHT = 640;
+
+function loadWinState() {
+    try {
+        const st = JSON.parse(fs.readFileSync(WIN_STATE_FILE, 'utf8'));
+        if (!st || typeof st !== 'object') return null;
+        const zoom = Number(st.zoom);
+        const validZoom = Number.isFinite(zoom) && zoom > 0
+            ? Math.min(5, Math.max(0.25, zoom))   // Electron 的缩放范围
+            : 1;
+        const b = st.bounds;
+        const hasBounds = b && [b.x, b.y, b.width, b.height].every((n) => Number.isFinite(n));
+        if (!hasBounds) {
+            return { zoom: validZoom, maximized: !!st.maximized };
+        }
+        return {
+            bounds: {
+                x: Math.round(b.x),
+                y: Math.round(b.y),
+                width: Math.max(WIN_MIN_WIDTH, Math.round(b.width)),
+                height: Math.max(WIN_MIN_HEIGHT, Math.round(b.height)),
+            },
+            maximized: !!st.maximized,
+            zoom: validZoom,
+        };
+    } catch (e) { return null; }
+}
+
+function boundsOnScreen(b) {
+    try {
+        return screen.getAllDisplays().some((d) => {
+            const a = d.workArea;
+            const ix = Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x);
+            const iy = Math.min(b.y + b.height, a.y + a.height) - Math.max(b.y, a.y);
+            // 至少要露出一块标题栏，否则用户没法用鼠标把它拖回来
+            return ix >= 160 && iy >= 80;
+        });
+    } catch (e) { return false; }
+}
+
+let _saveWinTimer = null;
+function saveWinState() {
+    if (!win || win.isDestroyed()) return;
+    try {
+        const b = win.getNormalBounds();   // 最大化时也能拿到还原后的尺寸
+        fs.writeFileSync(WIN_STATE_FILE, JSON.stringify({
+            bounds: { x: b.x, y: b.y, width: b.width, height: b.height },
+            maximized: win.isMaximized(),
+            zoom: win.webContents.getZoomFactor(),
+        }, null, 2));
+    } catch (e) {
+        blog('保存窗口状态失败: ' + e.message);
+    }
+}
+function scheduleSaveWinState() {
+    if (_saveWinTimer) clearTimeout(_saveWinTimer);
+    _saveWinTimer = setTimeout(() => { _saveWinTimer = null; saveWinState(); }, 500);
+}
+
 /* ---------------------------------------------------------------- 窗口 */
 function createWindow() {
     mainWinCreated = true;   // round55：主窗口开始创建即置位（window-all-closed 守卫依据）
-    win = new BrowserWindow({
-        width: 1560,
-        height: 940,
-        minWidth: 1024,
-        minHeight: 640,
+    const saved = loadWinState();
+    const useSavedBounds = !!(saved && saved.bounds && boundsOnScreen(saved.bounds));
+    const initialZoom = (saved && saved.zoom) || 1;
+    const winOpts = {
+        width: useSavedBounds ? saved.bounds.width : 1560,
+        height: useSavedBounds ? saved.bounds.height : 940,
+        minWidth: WIN_MIN_WIDTH,
+        minHeight: WIN_MIN_HEIGHT,
         backgroundColor: '#0e0c0a',
         autoHideMenuBar: true,          // 菜单按 Alt 才出现
         show: false,
@@ -724,8 +1156,39 @@ function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             spellcheck: false,
+            // 首帧就按上次的缩放渲染，避免「先 100% 再跳一下」
+            zoomFactor: initialZoom,
         },
+    };
+    if (useSavedBounds) {
+        winOpts.x = saved.bounds.x;
+        winOpts.y = saved.bounds.y;
+    }
+    win = new BrowserWindow(winOpts);
+
+    /* 缩放（Ctrl+滚轮 / 菜单 放大缩小）也一并记住。
+     * currentZoom 是内存里的最新值：页面内跳转/刷新时 dom-ready 会重新应用，
+     * 避免「缩放后点进阅读器再返回又变回 100%」。 */
+    let currentZoom = initialZoom;
+    if (saved && saved.maximized) {
+        try { win.maximize(); } catch (e) { /* 某些远程桌面会话不允许最大化 */ }
+    }
+    win.webContents.on('dom-ready', () => {
+        if (Math.abs(currentZoom - 1) < 0.001) return;
+        try { win.webContents.setZoomFactor(currentZoom); } catch (e) { /* 忽略 */ }
     });
+    win.webContents.on('zoom-changed', () => {
+        setTimeout(() => {
+            try {
+                currentZoom = win.webContents.getZoomFactor();
+                scheduleSaveWinState();
+            } catch (e) { /* 忽略 */ }
+        }, 50);
+    });
+    win.on('resize', scheduleSaveWinState);
+    win.on('move', scheduleSaveWinState);
+    win.on('maximize', scheduleSaveWinState);
+    win.on('unmaximize', scheduleSaveWinState);
 
     /* round39：ready-to-show 不再直接 show —— 有启动动画时等动画窗关闭
      * （splash 'closed' 回调 → maybeShowMain）。无动画时 splashDone=true 照旧立即显示 */
@@ -739,6 +1202,7 @@ function createWindow() {
      * 所以给一个硬兜底：4 秒还没显示就强行显示（哪怕内容是白的也比没窗口强）。
      * round39：启动动画播放期间不强行显示（等动画窗关闭时显示）。 */
     const forceShow = setTimeout(() => {
+        if (START_HIDDEN) return;   // 开机自启只驻留托盘，不强行弹窗
         if (splashDone && win && !win.isDestroyed() && !win.isVisible()) {
             blog('ready-to-show 未触发 → 兜底强制显示窗口');
             win.show();
@@ -834,7 +1298,24 @@ function createWindow() {
             }
         } catch (e) {}
     });
-    win.on('closed', () => { win = null; });
+    win.on('show', refreshTrayMenu);
+    win.on('hide', () => { refreshTrayMenu(); releaseDisplayAwake('窗口隐藏'); });
+    /* 视频/音频真正开始播放才阻止息屏；暂停、结束、切走页面都释放 */
+    win.webContents.on('media-started-playing', () => holdDisplayAwake('媒体播放'));
+    win.webContents.on('media-paused', () => releaseDisplayAwake('媒体暂停'));
+    win.on('close', (e) => {
+        // 托盘模式：点窗口 X 隐藏到托盘，不真正退出；真正退出走「托盘→退出」或 app.quit()
+        if (!quitting && tray) {
+            e.preventDefault();
+            if (win && !win.isDestroyed()) win.hide();
+            maybeShowTrayHint();
+            return;
+        }
+        // 无托盘或明确退出：保存状态后正常关闭
+        if (_saveWinTimer) { clearTimeout(_saveWinTimer); _saveWinTimer = null; }
+        saveWinState();
+    });
+    win.on('closed', () => { releaseDisplayAwake('窗口关闭'); win = null; refreshTrayMenu(); });
     // 首页是应用自己的入口枢纽（影片 / 动漫 / 漫画 / 小说四合一）
     win.loadURL(BASE + '/');
 
@@ -863,16 +1344,32 @@ function buildMenu(getAuth) {
         {
             label: '文件',
             submenu: [
+                {
+                    label: '显示 / 隐藏主窗口',
+                    ...(activeShortcut ? { accelerator: activeShortcut, registerAccelerator: false } : {}),
+                    click: () => toggleMainWindow(),
+                },
+                { type: 'separator' },
                 { label: '打开数据文件夹', click: () => open(DATA_ROOT) },
                 { label: '打开配置 config.json', click: () => open(CONFIG_FILE) },
                 { label: '查看后端日志', click: () => open(SERVER_LOG) },
+                ...(autoLaunchSupported() ? [{
+                    label: '开机自动启动（最小化到托盘）',
+                    type: 'checkbox',
+                    checked: isAutoLaunchEnabled(),
+                    click: (item) => { setAutoLaunch(item.checked); },
+                }] : []),
                 { type: 'separator' },
                 {
                     label: '重启后端服务',
-                    click: () => { killServer(); startServer(); win && win.reload(); },
+                    click: () => { restartBackend(); },
                 },
                 { type: 'separator' },
-                { role: 'quit', label: '退出' },
+                {
+                    label: '退出',
+                    accelerator: 'CommandOrControl+Q',
+                    click: () => { quitting = true; app.quit(); },
+                },
             ],
         },
         {
@@ -930,9 +1427,11 @@ if (!app.requestSingleInstanceLock()) {
 } else {
     app.setAppUserModelId('cn.cinemavault.desktop');
     app.on('second-instance', () => {
-        if (!win) return;
-        if (win.isMinimized()) win.restore();
-        win.focus();
+        showMainWindow();
+    });
+    // macOS：点 Dock 图标恢复主窗口
+    app.on('activate', () => {
+        if (mainWinCreated) showMainWindow();
     });
 
     app.whenReady().then(async () => {
@@ -1006,13 +1505,21 @@ if (!app.requestSingleInstanceLock()) {
             log(`后端就绪，用时 ${Date.now() - t0}ms`);
             serverRestarts = 0;   /* round143：起来了就清零，避免历史崩溃次数吃掉自愈额度 */
 
-            Menu.setApplicationMenu(buildMenu(() => (readJson(CONFIG_FILE) || {}).auth || {}));
             createWindow();
+            createTray();
+            if (START_HIDDEN && !tray) {
+                /* 托盘创建失败时不能把窗口永远藏着，否则用户找不到入口 */
+                blog('--hidden 启动但托盘不可用 → 改为正常显示窗口');
+                if (win && !win.isDestroyed()) win.show();
+            }
+            registerGlobalShortcuts();
+            // 注册后再建菜单：菜单里显示的快捷键与真正生效的保持一致
+            Menu.setApplicationMenu(buildMenu(() => (readJson(CONFIG_FILE) || {}).auth || {}));
             blog('窗口已创建');
 
             /* 代码同步不完整 → 弹个**非阻塞**提示（不卡启动动画，也不阻断使用）。
                round80：以前这种情况是直接崩掉，用户只看到一串 EBUSY 堆栈。 */
-            if (syncRes && (syncRes.locked && syncRes.locked.length || syncRes.failed)) {
+            if (!START_HIDDEN && syncRes && (syncRes.locked && syncRes.locked.length || syncRes.failed)) {
                 setTimeout(() => {
                     dialog.showMessageBox(win, {
                         type: 'warning',
@@ -1032,7 +1539,7 @@ if (!app.requestSingleInstanceLock()) {
                 }, 1200);
             }
 
-            if (firstRun) {
+            if (firstRun && !START_HIDDEN) {
                 dialog.showMessageBox(win, {
                     type: 'info',
                     title: '欢迎使用 Cinema Vault',
@@ -1074,10 +1581,21 @@ if (!app.requestSingleInstanceLock()) {
             }
             return;
         }
+        // 托盘驻留：窗口关完不退出，除非用户明确退出
+        if (tray && !quitting) {
+            blog('事件 window-all-closed → 托盘驻留，不退出');
+            return;
+        }
         blog('事件 window-all-closed → quit');
         app.quit();
     });
-    app.on('before-quit', () => { blog('事件 before-quit'); killServer(); });
+    app.on('before-quit', () => {
+        quitting = true;
+        unregisterGlobalShortcuts();
+        destroyTray();
+        blog('事件 before-quit');
+        killServer();
+    });
     app.on('will-quit', () => { blog('事件 will-quit'); killServer(); });
     app.on('quit', (e, code) => blog('事件 quit code=' + code));
     let gpuCrashes = 0;

@@ -617,3 +617,60 @@
         mview: function () { return document.body.dataset.mview; }
     };
 })();
+
+/* ------------------------------------------------------------------ *
+ * v4.7.0 · 统一返回栈（仅当原生提供 CVNative 能力契约时启用）
+ *
+ * 目标：把"返回关闭哪个弹窗"的决定权从原生层（硬编码 DOM id 注入 JS）
+ * 收归前端统一栈。新增弹窗（series 分集/搜源、AI 工作台）只要在这里
+ * 注册一条关闭规则即可，不必改 APK —— 这是渐进式全原生的关键接缝。
+ *
+ * 未启用时（桌面浏览器 / 老 APK）原生旧逻辑照常工作，零回归。
+ * ------------------------------------------------------------------ */
+(function () {
+  'use strict';
+  if (!window.CVNative || typeof window.CVNative.isAvailable !== 'function') return;
+  if (!window.CVNative.isAvailable()) return;
+
+  // 关闭规则：按优先级从高到低，命中并执行关闭则返回 true。
+  var rules = [
+    // 追番：分集抽屉 / 搜源弹窗（本周新增，原生旧逻辑不认识它们）
+    function () {
+      var dlg = document.querySelector('.series-episode-sheet.show, .series-source-sheet.show, [data-series-sheet].show');
+      if (dlg) { dlg.classList.remove('show'); return true; }
+      return false;
+    },
+    // AI 工作台会话抽屉
+    function () {
+      var aiDrawer = document.querySelector('#aiSessionDrawer.open, .ai-workbench .drawer.open');
+      if (aiDrawer) { aiDrawer.classList.remove('open'); return true; }
+      return false;
+    },
+    // 手机导航抽屉
+    function () {
+      if (window.__mNav && window.__mNav.isOpen && window.__mNav.isOpen()) {
+        window.__mNav.close(); return true;
+      }
+      return false;
+    },
+    // 通用弹窗：详情 / 播放器 / 阅读器 / 任意 .modal.show
+    function () {
+      var modal = document.querySelector('.modal.show, #playerModal.show, #readerView.show');
+      if (!modal) return false;
+      var closeBtn = modal.querySelector('.modal-close, .close-btn, [data-close]');
+      if (closeBtn) { closeBtn.click(); return true; }
+      if (typeof window.closeModal === 'function') { window.closeModal(); return true; }
+      modal.classList.remove('show');
+      return true;
+    }
+  ];
+
+  window.CVNative.setBackHandler(function () {
+    for (var i = 0; i < rules.length; i++) {
+      try {
+        if (rules[i]()) return true;  // 已消费，原生不再处理
+      } catch (e) { /* 单条规则异常跳过 */ }
+    }
+    return false;  // 交回原生默认返回栈
+  });
+})();

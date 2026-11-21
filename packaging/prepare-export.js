@@ -74,10 +74,12 @@ function cleanExcept(dst, keep) {
     }
 }
 
-/* 不该进安装包的文件名：编辑器/手工备份、临时文件、系统垃圾。
+/* 不该进安装包的文件名：编辑器/手工备份、临时文件、系统垃圾、开发期验证台。
  * 实测踩过：public/js/app.js.bak-nr（改代码前留的档）被顺手复制进了 payload，
- * 于是 316KB 的旧源码跟着 exe 发到了用户机器上。 */
-const JUNK_RE = /(^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$|\.(bak|old|orig|swp|swo|tmp|log|repair)$|\.bak-[\w.-]+$|~$)/i;
+ * 于是 316KB 的旧源码跟着 exe 发到了用户机器上。
+ * 2026-11：public/ 下的备份与 lab 页面已迁到 archive/public-cleanup/，
+ * 这里再兜一层，防止以后又把 -backup / .backup- / _lab 之类的文件塞回 public。 */
+const JUNK_RE = /(^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$|\.(bak|old|orig|swp|swo|tmp|log|repair)$|\.bak-[\w.-]+$|\.v\d+-backup\.[a-z]+$|^\.backup-[\w.-]+$|^_[\w-]+-lab\.html$|^_magic-preview\.html$|~$)/i;
 
 function copyDir(src, dst, skip) {
     fs.mkdirSync(dst, { recursive: true });

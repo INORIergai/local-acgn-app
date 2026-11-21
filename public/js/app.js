@@ -1,9 +1,18 @@
 // ========== 全局状态 ==========
 let currentView = 'home';
 let currentSort = 'hot';
+// ★ P0：视图/搜索代次 —— 切走后返回的慢请求据此丢弃，避免旧列表覆盖新视图。
+let viewToken = 0;
+let searchSeq = 0;
+let searchAbort = null;
 let currentMovies = [];
 let scanTimer = null;
 let scanStatusTimer = null;
+let _lastScanPollAt = 0;
+/* ★ P1（2026-11-21）：页面隐藏（最小化 / 后台标签 / 切到别的应用）时，
+   所有高频轮询只走计时器、不发请求；回到前台立刻补一次最新状态。
+   见文件末尾 visibilitychange 监听与各 tick 函数入口的 isPageHidden() 早退。 */
+function isPageHidden() { return !!document.hidden; }
 let currentScanModule = 'movie';
 let selectedMovies = new Set();
 let galleryTimer = null;
@@ -79,6 +88,8 @@ function formatTime(seconds) {
 const POSTER_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225"><rect width="400" height="225" fill="#241f18"/><text x="200" y="118" text-anchor="middle" font-size="64">🎬</text><text x="200" y="158" text-anchor="middle" fill="#9c9282" font-size="16">未找到封面</text></svg>'
 );
+// 内联 onerror 里要用到，挂到 window 上确保稳定可见
+window.POSTER_PLACEHOLDER = POSTER_PLACEHOLDER;
 
 function getPosterUrl(movie) {
     // 优先用posterPath（缓存文件），其次用localPosterPath
@@ -183,6 +194,8 @@ function startNotifyPolling() {
     if (_pollingStarted) return;
     _pollingStarted = true;
     setInterval(async () => {
+        // 页面隐藏时不发请求（Electron 最小化后没有任何可见收益）
+        if (isPageHidden()) return;
         // 未解锁（密码门禁未过）时不弹，避免把成人库的情报泄露到锁屏前
         if (window.Gate && !Gate.isUnlocked()) return;
         try {
@@ -214,18 +227,74 @@ window.getCurrentPage = () => currentPage;
 window.getCurrentTotalPages = () => currentTotalPages;
 
 // ========== API 封装 ==========
+/* ★ P0：统一请求层 —— 401 拉起门禁、超时、JSON 异常、HTTP 错误都走同一条路。
+   业务方法不再各自裸 fetch + res.json()，避免会话过期时「静默空列表」。 */
+async function request(url, options = {}) {
+    const { timeout = 15000, signal, viewBound = false, ...init } = options;
+    const tokenAtStart = viewBound ? viewToken : null;
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if (signal) {
+        if (signal.aborted) ctrl.abort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    }
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+        const res = await fetch(url, { ...init, signal: ctrl.signal });
+        /* ★ P0：视图已切走 → 丢弃这次结果，避免慢请求把旧列表渲染进新视图。 */
+        if (viewBound && tokenAtStart !== viewToken) {
+            const stale = new Error('视图已切换');
+            stale.code = 'STALE';
+            stale.isRequestError = true;
+            throw stale;
+        }
+        if (res.status === 401) {
+            if (window.Gate && window.Gate.onUnauthorized) window.Gate.onUnauthorized();
+            throw new Error('会话已过期，请重新验证');
+        }
+        const text = await res.text();
+        let data = {};
+        if (text) {
+            try { data = JSON.parse(text); }
+            catch (e) { throw new Error('服务器响应格式异常'); }
+        }
+        if (!res.ok) throw new Error((data && data.msg) || `请求失败（${res.status}）`);
+        return data;
+    } catch (e) {
+        if (e && e.name === 'AbortError') {
+            const err = new Error('请求已取消');
+            err.code = 'ABORTED';
+            err.isRequestError = true;
+            throw err;
+        }
+        if (e) e.isRequestError = true;
+        throw e;
+    } finally {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+    }
+}
+
+/* code<0（HTTP 200 的业务错误）也要显式失败，避免「静默空列表」。 */
+function apiData(data, fallback) {
+    if (data && data.code !== undefined && data.code < 0) {
+        throw new Error(data.msg || '请求失败');
+    }
+    return data && data.data !== undefined ? data.data : fallback;
+}
+
 const api = {
     async getMovies(sort = 'hot', filter = 'all', type = 'all', page = 1, pageSize = 50, privacy = '') {
         const pz = privacy ? `&privacy=${privacy}` : '';
-        const res = await fetch(`/api/movie?sort=${sort}&filter=${filter}&type=${type}&page=${page}&pageSize=${pageSize}${pz}`);
-        const data = await res.json();
+        const data = await request(`/api/movie?sort=${sort}&filter=${filter}&type=${type}&page=${page}&pageSize=${pageSize}${pz}`, { viewBound: true });
+        if (data.code !== undefined && data.code < 0) throw new Error(data.msg || '加载影片失败');
         currentTotal = data.total || 0;
         currentTotalPages = data.totalPages || 0;
         currentPage = data.page || 1;
         return data.data || [];
     },
-    
-    async searchMovies(q) {
+
+    async searchMovies(q, signal) {
         // round41 #4：搜索结果排序；round42：下拉移到顶栏搜索框旁，全季/年份筛选已取消
         // r126：顶栏 🔒 总开关处于隐藏态时，搜索结果同步剔除隐私内容（后端 privacy=exclude）
         const [sortKey, orderKey] = (localStorage.getItem('searchSort') || 'name:asc').split(':');
@@ -234,152 +303,132 @@ const api = {
         params.set('sort', sortKey || 'name');
         params.set('order', orderKey || 'asc');
         if (typeof isAdultNavHidden === 'function' && isAdultNavHidden()) params.set('privacy', 'exclude');
-        const res = await fetch(`/api/movie/search?${params.toString()}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/movie/search?${params.toString()}`, { signal, viewBound: true });
+        return apiData(data, []);
     },
 
     async semanticSearch(q, privacy) {
-        const res = await fetch('/api/ai/semantic-search', {
+        const data = await request('/api/ai/semantic-search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ q, privacy: privacy || '' })
         });
-        const data = await res.json();
         if (data.code !== 0) throw new Error(data.msg || 'AI 搜索失败');
         return { items: data.data || [], source: data.source || 'recall' };
     },
-    
+
     async getMovieDetail(id) {
-        const res = await fetch(`/api/movie/${id}`);
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/movie/${id}`, { viewBound: true });
+        return apiData(data, null);
     },
-    
+
     async playMovie(id) {
-        await fetch(`/api/movie/play/${id}`, { method: 'POST' });
+        await request(`/api/movie/play/${id}`, { method: 'POST' });
     },
-    
+
     async toggleFavorite(id) {
-        const res = await fetch(`/api/movie/favorite/${id}`, { method: 'POST' });
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/movie/favorite/${id}`, { method: 'POST' });
+        return apiData(data, null);
     },
-    
+
     async toggleWatched(id) {
-        const res = await fetch(`/api/movie/watched/${id}`, { method: 'POST' });
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/movie/watched/${id}`, { method: 'POST' });
+        return apiData(data, null);
     },
-    
+
     async rateMovie(id, rating) {
-        await fetch(`/api/movie/rating/${id}`, {
+        await request(`/api/movie/rating/${id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ rating })
         });
     },
-    
+
     // round34 切片器：type 可选 all/jav/anime/film/cartoon
     async getActresses(type) {
         const qs = (type && type !== 'all') ? `?type=${encodeURIComponent(type)}` : '';
-        const res = await fetch('/api/actress' + qs);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request('/api/actress' + qs, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getActressMovies(id) {
-        const res = await fetch(`/api/actress/${id}/movies`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/actress/${id}/movies`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async toggleActressFollow(id) {
-        const res = await fetch(`/api/actress/${id}/follow`, { method: 'POST' });
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/actress/${id}/follow`, { method: 'POST' });
+        return apiData(data, null);
     },
-    
+
     // round34 切片器：type 可选 all/jav/anime/film/cartoon
     async getTags(type) {
         const qs = (type && type !== 'all') ? `?type=${encodeURIComponent(type)}` : '';
-        const res = await fetch('/api/tags' + qs);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request('/api/tags' + qs, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getTagMovies(id) {
-        const res = await fetch(`/api/tags/${id}/movies`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/tags/${id}/movies`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getSimilarMovies(id, limit = 12, privacy = '') {
-        const res = await fetch(`/api/recommend/similar/${id}?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/similar/${id}?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getRandomMovies(limit = 24, type = 'all', privacy = '') {
-        const res = await fetch(`/api/recommend/random?limit=${limit}&type=${type}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/random?limit=${limit}&type=${type}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
 
     async getHotMovies(limit = 24, privacy = '') {
-        const res = await fetch(`/api/recommend/hot?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/hot?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
 
     async getGuessMovies(limit = 24, privacy = '') {
-        const res = await fetch(`/api/recommend/guess?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/guess?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
 
     async getUnwatchedMovies(limit = 50, privacy = '') {
-        const res = await fetch(`/api/recommend/unwatched?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`);
-        const data = await res.json();
-        return data.data || [];
+        const data = await request(`/api/recommend/unwatched?limit=${limit}${privacy ? '&privacy=' + privacy : ''}`, { viewBound: true });
+        return apiData(data, []);
     },
-    
+
     async getStats(type) {
-        const res = await fetch('/api/stats/overview' + (type ? `?type=${type}` : ''));
-        const data = await res.json();
-        return data.data;
+        const data = await request('/api/stats/overview' + (type ? `?type=${type}` : ''), { viewBound: true });
+        return apiData(data, null);
     },
-    
+
     async getScanStatus(module = 'movie') {
-        const res = await fetch(`/api/scanner/status?module=${module}`);
-        const data = await res.json();
+        const data = await request(`/api/scanner/status?module=${module}`);
         return data.data;
     },
-    
+
     async startScan() {
-        await fetch('/api/scanner/start', { method: 'POST' });
+        await request('/api/scanner/start', { method: 'POST' });
     },
 
     // ===== 目录监控（round28）=====
     // 状态里含实时轮询间隔：没扫到新增时后端会逐次翻倍（上限 1 小时）
     async getWatchStatus() {
-        const res = await fetch('/api/scanner/watch-status');
-        const data = await res.json();
+        const data = await request('/api/scanner/watch-status');
         return data.data || {};
     },
 
     async watchNow() {
-        const res = await fetch('/api/scanner/watch-now', { method: 'POST' });
-        return await res.json();
+        return await request('/api/scanner/watch-now', { method: 'POST' });
     },
 
     async watchToggle(enabled) {
-        const res = await fetch('/api/scanner/watch-toggle', {
+        return await request('/api/scanner/watch-toggle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled: !!enabled })
         });
-        return await res.json();
     },
 
     // 视频文件流
@@ -390,45 +439,37 @@ const api = {
 
     // 播放列表
     async getPlaylists() {
-        const res = await fetch('/api/playlist');
-        const data = await res.json();
-        return data.data || [];
+        const data = await request('/api/playlist');
+        return apiData(data, []);
     },
-    
+
     async getPlaylistDetail(id) {
-        const res = await fetch(`/api/playlist/${id}`);
-        const data = await res.json();
-        return data.data;
+        const data = await request(`/api/playlist/${id}`, { viewBound: true });
+        return apiData(data, null);
     },
-    
+
     async createPlaylist(name, description) {
-        const res = await fetch('/api/playlist/create', {
+        return await request('/api/playlist/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, description })
         });
-        const data = await res.json();
-        return data;
     },
-    
+
     async addToPlaylist(playlistId, movieId) {
-        const res = await fetch(`/api/playlist/${playlistId}/add`, {
+        return await request(`/api/playlist/${playlistId}/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ movieId })
         });
-        const data = await res.json();
-        return data;
     },
-    
+
     async removeFromPlaylist(playlistId, movieId) {
-        const res = await fetch(`/api/playlist/${playlistId}/remove`, {
+        return await request(`/api/playlist/${playlistId}/remove`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ movieId })
         });
-        const data = await res.json();
-        return data;
     }
 };
 
@@ -701,22 +742,29 @@ function renderMovieCard(movie) {
         : avid;
     const sizeStr = movie.fileSize ? formatSize(movie.fileSize) : '';
     const metaLine = [bookSub, sizeStr].filter(Boolean).join(' · ');
+    /* ★ P0-安全：标题/副标题来自刮削站或文件名，进 HTML 前一律转义。
+       posterUrl 既进 src 属性也进 style 的 CSS url()，分别做属性转义和 CSS 转义。 */
+    const safeTitle = escapeHtml(displayTitle);
+    const safeBookSub = escapeHtml(bookSub);
+    const safeMeta = escapeHtml(metaLine);
+    const safeAddedDate = escapeHtml(addedDate);
+    const safePoster = escapeHtml(posterUrl || POSTER_PLACEHOLDER);
     const bookBgStyle = (isBookMedia && posterUrl)
-        ? ` style="--book-cover-url:url('${String(posterUrl).replace(/'/g, "\\'")}');"`
+        ? ` style="--book-cover-url:${cssUrl(posterUrl)};"`
         : '';
 
     return `
-        <div class="movie-card movie-card-compact ${isBookMedia ? 'is-book-media' : ''} ${isFav ? 'favorite' : ''} ${isWatched ? 'watched' : ''} ${isSelected ? 'selected' : ''}" data-id="${movie.id}" data-added="${movie.addedTime || ''}" data-added-date="${addedDate}" data-type="${movie.type || ''}" title="${displayTitle}">
+        <div class="movie-card movie-card-compact ${isBookMedia ? 'is-book-media' : ''} ${isFav ? 'favorite' : ''} ${isWatched ? 'watched' : ''} ${isSelected ? 'selected' : ''}" data-id="${movie.id}" data-added="${movie.addedTime || ''}" data-added-date="${addedDate}" data-type="${movie.type || ''}" title="${safeTitle}">
             <i class="am-glow" aria-hidden="true"></i>
             ${isFav ? '<span class="badge-fav">⭐</span>' : ''}
             ${isWatched ? '<span class="badge-watched">✓</span>' : ''}
             <div class="movie-poster-wrap${isBookMedia ? ' is-book-media' : ''}"${bookBgStyle}>
                 ${isNew ? '<span class="movie-badge-new">NEW</span>' : ''}
-                ${addedBadge ? `<span class="movie-badge-added" title="入库日期 ${addedDate}">📥 ${addedBadge}</span>` : ''}
-                <img class="movie-poster" src="${posterUrl || POSTER_PLACEHOLDER}" onerror="this.onerror=null;this.src=POSTER_PLACEHOLDER" alt="${displayTitle}" loading="lazy" decoding="async">
-                <div class="movie-avid-overlay">${bookSub}</div>
+                ${addedBadge ? `<span class="movie-badge-added" title="入库日期 ${safeAddedDate}">📥 ${addedBadge}</span>` : ''}
+                <img class="movie-poster" src="${safePoster}" onerror="this.onerror=null;this.src=POSTER_PLACEHOLDER" alt="${safeTitle}" loading="lazy" decoding="async">
+                <div class="movie-avid-overlay">${safeBookSub}</div>
                 <div class="movie-hover-info">
-                    <div class="movie-hover-title">${displayTitle}</div>
+                    <div class="movie-hover-title">${safeTitle}</div>
                     <div class="movie-hover-meta">
                         <span>${formatDuration(movie.duration)}</span>
                         <span>${formatSize(movie.fileSize)}</span>
@@ -728,10 +776,10 @@ function renderMovieCard(movie) {
                     <span class="mtb-type-pill">${typeLabel}</span>
                     ${addedBadge ? `<span class="mtb-date">${addedBadge}</span>` : ''}
                 </div>
-                <div class="mtb-main-title">${displayTitle}</div>
-                ${metaLine ? `<span class="mtb-meta">${metaLine}</span>` : ''}
+                <div class="mtb-main-title">${safeTitle}</div>
+                ${metaLine ? `<span class="mtb-meta">${safeMeta}</span>` : ''}
                 <div class="mtb-placard-foot">
-                    ${bookSub ? `<span class="mtb-author-chip">${bookSub}</span>` : ''}
+                    ${bookSub ? `<span class="mtb-author-chip">${safeBookSub}</span>` : ''}
                     ${sizeStr ? `<span class="mtb-size-chip">${sizeStr}</span>` : ''}
                     <span class="mtb-cta-link">${isBookMedia ? '翻阅藏书 →' : '立即播放 →'}</span>
                 </div>
@@ -949,45 +997,59 @@ function renderMovies(movies, fromFilter = false) {
 // round70：卡片点击绑定抽成公共函数 —— 原来只有 renderMovies 绑，
 // 随机推荐下方网格（renderRandomDeckView 里直接 innerHTML 拼出来的）从没绑过，
 // 表现就是「随机推荐下半屏的影片点了没反应」。
+/* P1（2026-11-21）：卡片点击/悬停改为容器级事件委托。
+   原来 renderMovies 一次性 innerHTML 之后给每张卡绑 click + mouseenter，
+   500 张卡就是 1000 个监听，且每次重绘都要重绑；现在每个容器只有 2 个监听，
+   DOM 重绘后自动生效。
+   容器可能嵌套（随机推荐 subWrap 在 #movieGrid 里、系列展开页 page2 也在
+   #movieGrid 里），用「最近的委托容器」判定归属，避免一次点击被两层各处理一次。 */
 function bindMovieCardClicks(container) {
-    if (!container) return;
-    container.querySelectorAll('.movie-card').forEach(card => {
-        if (card.__clickBound) return;
-        card.__clickBound = true;
-        card.addEventListener('click', (e) => {
-            const id = parseInt(card.dataset.id);
-            // Ctrl+点击 多选
-            if (e.ctrlKey || e.metaKey) {
-                toggleSelect(id);
-                return;
-            }
-            showMovieDetail(id);
-        });
-        // round36 P0-4：影视/动漫卡 hover 剧照（有 tmdbId 才拉，一次缓存）
-        bindStillHover(card);
+    if (!container || container.__cvCardDelegate) return;
+    container.__cvCardDelegate = true;
+    container.setAttribute('data-cv-card-delegate', '');
+
+    function owns(card) {
+        const owner = card.parentElement && card.parentElement.closest('[data-cv-card-delegate]');
+        return owner === container;
+    }
+
+    container.addEventListener('click', (e) => {
+        const card = e.target && e.target.closest ? e.target.closest('.movie-card') : null;
+        if (!card || !owns(card)) return;
+        const id = parseInt(card.dataset.id, 10);
+        if (!id) return;
+        // Ctrl+点击 多选
+        if (e.ctrlKey || e.metaKey) { toggleSelect(id); return; }
+        showMovieDetail(id);
     });
+
+    /* mouseover 委托模拟 mouseenter：relatedTarget 仍在同一张卡内时忽略，
+       否则从海报挪到标题会反复触发。 */
+    container.addEventListener('mouseover', (e) => {
+        const card = e.target && e.target.closest ? e.target.closest('.movie-card') : null;
+        if (!card || !owns(card)) return;
+        if (e.relatedTarget && card.contains(e.relatedTarget)) return;
+        loadCardStill(card);
+    }, { passive: true });
 }
 
 // round36 P0-4：hover 时拉取 TMDB 剧照，垫在 hover-info 底层淡入
-function bindStillHover(card) {
+function loadCardStill(card) {
     const type = (card.dataset.type || '').toLowerCase();
     if (type !== 'film' && type !== 'cartoon') return;
-    let loaded = false;
-    card.addEventListener('mouseenter', () => {
-        if (loaded) return;
-        loaded = true;
-        const id = parseInt(card.dataset.id);
-        const hover = card.querySelector('.movie-hover-info');
-        if (!id || !hover) return;
-        fetch(`/api/movie/stills/${id}`).then(r => r.json()).then(j => {
-            if (j.code !== 0 || !j.data || !j.data.length) return;
-            const img = document.createElement('img');
-            img.className = 'movie-hover-still';
-            img.src = j.data[0];
-            img.alt = '';
-            hover.prepend(img);
-        }).catch(() => {});
-    }, { passive: true });
+    if (card.__stillRequested) return;
+    card.__stillRequested = true;
+    const id = parseInt(card.dataset.id, 10);
+    const hover = card.querySelector('.movie-hover-info');
+    if (!id || !hover) return;
+    fetch(`/api/movie/stills/${id}`).then(r => r.json()).then(j => {
+        if (j.code !== 0 || !j.data || !j.data.length) return;
+        const img = document.createElement('img');
+        img.className = 'movie-hover-still';
+        img.src = j.data[0];
+        img.alt = '';
+        hover.prepend(img);
+    }).catch(() => {});
 }
 
 /* ============================================================
@@ -2174,6 +2236,7 @@ function initStartupScanBanner() {
     };
 
     const tick = async () => {
+        if (isPageHidden()) return;
         let r = null;
         try {
             const res = await fetch('/api/scanner/startup-report');
@@ -2837,15 +2900,32 @@ async function fillLibraryCounts() {
     if (adultEl && (javN || animeN)) adultEl.textContent = javN + animeN;
 }
 
-// 更新工具栏标题
+// 更新工具栏标题（★ P0：默认转义；需要插图标的少数入口走 updateToolbarTitleHtml）
 function updateToolbarTitle(title, count) {
     const toolbar = document.getElementById('toolbarTitle');
+    if (!toolbar) return;
+    const safe = escapeHtml(title == null ? '' : title);
     if (count !== undefined) {
-        toolbar.innerHTML = `${title} <span class="toolbar-count" id="movieCount">共 ${count} 部</span>`;
+        toolbar.innerHTML = `${safe} <span class="toolbar-count" id="movieCount">共 ${Number(count) || 0} 部</span>`;
     } else {
         // 不带数量时保留 movieCount 元素，避免后续 getElementById('movieCount') 为空
-        toolbar.innerHTML = `${title} <span class="toolbar-count" id="movieCount" style="display:none;"></span>`;
+        toolbar.innerHTML = `${safe} <span class="toolbar-count" id="movieCount" style="display:none;"></span>`;
     }
+}
+
+/* 仅限内部硬编码的图标 HTML（ttIcon）。用户输入永远不要走这里。 */
+function updateToolbarTitleHtml(html, count) {
+    const toolbar = document.getElementById('toolbarTitle');
+    if (!toolbar) return;
+    if (count !== undefined) {
+        toolbar.innerHTML = `${html} <span class="toolbar-count" id="movieCount">共 ${Number(count) || 0} 部</span>`;
+    } else {
+        toolbar.innerHTML = `${html} <span class="toolbar-count" id="movieCount" style="display:none;"></span>`;
+    }
+}
+
+function updateToolbarTitleIcon(iconId, label, count) {
+    updateToolbarTitleHtml(ttIcon(iconId) + ' ' + escapeHtml(label), count);
 }
 
 /* ★ round129：页头图标 —— 隐私组六个板块原来页头都用同一个 🔞，
@@ -3478,6 +3558,69 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
+/* ★ P0-安全：简介/描述这类允许少量富文本的字段，走白名单清洗后再进 innerHTML。
+   刮削来源的简介可能带 <script>、on* 事件属性或 javascript: 链接；这里剥掉危险节点与属性，
+   保留 <b>/<i>/<br>/<p> 等基础排版，详情页的观感不变。 */
+function sanitizeHtml(input) {
+    if (!input) return '';
+    const tpl = document.createElement('template');
+    tpl.innerHTML = String(input);
+    const BLOCK = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'BASE', 'FORM']);
+    tpl.content.querySelectorAll('*').forEach((el) => {
+        if (BLOCK.has(el.tagName)) { el.remove(); return; }
+        for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith('on') || name === 'srcdoc') {
+                el.removeAttribute(attr.name);
+            } else if ((name === 'href' || name === 'src' || name === 'xlink:href') &&
+                /^\s*(?:javascript|vbscript|data:text\/html)/i.test(attr.value)) {
+                el.removeAttribute(attr.name);
+            }
+        }
+    });
+    return tpl.innerHTML;
+}
+
+/* ★ P0-安全：src/href 只允许 http(s)、blob、data:image 和站内相对路径，其它协议一律丢弃。 */
+function safeAssetUrl(u) {
+    const s = String(u == null ? '' : u).trim();
+    if (!s) return '';
+    if (/^(?:https?:|blob:|data:image\/)/i.test(s)) return s;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return '';
+    return s;
+}
+
+/* ★ P0-安全：把 URL 放进 CSS url("...") 时转义引号/反斜杠/换行，避免从 style 属性里逃逸。 */
+function cssUrl(u) {
+    const s = String(u == null ? '' : u).replace(/["\\\n\r\f]/g, (ch) => '\\' + ch.charCodeAt(0).toString(16) + ' ');
+    return `url("${s}")`;
+}
+
+/* ★ P0：统一请求失败提示 —— 只提示一次，避免同一错误在多个并发请求里刷屏。 */
+let _lastRequestErrorAt = 0;
+let _lastRequestErrorMsg = '';
+function reportRequestError(e, where) {
+    if (!e || e.code === 'ABORTED' || e.name === 'AbortError') return;
+    const msg = e.message || String(e);
+    const now = Date.now();
+    if (msg === _lastRequestErrorMsg && now - _lastRequestErrorAt < 3000) return;
+    _lastRequestErrorAt = now;
+    _lastRequestErrorMsg = msg;
+    console.warn(`[${where || 'request'}] ${msg}`);
+    if (typeof showNotification === 'function') showNotification('加载失败', msg, 'error');
+}
+
+/* ★ P0：统一兜住请求层抛出的未处理异常。
+   - STALE（视图已切换）/ ABORTED（主动取消）静默丢弃；
+   - 其余网络/业务错误提示一次，避免页面「点了没反应但控制台有红字」。 */
+window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    if (!r || !r.isRequestError) return;
+    e.preventDefault();
+    if (r.code === 'STALE' || r.code === 'ABORTED') return;
+    reportRequestError(r, 'async');
+});
 
 // 切换小说视图（本地/网盘/全部）— round91 起支持三态
 // round99：切片器切换动效 —— 新激活的按钮做一次弹性回弹（动效库 toggle-flip 理念）
@@ -5495,15 +5638,15 @@ function renderCloudComics(comics) {
     }
 
     grid.innerHTML = comics.map(comic => `
-        <div class="movie-card" onclick="showCloudComicDetail('${comic.url}')">
+        <div class="movie-card" data-cloud-url="${escapeHtml(comic.url)}" onclick="showCloudComicDetail(this.dataset.cloudUrl)">
             <div class="movie-poster">
-                <img src="${kmoeImg(comic.cover)}" alt="${comic.title}" loading="lazy" decoding="async">
+                <img src="${escapeHtml(kmoeImg(comic.cover))}" alt="${escapeHtml(comic.title || '')}" loading="lazy" decoding="async">
                 <div class="poster-overlay">
                     <div class="play-btn">▶</div>
                 </div>
             </div>
             <div class="movie-info">
-                <div class="movie-title">${comic.title}</div>
+                <div class="movie-title">${escapeHtml(comic.title || '')}</div>
                 <div class="movie-meta">
                     <span class="source-tag">KOOB.ONE</span>
                 </div>
@@ -5550,13 +5693,13 @@ function showCloudComicModal(comic, kb, kbRaw) {
 
             <div class="detail-poster">
 
-                <img src="${kmoeImg(comic.cover)}" alt="${comic.title}">
+                <img src="${escapeHtml(kmoeImg(comic.cover))}" alt="${escapeHtml(comic.title || '')}">
 
             </div>
 
             <div class="detail-info">
 
-                <div class="detail-title">${comic.title || ''}</div>
+                <div class="detail-title">${escapeHtml(comic.title || '')}</div>
 
                 <span class="detail-avid">KOOB.ONE</span>
 
@@ -5608,7 +5751,7 @@ function showCloudComicModal(comic, kb, kbRaw) {
 
         
 
-        ${comic.description ? `<div class="detail-overview" style="margin-top:12px;">${comic.description}</div>` : ''}
+        ${comic.description ? `<div class="detail-overview" style="margin-top:12px;">${sanitizeHtml(comic.description)}</div>` : ''}
     `;
 
     document.getElementById('detailBody').innerHTML = html;
@@ -5973,8 +6116,8 @@ async function loadReadingStatsBanner(type) {
                     <span class="reading-stats-sub">🎯 阅读排行</span>
                     <div class="reading-top-list">
                         ${top.map((t, i) => `
-                            <span class="reading-top-item" onclick="openReaderByType(${t.movieId}, '${type}')" title="${t.title}">
-                                <b>${i + 1}</b> ${t.title} <em>${formatDurationHMS(t.seconds)}</em>
+                            <span class="reading-top-item" onclick="openReaderByType(${t.movieId}, '${type}')" title="${escapeHtml(t.title)}">
+                                <b>${i + 1}</b> ${escapeHtml(t.title)} <em>${formatDurationHMS(t.seconds)}</em>
                             </span>
                         `).join('')}
                     </div>
@@ -7662,6 +7805,7 @@ function startUpdatePolling() {
     const wrap = document.getElementById('updProgressWrap');
     if (wrap) wrap.style.display = '';
     const tick = async () => {
+        if (isPageHidden()) return;
         try {
             const r = await fetch('/api/update/status');
             const j = await r.json();
@@ -10933,7 +11077,7 @@ function renderPosterHealth(d) {
                     <span style="opacity:.6;min-width:78px;">${sz}</span>
                     <span style="opacity:.6;min-width:46px;">${kb}</span>
                     <span style="color:var(--danger);min-width:104px;">${x.reason}</span>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(x.title || x.fileName || '').slice(0, 40)}</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((x.title || x.fileName || '').slice(0, 40))}</span>
                     ${x.locked ? '<span style="opacity:.6;">🔒</span>' : ''}
                 </div>`;
             }).join('');
@@ -10980,6 +11124,7 @@ function pollPosterRepair() {
     if (_posterRepairTimer) clearInterval(_posterRepairTimer);
     const el = document.getElementById('posterRepairStatus');
     _posterRepairTimer = setInterval(async () => {
+        if (isPageHidden()) return;
         try {
             const res = await fetch('/api/movie/poster-health/repair/status');
             const { data } = await res.json();
@@ -11289,10 +11434,10 @@ function renderPosterOptions(grid, movieId, scraped, frames, cfg, state) {
 
     const card = (p) => `
         <div class="poster-option">
-            <img src="${p.display || p.url}" alt="${p.title || ''}" loading="lazy" decoding="async">
+            <img src="${escapeHtml(safeAssetUrl(p.display || p.url))}" alt="${escapeHtml(p.title || '')}" loading="lazy" decoding="async">
             <div class="poster-option-info">
                 <span class="poster-option-source">${String(p.source || '').toUpperCase()}</span>
-                ${p.title ? `<span class="poster-option-title">${p.title}</span>` : ''}
+                ${p.title ? `<span class="poster-option-title">${escapeHtml(p.title)}</span>` : ''}
             </div>
             <div style="display:flex;gap:4px;padding:5px 6px;background:var(--bg-elev-1, rgba(0,0,0,0.45));border-top:1px solid var(--border-color);border-radius:0 0 8px 8px;">
                 <button class="btn btn-sm" style="flex:1;padding:2px 4px;font-size:11px;" onclick="changePoster(${movieId}, '${p.url}')">选为封面</button>
@@ -12187,7 +12332,7 @@ async function loadAIHistory(sessionId = 'main') {
 /* 历史消息渲染：先转义，再把 [[ID|标题]] 换成可点击引用（r61：气泡 class 化，玻璃态 CSS 统一渲染） */
 function renderAIHistoryMessage(m) {
     const text = mdLite(escapeHtml(m.content || '')).replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (match, id, title) =>
-        `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${title}</span>`);
+        `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${escapeHtml(title)}</span>`);
     if (m.role === 'user') {
         return `<div class="ai-msg user"><div class="bubble">${text}</div></div>`;
     }
@@ -12936,7 +13081,7 @@ async function sendAIMessage() {
             }
 
             let formattedReply = mdLite(escapeHtml(reply)).replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (match, id, title) => {
-                return `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${title}</span>`;
+                return `<span class="ai-movie-ref" data-movie-id="${id}" onclick="jumpToMovieFromAI(${id})" style="color:var(--accent);cursor:pointer;text-decoration:underline;">📎 ${escapeHtml(title)}</span>`;
             });
             streamBubble.innerHTML = formattedReply;
 
@@ -12965,10 +13110,10 @@ async function sendAIMessage() {
                                 return `
                                     <div class="ai-movie-card" onclick="jumpToMovieFromAI(${movie.id})" style="width:120px;cursor:pointer;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--border);transition:all var(--mv2-d2, 0.2s) var(--mv2-snap, ease);">
                                         <div style="width:100%;aspect-ratio:2/3;background:var(--bg-elevated);overflow:hidden;">
-                                            ${posterUrl ? `<img src="${posterUrl}" style="width:100%;height:100%;object-fit:cover;" alt="${movie.title}">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:0.3;">🎬</div>`}
+                                            ${posterUrl ? `<img src="${escapeHtml(safeAssetUrl(posterUrl))}" style="width:100%;height:100%;object-fit:cover;" alt="${escapeHtml(movie.title || '')}">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:0.3;">🎬</div>`}
                                         </div>
                                         <div style="padding:6px;">
-                                            <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${movie.title || movie.avid || '未知'}</div>
+                                            <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(movie.title || movie.avid || '未知')}</div>
                                             ${movie.avid ? `<div style="font-size:10px;color:var(--accent);margin-top:2px;">${movie.avid}</div>` : ''}
                                             ${actressesHtml}
                                             <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">${tagsHtml}</div>
@@ -13210,14 +13355,14 @@ function renderAIMovieCards(movies) {
         return `
             <div class="ai-movie-card" style="width:110px;cursor:pointer;border-radius:10px;overflow:hidden;background:var(--card-bg);border:1px solid var(--border);transition:all var(--mv2-d2, 0.2s) var(--mv2-snap, ease);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''" onclick="jumpToMovieFromAI(${movie.id})">
                 <div style="width:100%;aspect-ratio:2/3;background:var(--bg-elevated);overflow:hidden;position:relative;">
-                    ${posterUrl ? `<img src="${posterUrl}" style="width:100%;height:100%;object-fit:cover;" alt="${movie.title}" onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;\\'>🎬</div>'">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>`}
+                    ${posterUrl ? `<img src="${escapeHtml(safeAssetUrl(posterUrl))}" style="width:100%;height:100%;object-fit:cover;" alt="${escapeHtml(movie.title || '')}" onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;\\'>🎬</div>'">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>`}
                     <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));padding:16px 6px 6px;display:flex;gap:4px;">
                         <button style="flex:1;padding:4px 0;background:rgba(255,255,255,0.9);border:none;border-radius:6px;font-size:10px;cursor:pointer;font-weight:600;" onclick="event.stopPropagation();closeAIModal();setTimeout(()=>openWithPotPlayer(${movie.id}),300)">▶ 播放</button>
                         <button style="flex:1;padding:4px 0;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);border-radius:6px;font-size:10px;cursor:pointer;color:white;" onclick="event.stopPropagation();jumpToMovieFromAI(${movie.id})">详情</button>
                     </div>
                 </div>
                 <div style="padding:6px 8px;">
-                    <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${movie.title || '未命名'}</div>
+                    <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(movie.title || '未命名')}</div>
                     ${movie.avid ? `<div style="font-size:10px;color:var(--accent);margin-top:2px;font-weight:500;">${movie.avid}</div>` : ''}
                 </div>
             </div>
@@ -13323,8 +13468,8 @@ async function showRelationGraph(movieId) {
                     <div class="similar-grid">
                         ${sameActressMovies.map(s => `
                             <div class="similar-card" onclick="showMovieDetail(${s.id})">
-                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
-                                <div class="similar-title">${s.title || s.avid || ''}</div>
+                                <img class="similar-poster" src="${escapeHtml(safeAssetUrl(getPosterUrl(s)))}" alt="${escapeHtml(s.title || '')}" loading="lazy" decoding="async">
+                                <div class="similar-title">${escapeHtml(s.title || s.avid || '')}</div>
                             </div>
                         `).join('')}
                     </div>
@@ -13337,8 +13482,8 @@ async function showRelationGraph(movieId) {
                     <div class="similar-grid">
                         ${sameTagMovies.map(s => `
                             <div class="similar-card" onclick="showMovieDetail(${s.id})">
-                                <img class="similar-poster" src="${getPosterUrl(s)}" alt="${s.title}" loading="lazy" decoding="async">
-                                <div class="similar-title">${s.title || s.avid || ''}</div>
+                                <img class="similar-poster" src="${escapeHtml(safeAssetUrl(getPosterUrl(s)))}" alt="${escapeHtml(s.title || '')}" loading="lazy" decoding="async">
+                                <div class="similar-title">${escapeHtml(s.title || s.avid || '')}</div>
                             </div>
                         `).join('')}
                     </div>
@@ -13441,6 +13586,8 @@ function hideGallery() {
 
 // ========== 视图切换 ==========
 function switchView(view) {
+    // ★ P0：切换代次 +1，所有 viewBound 请求在返回时会发现自己已过期。
+    viewToken++;
     // 切换视图时坚决重置可能残余的长任务等待遮罩与加载器
     if (window.NVX_LONG && typeof window.NVX_LONG.reset === 'function') {
         window.NVX_LONG.reset();
@@ -13609,7 +13756,7 @@ function switchView(view) {
         case 'guess-adult':
             document.getElementById('sortSelect').parentElement.style.display = 'none';
             hideGallery();
-            updateToolbarTitle(ttIcon('adult-guess') + ' 猜你喜欢');
+            updateToolbarTitleIcon('adult-guess', '猜你喜欢');
             if (window.AvBoard) {
                 document.getElementById('movieGrid').style.display = 'grid';
                 window.AvBoard.openGuess('adult');
@@ -14013,7 +14160,8 @@ async function loadTags(type) {
 }
 
 async function loadHot(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? ttIcon('adult-hot') + ' 热门排行' : '🔥 热门排行');
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-hot', '热门排行');
+    else updateToolbarTitle('🔥 热门排行');
     // 第 15 轮：48 → 100，榜单行铺满整页；round43：公开版排除 AV/里番
     let movies = await api.getHotMovies(100, privacy);
     /* round127 · bug2：隐私内容板块只允许出现 AV/里番。
@@ -14065,7 +14213,8 @@ async function loadRandom(privacy = 'exclude', cat) {
         _randomCat = order.find(k => (counts[k] || 0) > 0) || 'all';
     }
     if (privacy === 'adult' && _randomCat !== 'anime' && _randomCat !== 'all') _randomCat = 'anime';
-    updateToolbarTitle(privacy === 'adult' ? ttIcon('adult-random') + ' 随机推荐' : '🎲 随机推荐');
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-random', '随机推荐');
+    else updateToolbarTitle('🎲 随机推荐');
     const wantCount = _randomMode === 'canvas' ? 180 : 48;
     let movies = await api.getRandomMovies(wantCount, _randomCat, privacy);
     if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
@@ -14410,7 +14559,8 @@ function handleDeckCardClick(idx) {
 }
 
 async function loadGuess(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? ttIcon('adult-guess') + ' 猜你喜欢' : '✨ 猜你喜欢');
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-guess', '猜你喜欢');
+    else updateToolbarTitle('✨ 猜你喜欢');
     let movies = await api.getGuessMovies(48, privacy);
     if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
     renderGuessRail(movies, privacy);
@@ -14464,7 +14614,8 @@ function renderGuessRail(movies, privacy) {
 }
 
 async function loadUnwatched(privacy = 'exclude') {
-    updateToolbarTitle(privacy === 'adult' ? ttIcon('adult-unwatched') + ' 未观看' : '📺 未观看');
+    if (privacy === 'adult') updateToolbarTitleIcon('adult-unwatched', '未观看');
+    else updateToolbarTitle('📺 未观看');
     let movies = await api.getUnwatchedMovies(50, privacy);
     if (privacy === 'adult') movies = onlyAdultItems(movies);   // round127 · bug2 兜底
     renderUnwatchedView(movies);
@@ -14497,13 +14648,13 @@ async function loadAdultMovies(page = 1) {
     const movies = onlyAdultItems(await api.getMovies(currentSort, 'all', 'adult', page, currentPageSize));
     renderMovies(movies);
     renderPagination();
-    updateToolbarTitle(ttIcon('adult-all') + ' 全部内容', currentTotal);
+    updateToolbarTitleIcon('adult-all', '全部内容', currentTotal);
     const el = document.getElementById('countAdult');
     if (el) el.textContent = currentTotal;
 }
 
 async function loadAdultRecent() {
-    updateToolbarTitle(ttIcon('adult-history') + ' 观看历史');
+    updateToolbarTitleIcon('adult-history', '观看历史');
     const movies = onlyAdultItems(await api.getMovies('lastplay', 'all', 'adult', 1, 300));
     renderRecentView(movies);
 }
@@ -14579,8 +14730,8 @@ async function showMovieDetail(id) {
                 ${posterUrl ? `<span class="poster-zoom-hint">🔍 单击放大</span>` : ''}
             </div>
             <div class="detail-head-main">
-                <div class="detail-title">${prefTitle(movie)}</div>
-                ${movie.avid ? `<span class="detail-avid">${movie.avid}</span>` : ''}
+                <div class="detail-title">${escapeHtml(prefTitle(movie))}</div>
+                ${movie.avid ? `<span class="detail-avid">${escapeHtml(movie.avid)}</span>` : ''}
                 <div class="detail-head-meta dm-blocks" id="detailMetaBlocks">
                     ${metaBlocks(movie).map((b, i) => `
                         <div class="dm-block" style="--di:${i};--dc:${b.color}" title="${escapeHtml(b.label)}：${escapeHtml(String(b.value))}">
@@ -14618,9 +14769,9 @@ async function showMovieDetail(id) {
                     ${movie.actresses.map(a => `
                         <div class="detail-actress" data-actress-id="${a.id}" data-actress-name="${escapeHtml(a.name)}">
                             <div class="detail-actress-avatar">
-                                ${a.avatar ? `<img src="${a.avatar}" alt="${escapeHtml(a.name)}" loading="lazy"
-                                    onerror="this.style.display='none';this.parentElement.textContent='${(a.name || '?').charAt(0)}'">`
-                                    : (a.name ? a.name.charAt(0) : '?')}
+                                ${a.avatar ? `<img src="${escapeHtml(safeAssetUrl(a.avatar))}" alt="${escapeHtml(a.name)}" loading="lazy"
+                                    onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='flex'">` : ''}
+                                <span class="detail-actress-fallback" style="display:${a.avatar ? 'none' : 'flex'};align-items:center;justify-content:center;">${escapeHtml((a.name || '?').charAt(0))}</span>
                             </div>
                             <span class="detail-actress-name">${escapeHtml(a.name)}</span>
                             <div class="detail-actress-quick-edit" title="设置/更换女优头像" onclick="window.showActressAvatarMenu(event, ${a.id}, '${escapeHtml(a.name)}')">📷</div>
@@ -14637,7 +14788,7 @@ async function showMovieDetail(id) {
                     ${movie.tags.map((t, i) => `
                         <span class="detail-tag tag-slicer" data-tag-id="${t.id}" data-tag-name="${escapeHtml(t.name)}" title="点击进入「${escapeHtml(t.name)}」筛选结果">
                             <span class="dt-name">${escapeHtml(t.name)}</span>
-                            <span class="dt-x" title="删除该标签" onclick="event.stopPropagation();removeTagFromMovie(${movie.id}, ${t.id}, '${t.name}')">×</span>
+                            <span class="dt-x" title="删除该标签" onclick="event.stopPropagation();removeTagFromMovie(${movie.id}, ${t.id}, this.parentElement.dataset.tagName)">×</span>
                         </span>
                     `).join('')}
                 </div>
@@ -14647,7 +14798,7 @@ async function showMovieDetail(id) {
             ${movie.overview ? `
             <div class="detail-section">
                 <h4 style="display:flex;align-items:center;gap:6px;">${uiIcon('file', 15)} 简介</h4>
-                <div class="detail-overview">${movie.overview}</div>
+                <div class="detail-overview">${sanitizeHtml(movie.overview)}</div>
             </div>
             ` : ''}
 
@@ -17085,7 +17236,14 @@ function renderScanStatusUI() {
         : scanState.hasResult ? 'ok' : 'idle');
 }
 
-async function checkScanStatus() {
+async function checkScanStatus(force = false) {
+    if (!force && isPageHidden()) return;
+    /* 扫描空闲时降频：定时器仍按 1.5s 跑，但真正发请求的 tick 限制在 10s 一次；
+       扫描中保持 1.5s，保证进度条流畅。force = true 用于启动扫描、回到前台时立即刷新。 */
+    const _now = Date.now();
+    const _minGap = (scanState && scanState.running) ? 1500 : 10000;
+    if (!force && _now - _lastScanPollAt < _minGap) return;
+    _lastScanPollAt = _now;
     try {
         const status = await api.getScanStatus(currentScanModule);
         const btn = document.getElementById('scanBtn');
@@ -17169,6 +17327,8 @@ async function startModuleScan(module) {
             if (!scanStatusTimer) {
                 scanStatusTimer = setInterval(checkScanStatus, 2000);
             }
+            // 空闲降频下最多要等 10s，这里强制立即刷一次，让按钮马上变成「扫描中」
+            if (typeof checkScanStatus === 'function') checkScanStatus(true);
         } else {
             showNotification('启动失败: ' + data.msg, 'error');
         }
@@ -17259,7 +17419,10 @@ function initDirWatchUi() {
 let searchTimeout = null;
 function handleSearch(e) {
     const q = e.target.value.trim();
-    clearTimeout(searchTimeout);    
+    clearTimeout(searchTimeout);
+    /* ★ P0：搜索代次 + 取消上一请求 —— 慢的旧查询不会覆盖新结果。 */
+    const seq = ++searchSeq;
+    if (searchAbort) { searchAbort.abort(); searchAbort = null; }
     if (!q) {
         currentSearchQuery = '';
         // 清空搜索词：原地刷新当前列表，保持页码与视窗位置
@@ -17271,7 +17434,20 @@ function handleSearch(e) {
     currentSearchQuery = q;
     rememberViewState(currentView, q);      // round26 #1：搜索词写进 hash，F5 后能恢复
     searchTimeout = setTimeout(async () => {
-        const movies = await api.searchMovies(q);
+        const ac = new AbortController();
+        searchAbort = ac;
+        let movies;
+        try {
+            movies = await api.searchMovies(q, ac.signal);
+        } catch (err) {
+            if (seq !== searchSeq) return;
+            if (err && (err.code === 'ABORTED' || err.code === 'STALE')) return;
+            reportRequestError(err, 'search');
+            return;
+        } finally {
+            if (searchAbort === ac) searchAbort = null;
+        }
+        if (seq !== searchSeq) return;
         // round37 #2：用户在首页/榜单视图直接用顶栏搜索时，结果原来渲染进
         // 被首页覆盖层挡住的 movieGrid → 看起来「没反应」。这里收起覆盖层、
         // 恢复排序条，并把视图状态切到 movies，让结果真正可见。
@@ -17291,7 +17467,7 @@ function handleSearch(e) {
         hideGallery();
         if (!movies.length) {
             updateToolbarTitle(`搜索: ${q}`, 0);
-            renderAISearchFallback(q);
+            renderAISearchFallback(q, seq);
         } else {
             renderMovies(movies);
             updateToolbarTitle(`搜索: ${q}`, movies.length);
@@ -17301,9 +17477,10 @@ function handleSearch(e) {
 
 /* r153 · C1：字面 0 结果 → 「AI 帮我找」兜底墙。
    粗召回永远可用；AI 只负责重排和写一句命中理由，失败也不空屏。 */
-async function renderAISearchFallback(q) {
+async function renderAISearchFallback(q, seq) {
     const grid = document.getElementById('movieGrid');
     if (!grid) return;
+    if (seq !== undefined && seq !== searchSeq) return;
     const emptyTip = document.getElementById('emptyTip');
     if (emptyTip) emptyTip.style.display = 'none';
     grid.style.display = 'block';
@@ -17321,7 +17498,9 @@ async function renderAISearchFallback(q) {
     let r;
     try {
         r = await api.semanticSearch(q, privacy);
+        if (seq !== undefined && seq !== searchSeq) return;
     } catch (e) {
+        if (seq !== undefined && seq !== searchSeq) return;
         if (box) box.querySelector('.ai-ss-grid').innerHTML = `<div class="ai-ss-empty">AI 搜索暂不可用：${escapeHtml(e.message)}</div>`;
         return;
     }
@@ -17339,7 +17518,7 @@ async function renderAISearchFallback(q) {
         : '本地语义召回（AI 未启用或超时，仍按标签/简介命中）';
     box.querySelector('.ai-ss-grid').innerHTML = items.map((m) => `
         <article class="ai-ss-card" data-ai-id="${m.id}" tabindex="0" role="button" aria-label="${escapeHtml(m.title || '')}">
-            <div class="ai-ss-poster"><img src="${getPosterUrl(m) || ''}" alt="" loading="lazy" onerror="this.parentElement.classList.add('noimg')"></div>
+            <div class="ai-ss-poster"><img src="${escapeHtml(safeAssetUrl(getPosterUrl(m)))}" alt="" loading="lazy" onerror="this.parentElement.classList.add('noimg')"></div>
             <div class="ai-ss-body">
                 <div class="ai-ss-title">${escapeHtml(prefTitle(m))}</div>
                 <div class="ai-ss-meta">${escapeHtml(String(m.type || '').toUpperCase())}${m.releaseDate ? ' · ' + escapeHtml(String(m.releaseDate).slice(0, 4)) : ''}</div>
@@ -17455,7 +17634,7 @@ function bindEvents() {
                 showNotification('扫描开始', '正在扫描影片库...');
                 currentScanModule = 'movie';
                 // 立刻刷一次并开始轮询，否则前端看不到进度和最终结果
-                if (typeof checkScanStatus === 'function') checkScanStatus();
+                if (typeof checkScanStatus === 'function') checkScanStatus(true);
                 if (!scanStatusTimer) scanStatusTimer = setInterval(checkScanStatus, 2000);
             } else {
                 showNotification('无法开始扫描', data.msg || '未知错误');
@@ -18531,7 +18710,7 @@ function init() {
     });
 
     updateStats();
-    checkScanStatus();
+    checkScanStatus(true);
     loadNotifications();
     startNotifyPolling();   // round34 批次B：即时 toast + 未读徽章轮询
 
@@ -18552,6 +18731,7 @@ function init() {
 
     // 扫描中每10秒刷新列表（保持页码与视窗位置）
     setInterval(async () => {
+        if (isPageHidden()) return;
         try {
             const status = await api.getScanStatus();
             if (status.running && (currentView === 'movies' || currentView === 'jav')) {
@@ -18560,6 +18740,17 @@ function init() {
             }
         } catch (e) {}
     }, 10000);
+
+    /* ★ P1：从最小化/后台回到前台时立即补一次状态，不用等下一个轮询周期。
+       扫描状态强制刷新（绕过空闲降频）；通知与续播进度一并补齐。 */
+    document.addEventListener('visibilitychange', () => {
+        if (isPageHidden()) return;
+        try { checkScanStatus(true); } catch (e) {}
+        try { loadNotifications(); } catch (e) {}
+        if (window.Features && window.Features.loadProgressMap) {
+            try { window.Features.loadProgressMap(); } catch (e) {}
+        }
+    });
 }
 
 // ========== 女优头像批量刮削 ==========
@@ -18943,6 +19134,7 @@ async function saveNotifyPrefs() {
 }
 
 async function loadNotifications() {
+    if (isPageHidden()) return;
     try {
         const res = await fetch('/api/notification');
         const data = await res.json();
@@ -18980,7 +19172,7 @@ function renderNotifications() {
             <div class="notification-item-actions">
                 <button class="notification-item-action" onclick="event.stopPropagation();deleteNotification(${n.id})" title="删除">✕</button>
             </div>
-            <div class="notification-item-title">${n.title}</div>
+            <div class="notification-item-title">${escapeHtml(n.title || '')}</div>
             ${n.content ? `<div class="notification-item-content">${n.content}</div>` : ''}
             <div class="notification-item-time">${formatTime(n.createdAt)}</div>
         </div>
@@ -19134,26 +19326,26 @@ function showEditModal(id) {
             <div style="display:flex;flex-direction:column;gap:16px;">
                 <div>
                     <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">标题</label>
-                    <input type="text" id="editTitle" class="select-input" style="width:100%;height:40px;" value="${movie.title || ''}">
+                    <input type="text" id="editTitle" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.title || '')}">
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">发行日期</label>
-                        <input type="text" id="editRelease" class="select-input" style="width:100%;height:40px;" value="${movie.releaseDate || ''}">
+                        <input type="text" id="editRelease" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.releaseDate || '')}">
                     </div>
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">片商</label>
-                        <input type="text" id="editProducer" class="select-input" style="width:100%;height:40px;" value="${movie.producer || ''}">
+                        <input type="text" id="editProducer" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.producer || '')}">
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">系列</label>
-                        <input type="text" id="editSerial" class="select-input" style="width:100%;height:40px;" value="${movie.serial || ''}">
+                        <input type="text" id="editSerial" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.serial || '')}">
                     </div>
                     <div>
                         <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">导演</label>
-                        <input type="text" id="editDirector" class="select-input" style="width:100%;height:40px;" value="${movie.director || ''}">
+                        <input type="text" id="editDirector" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(movie.director || '')}">
                     </div>
                 </div>
                 <div>
@@ -19163,7 +19355,7 @@ function showEditModal(id) {
                             ${uiIcon('actress', 12)} 点选库中女优
                         </button>
                     </div>
-                    <input type="text" id="editActresses" class="select-input" style="width:100%;height:40px;" value="${actressNames.replace(/"/g, '&quot;')}" placeholder="如：葵司, 三上悠亜">
+                    <input type="text" id="editActresses" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(actressNames)}" placeholder="如：葵司, 三上悠亜">
                     <div id="editActressPicker" style="display:none;margin-top:8px;padding:10px;background:var(--bg-elev-1, rgba(255,255,255,0.04));border:1px solid var(--line, var(--border, rgba(255,255,255,.1)));border-radius:8px;">
                         <div style="display:flex;gap:6px;margin-bottom:8px;">
                             <input type="text" id="editActressFilter" placeholder="输入名字过滤女优…" class="select-input" style="height:30px;font-size:12px;flex:1;" oninput="filterActressPicker(this.value)">
@@ -19175,16 +19367,17 @@ function showEditModal(id) {
                         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600;">👩 当前女优头像（可在此直接刮削或上传新头像）：</div>
                         <div id="editActressAvatarList" style="display:flex;flex-wrap:wrap;gap:10px;">
                             ${movieActresses.map(a => `
-                                <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg-primary, rgba(0,0,0,0.25));border:1px solid var(--border-color);border-radius:6px;" data-actress-id="${a.id}">
+                                <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg-primary, rgba(0,0,0,0.25));border:1px solid var(--border-color);border-radius:6px;" data-actress-id="${a.id}" data-actress-name="${escapeHtml(a.name)}">
                                     <div class="detail-actress-avatar" style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:#333;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">
-                                        ${a.avatar ? `<img src="${a.avatar}" alt="${escapeHtml(a.name)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';this.parentElement.textContent='${(a.name||'?').charAt(0)}'">` : (a.name ? a.name.charAt(0) : '?')}
+                                        ${a.avatar ? `<img src="${escapeHtml(safeAssetUrl(a.avatar))}" alt="${escapeHtml(a.name)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='flex'">` : ''}
+                                        <span style="display:${a.avatar ? 'none' : 'flex'};align-items:center;justify-content:center;">${escapeHtml((a.name || '?').charAt(0))}</span>
                                     </div>
                                     <div>
                                         <div style="font-size:12px;font-weight:600;margin-bottom:2px;">${escapeHtml(a.name)}</div>
                                         <div style="display:flex;gap:4px;">
-                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.scrapeAvatar(${a.id}, '${escapeHtml(a.name)}')">🔍 刮削</button>
-                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.uploadAvatar(${a.id}, '${escapeHtml(a.name)}')">📷 上传</button>
-                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.setFromUrl(${a.id}, '${escapeHtml(a.name)}')">🔗 URL</button>
+                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.scrapeAvatar(${a.id}, this.closest('[data-actress-name]').dataset.actressName)">🔍 刮削</button>
+                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.uploadAvatar(${a.id}, this.closest('[data-actress-name]').dataset.actressName)">📷 上传</button>
+                                            <button type="button" class="btn btn-sm btn-secondary" style="padding:1px 5px;font-size:10.5px;height:20px;" onclick="window.ActressAvatarManager.setFromUrl(${a.id}, this.closest('[data-actress-name]').dataset.actressName)">🔗 URL</button>
                                         </div>
                                     </div>
                                 </div>
@@ -19199,14 +19392,14 @@ function showEditModal(id) {
                             ${uiIcon('tag', 12)} 常用标签点选
                         </button>
                     </div>
-                    <input type="text" id="editTags" class="select-input" style="width:100%;height:40px;" value="${tagNames.replace(/"/g, '&quot;')}" placeholder="如：熟女, 中出">
+                    <input type="text" id="editTags" class="select-input" style="width:100%;height:40px;" value="${escapeHtml(tagNames)}" placeholder="如：熟女, 中出">
                     <div id="editTagPicker" style="display:none;margin-top:8px;padding:10px;background:var(--bg-elev-1, rgba(255,255,255,0.04));border:1px solid var(--line, var(--border, rgba(255,255,255,.1)));border-radius:8px;">
                         <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow-y:auto;"></div>
                     </div>
                 </div>
                 <div>
                     <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">简介</label>
-                    <textarea id="editOverview" class="select-input" style="width:100%;height:100px;padding:10px;resize:vertical;">${movie.overview || ''}</textarea>
+                    <textarea id="editOverview" class="select-input" style="width:100%;height:100px;padding:10px;resize:vertical;">${escapeHtml(movie.overview || '')}</textarea>
                 </div>
             </div>
             <div style="display:flex;gap:12px;margin-top:24px;justify-content:flex-end;align-items:center;">

@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.0'
+TAG = 'v6.8.1'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,23 +35,22 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.0：追番从"搜到"变成"点一下就播"
+COMMIT_MSG = """v6.8.1：桌面端托盘/快捷键与首屏性能
 
-A 档 · 看番链路
-- 自动选源：点「+ 追番」后自动回填分集 → 全网搜源 → 按标题相似度+tier 选最优 → 直接挂上，全程不用手点（失败才降级成手动选源）
-- 季号对齐：追第一季不会再被自动挂到第二季（归一化会抹掉季号，加权重修正）
-- 失败五态：success/noResult/error/captcha 分开计数，搜不到时能看出是源挂了、无结果、还是要人机验证
-- 验证码救回：需验证的源可一键开有头浏览器自己过，过完 Cookie 落盘复用；连续失败 3 次的源冷却 24h
-- 新增 json-api 源工厂：受限 JSONPath（禁过滤器/递归/切片）跑通稀饭动漫 Next，搜索→剧集→签发播放地址全链路
-- 在线播放补弹幕/字幕匹配：展示标题「番名 · 第N集」洗成「番名 第01话」再喂弹弹play 与本地字幕库；在线流不再白跑一次同目录字幕扫描
-- 修在线播放跳过 OP/ED 读不到 DB 区间（此前只有本地播放分支传了 episode）
+桌面壳
+- 系统托盘：关闭到托盘、托盘菜单、首次提示；全局快捷键 Space 被占用时回退 F12
+- 窗口位置/大小/最大化/缩放持久化，副屏拔插保护
+- 播放时阻止显示器息屏，暂停/关窗恢复
+- 后端崩溃自愈（退避重启、稳定 10 分钟重置额度、失败弹窗可手动重启）
+- 可选开机自启（--hidden 驻留托盘）
 
-B 档 · 管理与同步
-- 追番补「搁置/抛弃」两态，看板 5 态 + 全部，卡片显示状态徽章
-- Bangumi 逐条冲突对比：先出差异清单（冲突/云端独有/本地独有），逐条选「保留本地」或「用云端」，不再无脑整批覆盖
-- 进度双键：episode 记住 Bangumi 集号 + 独立账本，番剧重建后按集号把进度接回来
+前端
+- 首屏 CSS 83→2、JS 45→2 请求合并，内容哈希缓存
+- 统一请求层、XSS 收敛、请求竞态保护
+- 隐藏页面暂停高频轮询，回前台补刷
+- 卡片点击/悬停事件委托
 
-验收：追番页 UI 6 tab / 卡片 5 按钮 / 详情 7 集全绿，页面零报错；json-api 三段落实测通；双键账本写入与恢复实测通。承接 v6.7.0。"""
+版本：6.8.1"""
 
 
 def get_token():

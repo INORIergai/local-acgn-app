@@ -787,17 +787,29 @@ router.post('/:id/ai-companion', async (req, res) => {
             parts.push(`【${ch.title || '第 ' + (i + 1) + ' 章'}】\n${t}`);
         }
 
+        const sourceForPolish = mode === 'polish' ? plain(content.chapters[cur]) : '';
         const prompts = {
             recap: '请用 200 字以内总结以上章节的核心剧情，只讲已经发生的事，结尾点出当前悬念。不要剧透后文。',
             characters: '请提取截至当前进度已经登场的人物，输出 3~6 条：姓名 / 身份 / 与主角关系 / 一句性格特征。严格只用以上文本，不要推测或剧透后文。',
-            polish: '请把以上当前章节重写为自然流畅的中文（保留情节、人名、专有名词不变，去掉机翻腔）。直接输出正文，不要解释。'
+            polish: '以上只有一章原文。请只改写这一章，输出自然流畅的中文（保留情节、人名、专有名词和章节标题不变，去掉机翻腔）。严禁改写成其它章节、严禁续写、严禁概括。直接输出同一章正文，不要解释。'
         };
         const { callAI } = require('../utils/ai-service');
         const text = await callAI(
             `书名：${novel.title || novel.cleanName || ''}\n阅读进度：第 ${cur + 1} / ${content.chapters.length} 章\n\n${parts.join('\n\n')}\n\n${prompts[mode]}`,
             '你是小说阅读器的伴读助手，只依据用户提供的原文回答，绝不编造后文。'
         );
-        const data = { text: String(text || '').trim(), mode, chapter: cur, cached: false };
+        const polished = String(text || '').trim();
+        /* 小模型会把「润色」答成另一章/整本书：这种结果绝不能进阅读器。
+         * 润色只改表达，篇幅不应爆炸或缩水成摘要；异常直接拒绝且不写缓存。 */
+        if (mode === 'polish') {
+            const srcLen = sourceForPolish.length;
+            const tooLong = polished.length > Math.max(1200, srcLen * 2.5);
+            const tooShort = srcLen > 200 && polished.length < srcLen * 0.3;
+            if (!polished || tooLong || tooShort) {
+                return res.json({ code: -1, msg: '本次润色结果异常（可能答非所问），已丢弃。请重试或更换 AI 模型。' });
+            }
+        }
+        const data = { text: polished, mode, chapter: cur, cached: false };
         if (companionCache.size > 120) companionCache.clear();
         companionCache.set(cacheKey, data);
         res.json({ code: 0, data });
