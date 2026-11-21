@@ -30,6 +30,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const dns = require('dns');
+const net = require('net');
 const { spawn } = require('child_process');
 
 const config = require('./config');
@@ -47,6 +49,15 @@ const DEFAULT_REPO = 'INORIergai/local-acgn-app';
 const UA = 'CinemaVault-Updater';
 const CHECK_CACHE_MS = 5 * 60 * 1000;      // 同一进程内检查结果的缓存时长
 
+/* 内置 GitHub 下载加速前缀（国内直连 github.com 大文件常卡死）。
+ * 这些是公开反向代理，只用于转发 Release 安装包下载；顺序即尝试顺序。
+ * 用户可用 config.update.mirrorPrefixes 覆盖；设为空数组可只用原站。 */
+const DEFAULT_MIRROR_PREFIXES = [
+    'https://ghfast.top/',
+    'https://gh-proxy.com/',
+    'https://github.moeyy.xyz/',
+];
+
 /* ================================================================== 配置 */
 
 function updaterConfig() {
@@ -55,7 +66,11 @@ function updaterConfig() {
         enabled: c.enabled !== false,
         repo: c.repo || DEFAULT_REPO,
         apiBase: (c.apiBase || 'https://api.github.com').replace(/\/+$/, ''),
-        downloadPrefix: c.downloadPrefix || '',   // 可选：CDN/加速前缀，拼在下载链接前
+        downloadPrefix: c.downloadPrefix || '',   // 可选：单个加速前缀（旧配置，优先级最高）
+        // 镜像前缀数组：null/未设→内置默认；[]→只用原站；数组→按序尝试
+        mirrorPrefixes: Array.isArray(c.mirrorPrefixes)
+            ? c.mirrorPrefixes.map(p => String(p).replace(/\/+$/, '') + '/')
+            : DEFAULT_MIRROR_PREFIXES.slice(),
         autoCheck: c.autoCheck !== false,         // 启动时静默检查一次
         token: c.token || '',                     // 可选：提 GitHub API 限额（60/h → 5000/h）
     };
@@ -147,6 +162,80 @@ function cmpVersion(a, b) {
 
 /* ================================================================ 网络 */
 
+/* ── SSRF 防护 ─────────────────────────────────────────────────────────
+ * 更新器会跟随 GitHub 的 302 下载链接，也会接受配置里的镜像前缀。若不做
+ * 校验，恶意/误配的 URL（或 DNS rebinding）可能让服务端请求本机或内网。
+ * 统一规则：只放行 http/https；host 不能是 localhost / 环回 / 私网 /
+ * 链路本地 / 保留地址；域名要解析，且所有解析结果都必须落在公网。
+ * ──────────────────────────────────────────────────────────────────── */
+
+/** IPv4：环回/私网/链路本地/保留/组播/未指定，全部不允许 */
+function isBlockedIpv4(addr) {
+    const p = String(addr).split('.').map(Number);
+    if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+    const [a, b] = p;
+    if (a === 0 || a === 10 || a === 127) return true;              // 未指定/私网/环回
+    if (a === 169 && b === 254) return true;                        // 链路本地
+    if (a === 172 && b >= 16 && b <= 31) return true;               // 私网
+    if (a === 192 && b === 168) return true;                        // 私网
+    if (a === 192 && b === 0) return true;                          // IETF 协议分配
+    if (a === 100 && b >= 64 && b <= 127) return true;              // CGNAT 共享地址
+    if (a === 127 || a === 255) return true;                        // 环回/广播
+    if (a >= 224) return true;                                      // 组播及保留
+    return false;
+}
+
+/** IPv6：环回/未指定/链路本地/唯一本地/保留 不允许；IPv4-mapped 拆出来再判 */
+function isBlockedIpv6(addr) {
+    let s = String(addr).toLowerCase().split('%')[0];              // 去掉 zone id
+    if (s.startsWith('::ffff:')) {
+        const tail = s.slice(7);
+        if (tail.includes('.')) return isBlockedIpv4(tail);         // ::ffff:a.b.c.d
+    }
+    if (s === '::' || s === '::1') return true;
+    if (/^f[cd]/.test(s)) return true;                              // 唯一本地 fc00::/7
+    if (/^fe[89ab]/.test(s)) return true;                           // 链路本地 fe80::/10
+    return false;
+}
+
+function isBlockedIp(addr) {
+    if (net.isIPv4(addr)) return isBlockedIpv4(addr);
+    if (net.isIPv6(addr)) return isBlockedIpv6(addr);
+    return true;                                                    // 非 IP 形态视为异常
+}
+
+/**
+ * 校验一个 URL 是否允许请求（async：域名要解析）。
+ * 成功 resolve()，失败 throw Error（含可读原因）。
+ */
+async function assertSafeUrl(rawUrl) {
+    let u;
+    try { u = new URL(rawUrl); }
+    catch (e) { throw new Error('URL 无效'); }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+        throw new Error('仅允许 http/https 协议');
+    }
+    if (u.username || u.password) throw new Error('URL 不允许携带用户名/密码');
+
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');   // IPv6 去方括号
+    if (host === 'localhost' || host.endsWith('.localhost') ||
+        host.endsWith('.local') || host.endsWith('.internal')) {
+        throw new Error('禁止请求本机/内网主机名');
+    }
+    if (net.isIP(host)) {
+        if (isBlockedIp(host)) throw new Error('禁止请求本机/私网/保留地址');
+        return;
+    }
+    // 域名：解析所有 A/AAAA 记录，任一命中禁区即拒绝（防 DNS rebinding）
+    let addrs;
+    try { addrs = await dns.promises.lookup(host, { all: true }); }
+    catch (e) { throw new Error('域名解析失败: ' + (e && e.code || 'unknown')); }
+    if (!addrs || !addrs.length) throw new Error('域名无解析结果');
+    for (const a of addrs) {
+        if (isBlockedIp(a.address)) throw new Error('域名解析到私网/保留地址，已拒绝');
+    }
+}
+
 function makeAgent(opts = {}) {
     if (opts.noProxy) return { agent: null, proxy: null };
     const proxy = config.network && config.network.proxyServer;
@@ -184,6 +273,11 @@ function isTransientNetError(e) {
 function request(url, opts = {}, stream = false, onData = null, attempt = 1) {
     const maxAttempts = stream ? 1 : (opts.retry == null ? 3 : opts.retry);
     return new Promise((resolve, reject) => {
+        // SSRF 防护：发起任何请求前先校验目标（协议/host/解析结果）。
+        // 校验本身是异步的（DNS），放在 Promise 里 await 后再继续建连。
+        assertSafeUrl(url).then(() => doRequest(), reject);
+
+        function doRequest() {
         let u;
         try { u = new URL(url); } catch (e) { return reject(new Error('URL 无效: ' + url)); }
 
@@ -214,11 +308,15 @@ function request(url, opts = {}, stream = false, onData = null, attempt = 1) {
             agent: agent || undefined,
             timeout: opts.timeout || 20000,
         }, (res) => {
-            // 重定向
+            // 重定向：目标同样要过安全校验（防 302 打到内网元数据服务等）
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 res.resume();
-                const next = new URL(res.headers.location, url).toString();
-                return resolve(request(next, opts, stream, onData));
+                let next;
+                try { next = new URL(res.headers.location, url).toString(); }
+                catch (e) { return reject(new Error('重定向 URL 无效')); }
+                return assertSafeUrl(next)
+                    .then(() => resolve(request(next, opts, stream, onData, 1)))
+                    .catch(reject);
             }
             if (stream) {
                 return resolve({
@@ -267,6 +365,7 @@ function request(url, opts = {}, stream = false, onData = null, attempt = 1) {
         req.on('error', onErr);
         if (bodyBuf) req.write(bodyBuf);
         req.end();
+        } // doRequest
     });
 }
 
@@ -513,6 +612,101 @@ function findDownloaded(assetName) {
     return fs.existsSync(p) ? p : null;
 }
 
+/**
+ * 构造候选下载 URL（按优先级去重）：
+ *   1) config.update.downloadPrefix（旧的单镜像配置，显式指定优先级最高）
+ *   2) GitHub 原站
+ *   3) config.update.mirrorPrefixes（默认内置 3 个国内加速前缀）
+ * 镜像前缀只拼在 GitHub 官方下载直链前，且每个 URL 在 request() 里都会再过
+ * SSRF 校验，避免配置被污染后打到内网。
+ */
+function candidateDownloadUrls(cfg, asset) {
+    const out = [];
+    const seen = new Set();
+    const add = (u, label) => {
+        if (!u || seen.has(u)) return;
+        seen.add(u);
+        out.push({ url: u, label });
+    };
+    if (cfg.downloadPrefix) {
+        add(cfg.downloadPrefix.replace(/\/+$/, '') + '/' + asset.downloadUrl, '自定义镜像');
+    }
+    add(asset.downloadUrl, '官方原站');
+    for (const p of cfg.mirrorPrefixes || []) {
+        // 前缀必须是 http/https 且 host 非内网/保留地址，杜绝配置被污染后打到内网
+        if (!/^https?:\/\//i.test(p)) continue;
+        let ph;
+        try { ph = new URL(p).hostname.toLowerCase().replace(/^\[|\]$/g, ''); }
+        catch (e) { continue; }
+        if (ph === 'localhost' || ph.endsWith('.localhost') || ph.endsWith('.local') ||
+            (net.isIP(ph) && isBlockedIp(ph))) continue;
+        add(p.replace(/\/+$/, '') + '/' + asset.downloadUrl, '加速镜像 ' + ph);
+    }
+    return out;
+}
+
+/** 单个源的下载尝试：成功 resolve(true)，失败/被取消 resolve(false)。 */
+function trySource(entry, ctx) {
+    const { tmpPath, asset, finalPath } = ctx;
+    return new Promise((resolve) => {
+        let settled = false;
+        let ws = null;
+        let stream = null;
+        const done = (ok, err) => {
+            if (settled) return;
+            settled = true;
+            try { if (stream && !stream.destroyed) stream.destroy(); } catch (e) { /* 忽略 */ }
+            try { if (ws) ws.end(); } catch (e) { /* 忽略 */ }
+            if (ok) return resolve(true);
+            // 被用户取消：清理后不再尝试其它源
+            try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (e) { /* 忽略 */ }
+            if (downloadState.state === 'cancelled') return resolve(false);
+            ctx.errors.push(entry.label + '：' + (err && err.message ? err.message : '失败'));
+            return resolve(false);
+        };
+
+        request(entry.url, { timeout: 30000 }, true).then((r) => {
+            if (downloadState.state === 'cancelled') return done(false, new Error('已取消'));
+            if (r.status !== 200) return done(false, new Error('HTTP ' + r.status));
+            stream = r.stream;
+            downloadState.source = entry.label;
+            downloadState.sourceUrl = entry.url;
+            downloadState.total = r.length || asset.size || 0;
+            downloadState.received = 0;   // 每换一个源，字节数从头算
+            ws = fs.createWriteStream(tmpPath);
+            stream.on('data', (chunk) => {
+                downloadState.received += chunk.length;
+                if (downloadState.total) {
+                    downloadState.percent = Math.min(99.9, +(downloadState.received / downloadState.total * 100).toFixed(1));
+                }
+            });
+            ws.on('error', (e) => done(false, e));
+            stream.on('error', (e) => done(false, e));
+            stream.on('end', () => {
+                // 流结束：先关文件句柄，再校验大小（fs.statSync 需在数据落盘后）
+                try { ws.end(); } catch (e) { /* 忽略 */ }
+                // end 事件早于文件 fd 关闭，用 close 事件确保写完
+                ws.on('close', () => {
+                    try {
+                        const st = fs.statSync(tmpPath);
+                        const exact = asset.size && asset.sizeExact !== false;
+                        if (exact ? st.size !== asset.size : st.size < 1024 * 1024) {
+                            return done(false, new Error(asset.size
+                                ? `文件大小不符（应 ${asset.size} 实际 ${st.size}）`
+                                : `内容异常（仅 ${st.size} 字节）`));
+                        }
+                        if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
+                        fs.renameSync(tmpPath, finalPath);
+                        downloadState.received = st.size;
+                        done(true);
+                    } catch (e) { done(false, e); }
+                });
+            });
+            downloadState._abort = () => { done(false, new Error('已取消')); };
+        }).catch((e) => done(false, e));
+    });
+}
+
 async function startDownload(assetName) {
     const cfg = updaterConfig();
     const chk = lastCheck && lastCheck.result;
@@ -525,7 +719,10 @@ async function startDownload(assetName) {
     const dir = updateDir();
     const finalPath = path.join(dir, asset.name);
     const tmpPath = finalPath + '.part';
+    const candidates = candidateDownloadUrls(cfg, asset);
+    if (!candidates.length) throw new Error('没有可用的下载源');
 
+    const ctx = { tmpPath, asset, finalPath, errors: [] };
     downloadState = {
         state: 'downloading',
         assetName: asset.name,
@@ -535,76 +732,37 @@ async function startDownload(assetName) {
         percent: 0,
         startedAt: Date.now(),
         error: null,
+        source: null,
+        attemptedSources: [],
     };
 
     try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (e) { /* 忽略 */ }
 
-    /* 下载加速前缀：有些地区 GitHub 直连很慢，可在 config.update.downloadPrefix
-     * 里填镜像前缀（如 https://ghfast.top/），会自动拼到原始链接前面。 */
-    const url = cfg.downloadPrefix
-        ? cfg.downloadPrefix.replace(/\/+$/, '') + '/' + asset.downloadUrl
-        : asset.downloadUrl;
-
-    return new Promise((resolve, reject) => {
-        const ws = fs.createWriteStream(tmpPath);
-        let settled = false;
-        const finish = (err) => {
-            if (settled) return;
-            settled = true;
-            try { ws.close(); } catch (e) { /* 忽略 */ }
-            if (err) {
-                downloadState.state = 'error';
-                downloadState.error = err.message;
-                try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (e) { /* 忽略 */ }
-                return reject(err);
-            }
-            /* 大小校验：API 通道有精确 size，对不上就是下坏了；
-             * 网页通道拿不到 size，退而求其次 —— 小于 1MB 的一定不是 100MB 的安装包。 */
-            const st = fs.statSync(tmpPath);
-            const exact = asset.size && asset.sizeExact !== false;
-            if (exact ? st.size !== asset.size : st.size < 1024 * 1024) {
-                downloadState.state = 'error';
-                downloadState.error = asset.size
-                    ? `文件大小不符（应为 ${asset.size} 实际 ${st.size}）`
-                    : `下载内容异常（只有 ${st.size} 字节），请重试`;
-                try { fs.unlinkSync(tmpPath); } catch (e) { /* 忽略 */ }
-                return reject(new Error(downloadState.error));
-            }
-            try {
-                if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
-                fs.renameSync(tmpPath, finalPath);
-            } catch (e) {
-                downloadState.state = 'error';
-                downloadState.error = '落盘失败：' + e.message;
-                return reject(e);
-            }
+    for (const entry of candidates) {
+        if (downloadState.state === 'cancelled') break;
+        console.log('[更新] 尝试下载源：' + entry.label + ' ' + entry.url);
+        downloadState.attemptedSources.push(entry.label);
+        const ok = await trySource(entry, ctx);
+        if (ok) {
             downloadState.state = 'done';
             downloadState.percent = 100;
-            downloadState.received = st.size;
             downloadState.finishedAt = Date.now();
-            resolve(downloadState);
-        };
+            downloadState.error = null;
+            console.log('[更新] 下载完成（源：' + entry.label + '）');
+            return downloadState;
+        }
+        if (downloadState.state === 'cancelled') break;   // 用户取消，停止切换
+        downloadState.received = 0;
+        downloadState.percent = 0;
+    }
 
-        request(url, { timeout: 30000 }, true).then((r) => {
-            if (r.status !== 200) {
-                return finish(new Error('下载失败，HTTP ' + r.status));
-            }
-            downloadState.total = r.length || asset.size || 0;
-            let cur = null;
-            r.stream.on('data', (chunk) => {
-                downloadState.received += chunk.length;
-                if (downloadState.total) {
-                    downloadState.percent = Math.min(99.9, +(downloadState.received / downloadState.total * 100).toFixed(1));
-                }
-            });
-            ws.on('error', finish);
-            r.stream.on('error', finish);
-            r.stream.on('end', () => finish(null));
-            r.stream.pipe(ws);
-            cur = r.stream;
-            downloadState._abort = () => { try { cur.destroy(); } catch (e) { /* 忽略 */ } };
-        }).catch(finish);
-    });
+    // 走到这里说明所有源都失败（或被取消）
+    if (downloadState.state !== 'cancelled') {
+        downloadState.state = 'error';
+        downloadState.error = ctx.errors.join('；') || '所有下载源均失败';
+    }
+    const msg = downloadState.error || '下载已取消';
+    throw new Error(msg);
 }
 
 function cancelDownload() {
@@ -694,5 +852,8 @@ module.exports = {
     openFolder,
     updateDir,
     status,
-    request,   // round33：acg-rank.js 复用它的代理/直连双路请求
+    request,        // round33：acg-rank.js 复用它的代理/直连双路请求
+    assertSafeUrl,  // 导出供单测与复用：SSRF 目标校验
+    isBlockedIp,    // 纯函数，便于测试私网/保留地址判定
+    candidateDownloadUrls, // 导出供单测：多源 URL 构造
 };
