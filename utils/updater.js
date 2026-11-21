@@ -941,7 +941,20 @@ async function startDownload(assetName) {
  * 伪造 patch 签名）。此函数不接受任何参数，是可供非 HTTP 测试注入的 seam。
  */
 function readUpdatePublicKey() {
-    return process.env.CV_UPDATE_PUBLIC_KEY || '';
+    // 1) 环境变量优先（部署时显式注入，最高优先级）
+    const fromEnv = process.env.CV_UPDATE_PUBLIC_KEY;
+    if (fromEnv && String(fromEnv).trim()) return fromEnv;
+    // 2) 数据目录下的公钥文件（打包版由主进程从 payload 写入；公钥可公开，非凭据）
+    //    <runtime>/utils/updater.js → 上两级到 <DATA_ROOT>/updates
+    try {
+        const dataUpdates = path.join(__dirname, '..', '..', 'updates');
+        const keyFile = path.join(dataUpdates, 'update-public-key.pem');
+        if (fs.existsSync(keyFile)) {
+            const pem = fs.readFileSync(keyFile, 'utf-8').trim();
+            if (pem) return pem;
+        }
+    } catch (e) { /* 读不到就当没有，回退全量下载 */ }
+    return '';
 }
 
 /**

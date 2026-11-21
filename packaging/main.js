@@ -196,6 +196,27 @@ try {
     blog('写入版本文件失败（后端将退化读 package.json）: ' + e.message);
 }
 
+/* 增量更新验签公钥：payload 里随包携带（公开信息，非凭据），首次启动写到
+ * 数据目录 updates/，后端 updater.js 从同一路径读取。用户双击 EXE 无需设任何
+ * 环境变量即可启用增量更新；公钥缺失时后端自动回退全量下载，不影响使用。
+ * 已存在则不覆盖——运维可在数据目录替换公钥做轮换。 */
+try {
+    const srcKey = path.join(PAYLOAD, 'update-public-key.pem');
+    const dstDir = path.join(DATA_ROOT, 'updates');
+    const dstKey = path.join(dstDir, 'update-public-key.pem');
+    if (fs.existsSync(srcKey)) {
+        fs.mkdirSync(dstDir, { recursive: true });
+        if (!fs.existsSync(dstKey)) {
+            fs.copyFileSync(srcKey, dstKey);
+            blog('已部署增量验签公钥 → ' + dstKey);
+        }
+    } else {
+        blog('payload 未带验签公钥，增量更新将回退全量下载');
+    }
+} catch (e) {
+    blog('部署验签公钥失败（增量更新可能不可用，全量下载不受影响）: ' + e.message);
+}
+
 /**
  * 「用户数据」永不覆盖：升级同步时这些名字一律跳过（目标已存在就保留）。
  * 没在第一次出现（目标不存在）时会正常复制过去，比如 db/schema.sql。

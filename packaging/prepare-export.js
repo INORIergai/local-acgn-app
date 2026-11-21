@@ -31,6 +31,8 @@ const COPY_FILES = [
     'package.json',
     'package-lock.json',
     'config.example.json',
+    // 增量更新验签公钥（公开信息，非凭据）：随包携带，主进程启动时部署到数据目录
+    'update-public-key.pem',
 ];
 // host/ 与 db/ 与 tools/ 只挑干净文件
 const SUBSET = {
