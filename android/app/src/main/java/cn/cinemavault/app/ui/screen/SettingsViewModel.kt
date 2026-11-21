@@ -34,7 +34,44 @@ class SettingsViewModel : ViewModel() {
     var themeMode by mutableStateOf(ThemeStore.mode)
         private set
 
+    // 音色：fishaudio 的 reference_id 列表
+    var voices by mutableStateOf<List<TtsRepository.Voice>>(emptyList())
+        private set
+    var currentVoiceId by mutableStateOf("")
+        private set
+    var currentVoiceName by mutableStateOf("未获取")
+        private set
+    var voiceBusy by mutableStateOf(false)
+        private set
+
     init { refresh() }
+
+    private fun loadVoices() {
+        viewModelScope.launch {
+            try {
+                val (cur, list) = ttsRepo.fishVoices()
+                currentVoiceId = cur
+                voices = list
+                currentVoiceName = list.firstOrNull { it.id == cur }?.name
+                    ?: list.firstOrNull()?.name ?: "未选择"
+            } catch (_: Exception) { /* 引擎没起来就留空，不拖垮整个设置页 */ }
+        }
+    }
+
+    fun selectVoice(v: TtsRepository.Voice) {
+        if (voiceBusy) return
+        voiceBusy = true
+        viewModelScope.launch {
+            try {
+                ttsRepo.selectFishVoice(v.id, v.name)
+                currentVoiceId = v.id
+                currentVoiceName = v.name
+                toast = "音色已切换：${v.name}"
+            } catch (e: Exception) {
+                toast = "音色切换失败：${e.message?.take(40)}"
+            } finally { voiceBusy = false }
+        }
+    }
 
     fun onServerDraft(s: String) { serverDraft = s }
 
@@ -49,6 +86,7 @@ class SettingsViewModel : ViewModel() {
             ttsStatus = ttsRepo.status()
             aiModel = try { aiRepo.status().currentModel } catch (e: Exception) { "" }
         }
+        loadVoices()
     }
 
     fun saveServer() {
