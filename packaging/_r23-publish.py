@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.1'
+TAG = 'v6.8.2'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,22 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.1：桌面端托盘/快捷键与首屏性能
+COMMIT_MSG = """v6.8.2：修复应用内更新下载
 
-桌面壳
-- 系统托盘：关闭到托盘、托盘菜单、首次提示；全局快捷键 Space 被占用时回退 F12
-- 窗口位置/大小/最大化/缩放持久化，副屏拔插保护
-- 播放时阻止显示器息屏，暂停/关窗恢复
-- 后端崩溃自愈（退避重启、稳定 10 分钟重置额度、失败弹窗可手动重启）
-- 可选开机自启（--hidden 驻留托盘）
+更新器
+- 下载改为多源自动回退：原站 + 国内加速镜像逐个尝试，失败自动切换
+- SSRF 防护：仅 http/https，拒绝环回/私网/保留地址，重定向后复检
+- 保留 downloadPrefix 与新增 mirrorPrefixes 配置
 
-前端
-- 首屏 CSS 83→2、JS 45→2 请求合并，内容哈希缓存
-- 统一请求层、XSS 收敛、请求竞态保护
-- 隐藏页面暂停高频轮询，回前台补刷
-- 卡片点击/悬停事件委托
-
-版本：6.8.1"""
+版本：6.8.2"""
 
 
 def get_token():

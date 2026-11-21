@@ -220,13 +220,14 @@
   "push": {
     "enabled": false
   },
-  "_comment_update": "应用内更新：设置 → 版本 里可查询 GitHub 最新 Release 并一键下载。enabled 关掉后不再联网检查；autoCheck 控制启动时是否静默查一次（只比版本，不下载）；直连 GitHub 很慢时，可把 downloadPrefix 填成镜像前缀（会拼在下载链接前面）；GitHub 接口未登录限 60 次/小时，配 token 可提到 5000 次。",
+  "_comment_update": "应用内更新：设置 → 版本 里可查询 GitHub 最新 Release 并一键下载。enabled 关掉后不再联网检查；autoCheck 控制启动时是否静默查一次（只比版本，不下载）；下载走多源自动回退：原站 + mirrorPrefixes 里的加速镜像逐个尝试，失败自动切换；mirrorPrefixes 留空/不填=用内置默认镜像，填 [] =只用原站，填数组=自定义（仅 http/https 公网地址，内网地址会被忽略）；downloadPrefix 是旧的单镜像开关，优先级最高；GitHub 接口未登录限 60 次/小时，配 token 可提到 5000 次。token 请通过环境变量或密钥服务注入，不要把真实值写进本文件。",
   "update": {
     "enabled": true,
     "autoCheck": true,
     "repo": "INORIergai/local-acgn-app",
     "apiBase": "https://api.github.com",
     "downloadPrefix": "",
+    "mirrorPrefixes": [],
     "token": ""
   },
   "ingest": {
