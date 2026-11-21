@@ -28,6 +28,7 @@ const STATE_NAME = 'update-state.json';
 const LOCK_NAME = '.switch.lock';
 const BASELINE_NAME = 'baseline-manifest.json';
 const META_NAME = '_backup-meta.json';
+const BACKUP_DONE_NAME = '_backup-complete';   // 备份阶段完整结束的标记（含 pending 签名）
 const LOCK_STALE_MS = 10 * 60 * 1000;
 
 /** 校验相对路径安全（纵深防御；上游 Task 3 verifyPatch 已拦 zip-slip）。
@@ -131,24 +132,46 @@ async function checkAndApply(opts) {
     let target = '';
     let backupDir = '';
     let meta = null;          // {files:{rel:bool}, removed:[rel]}
+    let backupComplete = false;   // 本轮备份阶段是否完整成功（只有它为真才允许回滚删除文件）
+
+    /** 磁盘上的备份完成标记是否属于当前 pending（供跨进程/重试判断）。
+     *  只有标记存在且 target/createdAt 对得上，回滚才敢删除 patch 新增文件。 */
+    const markerMatches = () => {
+        try {
+            const raw = fs.readFileSync(path.join(backupDir, BACKUP_DONE_NAME), 'utf8');
+            const marker = JSON.parse(raw);
+            if (!marker || marker.target !== target) return false;
+            if (pending && pending.createdAt && marker.createdAt !== pending.createdAt) return false;
+            return true;
+        } catch (e) { return false; }
+    };
 
     /* 回滚：把 runtime 恢复到切换前的状态。
      * meta 是权威记录：files[rel]===true 表示原来有文件（从 backup 拷回）；
-     * false 表示是 patch 新增的（回滚时删掉）。removed 列表里的文件从 backup 拷回。 */
-    const rollback = (reason) => {
+     * false 表示是 patch 新增的（回滚时删掉）。removed 列表里的文件从 backup 拷回。
+     *
+     * ★ 安全底线（review Critical #1）：只有「备份阶段完整成功」的标记存在时，
+     *   才允许按 meta.files[rel]===false 删除文件。否则一律 restore-only：
+     *   有备份就拷回，没备份就保持 dest 原样，绝不 unlink —— 防止误删用户原文件。 */
+    const rollback = async (reason) => {
         let rollbackError = null;
+        const allowDeletes = backupComplete || markerMatches();
         try {
             if (!meta && fs.existsSync(path.join(backupDir, META_NAME))) {
                 try { meta = JSON.parse(fs.readFileSync(path.join(backupDir, META_NAME), 'utf8')); }
                 catch (e) { meta = null; }
             }
             if (!meta && pending) {
-                // meta 丢失时的保守推断：backup 里有的就拷回，patch 新增的就删掉
+                /* meta 丢失（通常是备份阶段之前就失败）→ 推断时强制 restore-only：
+                 * files[rel] 一律按「有备份就恢复」处理，没有备份就保持不动，绝不删除。
+                 * 同时在这里就套 safeRel，非法 rel 直接跳过（纵深防御）。 */
                 meta = { files: {}, removed: [] };
                 for (const rel of Object.keys(pending.files || {})) {
+                    if (!safeRel(rel, runtimeDir)) continue;
                     meta.files[rel] = fs.existsSync(path.join(backupDir, rel));
                 }
                 for (const rel of (pending.removed || [])) {
+                    if (!safeRel(rel, runtimeDir)) continue;
                     if (fs.existsSync(path.join(backupDir, rel))) meta.removed.push(rel);
                 }
             }
@@ -162,8 +185,12 @@ async function checkAndApply(opts) {
                         if (!fs.existsSync(backup)) throw new Error('备份缺失: ' + rel);
                         fs.mkdirSync(path.dirname(dest), { recursive: true });
                         fs.copyFileSync(backup, dest);
-                    } else {
+                    } else if (allowDeletes) {
+                        // 只有备份完整成功过，才能确认这是 patch 新增文件并安全删除
                         if (fs.existsSync(dest)) fs.unlinkSync(dest);
+                    } else {
+                        // restore-only：无备份且无完整标记 → 保持 dest 原样，绝不删除
+                        log('[switch] 回滚(restore-only) 保留未备份文件: ' + rel);
                     }
                 } catch (e) {
                     rollbackError = rollbackError || ('恢复 ' + rel + ' 失败: ' + ((e && e.message) || e));
@@ -183,6 +210,19 @@ async function checkAndApply(opts) {
             }
         } catch (e) {
             rollbackError = rollbackError || ((e && e.message) || String(e));
+        }
+        /* 文件恢复成功后必须再重启一次：否则 live 进程仍持有新/坏代码（或已死），
+         * 磁盘恢复了但运行状态没恢复（review Important #2）。
+         * 再重启失败 → rolledBack=false → 保留 pending 供下次重试。 */
+        if (!rollbackError) {
+            try {
+                log('[switch] 文件已恢复，回滚重启后端');
+                await restart();
+                log('[switch] 回滚重启成功');
+            } catch (e) {
+                rollbackError = '回滚后重启失败: ' + ((e && (e.message || e)) || e);
+                log('[switch] ' + rollbackError);
+            }
         }
         result.rolledBack = !rollbackError;
         result.error = (result.error ? result.error + '；' : '') + (reason || '切换失败')
@@ -287,6 +327,13 @@ async function checkAndApply(opts) {
             }
             fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
         }
+        /* 备份阶段完整成功 → 写完成标记。只有这时回滚才允许删除 patch 新增文件。
+         * 标记带 target + createdAt，跨进程重试时只对同一 pending 生效。
+         * 无论 meta 是本轮新建还是从上次重试加载，走到这里都表示备份阶段已完整成功。 */
+        fs.writeFileSync(path.join(backupDir, BACKUP_DONE_NAME), JSON.stringify({
+            target, createdAt: pending && pending.createdAt, completedAt: new Date().toISOString(),
+        }, null, 2), 'utf8');
+        backupComplete = true;
 
         /* -------------------------------------------------------------- 替换阶段 */
         for (const rel of Object.keys(files)) {

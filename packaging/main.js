@@ -309,20 +309,32 @@ async function restartBackend() {
 
 /* restartBackend() 内部把 waitServer 失败只记日志、不抛出（菜单重启可以容忍
  * 暂时不可用），但增量切换必须把「新后端没起来」当成失败并回滚 —— 否则会留下
- * 一套已覆盖、却跑不起来的 runtime。这里包一层：重启后独立 ping 后端健康接口，
- * 不通就 throw，checkAndApply 收到异常即回滚。 */
+ * 一套已覆盖、却跑不起来的 runtime。这里包一层：
+ *   1) 等旧后端进程真正退出（Windows 上文件占用释放后才能安全覆盖；也避免旧进程
+ *      残留导致「旧后端还在应答 → 误判健康」）；
+ *   2) 重启；
+ *   3) 独立 ping 健康接口（2xx 才算健康），单请求 2.5s 超时。
+ * 总等待上限 15s（含 restartBackend 内部等待），不堆叠两个 40s 循环（review #3c）。 */
 async function verifiedRestartForSwitch() {
+    const oldProc = serverProc;
+    if (oldProc && oldProc.exitCode === null && !oldProc.killed) {
+        await Promise.race([
+            new Promise((resolve) => oldProc.once('exit', resolve)),
+            new Promise((resolve) => setTimeout(resolve, 3000)),   // 最多等 3s
+        ]);
+        if (oldProc.exitCode === null) throw new Error('增量切换：旧后端进程未在 3s 内退出');
+    }
     await restartBackend();
     if (!BASE) throw new Error('重启后端后无可用 BASE');
     const t0 = Date.now();
-    while (Date.now() - t0 < 40000) {
+    while (Date.now() - t0 < 15000) {
         if (await pingOnce(BASE + '/api/auth/status')) {
             blog('[switch] 新后端重启后健康应答正常');
             return;
         }
         await new Promise((r) => setTimeout(r, 400));
     }
-    throw new Error('增量切换：新后端重启后 40s 内未就绪');
+    throw new Error('增量切换：新后端重启后 15s 内未就绪');
 }
 
 /* ------------------------------------- M3：增量热更新（主进程原子切换 + 回滚）
@@ -1089,9 +1101,15 @@ function killServer() {
     serverProc = null;
 }
 
+/* 后端健康探测。注意：只在 2xx 时算健康 —— 500/404 等虽是「有响应」，
+ * 但说明新后端不健康，不能据此认为切换成功（review Important #3a）。
+ * 单次请求超时 2.5s，整段等待由调用方设总上限。 */
 function pingOnce(url) {
     return new Promise((resolve) => {
-        const req = http.get(url, (res) => { res.resume(); resolve(res.statusCode || 0); });
+        const req = http.get(url, (res) => {
+            res.resume();
+            resolve(res.statusCode >= 200 && res.statusCode < 300 ? res.statusCode : 0);
+        });
         req.on('error', () => resolve(0));
         req.setTimeout(2500, () => { req.destroy(); resolve(0); });
     });

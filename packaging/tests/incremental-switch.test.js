@@ -111,10 +111,10 @@ test('rolls back when restart fails', async () => {
     let restarted = 0;
     const r = await sw.checkAndApply({
         runtimeDir: runtime, updatesDir: updates,
-        restart: async () => { restarted++; throw new Error('boom'); },
+        restart: async () => { restarted++; if (restarted === 1) throw new Error('boom'); },
         blog: () => { },
     });
-    assert.equal(restarted, 1);
+    assert.equal(restarted, 2, '第一次重启失败后，回滚应再重启一次');
     assert.equal(r.applied, false);
     assert.equal(r.rolledBack, true);
     assert.equal(fs.readFileSync(path.join(runtime, 'public', 'a.js'), 'utf8'), 'old');
@@ -124,22 +124,22 @@ test('rolls back when restart fails', async () => {
         '回滚成功后应删除 pending，避免每 15s 反复重试');
 });
 
-test('rolls back on mid-swap failure (second file copy throws)', async () => {
+test('rolls back on mid-swap failure and re-restarts backend', async () => {
     const s = scenario({
         target: '6.9.0',
         originals: { 'public/a.js': 'old-a', 'public/b.js': 'old-b' },
         files: { 'public/a.js': 'new-a', 'public/b.js': 'new-b' },
     });
-    let restarted = 0;
+    let restarts = 0;
     const r = await sw.checkAndApply({
         runtimeDir: s.runtime, updatesDir: s.updates,
-        restart: async () => { restarted++; },
+        restart: async () => { restarts++; },
         hooks: { beforeWrite: (rel) => { if (rel === 'public/b.js') throw new Error('disk full'); } },
         blog: () => { },
     });
     assert.equal(r.applied, false);
     assert.equal(r.rolledBack, true);
-    assert.equal(restarted, 0, '替换失败时不得重启');
+    assert.equal(restarts, 1, '文件恢复后必须再重启一次，让 live 进程回到旧代码');
     assert.equal(fs.readFileSync(path.join(s.runtime, 'public', 'a.js'), 'utf8'), 'old-a',
         '第一个已写入的文件必须被恢复');
     assert.equal(fs.readFileSync(path.join(s.runtime, 'public', 'b.js'), 'utf8'), 'old-b');
@@ -153,9 +153,10 @@ test('rolls back removed files and deletes patch-added files', async () => {
         removed: ['public/gone.js'],
     });
     assert.ok(fs.existsSync(path.join(s.runtime, 'public', 'gone.js')));
+    let restarted = 0;
     const r = await sw.checkAndApply({
         runtimeDir: s.runtime, updatesDir: s.updates,
-        restart: async () => { throw new Error('boom'); },
+        restart: async () => { restarted++; if (restarted === 1) throw new Error('boom'); },
         blog: () => { },
     });
     assert.equal(r.applied, false);
@@ -278,4 +279,54 @@ test('rejects unsafe rel paths (defense in depth; upstream verifyPatch already b
     });
     assert.equal(r.applied, false);
     assert.equal(fs.existsSync(path.join(s.runtime, '..', 'evil.js')), false);
+});
+
+/* --------------------------- review round 1 regression --------------------------- */
+
+test('CRITICAL: unsafe rel fails before backup — safe original is NOT deleted by rollback', async () => {
+    // 构造：一个不安全 rel（触发 outer catch，早于备份阶段）+ 一个安全 rel（disk 上有原文件）
+    const s = scenario({
+        target: '6.9.9',
+        originals: { 'public/keep.js': 'ORIGINAL-CONTENT' },
+        files: {},
+    });
+    s.pending.files = {
+        '../evil.js': { sha256: sha('x') },     // 不安全 → safeRel 校验抛错
+        'public/keep.js': { sha256: sha('y') }, // 安全 → disk 上有原文件，备份阶段从未运行
+    };
+    fs.writeFileSync(path.join(s.updates, 'pending-switch.json'), JSON.stringify(s.pending));
+    let restarts = 0;
+    const r = await sw.checkAndApply({
+        runtimeDir: s.runtime, updatesDir: s.updates,
+        restart: async () => { restarts++; },
+        blog: () => { },
+    });
+    assert.equal(r.applied, false);
+    assert.equal(r.rolledBack, true);
+    // 核心断言：安全 rel 的原文件绝不能被回滚误删（Critical #1）
+    assert.equal(fs.readFileSync(path.join(s.runtime, 'public', 'keep.js'), 'utf8'), 'ORIGINAL-CONTENT',
+        '回滚不得删除从未备份过的原始文件');
+    assert.equal(fs.existsSync(path.join(s.runtime, '..', 'evil.js')), false);
+    assert.equal(restarts, 1, 'restore-only 回滚后仍要重启一次');
+});
+
+test('rollback re-restart failure leaves rolledBack=false and retains pending', async () => {
+    const s = scenario({
+        target: '7.0.0',
+        originals: { 'public/a.js': 'old' },
+        files: { 'public/a.js': 'new' },
+    });
+    let attempts = 0;
+    const r = await sw.checkAndApply({
+        runtimeDir: s.runtime, updatesDir: s.updates,
+        restart: async () => { attempts++; throw new Error('backend down'); }, // 两次都失败
+        blog: () => { },
+    });
+    assert.equal(attempts, 2);
+    assert.equal(r.applied, false);
+    assert.equal(r.rolledBack, false, '回滚重启失败 → rolledBack=false');
+    // 文件本身仍已恢复（restore 成功），只是 live 状态没恢复
+    assert.equal(fs.readFileSync(path.join(s.runtime, 'public', 'a.js'), 'utf8'), 'old');
+    assert.equal(fs.existsSync(path.join(s.updates, 'pending-switch.json')), true,
+        '回滚不彻底 → 保留 pending 供下次重试');
 });
