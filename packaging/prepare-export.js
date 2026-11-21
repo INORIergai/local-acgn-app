@@ -31,9 +31,10 @@ const COPY_FILES = [
     'package.json',
     'package-lock.json',
     'config.example.json',
-    // 增量更新验签公钥（公开信息，非凭据）：随包携带，主进程启动时部署到数据目录
-    'update-public-key.pem',
 ];
+// 增量更新验签公钥（公开信息，非凭据）：位于 packaging/ 下，随包携带，
+// 主进程启动时部署到数据目录。它只在 packaging/ 有一份，不从项目根找。
+const SIGNING_PUBLIC_KEY = path.join(__dirname, 'update-public-key.pem');
 // host/ 与 db/ 与 tools/ 只挑干净文件
 const SUBSET = {
     host: ['protocol-handler.js', 'install-protocols.bat', 'protocols.reg'],
@@ -107,6 +108,11 @@ function main() {
     for (const f of COPY_FILES) {
         const s = path.join(SRC, f);
         if (fs.existsSync(s)) fs.copyFileSync(s, path.join(DST, f));
+    }
+    if (fs.existsSync(SIGNING_PUBLIC_KEY)) {
+        fs.copyFileSync(SIGNING_PUBLIC_KEY, path.join(DST, 'update-public-key.pem'));
+    } else {
+        console.warn('  ⚠️ 缺少增量验签公钥 payload/update-public-key.pem（增量更新将回退全量）');
     }
     for (const [dir, files] of Object.entries(SUBSET)) {
         fs.mkdirSync(path.join(DST, dir), { recursive: true });
