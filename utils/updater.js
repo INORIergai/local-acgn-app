@@ -24,10 +24,19 @@
  * 发布产物有两个：Setup（安装版，NSIS）与 Portable（便携版）。
  * 便携版是自解压运行，**不能覆盖自身**，所以它的「更新」是下载新包 +
  * 打开所在目录让用户自己替换；安装版才支持直接跑安装包升级。
+ *
+ * ── 增量更新（M2/M3）的部署前置 ────────────────────────────────────
+ * 1) 验签公钥：部署/打包时必须把发布端的 ed25519 **公钥**注入到后端 env
+ *    `CV_UPDATE_PUBLIC_KEY`（私钥只在发布端，用 {{SECRET_*}} 管理，绝不入库）。
+ *    未注入时增量自动禁用并告警，全量下载照常工作 —— 这是有意的安全降级，
+ *    绝不把公钥硬编码进源码/测试。
+ * 2) baseline：首次增量检查会从已安装源码现场合成 `<DATA_ROOT>/updates/baseline-manifest.json`
+ *    （无需联网/无需先成功增量切换）；M3 成功切换后也会更新它。
  */
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
 const dns = require('dns');
@@ -704,6 +713,108 @@ function normalizeManifest(m) {
     };
 }
 
+/** 增量 diff 覆盖的源码前缀：必须与 packaging/_cv_patch.py 的 ALLOWED 一致，
+ *  也与发布端 build_manifest() 的扫描范围一致，否则合成 baseline 的文件集合
+ *  与发布端 manifest 不对齐，本地改动检测会误报/漏报。 */
+const INCREMENTAL_FILE_PREFIXES = ['public/', 'routes/', 'utils/', 'server.js', 'package.json'];
+
+/**
+ * 从「本地已安装文件」合成 baseline manifest —— 不触网、不需要事先成功切换过。
+ *
+ * 解决了增量更新的鸡生蛋问题：过去只有 M3 成功切换后才写 baseline-manifest.json，
+ * 而成功切换又必须先 startIncremental 读到 baseline，导致全新安装/一路全量下载的用户
+ * 永远无 baseline、增量形同虚设。这里在首次增量检查时按已安装源码现场算 sha256，
+ * 文件集合与发布端 build_manifest() 同口径，故 from→to 命名与本地改动检测都能正常工作。
+ *
+ * @param {string} runtimeDir 已安装源码根目录（默认 <DATA_ROOT>）
+ * @param {string} version    本地版本号（默认 localVersion()）
+ * @returns {{version:string, generatedAt:string, files:object, binaryDirs:Array, fullFallback:object}}
+ */
+function synthesizeBaseline(runtimeDir, version) {
+    const root = path.resolve(runtimeDir || path.join(__dirname, '..'));
+    const files = {};
+    const inScope = (rel, isDir) => {
+        // 目录用 rel+'/' 判定，才能 descending 进 public/routes/utils 根；
+        // 文件用 rel 判定，与发布端 build_manifest 的 rel.startswith(p) 完全同口径。
+        const r = isDir ? rel + '/' : rel;
+        return INCREMENTAL_FILE_PREFIXES.some(p => r.startsWith(p));
+    };
+    const walk = (dir) => {
+        let entries;
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+        catch (e) { return; }
+        for (const e of entries) {
+            if (e.name === 'node_modules' || e.name === '.git') continue;
+            const full = path.join(dir, e.name);
+            const rel = path.relative(root, full).split(path.sep).join('/');
+            if (e.isDirectory()) {
+                if (inScope(rel, true)) walk(full);
+                continue;
+            }
+            if (!e.isFile() || !inScope(rel, false)) continue;
+            try {
+                const st = fs.statSync(full);
+                files[rel] = {
+                    sha256: crypto.createHash('sha256').update(fs.readFileSync(full)).digest('hex'),
+                    size: st.size,
+                };
+            } catch (e) { /* 单文件读失败跳过，不让整份 baseline 失效 */ }
+        }
+    };
+    walk(root);
+    return {
+        version: String(version || localVersion()).replace(/^[vV]/, ''),
+        generatedAt: new Date().toISOString(),
+        files,
+        binaryDirs: [],
+        fullFallback: {},
+    };
+}
+
+/**
+ * 取得可用的 baseline：优先用显式传入 / 磁盘上已有的；没有或损坏则从已安装文件合成
+ * 并落盘（原子 rename），供后续复用且与 M3 切换写入方共用同一路径。
+ * 仅做本地文件系统操作，绝不触网。
+ *
+ * @param {object} [opts] {runtimeDir?, baselinePath?, version?}
+ * @returns {object|null} 归一化后的 baseline；连已安装文件也扫不到时返回 null（交上层回退全量）
+ */
+function ensureBaseline(opts = {}) {
+    const bp = opts.baselinePath || path.join(updateDir(), 'baseline-manifest.json');
+    try {
+        if (fs.existsSync(bp)) {
+            const m = normalizeManifest(JSON.parse(fs.readFileSync(bp, 'utf8')));
+            if (m.files && Object.keys(m.files).length) return m;
+        }
+    } catch (e) { /* 文件缺失/损坏/不可读 → 现场合成 */ }
+
+    const synthesized = synthesizeBaseline(opts.runtimeDir, opts.version);
+    if (!Object.keys(synthesized.files).length) return null;
+    try {
+        fs.mkdirSync(path.dirname(bp), { recursive: true });
+        const tmp = bp + '.tmp-' + process.pid;
+        fs.writeFileSync(tmp, JSON.stringify(synthesized, null, 2), 'utf8');
+        fs.renameSync(tmp, bp);
+    } catch (e) {
+        // 落盘失败不阻断本次增量（用内存中的 baseline 继续），但要显式告警
+        console.warn('[更新] baseline-manifest.json 落盘失败（本次仍可用内存 baseline）: ' + (e && e.message));
+    }
+    return normalizeManifest(synthesized);
+}
+
+/** 增量的验签公钥守卫：缺失时告警并抛错，交给路由层回退 A 方案全量下载。
+ *  公钥只从 env 读取，绝不硬编码；打包版必须在部署时注入 CV_UPDATE_PUBLIC_KEY
+ *  才能启用增量更新，否则增量不可用但全量下载照常工作。 */
+function requireUpdatePublicKey() {
+    const pem = readUpdatePublicKey();
+    if (!pem) {
+        console.warn('[更新] 未配置验签公钥 CV_UPDATE_PUBLIC_KEY：增量更新不可用，本次回退全量下载。'
+            + '打包版需在部署时注入该环境变量（公钥可公开，私钥仅发布端持有）方可启用增量更新。');
+        throw new Error('未配置验签公钥（CV_UPDATE_PUBLIC_KEY）');
+    }
+    return pem;
+}
+
 /** 单个源的下载尝试：成功 resolve(true)，失败/被取消 resolve(false)。 */
 function trySource(entry, ctx) {
     const { tmpPath, asset, finalPath } = ctx;
@@ -858,16 +969,19 @@ async function startIncremental(opts = {}) {
     /* baseline = 本地当前版本的 manifest（用于 from→to 命名 + 本地改动检测）。
      * checkUpdate.result.manifest 是「目标版本」的 manifest，只用于 target 侧参考，
      * 不能当 baseline（否则 from==to、本地改动全被误报），故必须从本地读取：
-     *   opts.baseline  >  opts.baselinePath > <DATA_ROOT>/updates/baseline-manifest.json */
+     *   opts.baseline  >  opts.baselinePath > <DATA_ROOT>/updates/baseline-manifest.json
+     * 若以上都没有，ensureBaseline 会从本地已安装文件现场合成并落盘（首次安装/
+     * 全量下载用户的 bootstrap），无需先成功切换过，也无需额外网络请求。 */
     let baseline = opts.baseline || null;
     if (!baseline) {
-        const bp = opts.baselinePath || path.join(updateDir(), 'baseline-manifest.json');
-        try {
-            if (fs.existsSync(bp)) baseline = normalizeManifest(JSON.parse(fs.readFileSync(bp, 'utf8')));
-        } catch (e) { baseline = null; }
+        baseline = ensureBaseline({
+            runtimeDir: opts.runtimeDir,
+            baselinePath: opts.baselinePath,
+            version: localVersion(),
+        });
     }
     if (!baseline || !baseline.files || !Object.keys(baseline.files).length) {
-        throw new Error('缺少本地 baseline manifest，改走全量');
+        throw new Error('本地无可合成 baseline 的源码文件，改走全量');
     }
 
     const cfg = updaterConfig();
@@ -876,9 +990,9 @@ async function startIncremental(opts = {}) {
     const patchUrl = assetDownloadUrl(cfg, chk.release.tag || chk.release.version, relForCheck(chk), patchName);
     if (!patchUrl) throw new Error('该版本未提供 patch 资产');
 
-    // 信任锚：验签公钥只从环境变量读取，不接受 opts/请求体注入（review round1 Important#1）
-    const pubkeyPem = readUpdatePublicKey();
-    if (!pubkeyPem) throw new Error('未配置验签公钥（CV_UPDATE_PUBLIC_KEY）');
+    // 信任锚：验签公钥只从环境变量读取，不接受 opts/请求体注入（review round1 Important#1）。
+    // 缺失时告警并抛错 → 路由层回退全量；打包版须在部署时注入 CV_UPDATE_PUBLIC_KEY。
+    const pubkeyPem = requireUpdatePublicKey();
 
     const patchBytes = await iu.downloadPatchBytes(cfg, { downloadUrl: patchUrl });
     const updatesDir = updateDir();
@@ -1010,6 +1124,13 @@ module.exports = {
     candidateDownloadUrls, // 导出供单测：多源 URL 构造
     startIncremental,       // M2：增量 patch 下载 + 校验（不切换）
     readUpdatePublicKey,    // M2：验签公钥唯一信任锚（只读 env，供非 HTTP 测试）
+    requireUpdatePublicKey, // 公钥缺失守卫：告警 + 抛错 → 回退全量（供非 HTTP 测试）
+    synthesizeBaseline,     // fresh-install bootstrap：从本地已安装文件合成 baseline（不触网）
+    ensureBaseline,         // baseline 读取/合成 + 落盘（供非 HTTP 测试）
+    INCREMENTAL_FILE_PREFIXES, // 增量扫描前缀（与发布端 _cv_patch.py ALLOWED 同口径）
+    /** 仅供非 HTTP 单测注入最近一次 checkUpdate 结果（startIncremental 依赖它）。
+     *  HTTP 路由绝不调用；真实运行由 checkUpdate() 自行填充。 */
+    __setLastCheckForTest(result) { lastCheck = result ? { at: Date.now(), result } : null; },
     normalizeManifest,      // M2：snake_case → camelCase 字段转换
     manifestAssetName,      // M2：cv-manifest-<ver>.json 命名
 };

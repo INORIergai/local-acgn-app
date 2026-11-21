@@ -354,3 +354,125 @@ test('POST /api/update/incremental falls back to startDownload on failure', asyn
         updater.startDownload = origDownload;
     }
 });
+
+/* ---------------------------------------- final fix: baseline bootstrap (fresh install) */
+
+/**
+ * final whole-branch review finding A: 没有 producer 在首次安装/全量用户机器上写
+ * baseline-manifest.json —— 成功切换才写 baseline，而成功切换又必须先读到 baseline，
+ * 形成鸡生蛋，增量对全新用户永远是死代码。下面锁住新的 bootstrap 契约：
+ *   - 从本地已安装文件现场合成 baseline（含 sha256/size），与发布端 build_manifest 同口径
+ *   - 版本 = 本地版本；文件集合限定在 INCREMENTAL_FILE_PREFIXES 内
+ *   - 落盘到自定义 baselinePath（测试隔离，不碰真实 updateDir）；不触网、不需要先成功切换
+ */
+test('bootstrap: synthesizeBaseline hashes installed files in scope, version matches, no network', () => {
+    const root = mkdtemp();
+    fs.mkdirSync(path.join(root, 'public', 'js'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'routes'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'public', 'js', 'app.js'), 'APP');
+    fs.writeFileSync(path.join(root, 'routes', 'data.js'), 'ROUTE');
+    fs.writeFileSync(path.join(root, 'personal-photo.jpg'), 'PRIVATE');   // 不在 scope
+    fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'node_modules', 'lib.js'), 'LIB');   // 必须跳过
+
+    const m = updater.synthesizeBaseline(root, '6.8.2');
+    assert.equal(m.version, '6.8.2');
+    assert.deepEqual(Object.keys(m.files).sort(), ['public/js/app.js', 'routes/data.js'].sort());
+    assert.equal(m.files['public/js/app.js'].sha256, sha('APP'));
+    assert.equal(m.files['public/js/app.js'].size, 3);
+    assert.equal(m.files['routes/data.js'].sha256, sha('ROUTE'));
+    assert.ok(m.generatedAt, '含生成时间');
+});
+
+test('bootstrap: ensureBaseline seeds a fresh install (no baseline file) and reuses it afterwards', () => {
+    const root = mkdtemp();
+    const runtime = path.join(root, 'runtime');
+    const updates = path.join(root, 'updates');
+    const bp = path.join(updates, 'baseline-manifest.json');
+    fs.mkdirSync(path.join(runtime, 'utils'), { recursive: true });
+    fs.writeFileSync(path.join(runtime, 'utils', 'x.js'), 'X');
+    assert.equal(fs.existsSync(bp), false, '前置：没有 baseline（全新安装）');
+
+    const first = updater.ensureBaseline({ runtimeDir: runtime, baselinePath: bp, version: '6.8.2' });
+    assert.equal(first.version, '6.8.2');
+    assert.equal(first.files['utils/x.js'].sha256, sha('X'));
+    assert.equal(fs.existsSync(bp), true, '首次即落盘 baseline');
+    const onDisk = JSON.parse(fs.readFileSync(bp, 'utf8'));
+    assert.equal(onDisk.version, '6.8.2');
+    assert.equal(onDisk.files['utils/x.js'].sha256, sha('X'));
+
+    // 篡改落盘 baseline：ensureBaseline 应优先复用已有版本（M3 切换写入的内容），不覆盖
+    onDisk.files['utils/x.js'].sha256 = 'MARKED';
+    fs.writeFileSync(bp, JSON.stringify(onDisk), 'utf8');
+    const second = updater.ensureBaseline({ runtimeDir: runtime, baselinePath: bp, version: '6.8.2' });
+    assert.equal(second.files['utils/x.js'].sha256, 'MARKED');
+});
+
+test('bootstrap: version match — synthesized baseline uses installed version, strips v prefix', () => {
+    const root = mkdtemp();
+    fs.writeFileSync(path.join(root, 'server.js'), 'S');
+    const m = updater.synthesizeBaseline(root, 'v6.8.2');
+    assert.equal(m.version, '6.8.2', 'v 前缀被去掉，与发布端 patch 命名 from 一致');
+    assert.deepEqual(Object.keys(m.files), ['server.js']);
+});
+
+test('bootstrap: startIncremental seeds baseline on fresh install then proceeds (no prior switch) — graceful no-pubkey degradation', async () => {
+    const root = mkdtemp();
+    const runtime = path.join(root, 'runtime');
+    const updates = path.join(root, 'updates');
+    const bp = path.join(updates, 'baseline-manifest.json');
+    fs.mkdirSync(path.join(runtime, 'public', 'js'), { recursive: true });
+    fs.writeFileSync(path.join(runtime, 'public', 'js', 'app.js'), 'OLD');
+    assert.equal(fs.existsSync(bp), false, '前置：全新安装无 baseline');
+
+    // 注入一次「已检查更新」结果（无需触网），指向一个虚构目标版本
+    updater.__setLastCheckForTest({
+        release: { tag: 'v6.8.3', version: '6.8.3' },
+        assets: [{ name: 'cv-patch-6.8.2-6.8.3.zip', downloadUrl: 'https://github.com/x/y/releases/download/v6.8.3/cv-patch-6.8.2-6.8.3.zip' }],
+        manifest: null,
+    });
+
+    const origKey = process.env.CV_UPDATE_PUBLIC_KEY;
+    const origDl = iu.downloadPatchBytes;
+    const saved = (v) => { if (v === undefined) delete process.env.CV_UPDATE_PUBLIC_KEY; else process.env.CV_UPDATE_PUBLIC_KEY = v; };
+    let downloadCalled = 0;
+    let patchNameSeen = '';
+    try {
+        // ① 无公钥：必须优雅降级（告警 + 抛错），且 baseline 已被 bootstrap 写出、无网络下载
+        saved('');
+        const warns = [];
+        const origWarn = console.warn;
+        console.warn = (m) => warns.push(String(m));
+        let err1 = null;
+        try { await updater.startIncremental({ runtimeDir: runtime, baselinePath: bp, version: '6.8.2' }); }
+        catch (e) { err1 = e; }
+        finally { console.warn = origWarn; }
+        assert.ok(err1, '缺公钥应抛错，由路由层回退全量');
+        assert.match(err1.message, /未配置验签公钥/);
+        assert.ok(warns.some(w => /CV_UPDATE_PUBLIC_KEY/.test(w)), '应有明确告警');
+        assert.equal(downloadCalled, 0, '无公钥时绝不下载 patch');
+        assert.equal(fs.existsSync(bp), true, '无公钥也应先 bootstrap baseline（与公钥检查解耦）');
+        const boot = JSON.parse(fs.readFileSync(bp, 'utf8'));
+        assert.equal(boot.version, '6.8.2');
+        assert.equal(boot.files['public/js/app.js'].sha256, sha('OLD'));
+
+        // ② 有公钥（临时生成，非硬编码）：baseline 已存在 → 直接进入下载，patch 名来自 baseline 版本
+        const k = genKey();
+        saved(k.pub);
+        iu.downloadPatchBytes = async (cfg, asset) => {
+            downloadCalled++;
+            patchNameSeen = asset.downloadUrl.split('/').pop();
+            throw new Error('STOP-AFTER-BOOTSTRAP');   // 不真正下载内容
+        };
+        let err2 = null;
+        try { await updater.startIncremental({ runtimeDir: runtime, baselinePath: bp, version: '6.8.2' }); }
+        catch (e) { err2 = e; }
+        assert.ok(err2 && /STOP-AFTER-BOOTSTRAP/.test(err2.message));
+        assert.equal(downloadCalled, 1, '公钥就位时应进入 patch 下载');
+        assert.equal(patchNameSeen, 'cv-patch-6.8.2-6.8.3.zip', 'from 版本取自 bootstrap 的 baseline，不是目标版本');
+    } finally {
+        saved(origKey);
+        iu.downloadPatchBytes = origDl;
+        updater.__setLastCheckForTest(null);
+    }
+});
