@@ -53,12 +53,20 @@ router.post('/download', async (req, res) => {
 /**
  * POST /api/update/incremental — M2：增量 patch 下载 + 校验（不切换）。
  * 增量失败一律回退 A 方案全量下载（兼容 A 方案，controller 裁定）。
+ *
+ * 安全：绝不把 req.body 整包传给 startIncremental —— 其 opts 含 baseline /
+ * baselinePath / runtimeDir 等特权字段，一旦由客户端控制即可操纵 patch 文件名
+ * 与本地改动检测根目录。这里只取 assetName 这类无害标量，其余选项由服务端派生。
  */
 router.post('/incremental', async (req, res) => {
     if (busy) return res.json({ code: -1, msg: '已有下载任务在进行中' });
     busy = true;
     try {
-        const r = await updater.startIncremental(req.body || {});
+        const r = await updater.startIncremental({
+            assetName: (req.body && typeof req.body.assetName === 'string') ? req.body.assetName : '',
+            // baseline / baselinePath / runtimeDir 由 startIncremental 内部按服务端状态派生，
+            // 不从请求体读取；验签公钥只从 CV_UPDATE_PUBLIC_KEY 环境变量读取。
+        });
         res.json({ code: 0, data: r });
     } catch (e) {
         // 增量失败 → 自动回退全量下载（A 方案）

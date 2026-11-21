@@ -825,7 +825,20 @@ async function startDownload(assetName) {
 }
 
 /**
+ * 验签公钥唯一信任锚：只从 CV_UPDATE_PUBLIC_KEY 环境变量读取。
+ * 绝不接收 HTTP 请求体或调用方 opts 传入的公钥（否则攻击者可用自己的公钥
+ * 伪造 patch 签名）。此函数不接受任何参数，是可供非 HTTP 测试注入的 seam。
+ */
+function readUpdatePublicKey() {
+    return process.env.CV_UPDATE_PUBLIC_KEY || '';
+}
+
+/**
  * M2：增量 patch 下载 + 验签 + 写 staging / pending-switch.json（不切换）。
+ *
+ * 注意：opts 仅供内部/非 HTTP 测试使用，绝不可把 HTTP 请求体整包传入 ——
+ * baseline / baselinePath / runtimeDir 等特权字段一旦被客户端控制，将可操纵
+ * patch 文件名与本地改动检测根目录。HTTP 入口见 routes/update.js 的显式构造。
  *
  * 流程：取 baseline manifest（opts.baseline 或 opts.baselinePath 指向本地
  * cv-manifest-<ver>.json；未传则退到本地版本文件）→ 算 from→to →
@@ -863,7 +876,8 @@ async function startIncremental(opts = {}) {
     const patchUrl = assetDownloadUrl(cfg, chk.release.tag || chk.release.version, relForCheck(chk), patchName);
     if (!patchUrl) throw new Error('该版本未提供 patch 资产');
 
-    const pubkeyPem = process.env.CV_UPDATE_PUBLIC_KEY || opts.publicKey || '';
+    // 信任锚：验签公钥只从环境变量读取，不接受 opts/请求体注入（review round1 Important#1）
+    const pubkeyPem = readUpdatePublicKey();
     if (!pubkeyPem) throw new Error('未配置验签公钥（CV_UPDATE_PUBLIC_KEY）');
 
     const patchBytes = await iu.downloadPatchBytes(cfg, { downloadUrl: patchUrl });
@@ -995,6 +1009,7 @@ module.exports = {
     isBlockedIp,    // 纯函数，便于测试私网/保留地址判定
     candidateDownloadUrls, // 导出供单测：多源 URL 构造
     startIncremental,       // M2：增量 patch 下载 + 校验（不切换）
+    readUpdatePublicKey,    // M2：验签公钥唯一信任锚（只读 env，供非 HTTP 测试）
     normalizeManifest,      // M2：snake_case → camelCase 字段转换
     manifestAssetName,      // M2：cv-manifest-<ver>.json 命名
 };

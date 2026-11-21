@@ -105,6 +105,23 @@ test('normalizeManifest converts publisher snake_case fields into camelCase', ()
     assert.equal(updater.manifestAssetName('v6.8.3'), 'cv-manifest-6.8.3.json');
 });
 
+/* ------------------------------- review round1: 验签公钥信任锚 / 选项特权限定 */
+
+test('readUpdatePublicKey reads only CV_UPDATE_PUBLIC_KEY env (no opts injection)', () => {
+    const saved = process.env.CV_UPDATE_PUBLIC_KEY;
+    try {
+        delete process.env.CV_UPDATE_PUBLIC_KEY;
+        assert.equal(updater.readUpdatePublicKey(), '');
+        process.env.CV_UPDATE_PUBLIC_KEY = 'SERVER-PUBKEY-FROM-ENV';
+        // 即便调用方伪造 opts.publicKey，信任锚函数不接受任何参数，只读 env
+        assert.equal(updater.readUpdatePublicKey({ publicKey: 'ATTACKER' }), 'SERVER-PUBKEY-FROM-ENV');
+        assert.equal(updater.readUpdatePublicKey(), 'SERVER-PUBKEY-FROM-ENV');
+    } finally {
+        if (saved === undefined) delete process.env.CV_UPDATE_PUBLIC_KEY;
+        else process.env.CV_UPDATE_PUBLIC_KEY = saved;
+    }
+});
+
 /* ---------------------------------------------------------------- Step 16 */
 
 test('diffLocal reports added/modified/removed', () => {
@@ -317,7 +334,12 @@ test('POST /api/update/incremental falls back to startDownload on failure', asyn
     updater.startDownload = async (name) => { downloadCalled++; return { state: 'done', file: 'full-' + name, name }; };
 
     try {
-        const req = { body: { assetName: 'CV-Setup.exe' } };
+        const req = { body: {
+            assetName: 'CV-Setup.exe',
+            // 攻击者试图注入的特权字段：均不得进入 startIncremental 的 opts
+            publicKey: 'ATTACKER-PUBKEY', baseline: { files: { evil: {} } },
+            baselinePath: 'C:/evil.json', runtimeDir: 'C:/evil-runtime',
+        } };
         const res = { json(o) { this.body = o; return this; } };
         await handler(req, res);
         assert.equal(downloadCalled, 1, '应回退到全量下载');
@@ -325,7 +347,8 @@ test('POST /api/update/incremental falls back to startDownload on failure', asyn
         assert.equal(res.body.data.mode, 'full');
         assert.equal(res.body.data.file, 'full-CV-Setup.exe');
         assert.match(res.body.data.incrementalError, /无可用 patch/);
-        assert.deepEqual(incrementalArg, req.body);
+        // 路由只透传 assetName；基线/公钥/运行时目录等特权字段一律不进 opts
+        assert.deepEqual(incrementalArg, { assetName: 'CV-Setup.exe' });
     } finally {
         updater.startIncremental = origIncremental;
         updater.startDownload = origDownload;
