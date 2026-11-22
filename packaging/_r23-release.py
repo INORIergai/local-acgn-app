@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.5'
-TAG = 'v6.8.5'
+VER = '6.8.6'
+TAG = 'v6.8.6'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -68,15 +68,14 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.5 · 应用内一键增量更新
+## v6.8.6 · 漫画跨源 + DoH 抗污染 + 订阅门禁
 
-设置 → 版本 新增增量更新按钮：升级只下载变化文件（通常几 MB），验签与逐文件校验后由桌面主进程原子替换，失败自动回退全量下载。首次升级到本版仍需全量一次，之后即可增量升级。
+- 漫画跨源搜索：输入书名多源并发搜索、按匹配度排序；换源续读停在同章同滚动比例。
+- DoH 兜底：DNS 被污染时自动用加密 DNS 解析（国内端点优先），仅 https + host 白名单 + 拒绝内网。
+- 订阅 schemaVersion 门禁：不兼容的新定义自动跳过，不覆盖可用源。
+- Bangumi 冲突逐条选择（已就绪）。
 
-- patch 用 ed25519 签名，客户端验签
-- 仅 http/https，拒绝内网地址的 SSRF 防护
-- 解压防路径穿越，不执行下载内容
-
-其余功能与 6.8.4 一致。如有 bug 或需求，欢迎提 issue。"""
+其余功能与 6.8.5 一致。如有 bug 或需求，欢迎提 issue。"""
 
 
 def get_token():
