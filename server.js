@@ -509,6 +509,7 @@ app.use('/api/health', require('./routes/health'));     // round36：环境信�
 // ★ 必须挂在整站反代（app.use('/', webviewProxy)）之前：反代会接管任意一层路径，
 //   挂它后面可能被当成某个站点的子路径吞掉。
 app.use('/api/media-source', require('./routes/media-source'));
+app.use('/api/media-source', require('./routes/reading-search')); // 第四批：漫画跨源搜索（独立文件，host 白名单）
 app.use('/api/bangumi', require('./routes/bangumi-sync'));   // round173e：Bangumi OAuth 云同步（须在反代之前）
 app.use('/api/player', require('./routes/player'));   // round173g：播放器增强（字幕扫描/VTT 转换）
 app.use('/api/bt', require('./routes/bt-search'));   // round173h：阶段4 BT 搜索 + 夸克离线任务（须在反代前）

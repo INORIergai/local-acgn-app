@@ -444,6 +444,36 @@ function migrate() {
     );
   `);
 
+  /* 在线观看历史（站点解析播放）。
+     独立于本地影片 watch_history：items 不一定是媒体库里的 movieId；
+     以 sourceId + 单集 url 作为跨设备去重键，updatedAt 负责新旧写入合并。 */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS online_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sourceId TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      episode TEXT DEFAULT '',
+      sourceName TEXT DEFAULT '',
+      workUrl TEXT DEFAULT '',
+      episodes TEXT DEFAULT '[]',
+      episodeIndex INTEGER DEFAULT 0,
+      kind TEXT DEFAULT '',
+      position REAL DEFAULT 0,
+      duration REAL DEFAULT 0,
+      completed INTEGER DEFAULT 0,
+      watchedAt INTEGER DEFAULT 0,
+      updatedAt INTEGER DEFAULT 0,
+      UNIQUE(sourceId, url)
+    );
+    CREATE INDEX IF NOT EXISTS idx_online_history_updated ON online_history(updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_online_history_work ON online_history(sourceId, workUrl);
+    CREATE TABLE IF NOT EXISTS online_history_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+
   /* round73：漫画 / 小说的阅读进度（落库版）。
      ★ 为什么单独建表而不是往 movies 加字段、或复用 playback_progress：
        - 往 movies 加列：movies 已 37 字段，且 FTS 触发器 movies_fts_update 历史上出过

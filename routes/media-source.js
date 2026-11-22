@@ -18,10 +18,12 @@
  *
  * ★ 安全：代理接口会带着用户的请求去访问任意 URL，必须挡住内网（SSRF）。
  */
-const express = require('express');
-const router = express.Router();
+const express = require('express');const router = express.Router();
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const engine = require('../utils/media-sources/engine');
 const reading = require('../utils/media-sources/reading');
+const onlineHistory = require('../utils/online-history');
 
 // ==================================================================
 // 并发控制：多源搜索时限制同时在跑的请求数，别把机器和站点一起打爆
@@ -81,8 +83,9 @@ router.get('/search', async (req, res) => {
     if (!q) return res.json({ code: -1, msg: '请输入关键词', data: [] });
 
     const only = String(req.query.sources || '').split(',').filter(Boolean);
+    const excluded = new Set(String(req.query.exclude || '').split(',').filter(Boolean));
     const timeout = Math.min(30000, Math.max(5000, Number(req.query.timeout) || 15000));
-    let list = engine.loadSources().filter((s) => s.kind === 'web');
+    let list = engine.loadSources().filter((s) => s.kind === 'web' && !excluded.has(s.id));
     if (only.length) list = list.filter((s) => only.includes(s.id));
 
     const results = await pool(list, 6, async (s) => {
@@ -99,6 +102,52 @@ router.get('/search', async (req, res) => {
     });
     const clean = results.filter(Boolean);
     res.json({ code: 0, data: clean, query: q });
+});
+
+// ==================================================================
+// 在线观看历史（跨设备同步）
+// ==================================================================
+router.get('/history', (req, res) => {
+    try {
+        res.json({ code: 0, data: onlineHistory.list(req.query.limit) });
+    } catch (e) {
+        res.status(500).json({ code: -1, msg: e.message, data: [] });
+    }
+});
+
+router.post('/history', (req, res) => {
+    try {
+        const r = onlineHistory.upsert(req.body || {});
+        res.json({ code: 0, data: { saved: true, changed: r.changed } });
+    } catch (e) {
+        res.status(400).json({ code: -1, msg: e.message, data: null });
+    }
+});
+
+router.post('/history/merge', (req, res) => {
+    try {
+        const items = Array.isArray(req.body && req.body.items) ? req.body.items : [];
+        res.json({ code: 0, data: onlineHistory.merge(items) });
+    } catch (e) {
+        res.status(400).json({ code: -1, msg: e.message, data: null });
+    }
+});
+
+router.delete('/history', (req, res) => {
+    try {
+        res.json({ code: 0, data: { cleared: onlineHistory.clear() } });
+    } catch (e) {
+        res.status(500).json({ code: -1, msg: e.message, data: null });
+    }
+});
+
+router.delete('/history/item', (req, res) => {
+    try {
+        const removed = onlineHistory.remove(req.query.sourceId, req.query.url);
+        res.json({ code: 0, data: { removed } });
+    } catch (e) {
+        res.status(400).json({ code: -1, msg: e.message, data: null });
+    }
 });
 
 /* r153 · D：源站目录 / 发现页（无关键词浏览）。 */
@@ -346,7 +395,24 @@ router.get('/seg', async (req, res) => {
     if (refOk) ctx.headers = Object.assign({}, ctx.headers, { Referer: refParam });
     const range = req.headers.range;
     const baseHeaders = {};
-    if (range) baseHeaders.Range = range;   // 拖动进度条会带 Range，必须透传
+    const isImageReq = /^image\//i.test(String(req.query.img || ''));
+    const keyLocked = isImageReq || !!refParam;
+    // 整文件媒体（mp4/mp3…）与 HLS 分片（.ts/.m4s）区别对待：
+    // 源站的开放式 Range（bytes=0-）实测会拖到超时，必须改成有界窗口；
+    // HLS 分片不带 Range 时不能只探 1 字节，否则分片被截断。
+    const fileLike = !keyLocked && /\.(mp4|m4v|mov|webm|mkv|mp3|m4a|aac|flac|wav)(?:$|[?#])/i.test(u);
+    const RANGE_WINDOW = 8 * 1024 * 1024;
+    let upstreamRange = range;
+    if (fileLike && range) {
+        const m = /^bytes=(\d+)-(\d*)$/i.exec(String(range).trim());
+        if (m) {
+            const start = Number(m[1]);
+            const asked = m[2] ? Number(m[2]) : start + RANGE_WINDOW - 1;
+            upstreamRange = 'bytes=' + start + '-' + Math.min(asked, start + RANGE_WINDOW - 1);
+        }
+    }
+    if (upstreamRange) baseHeaders.Range = upstreamRange;
+    else if (fileLike) baseHeaders.Range = 'bytes=0-' + (RANGE_WINDOW - 1);
     // Komiic 章节图要 X-Image-Ticket；只对 komiic 域名放行这一个头，别的地方一律忽略
     const xt = String(req.query.xt || '');
     try {
@@ -368,9 +434,29 @@ router.get('/seg', async (req, res) => {
      *   不带才 200 —— 嘀嗒影视走的小红书 CDN 就是这样）。
      *   所以先不带 Referer 试，被拒再带 Referer 重试一次。 */
     const reqHeaders = Object.assign({}, baseHeaders, ctx.headers || {});
+    // 图片缓冲用于缓存；视频/分片必须边下边发，不能等整个文件 arrayBuffer 完成。
+    const streaming = !keyLocked;
+    if (streaming) {
+        const r = await engine.grab(u, { timeout: 30000, headers: reqHeaders, cookie: ctx.cookie || '', stream: true });
+        if (!r.ok || !r.body) return res.status(502).json({ code: -1, msg: '分片拉取失败：' + (r.error || ('HTTP ' + r.status)) });
+        res.status(r.status || 200);
+        res.set('Content-Type', r.ctype || 'application/octet-stream');
+        for (const h of ['content-length', 'content-range', 'accept-ranges']) {
+            const v = r.headers.get(h);
+            if (v) res.set(h, v);
+        }
+        if (!r.headers.get('accept-ranges')) res.set('Accept-Ranges', 'bytes');
+        res.set('Cache-Control', 'no-cache');
+        try {
+            await pipeline(Readable.fromWeb(r.body), res);
+        } catch (e) {
+            // 客户端暂停后关页会断开响应，属于正常取消，不应再写第二个错误响应。
+            if (!res.headersSent && !res.destroyed) res.status(502).end();
+        }
+        return;
+    }
 
     // 图片可能是首屏预热发起的同一张图：并到同一个在途请求，别重复打源站
-    const keyLocked = /^image\//i.test(String(req.query.img || '')) || !!refParam;
     let r;
     if (keyLocked && coverPending.has(coverKey)) {
         r = await coverPending.get(coverKey);

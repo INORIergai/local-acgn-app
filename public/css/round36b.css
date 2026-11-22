@@ -134,6 +134,50 @@
 .ms-hist-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .ms-hist-main b { font-size: 13px; color: var(--text); }
 .ms-hist-m { font-size: 11px; color: var(--text-muted); }
+.ms-hist-sync { font-size: 10.5px; color: var(--text-muted); }
+.ms-empty .ms-hist-sync { display: inline-block; margin-top: 6px; }
+
+/* ---- 标题匹配评分 / 推荐线路 / 换源解释 ---- */
+.ms-sort-note { margin-left: 8px; font-size: 10.5px; color: var(--text-muted); font-weight: 400; }
+.ms-best {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 9px 12px; margin-bottom: 10px;
+    border: 1px solid var(--accent); border-radius: 10px;
+    background: var(--card-bg);
+}
+.ms-best-tag {
+    font-size: 10.5px; font-weight: 700; color: #fff; background: var(--accent);
+    padding: 2px 8px; border-radius: 9px;
+}
+.ms-best-src { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.ms-best-name { font-size: 12px; color: var(--text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-best-score { font-size: 10.5px; color: #2f9e5f; }
+.ms-best-warn { font-size: 10.5px; color: #c07a12; }
+.ms-best button { margin-left: auto; }
+.ms-item-badge {
+    flex: none; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    border: 1px solid var(--border); color: var(--text-muted); background: var(--bg);
+}
+.ms-item-badge i { font-style: normal; margin-left: 3px; opacity: .72; }
+.ms-item-badge.is-exact, .ms-alt-score.is-exact { color: #2f9e5f; border-color: #2f9e5f; }
+.ms-item-badge.is-same, .ms-alt-score.is-same { color: #3b7ea1; border-color: #3b7ea1; }
+.ms-item-badge.is-season, .ms-alt-score.is-season { color: #c07a12; border-color: #c07a12; }
+.ms-item-badge.is-special, .ms-alt-score.is-special { color: #b3453f; border-color: #b3453f; }
+.ms-item-badge.is-low { opacity: .75; }
+.ms-alt-note { font-size: 11px; color: var(--text-muted); margin: 2px 0 8px; }
+.ms-alt .ms-alt-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.ms-alt-item {
+    width: 100%; flex-direction: row; align-items: center; justify-content: space-between;
+    gap: 10px; text-align: left;
+}
+.ms-alt-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-alt-title {
+    font-size: 11px; color: var(--text-muted); max-width: 190px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ms-alt-score { flex: none; font-size: 10.5px; color: var(--text-muted); text-align: right; }
+.ms-alt-score.is-exact, .ms-alt-score.is-same, .ms-alt-score.is-season, .ms-alt-score.is-special { border: 0; }
+.ms-alt-item.is-failed { opacity: .62; }
 
 /* ---- 手机端：tab 横向滚动，不依赖 hover ---- */
 @media (max-width: 860px) {

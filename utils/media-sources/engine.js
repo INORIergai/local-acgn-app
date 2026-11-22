@@ -23,6 +23,7 @@ const cheerio = require('cheerio');
 const iconv = require('iconv-lite');
 
 const config = require('../config');
+const doh = require('./doh');
 
 // 内置源定义目录（随应用打包）
 const BUILTIN_DIR = path.join(__dirname, 'subs');
@@ -291,12 +292,51 @@ async function grab(url, opts = {}) {
     for (const a of attempts) {
         try {
             const r = await fetch(url, a);
+            if (opts.stream) {
+                return { ok: r.status < 400, status: r.status, body: r.body, ctype: r.headers.get('content-type') || '', headers: r.headers };
+            }
             const buf = Buffer.from(await r.arrayBuffer());
             const ctype = r.headers.get('content-type') || '';
             return { ok: r.status < 400, status: r.status, buf, ctype, text: decode(buf, ctype), headers: r.headers };
         } catch (e) {
             lastErr = e;
         }
+    }
+
+    /* DoH 兜底：代理与直连都失败（典型是 DNS 污染拿到错误 IP）时，
+     * 用 DoH 解析公网 IP，再让 undici 连这个 IP（SNI 仍是原域名）。
+     * 仅对 http/https 的公网域名启用；IP 字面量/内网跳过。失败静默回原错误。 */
+    if (opts.doh !== false) {
+        try {
+            const u = new URL(url);
+            if ((u.protocol === 'https:' || u.protocol === 'http:') && !require('node:net').isIP(u.hostname)
+                && !doh.isBlockedIp(u.hostname)) {
+                const ips = await doh.resolveViaDoh(u.hostname);
+                if (ips.length) {
+                    const { Agent } = require('undici');
+                    let idx = 0;
+                    // lookup 回调：返回 DoH 解析出的 IP（轮转），TLS servername 由 undici 保留原 host
+                    const lookup = (hostname, options, cb) => {
+                        if (typeof options === 'function') { cb = options; options = {}; }
+                        const ip = ips[idx++ % ips.length];
+                        if (cb) cb(null, ip, options && options.family === 6 ? 6 : 4);
+                        return ip;
+                    };
+                    const dispatcher = new Agent({ connect: { lookup } });
+                    try {
+                        const r = await fetch(url, { ...init, dispatcher });
+                        if (opts.stream) {
+                            return { ok: r.status < 400, status: r.status, body: r.body, ctype: r.headers.get('content-type') || '', headers: r.headers };
+                        }
+                        const buf = Buffer.from(await r.arrayBuffer());
+                        const ctype = r.headers.get('content-type') || '';
+                        return { ok: r.status < 400, status: r.status, buf, ctype, text: decode(buf, ctype), headers: r.headers };
+                    } finally {
+                        dispatcher.close();
+                    }
+                }
+            }
+        } catch (e) { lastErr = e; /* DoH 兜底失败不影响返回原错误 */ }
     }
     return { ok: false, status: 0, buf: null, ctype: '', text: '', error: (lastErr && lastErr.message) || 'network error' };
 }
@@ -1036,6 +1076,23 @@ function statusMap(force) {
 const SUB_REPO_API = 'https://api.github.com/repos/creamycake-anime/animeko-subs/git/trees/main?recursive=1';
 const SUB_REPO_RAW = 'https://raw.githubusercontent.com/creamycake-anime/animeko-subs/main/';
 
+/* 订阅 schema 门禁（对标 AniLiberty 的 schemaVersion）：
+ * 本 engine 只理解下列 factory 的最高版本；上游若发布更高版本的定义，
+ * 说明格式已变、本引擎解析会出错，必须跳过而不是写进 override 覆盖可用源。
+ * 无版本字段的旧定义仍接受（向后兼容）。 */
+const FACTORY_MAX_VERSION = Object.freeze({ 'web-selector': 2, 'json-api': 1, rss: 1 });
+function schemaSupported(def) {
+    if (!def || typeof def !== 'object') return false;
+    const factory = String(def.factoryId || def.factory || '');
+    const raw = def.schemaVersion != null ? def.schemaVersion : def.version;
+    if (raw == null) return true;                       // 旧格式无版本字段：放行
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return false;              // 版本号非数字：拒绝
+    const max = FACTORY_MAX_VERSION[factory];
+    if (max == null) return true;                       // 未知 factory 由加载器自行判定
+    return v <= max;
+}
+
 /**
  * 订阅刷新：把最新的源定义抓到 override 目录。
  * 站点改版往往只是选择器变了，刷新订阅就能救回来，不必等应用发版。
@@ -1052,20 +1109,28 @@ async function refreshSubscription() {
     if (!paths.length) return { updated: 0, error: '拿不到订阅仓库文件列表（GitHub 不可达或被限流）' };
 
     fs.mkdirSync(OVERRIDE_DIR, { recursive: true });
-    let updated = 0, failed = 0;
+    let updated = 0, failed = 0, skippedSchema = 0;
     for (const p of paths) {
         const r = await grab(SUB_REPO_RAW + p, { timeout: 20000 });
         if (!r.ok || !r.text) { failed++; continue; }
+        let def;
         try {
-            JSON.parse(r.text);   // 必须能解析，别把 HTML 错误页写成源定义
+            def = JSON.parse(r.text);   // 必须能解析，别把 HTML 错误页写成源定义
         } catch (e) { failed++; continue; }
-        const out = path.join(OVERRIDE_DIR, p.replace(/^subs\//, ''));
+        // schemaVersion 门禁：高于本 engine 支持上限的定义跳过，不覆盖可用源
+        if (!schemaSupported(def)) { skippedSchema++; continue; }
+        // 路径边界：订阅相对路径必须落在 OVERRIDE_DIR 内，拒绝 ../ 等越界
+        const rel = p.replace(/^subs\//, '');
+        if (!rel || rel.startsWith('/') || /^[A-Za-z]:/.test(rel) || rel.split('/').includes('..')) { failed++; continue; }
+        const out = path.resolve(OVERRIDE_DIR, rel);
+        const rootAbs = path.resolve(OVERRIDE_DIR);
+        if (out !== rootAbs && !out.startsWith(rootAbs + path.sep)) { failed++; continue; }
         fs.mkdirSync(path.dirname(out), { recursive: true });
         fs.writeFileSync(out, r.text, 'utf8');
         updated++;
     }
     loadSources(true);
-    return { updated, failed, error: '' };
+    return { updated, failed, skippedSchema, error: '' };
 }
 
 /** round182 P0-3：订阅新鲜度——用 override 目录里最新 json 的 mtime 当"上次刷新时间" */

@@ -29,6 +29,7 @@ const TAG_CANDY = ['#ffdbfd', '#FAED8F', '#DDFCFC', '#CAF7C8', '#fbb663', '#f499
 let currentPlayerMovie = null;
 // round182 P0-1：追番在线播放当前集 id（关闭播放器时补写进度用）
 let currentPlayerEpisode = 0;
+// 在线会话由 MediaSource 挂到 window；不要另建 let，首屏合并脚本会切断顶层 let 与 window 的对应。
 // 当前详情弹窗中的影片（用于详情弹窗内的按钮操作，不依赖列表缓存）
 let currentDetailMovie = null;
 // 当前列表筛选上下文（标签/女优筛选），用于数据变更后原地刷新保持状态
@@ -13996,7 +13997,11 @@ function switchView(view) {
                 'watch-anime': '🌸 动漫在线观看'
             };
             updateToolbarTitle(watchTitles[currentView] || '📺 在线观看');
-            if (window.Features && window.Features.showWatch) window.Features.showWatch(currentView);
+            if (window.MediaSource && window.MediaSource.show) {
+                window.MediaSource.show('search', { anime: true });
+            } else if (window.Features && window.Features.showWatch) {
+                window.Features.showWatch(currentView);
+            }
             break;
         }
         // 原站排障：整站反代 / iframe 窗口（过 CF 盾、解析器全挂时用）
@@ -15300,9 +15305,13 @@ function updatePlayerLoopBtn() {
 }
 
 // 在线播放
-async function playMovieInline(id) {
+async function playMovieInline(id, options = {}) {
     const movie = await api.getMovieDetail(id);
     if (!movie) return;
+
+    if (options.keepPlaylist !== true && window.MediaSource && typeof window.MediaSource.clearPlayback === 'function') {
+        window.MediaSource.clearPlayback();
+    }
 
     // round46：按格式路由阅读器——所有入口（展台 CTA/牌堆/连播/列表）统一在此分流，
     // 漫画/小说不该被塞进视频播放器；视频类（jav/anime/film/cartoon）照旧
@@ -15401,7 +15410,7 @@ async function playMovieInline(id) {
                 window.currentPlaylistIndex = nextIndex;
                 const nextMovie = window.currentPlaylist[nextIndex];
                 showNotification('自动连播', `正在播放：${nextMovie.title || nextMovie.fileName}`);
-                playMovieInline(nextMovie.id);
+                playMovieInline(nextMovie.id, { keepPlaylist: true });
             } else {
                 showNotification('播放完成', '播放列表已全部播放完毕');
                 window.currentPlaylist = null;
@@ -15434,7 +15443,10 @@ function updatePlayerQueueUI() {
             const mId = typeof item === 'object' ? item.id : item;
             const mTitle = typeof item === 'object' ? (item.title || item.avid) : `影片 ${mId}`;
             const isPlaying = idx === window.currentPlaylistIndex;
-            return `<div class="ppd-item ${isPlaying ? 'active' : ''}" data-idx="${idx}" onclick="playMovieInline(${mId})">
+            const clickAction = currentOnlinePlayback
+                ? `window.MediaSource.playQueue(${idx})`
+                : `playMovieInline(${JSON.stringify(mId)}, { keepPlaylist: true })`;
+            return `<div class="ppd-item ${isPlaying ? 'active' : ''}" data-idx="${idx}" onclick='${clickAction}'>
                 <span class="ppd-idx">${idx + 1}</span>
                 <span class="ppd-title">${escapeHtml(mTitle)}</span>
                 ${isPlaying ? '<span class="ppd-tag">正在播放</span>' : ''}
@@ -15505,6 +15517,10 @@ function togglePlayerPlaylistDrawer() {
 }
 
 function playNextEpisode() {
+    if (currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.next === 'function') {
+        window.MediaSource.next();
+        return;
+    }
     if (!window.currentPlaylist || !window.currentPlaylist.length) {
         showNotification('播放提示', '当前没有播放队列');
         return;
@@ -15521,7 +15537,7 @@ function playNextEpisode() {
         window.currentPlaylistIndex = nextIndex;
         const target = window.currentPlaylist[nextIndex];
         const nextId = typeof target === 'object' ? target.id : target;
-        playMovieInline(nextId);
+        playMovieInline(nextId, { keepPlaylist: true });
         showNotification('播放下一集', typeof target === 'object' ? target.title : `影片 ${nextId}`);
     } else {
         showNotification('播放提示', '已经是最后一集（顺序连播结束）');
@@ -15529,6 +15545,10 @@ function playNextEpisode() {
 }
 
 function playPrevEpisode() {
+    if (currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.prev === 'function') {
+        window.MediaSource.prev();
+        return;
+    }
     if (!window.currentPlaylist || !window.currentPlaylist.length) {
         showNotification('播放提示', '当前没有播放队列');
         return;
@@ -15545,7 +15565,7 @@ function playPrevEpisode() {
     window.currentPlaylistIndex = prevIndex;
     const target = window.currentPlaylist[prevIndex];
     const prevId = typeof target === 'object' ? target.id : target;
-    playMovieInline(prevId);
+    playMovieInline(prevId, { keepPlaylist: true });
     showNotification('播放上一集', typeof target === 'object' ? target.title : `影片 ${prevId}`);
 }
 
@@ -15835,6 +15855,10 @@ function closePlayer() {
         window.AndroidBridge.setReaderMode(false);
     }
     const video = document.getElementById('videoPlayer');
+    if (currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.saveProgress === 'function') {
+        window.MediaSource.saveProgress(video.currentTime, video.duration);
+        window.MediaSource.clearPlayback();
+    }
     const playedMovie = currentPlayerMovie;
     // round182 P0-1：关闭时补写一次在线追番进度（兜住最后 <10 秒未节流上报的部分）
     if (currentPlayerEpisode && video.duration > 0) {
@@ -15875,6 +15899,11 @@ function cleanMediaTitle(t) {
 }
 
 function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0, episodeId = 0) {
+    if (!currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.clearPlayback === 'function') {
+        window.MediaSource.clearPlayback();
+        window.currentPlaylist = null;
+        window.currentPlaylistIndex = null;
+    }
     const video = document.getElementById('videoPlayer');
     // round182 P0-1：追番在线播放时把进度写回 episode（此前只更新 UI，追番"继续看"永不动）
     currentPlayerEpisode = Number(episodeId) || 0;
@@ -15930,6 +15959,10 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
         document.getElementById('playerProgressFill').style.width = progress + '%';
         document.getElementById('playerTime').textContent =
             `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        if (currentOnlinePlayback && window.MediaSource && video.duration > 0 && Date.now() - window.__epLastSave > 10000) {
+            window.__epLastSave = Date.now();
+            window.MediaSource.saveProgress(video.currentTime, video.duration);
+        }
         // round182 P0-1：在线追番进度回写（10 秒节流，换片/关闭时 ontimeupdate 不会再触发，故靠节流兜底）
         if (currentPlayerEpisode && video.duration > 0 && Date.now() - window.__epLastSave > 10000) {
             window.__epLastSave = Date.now();
@@ -15946,6 +15979,12 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
         const rect = e.currentTarget.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
         video.currentTime = percent * video.duration;
+    };
+
+    video.onended = () => {
+        if (!currentOnlinePlayback || !window.MediaSource) return;
+        window.MediaSource.saveProgress(video.duration || video.currentTime, video.duration, true);
+        window.MediaSource.next({ automatic: true, loopMode: playerLoopMode });
     };
 }
 

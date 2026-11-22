@@ -161,6 +161,33 @@ CREATE TABLE IF NOT EXISTS playback_progress (
   FOREIGN KEY(movieId) REFERENCES movies(id) ON DELETE CASCADE
 );
 
+-- ============ 在线观看历史（站点解析播放，区别于本地影片 watch_history） ============
+CREATE TABLE IF NOT EXISTS online_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sourceId TEXT NOT NULL,
+  url TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  episode TEXT DEFAULT '',
+  sourceName TEXT DEFAULT '',
+  workUrl TEXT DEFAULT '',
+  episodes TEXT DEFAULT '[]',
+  episodeIndex INTEGER DEFAULT 0,
+  kind TEXT DEFAULT '',
+  position REAL DEFAULT 0,
+  duration REAL DEFAULT 0,
+  completed INTEGER DEFAULT 0,
+  watchedAt INTEGER DEFAULT 0,
+  updatedAt INTEGER DEFAULT 0,
+  UNIQUE(sourceId, url)
+);
+CREATE INDEX IF NOT EXISTS idx_online_history_updated ON online_history(updatedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_online_history_work ON online_history(sourceId, workUrl);
+-- 清空时间戳：拒绝清空前发出、清空后才到达的旧写入，避免“清空后记录复活”。
+CREATE TABLE IF NOT EXISTS online_history_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- ============ 新增：刮削失败记录（供一键重刮） ============
 CREATE TABLE IF NOT EXISTS scrape_failures (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

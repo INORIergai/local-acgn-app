@@ -57,6 +57,23 @@ async function apiJson(url, opts = {}) {
     return j;
 }
 
+/* 搜索类请求只访问本文件白名单内的固定域名；用户提交的关键词只进 query 参数，
+ * 绝不作为 URL/主机使用。任何非 http(s) 或内网/保留地址一律拒绝（SSRF 防线）。 */
+const SEARCH_HOST_ALLOW = new Set(['www.dm5.com', 'manhua.zaimanhua.com', 'komiic.com']);
+function assertSafeSearchHost(u) {
+    let url;
+    try { url = new URL(u); } catch (e) { throw new Error('搜索地址无效'); }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('搜索协议不允许');
+    const h = url.hostname.toLowerCase();
+    if (h === 'localhost' || h === '::1' || h === '[::1]' || /^127\./.test(h) || /^10\./.test(h)
+        || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^169\.254\./.test(h)
+        || /^0\./.test(h) || /\.local$/.test(h) || /\.internal$/.test(h)) {
+        throw new Error('拒绝访问内网地址');
+    }
+    if (!SEARCH_HOST_ALLOW.has(h)) throw new Error('搜索目标不在白名单');
+    return u;
+}
+
 // ==================================================================
 // 适配器：DM5（动漫屋）
 // ==================================================================
@@ -91,6 +108,37 @@ const dm5 = {
             });
         });
         return items.slice(0, 36);
+    },
+    async search(q) {
+        const base = 'https://www.dm5.com/';
+        const searchUrl = assertSafeSearchHost('https://www.dm5.com/search?title=' + encodeURIComponent(q));
+        const { $, base: pageBase } = await page(searchUrl, { timeout: 25000 });
+        const seen = new Set();
+        const items = [];
+        $('.mh-item').each((i, el) => {
+            const a = $(el).find('h2.title a').first();
+            const href = abs(pageBase, a.attr('href') || '');
+            if (!/\/manhua-[a-z0-9]+\/?$/.test(href)) return;
+            const key = href.replace(/\/+$/, '');
+            if (seen.has(key)) return;
+            const name = clean(a.attr('title') || a.text());
+            if (!name) return;
+            // 封面在 .mh-cover 的内联 background，不是 <img src>
+            const bg = /url\((['"]?)([^'")]+)\1\)/.exec($(el).find('.mh-cover').first().attr('style') || '');
+            const cover = bg ? abs(pageBase, bg[2]) : (() => {
+                const im = $(el).find('img').first();
+                return abs(pageBase, im.attr('data-src') || im.attr('src') || '');
+            })();
+            seen.add(key);
+            items.push({
+                name,
+                url: href,
+                cover: cover && !/mrtx|loading|qrcode|logo/i.test(cover) ? imgProxy(cover, base) : '',
+                latest: clean($(el).find('.chapter').first().text()).slice(0, 40),
+                author: ''
+            });
+        });
+        return items.slice(0, 12);
     },
     async chapters(detailUrl) {
         const { $, base } = await page(detailUrl, { timeout: 25000 });
@@ -242,6 +290,20 @@ const zaimanhua = {
             latest: clean(it.last_update_chapter_name || '')
         }));
     },
+    async search(q) {
+        // 搜索走 /app/v1/，不是适配器的 /api/v1（实测差异）
+        const url = assertSafeSearchHost('https://manhua.zaimanhua.com/app/v1/search/index?keyword=' + encodeURIComponent(q)
+            + '&source=1&page=1&size=10');
+        const j = await apiJson(url, { referer: this.catalogUrl });
+        const list = (j.data && j.data.list) || [];
+        return list.map((it) => ({
+            name: clean(it.title || it.name),
+            url: 'https://manhua.zaimanhua.com/details/' + it.id,
+            cover: it.cover ? imgProxy(it.cover, this.catalogUrl) : '',
+            latest: clean(it.last_name || it.last_update_chapter_name || '').slice(0, 40),
+            author: clean(it.authors || '')
+        })).filter((it) => it.name);
+    },
     async chapters(detailUrl) {
         const id = (/(\d+)/.exec(String(detailUrl).split('/details/')[1] || '') || [])[1];
         if (!id) throw new Error('作品地址里没有 id');
@@ -279,10 +341,10 @@ const komiic = {
     name: 'Komiic',
     kind: 'manga',
     catalogUrl: 'https://komiic.com/',
-    async gql(query) {
-        const j = await apiJson('https://komiic.com/api/query', {
+    async gql(query, variables) {
+        const j = await apiJson(assertSafeSearchHost('https://komiic.com/api/query'), {
             method: 'POST',
-            body: JSON.stringify({ operationName: null, variables: {}, query }),
+            body: JSON.stringify({ operationName: null, variables: variables || {}, query }),
             headers: { 'Content-Type': 'application/json' },
             referer: 'https://komiic.com/',
             timeout: 25000
@@ -300,6 +362,21 @@ const komiic = {
             latest: it.lastChapterUpdate ? ('更新至 ' + it.lastChapterUpdate) : '',
             author: clean(((it.authors || [])[0] || {}).name || '')
         }));
+    },
+    async search(q) {
+        const query = 'query($keyword:String!,$pagination:Pagination!){searchComics(keyword:$keyword,pagination:$pagination)'
+            + '{id title imageUrl status authors{name}}}';
+        const d = await this.gql(query, {
+            keyword: q,
+            pagination: { limit: 8, offset: 0, orderBy: 'DATE_UPDATED', asc: false }
+        });
+        return (d.searchComics || []).map((it) => ({
+            name: clean(it.title),
+            url: 'https://komiic.com/comics/' + it.id,
+            cover: it.imageUrl ? imgProxy(it.imageUrl, 'https://komiic.com/') : '',
+            latest: '',
+            author: clean(((it.authors || [])[0] || {}).name || '')
+        })).filter((it) => it.name).slice(0, 8);
     },
     async chapters(detailUrl) {
         const comicId = (/\/(\d+)/.exec(String(detailUrl).replace(/^https?:\/\/[^/]+/, '')) || [])[1];
@@ -447,4 +524,20 @@ function listAdapters() {
     return Object.values(ADAPTERS).map((a) => ({ id: a.id, name: a.name, kind: a.kind, catalogUrl: a.catalogUrl }));
 }
 
-module.exports = { getAdapter, listAdapters, imgProxy, catalogCached };
+/** 跨源搜索：并发查所有带 search() 的适配器，单源失败不影响其它源 */
+async function searchAll(query, opts = {}) {
+    const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!q) return [];
+    const kind = opts.kind === 'all' ? 'all' : (opts.kind === 'novel' ? 'novel' : 'manga');
+    const list = Object.values(ADAPTERS)
+        .filter((a) => typeof a.search === 'function' && (kind === 'all' || a.kind === kind));
+    return Promise.all(list.map(async (a) => {
+        try {
+            return { adapter: a.id, name: a.name, kind: a.kind, ok: true, error: '', items: await a.search(q) };
+        } catch (e) {
+            return { adapter: a.id, name: a.name, kind: a.kind, ok: false, error: e.message || '搜索失败', items: [] };
+        }
+    }));
+}
+
+module.exports = { getAdapter, listAdapters, imgProxy, catalogCached, searchAll };
