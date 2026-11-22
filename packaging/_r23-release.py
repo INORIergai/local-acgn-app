@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.6'
-TAG = 'v6.8.6'
+VER = '6.8.7'
+TAG = 'v6.8.7'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -68,14 +68,14 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.6 · 漫画跨源 + DoH 抗污染 + 订阅门禁
+## v6.8.7 · 阅读源本地化 + 增量进度可见
 
-- 漫画跨源搜索：输入书名多源并发搜索、按匹配度排序；换源续读停在同章同滚动比例。
-- DoH 兜底：DNS 被污染时自动用加密 DNS 解析（国内端点优先），仅 https + host 白名单 + 拒绝内网。
-- 订阅 schemaVersion 门禁：不兼容的新定义自动跳过，不覆盖可用源。
-- Bangumi 冲突逐条选择（已就绪）。
+- 增量更新：四阶段进度实时可见（检查→下载%→校验→自动完成），不再盲等；完成后自动重启。
+- 漫画：KMoe 支持「存漫画库」——签名 EPUB 下载到应用目录、去重、可应用内阅读。
+- 阅读源：新增轻小说文库单章在线阅读、次元狗资源索引（最新列表+原站跳转）。
+- 安全：新增站点仅 https + host 白名单 + 拒绝内网。
 
-其余功能与 6.8.5 一致。如有 bug 或需求，欢迎提 issue。"""
+首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
 
 def get_token():

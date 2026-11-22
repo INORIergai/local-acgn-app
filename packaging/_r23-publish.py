@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.6'
+TAG = 'v6.8.7'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,14 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.6：漫画跨源 + DoH 抗污染 + 订阅门禁
+COMMIT_MSG = """v6.8.7：阅读源本地化 + 增量进度可见
 
 - 发布端生成 release manifest 与签名 patch，随 Release 上传
 - 客户端增量 diff、验签、逐文件 sha256 校验，失败自动回退全量
 - Electron 主进程原子切换 + 失败回滚；验签公钥随包部署
 - 保留 6.8.2 的多源下载回退与 SSRF 防护
 
-版本：6.8.6"""
+版本：6.8.7"""
 
 
 def get_token():
