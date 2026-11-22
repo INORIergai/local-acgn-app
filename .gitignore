@@ -80,3 +80,6 @@ android/last-build.json
 
 # 工具运行态（DSH hook/ledger 等，不入库）
 .mimosa/
+
+# SDD 计划工作区（技能临时产物）
+.superpowers/
