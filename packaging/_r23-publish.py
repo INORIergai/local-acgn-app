@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.8'
+TAG = 'v6.8.9'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,14 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.8：搜索分类 + AI 学习 + 在线发现
+COMMIT_MSG = """v6.8.9：PC + Android 联合发布（内置 Android v5.1.0）
 
 - 发布端生成 release manifest 与签名 patch，随 Release 上传
 - 客户端增量 diff、验签、逐文件 sha256 校验，失败自动回退全量
 - Electron 主进程原子切换 + 失败回滚；验签公钥随包部署
+- PC 端内置 Android v5.1.0 安装包，手机扫码/更新即可
 - 保留 6.8.2 的多源下载回退与 SSRF 防护
 
-版本：6.8.8"""
+版本：6.8.9"""
 
 
 def get_token():
