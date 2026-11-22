@@ -77,11 +77,23 @@ const stmt = {
   getMemory: db.prepare('SELECT * FROM ai_memories WHERE id = ?'),
   delMemory: db.prepare('DELETE FROM ai_memories WHERE id = ?'),
   countMemories: db.prepare('SELECT COUNT(*) AS n FROM ai_memories'),
-  worstMemories: db.prepare('SELECT id FROM ai_memories ORDER BY importance ASC, updatedAt ASC LIMIT ?')
+  worstMemories: db.prepare('SELECT id FROM ai_memories ORDER BY importance ASC, updatedAt ASC LIMIT ?'),
+  // 第四批·行为→偏好：全部参数绑定，不拼接 SQL
+  behaviorTypes: db.prepare(`SELECT COALESCE(m.type,'jav') AS type, COUNT(*) AS n
+    FROM watch_history w LEFT JOIN movies m ON m.id = w.movieId
+    GROUP BY COALESCE(m.type,'jav') ORDER BY n DESC LIMIT ?`),
+  behaviorKeywords: db.prepare(`SELECT keyword, COUNT(*) AS n FROM search_history
+    WHERE keyword IS NOT NULL AND LENGTH(keyword) >= 2
+    GROUP BY keyword ORDER BY n DESC LIMIT ?`),
+  behaviorOnlineKinds: db.prepare(`SELECT kind, COUNT(*) AS n FROM online_history
+    WHERE kind IS NOT NULL AND kind <> '' GROUP BY kind ORDER BY n DESC LIMIT ?`),
+  behaviorMemoryExists: db.prepare(`SELECT id FROM ai_memories WHERE source = 'behavior' AND content = ? LIMIT 1`),
+  insMemoryBehavior: db.prepare(`INSERT INTO ai_memories (kind, content, importance, source) VALUES (?, ?, ?, 'behavior')`)
 };
 
 // ========== 配置（每次现读磁盘：设置页保存后立即生效，与人格/模型路由同一纪律） ==========
-const DEFAULTS = { enabled: true, liveTurns: 10, autoCompress: true, autoMemory: true, memoryCap: 100 };
+const DEFAULTS = { enabled: true, liveTurns: 10, autoCompress: true, autoMemory: true,
+  learnFromBehavior: true, memoryCap: 100 };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 function getMemorySettings() {
@@ -93,6 +105,7 @@ function getMemorySettings() {
       liveTurns: clamp(parseInt(m.liveTurns) || DEFAULTS.liveTurns, 2, 50),
       autoCompress: m.autoCompress !== false,
       autoMemory: m.autoMemory !== false,
+      learnFromBehavior: m.learnFromBehavior !== false,
       memoryCap: clamp(parseInt(m.memoryCap) || DEFAULTS.memoryCap, 10, 500)
     };
   } catch (e) {
@@ -558,8 +571,47 @@ function deleteSession(sessionId) {
   return { ok: true, id: sid };
 }
 
+/**
+ * 行为→偏好提炼：从 watch_history / search_history / online_history 统计高频
+ * 分类与关键词，写入 source='behavior' 的 ai_memories。受 learnFromBehavior 开关约束。
+ * 单飞、失败只记日志不影响主链路；同一条内容去重（避免反复提炼膨胀）。
+ * @returns {{learned:number, skipped:number, reason?:string}}
+ */
+function learnFromBehavior() {
+  const s = getMemorySettings();
+  if (!s.enabled || !s.learnFromBehavior) return { learned: 0, skipped: 0, reason: 'disabled' };
+  const learned = [];
+  const add = (kind, content, importance) => {
+    try {
+      if (stmt.behaviorMemoryExists.get(content)) return false;
+      stmt.insMemoryBehavior.run(kind, content, importance);
+      learned.push(content);
+      return true;
+    } catch (e) { console.warn('[记忆] 行为提炼写入失败:', e.message); return false; }
+  };
+  const typeLabel = { jav: 'AV', anime: '动漫', comic: '漫画', novel: '小说', film: '影视', cartoon: '动画' };
+  try {
+    for (const r of stmt.behaviorTypes.all(5)) {
+      const label = typeLabel[r.type] || r.type;
+      if (r.n >= 2) add('habit', `用户常看「${label}」类内容（观看 ${r.n} 次）`, Math.min(0.9, 0.4 + r.n * 0.02));
+    }
+    for (const r of stmt.behaviorOnlineKinds.all(5)) {
+      const label = typeLabel[r.kind] || r.kind;
+      if (r.n >= 2) add('habit', `用户常在在线源看「${label}」（${r.n} 次）`, Math.min(0.85, 0.4 + r.n * 0.02));
+    }
+    for (const r of stmt.behaviorKeywords.all(6)) {
+      if (r.n >= 2) add('preference', `用户常搜索「${r.keyword}」（${r.n} 次）`, Math.min(0.8, 0.35 + r.n * 0.03));
+    }
+  } catch (e) {
+    console.warn('[记忆] 行为提炼失败:', e.message);
+    return { learned: learned.length, skipped: 0, reason: e.message };
+  }
+  return { learned: learned.length, skipped: 0 };
+}
+
 module.exports = {
   getMemorySettings,
+  learnFromBehavior,
   normalizeSessionId,
   appendMessage,
   getHistory,

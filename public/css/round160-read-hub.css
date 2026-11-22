@@ -8,7 +8,10 @@
    ============================================================================ */
 
 .rh-shell {
-    max-width: 1220px;
+    /* 响应式卡片墙：不再锁死 1220px（宽屏右侧大片留白），占满可用宽度，
+       让 .rh-wall 的 auto-fill minmax 随窗口自动增减列数。 */
+    width: 100%;
+    max-width: none;
     margin: 0 auto;
     padding: 2px 2px 40px;
 }

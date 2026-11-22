@@ -174,6 +174,19 @@ router.get('/catalog', async (req, res) => {
     }
 });
 
+// 在线最新聚合（影视库/动漫库首页的"在线优先"卡片区）。只聚合元数据，
+// 不接触用户 URL / 本地文件，故不走 /seg 的 hostBlocked。
+router.get('/browse', async (req, res) => {
+    const kind = req.query.kind === 'film' ? 'film' : 'anime';
+    try {
+        const browse = require('../utils/media-sources/browse');
+        const data = await browse.browseLatest(kind, { limit: Math.min(parseInt(req.query.limit, 10) || 30, 60) });
+        res.json({ code: 0, data });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message, data: { items: [], groups: [] } });
+    }
+});
+
 // ==================================================================
 // BT 搜索
 // ==================================================================

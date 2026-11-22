@@ -836,10 +836,21 @@ router.post('/memory-settings', (req, res) => {
             liveTurns: parseInt(b.liveTurns) || 10,
             autoCompress: b.autoCompress !== false,
             autoMemory: b.autoMemory !== false,
+            learnFromBehavior: b.learnFromBehavior !== false,
             memoryCap: parseInt(b.memoryCap) || 100
         };
         writeConfig(cfg);
         res.json({ code: 0, msg: '记忆引擎设置已保存，下一条对话生效', data: cfg.ai.memory });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
+// 手动触发「行为→偏好」提炼（受 learnFromBehavior 开关约束）；关闭时返回 disabled
+router.post('/learn-behavior', (req, res) => {
+    try {
+        const aiMemory = require('../utils/ai-memory');
+        res.json({ code: 0, data: aiMemory.learnFromBehavior() });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }
