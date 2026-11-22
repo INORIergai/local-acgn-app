@@ -77,7 +77,7 @@ body {
     font-family: var(--font-body);
     font-size: 14px;
     line-height: 1.6;
-    transition: background 0.25s ease, color 0.25s ease;
+    transition: background var(--mv2-d2, 0.25s) var(--mv2-snap, ease), color var(--mv2-d2, 0.25s) var(--mv2-snap, ease);
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -166,7 +166,7 @@ kbd {
     color: var(--text);
     font-size: 13.5px;
     outline: none;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), background var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 
 #searchInput:focus, .search-input:focus {
@@ -187,7 +187,7 @@ kbd {
     font-size: 15px;
     cursor: pointer;
     color: var(--text);
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), background var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .theme-toggle:hover { border-color: var(--primary); background: var(--primary-soft); }
 
@@ -208,7 +208,7 @@ kbd {
     height: 100%;
     width: 0;
     background: var(--primary);
-    transition: width 0.5s ease;
+    transition: width 0.5s var(--mv2-snap, ease);
 }
 
 /* ---------- 通知铃铛 ---------- */
@@ -301,7 +301,7 @@ kbd {
     font-size: 15px;
     cursor: pointer;
     user-select: none;
-    transition: background 0.12s ease, border-color 0.12s ease, opacity 0.22s ease;
+    transition: background var(--mv2-d1, 0.12s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease), opacity var(--mv2-d2, 0.22s) var(--mv2-snap, ease);
 }
 
 .nav-item:hover { background: var(--primary-soft); }
@@ -456,7 +456,7 @@ kbd {
     border-radius: 50%;
     font-size: 22px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
     backdrop-filter: blur(4px);
 }
 .gallery-arrow:hover { background: rgba(12, 10, 8, 0.8); }
@@ -476,7 +476,7 @@ kbd {
     border-radius: 2px;
     background: rgba(244, 239, 228, 0.3);
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
 }
 .gallery-dot.active { background: var(--primary); }
 
@@ -523,7 +523,7 @@ kbd {
     border-radius: var(--radius);
     color: var(--text-muted);
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition: background var(--mv2-d1, 0.12s) var(--mv2-snap, ease), color var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .tree-crumb:hover { background: var(--primary-soft); color: var(--text); }
 .tree-crumb-sep { color: var(--border-strong); }
@@ -548,7 +548,7 @@ kbd {
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    transition: transform var(--mv2-d1, 0.18s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, 0.18s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.18s) var(--mv2-snap, ease);
     aspect-ratio: 16 / 9;   /* 封面为宽幅 16:9，保持整幅可见，不再裁切 */
 }
 
@@ -600,7 +600,7 @@ kbd {
     letter-spacing: 0.08em;
     color: #F4EFE4;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
     pointer-events: none;
     white-space: nowrap;
     overflow: hidden;
@@ -628,7 +628,7 @@ kbd {
     background-image: radial-gradient(circle at 50% 50%, var(--primary) 2px, transparent 2.7px);
     background-size: 11px 9px;
     background-position: center;
-    transition: width 0.3s ease;
+    transition: width var(--mv2-d2, 0.3s) var(--mv2-snap, ease);
 }
 
 .movie-hover-info {
@@ -640,7 +640,7 @@ kbd {
     padding: 14px 12px 18px;
     background: linear-gradient(to top, rgba(10, 8, 6, 0.92) 0%, rgba(10, 8, 6, 0.35) 45%, transparent 75%);
     opacity: 0;
-    transition: opacity 0.18s ease;
+    transition: opacity var(--mv2-d1, 0.18s) var(--mv2-snap, ease);
     pointer-events: none;
     z-index: 2;
 }
@@ -682,7 +682,7 @@ kbd {
     border-radius: var(--radius);
     cursor: pointer;
     text-align: center;
-    transition: transform 0.15s, border-color 0.15s;
+    transition: transform var(--mv2-d1, 0.15s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .folder-card:hover { transform: translateY(-2px); border-color: var(--primary); }
 
@@ -732,7 +732,7 @@ kbd {
     font-family: var(--font-mono);
     font-size: 12.5px;
     cursor: pointer;
-    transition: border-color 0.12s, background 0.12s;
+    transition: border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease), background var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .page-btn:hover:not(:disabled) { border-color: var(--primary); background: var(--primary-soft); }
 .page-btn.current {
@@ -769,7 +769,7 @@ kbd {
     font-family: var(--font-body);
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    transition: background var(--mv2-d1, 0.15s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-dpress, 0.1s) var(--mv2-snap, ease);
 }
 .btn:hover { background: var(--primary-strong); border-color: var(--primary-strong); }
 .btn:active { transform: translateY(1px); }
@@ -802,7 +802,7 @@ kbd {
     color: var(--primary);
     font-size: 13px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .magic-btn:hover { background: var(--primary-soft); }
 
@@ -823,7 +823,7 @@ kbd {
     border-radius: var(--radius);
     text-align: center;
     cursor: pointer;
-    transition: transform 0.15s, border-color 0.15s;
+    transition: transform var(--mv2-d1, 0.15s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .actress-card:hover { transform: translateY(-2px); border-color: var(--primary); }
 
@@ -863,7 +863,7 @@ kbd {
     border-radius: 20px;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.12s;
+    transition: all var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .actress-follow-btn.on {
     border-color: var(--primary);
@@ -883,7 +883,7 @@ kbd {
     border-radius: 20px;
     font-size: 13px;
     cursor: pointer;
-    transition: border-color 0.12s, background 0.12s;
+    transition: border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease), background var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .tag-item:hover { border-color: var(--primary); background: var(--primary-soft); }
 
@@ -963,7 +963,7 @@ kbd {
     background: var(--primary);
     opacity: 0.85;
     min-height: 2px;
-    transition: height 0.4s ease;
+    transition: height var(--mv2-d3, 0.4s) var(--mv2-snap, ease);
 }
 
 .read-chart-label { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-muted); }
@@ -1065,7 +1065,7 @@ kbd {
     line-height: 1;
     cursor: pointer;
     backdrop-filter: blur(4px);
-    transition: border-color 0.15s, background 0.15s, transform 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), background var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .detail-nav.prev { left: 8px; }
 .detail-nav.next { right: 8px; }
@@ -1133,7 +1133,7 @@ kbd {
     font-size: 17px;
     line-height: 1;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), background var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-dpress, 0.1s) var(--mv2-snap, ease);
 }
 .dbtn:hover {
     border-color: var(--primary);
@@ -1157,7 +1157,7 @@ kbd {
     font-size: 20px;
     color: var(--border-strong);
     cursor: pointer;
-    transition: color 0.12s, transform 0.12s;
+    transition: color var(--mv2-d1, 0.12s) var(--mv2-snap, ease), transform var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .star:hover { transform: scale(1.15); }
 .star.active { color: var(--primary); }
@@ -1184,7 +1184,7 @@ kbd {
     border: 1px solid var(--border);
     border-radius: 20px;
     cursor: pointer;
-    transition: border-color 0.12s;
+    transition: border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .detail-actress:hover { border-color: var(--primary); }
 
@@ -1208,7 +1208,7 @@ kbd {
     border: 1px solid var(--border);
     border-radius: 20px;
     font-size: 12px;
-    transition: border-color 0.12s;
+    transition: border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .detail-tag:hover { border-color: var(--danger); color: var(--danger); }
 
@@ -1248,7 +1248,7 @@ kbd {
     object-fit: cover;
     border-radius: var(--radius);
     border: 1px solid var(--border);
-    transition: border-color 0.15s, transform 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .similar-card:hover .similar-poster { border-color: var(--primary); transform: translateY(-2px); }
 
@@ -1323,7 +1323,7 @@ kbd {
     color: var(--text-muted);
     cursor: pointer;
     border-left: 2px solid transparent;
-    transition: all 0.12s;
+    transition: all var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .settings-nav-item:hover { background: var(--primary-soft); color: var(--text); }
 .settings-nav-item.active {
@@ -1366,7 +1366,7 @@ kbd {
     color: var(--text);
     font-size: 13px;
     outline: none;
-    transition: border-color 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .settings-input:focus, .select-input:focus { border-color: var(--primary); }
 
@@ -1426,7 +1426,7 @@ kbd {
     border-radius: var(--radius);
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .theme-card:hover { border-color: var(--primary); }
 .theme-swatch { display: flex; gap: 4px; justify-content: center; margin-bottom: 8px; }
@@ -1461,7 +1461,7 @@ kbd {
     border: none;
     position: relative;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
     flex-shrink: 0;
 }
 .toggle-btn::after {
@@ -1471,7 +1471,7 @@ kbd {
     width: 18px; height: 18px;
     border-radius: 50%;
     background: var(--bg-elevated);
-    transition: left 0.15s;
+    transition: left var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .toggle-btn.on { background: var(--primary); }
 .toggle-btn.on::after { left: 20px; }
@@ -1493,10 +1493,10 @@ kbd {
     line-height: 1;
     color: var(--text-muted);
     background: var(--border);
-    transition: background 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
-                color 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
-                transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
-                box-shadow 0.18s;
+    transition: background var(--mv2-d2, 0.25s) cubic-bezier(0.2, 0.8, 0.2, 1),
+                color var(--mv2-d2, 0.25s) cubic-bezier(0.2, 0.8, 0.2, 1),
+                transform var(--mv2-d1, 0.18s) cubic-bezier(0.2, 0.8, 0.2, 1),
+                box-shadow var(--mv2-d1, 0.18s) var(--mv2-snap, ease);
 }
 .view-toggle .toggle-btn::after { content: none; }   /* 去掉开关滑块 */
 .view-toggle .toggle-btn:hover {
@@ -1511,7 +1511,7 @@ kbd {
 }
 .view-toggle .toggle-btn.on { background: var(--primary); color: #fff; }
 /* 切换瞬间的弹性回弹（toggle-flip 理念的 segmented 版） */
-.view-toggle .toggle-btn.pop { animation: vtPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.view-toggle .toggle-btn.pop { animation: vtPop 0.35s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)); }
 @keyframes vtPop {
     0% { transform: scale(0.88); }
     55% { transform: scale(1.06); }
@@ -1533,7 +1533,7 @@ kbd {
     border-radius: var(--radius);
     overflow: hidden;
     border: 2px solid var(--border);
-    transition: border-color 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .poster-option:hover { border-color: var(--primary); }
 
@@ -1558,7 +1558,7 @@ kbd {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
-    transition: background 0.12s;
+    transition: background var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .notification-item:hover { background: var(--primary-soft); }
 .notification-item.unread { border-left: 2px solid var(--primary); }
@@ -1603,7 +1603,7 @@ kbd {
     opacity: 0;
     transform: translateY(14px);
     pointer-events: none;
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    transition: opacity var(--mv2-d2, 0.25s) var(--mv2-snap, ease), transform var(--mv2-d2, 0.25s) var(--mv2-snap, ease);
 }
 .notification.show { opacity: 1; transform: translateY(0); }
 
@@ -1636,7 +1636,7 @@ kbd {
     border-radius: var(--radius-lg);
     padding: 14px 16px;
     cursor: pointer;
-    transition: border-color 0.15s, transform 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .xhs-card:hover { border-color: var(--primary); transform: translateY(-2px); }
 
@@ -1681,7 +1681,7 @@ kbd {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .cloud-source-card:hover { border-color: var(--primary); }
 
@@ -1693,7 +1693,7 @@ kbd {
     border-radius: var(--radius);
     font-size: 12.5px;
     cursor: pointer;
-    transition: border-color 0.12s;
+    transition: border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
 }
 .chapter-item:hover { border-color: var(--primary); }
 
@@ -1707,7 +1707,7 @@ kbd {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .playlist-card:hover { border-color: var(--primary); }
 
@@ -1775,7 +1775,7 @@ kbd {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-2);
-    transition: transform 0.25s ease;
+    transition: transform var(--mv2-d2, 0.25s) var(--mv2-snap, ease);
 }
 .batch-toolbar.show { transform: translateX(-50%) translateY(0); }
 .batch-count { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
@@ -1946,6 +1946,11 @@ kbd {
    ============================================================ */
 .panel-section { max-width: 980px; }
 
+/* 在线阅读/媒体源面板同样铺满内容区：.panel-section 默认 max-width:980px
+   会把卡片墙挤在左半边、右侧大片留白。解除限制后，内部 auto-fill 网格
+   随窗口宽度自动增减列数，不再出现固定行数和大片空白。 */
+.panel-section.ms-full { max-width: none; }
+
 /* ============================================================
    在线观看：站点页要铺满整个内容区
    .panel-section 的 max-width:980px 是给文字类面板用的；大屏幕下嵌网页只剩中间一条，
@@ -2062,7 +2067,7 @@ kbd {
     border-radius: 8px;
     background: #111;
     display: block;
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    transition: transform var(--mv2-d2, 0.25s) var(--mv2-snap, ease), box-shadow var(--mv2-d2, 0.25s) var(--mv2-snap, ease);
 }
 .watch-card:hover img { transform: translateY(-3px); box-shadow: 0 12px 24px -12px rgba(0, 0, 0, 0.7); }
 .watch-card .t {
@@ -2224,7 +2229,7 @@ kbd {
     opacity: 0.88;
     border-radius: 2px 2px 0 0;
     min-height: 2px;
-    transition: height 0.4s ease;
+    transition: height var(--mv2-d3, 0.4s) var(--mv2-snap, ease);
 }
 
 .annual-col-label { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); }
@@ -2330,7 +2335,7 @@ kbd {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
-        transition-duration: 0.15s !important;
+        transition-duration: var(--mv2-d1, 0.15s) var(--mv2-snap, ease) !important;
         scroll-behavior: auto !important;
     }
 }
@@ -2386,7 +2391,7 @@ kbd {
         rgba(255, 238, 205, 0.17) 47%,
         rgba(229, 166, 60, 0.12) 55%,
         transparent 68%);
-    transition: opacity 0.3s ease, transform 0.62s cubic-bezier(0.22, 0.61, 0.36, 1);
+    transition: opacity var(--mv2-d2, 0.3s) var(--mv2-snap, ease), transform var(--mv2-d3, 0.62s) cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .movie-grid > .movie-card:hover::after { opacity: 1; transform: translateX(45%); }
 
@@ -2398,7 +2403,7 @@ kbd {
 .movie-grid > .movie-card:active { transform: translateY(-1px) scale(0.996); }
 
 .movie-grid > .movie-card .movie-poster {
-    transition: transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.3s ease;
+    transition: transform var(--mv2-d3, 0.55s) cubic-bezier(0.22, 0.61, 0.36, 1), filter var(--mv2-d2, 0.3s) var(--mv2-snap, ease);
 }
 .movie-grid > .movie-card:hover .movie-poster {
     transform: scale(1.045);
@@ -2454,7 +2459,7 @@ kbd {
     border: 1px solid var(--border);
     border-radius: 12px;
     cursor: pointer;
-    transition: border-color 0.2s ease, transform 0.2s ease;
+    transition: border-color var(--mv2-d2, 0.2s) var(--mv2-snap, ease), transform var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
 }
 .cloud-card .cloud-tile:hover { border-color: var(--primary); transform: translateY(-2px); }
 /* round100：网盘文件封面 —— 盖在图标上，加载失败 onerror 移除自动露出图标 */
@@ -2493,7 +2498,7 @@ kbd {
     font-size: 15px;
     line-height: 1;
     cursor: pointer;
-    transition: color 0.15s ease, border-color 0.15s ease;
+    transition: color var(--mv2-d1, 0.15s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .cloud-star:hover { color: var(--primary); border-color: var(--primary); }
 .cloud-star.on { color: var(--primary); border-color: var(--primary); }
