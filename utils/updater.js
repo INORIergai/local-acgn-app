@@ -890,6 +890,14 @@ function trySource(entry, ctx) {
 }
 
 async function startDownload(assetName) {
+    // 幂等：同一个包已下载完成且文件仍在时直接复用，绝不重复整包下载。
+    // 用户点完「下载更新」没看到自动重启，常会再点一次 → 每次都从头重下 200MB。
+    if (downloadState && downloadState.state === 'done' && downloadState.file &&
+        fs.existsSync(downloadState.file) &&
+        (!assetName || assetName === downloadState.assetName)) {
+        console.log('[更新] 安装包已就绪，复用已下载文件：' + downloadState.file);
+        return Object.assign({}, downloadState, { reused: true });
+    }
     const cfg = updaterConfig();
     const chk = lastCheck && lastCheck.result;
     if (!chk || !chk.assets || !chk.assets.length) {

@@ -7824,9 +7824,11 @@ async function downloadIncrementalUpdate() {
             if (String(dl.state || '').indexOf('incremental-') === 0 || dl.state === 'downloading' || dl.state === 'done') {
                 showUpdateProgress(dl);
             }
-            // ready 后继续显示倒计时，直到应用重启；其它非增量终态停轮询
-            const terminal = dl.state === 'done' || dl.state === 'error' || dl.state === 'cancelled';
-            if (terminal && dl.state !== 'done') { stopIncPolling(); return; }
+            // ready 后继续显示倒计时直到应用重启；其余终态（含回退全量的 done）一律停轮询，
+            // 避免 done 后仍每 600ms 空转、与 startUpdatePolling 并存放大重复操作观感
+            const terminal = dl.state === 'done' || dl.state === 'error' || dl.state === 'cancelled'
+                || dl.state === 'incremental-ready';
+            if (terminal) { stopIncPolling(); return; }
         } catch (e) { /* 抖动忽略，下一轮继续 */ }
     };
     stopIncPolling();
@@ -7917,10 +7919,27 @@ function stopUpdatePolling() {
     if (updPollTimer) { clearInterval(updPollTimer); updPollTimer = null; }
 }
 
+/* 按下载状态禁用/启用操作按钮：下载中或已完成时禁止再次发起下载，
+ * 避免用户没看到自动重启就反复点「下载更新」导致整包重下。done 时突出「立即安装」。 */
+function setUpdBtnsState(st) {
+    const row = document.querySelector('.upd-action-row');
+    if (!row) return;
+    const dlBtns = row.querySelectorAll('.upd-btn-dl');
+    const instBtn = row.querySelector('.upd-btn-inst');
+    const busy = st === 'downloading' || String(st || '').indexOf('incremental-') === 0;
+    const done = st === 'done';
+    dlBtns.forEach(b => { b.disabled = busy || done; });
+    if (instBtn) {
+        instBtn.disabled = !done;
+        instBtn.classList.toggle('btn-primary', done);
+    }
+}
+
 function showUpdateProgress(dl) {
     const bar = document.getElementById('updBarInner');
     const t = document.getElementById('updProgressText');
     const st = String(dl.state || '');
+    setUpdBtnsState(st);
     const elapsed = dl.startedAt ? Math.max(0, Math.round((Date.now() - dl.startedAt) / 1000)) : 0;
     if (st.indexOf('incremental-') === 0) {
         // 四阶段：checking → downloading → verifying → ready
