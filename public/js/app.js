@@ -7768,6 +7768,40 @@ function renderUpdateCheck(c) {
     box.style.display = '';
 }
 
+/* M4：增量更新 —— 只下载变化文件（MB 级），由后端验签后写 staging，
+   主进程轮询自动完成切换；失败时后端自动回退全量下载并返回 mode='full'。 */
+async function downloadIncrementalUpdate() {
+    const text = document.getElementById('updProgressText');
+    const wrap = document.getElementById('updProgressWrap');
+    const out = document.getElementById('updInstallMsg');
+    if (wrap) wrap.style.display = '';
+    if (text) text.textContent = '正在获取增量更新…';
+    if (out) out.innerHTML = '';
+    try {
+        const r = await fetch('/api/update/incremental', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const j = await r.json();
+        if (j.code !== 0) throw new Error(j.msg || '增量更新失败');
+        const d = j.data || {};
+        if (d.mode === 'incremental') {
+            if (text) text.innerHTML = '<span class="upd-ok">增量包已就绪（' + updEsc(d.target || '') + '）</span> —— 正在自动完成更新，稍后会自动重启';
+            if (out) out.innerHTML = '<span class="upd-ok">增量更新将在几秒内自动完成，无需点「立即安装」</span>';
+            showNotification('增量更新', 'patch 已下载并校验通过，应用将自动完成升级');
+        } else {
+            // 后端已回退全量下载：切回常规进度轮询，走「下载完成 → 立即安装」流程
+            if (text) text.innerHTML = '<span class="upd-warn">增量不可用（' + updEsc(d.incrementalError || '未知原因') + '），已自动改为全量下载</span>';
+            showNotification('增量不可用', '已自动回退全量下载：' + (d.incrementalError || ''));
+            startUpdatePolling();
+        }
+    } catch (e) {
+        if (text) text.innerHTML = '<span class="upd-warn">' + updEsc(e.message) + '</span>';
+        showNotification('增量更新失败', e.message);
+    }
+}
+
 async function downloadAppUpdate() {
     const sel = document.getElementById('updAssetSel');
     const name = sel ? sel.value : '';
@@ -7831,6 +7865,9 @@ function showUpdateProgress(dl) {
     if (dl.state === 'downloading') {
         t.textContent = (Number(dl.percent) || 0).toFixed(1) + '%  '
             + updSize(dl.received) + (dl.total ? ' / ' + updSize(dl.total) : '');
+    } else if (dl.state === 'incremental-ready') {
+        t.innerHTML = '<span class="upd-ok">增量包已就绪（' + updEsc(dl.target || '') + '）</span>'
+            + ' —— 正在自动完成更新，稍后重启';
     } else if (dl.state === 'done') {
         t.innerHTML = '<span class="upd-ok">下载完成：' + updEsc(dl.assetName) + '</span>'
             + ' —— 点「立即安装」完成升级';
@@ -9449,6 +9486,7 @@ function renderSettings(config) {
                             <div id="updProgressText" style="font-size:12.5px;color:var(--text);margin-top:6px;font-family:var(--font-mono);font-weight:600;"></div>
                         </div>
                         <div class="upd-action-row">
+                            <button class="btn btn-sm upd-btn-dl" onclick="downloadIncrementalUpdate()" title="只下载变化文件，通常几 MB；失败自动回退全量">⚡ 增量更新</button>
                             <button class="btn btn-sm upd-btn-dl" onclick="downloadAppUpdate()">${uiIcon('download', 14)} 下载更新</button>
                             <button class="btn btn-sm btn-secondary" onclick="cancelUpdateDownload()">${uiIcon('close', 14)} 取消下载</button>
                             <button class="btn btn-sm upd-btn-inst" onclick="installAppUpdate()">${uiIcon('check', 14)} 立即安装</button>
