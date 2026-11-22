@@ -96,6 +96,16 @@ router.post('/install', (req, res) => {
     try {
         const name = (req.body && req.body.assetName) || '';
         const r = updater.installDownloaded(name);
+        // 安装程序已拉起：通知 Electron 主进程主动退出，避免占用 exe 让 NSIS 安装卡住。
+        // NSIS 配了 runAfterFinish=true，安装完会自动启动新版；这里只写信号，不拼任何命令。
+        if (r.ok && r.mode === 'launch') {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                fs.writeFileSync(path.join(updater.updateDir(), 'quit-for-install.json'),
+                    JSON.stringify({ at: Date.now() }), 'utf8');
+            } catch (e) { /* 信号写失败不阻断安装（最坏仍需用户手动关闭应用） */ }
+        }
         res.json(r.ok ? { code: 0, data: r } : { code: -1, msg: r.msg });
     } catch (e) {
         res.json({ code: -1, msg: e.message });

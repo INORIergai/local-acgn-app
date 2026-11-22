@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.10'
+TAG = 'v6.8.11'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,16 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.10：修复增量更新回退全量
+COMMIT_MSG = """v6.8.11：修复全量更新不重启 / 重复下载
 
-- baseline 版本校验：过期基线现场重合成，避免 patch 名算错→404→回退全量
-- 增量前强制重查版本，不再信任 5 分钟过期缓存
-- 下载多源改为加速镜像优先、原站兜底，改善国内下载慢
-- 增量扫描前缀补 android-dist/，与发布端口径一致
-- PC 端内置 Android v5.1.0 安装包，手机扫码/更新即可
+- 安装程序拉起后写退出信号，主进程主动退出释放 exe 占用，装完自动重启新版
+- startDownload 幂等：已完成且文件存在时复用，不再重复整包下载
+- 前端下载中/完成禁用下载按钮，done 时高亮立即安装
+- 增量轮询在 done/ready 等终态停止，避免空转
+- 含 v6.8.10 增量修复：基线版本校验、强制重查、镜像优先
+- 内置 Android v5.1.0 安装包
 
-版本：6.8.10"""
+版本：6.8.11"""
 
 
 def get_token():

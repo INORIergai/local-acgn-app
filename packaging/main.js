@@ -369,7 +369,28 @@ async function verifiedRestartForSwitch() {
  * 自己的 startServer()/waitServer() 抢后端。 */
 const UPDATES_DIR = path.join(DATA_ROOT, 'updates');
 let switchTimer = null;
+/* 全量安装：后端拉起 NSIS 后写 quit-for-install.json。主进程看到就退出自己，
+ * 释放 exe 占用让 NSIS 顺利完成安装；NSIS runAfterFinish=true 会自动启动新版。
+ * 只在真正退出时才删信号，避免定时器重叠导致重复响应。 */
+let _quittingForInstall = false;
+function checkQuitForInstall() {
+    if (_quittingForInstall) return;
+    let sig;
+    try { sig = JSON.parse(fs.readFileSync(path.join(UPDATES_DIR, 'quit-for-install.json'), 'utf8')); }
+    catch (e) { return; }
+    const age = Date.now() - (Number(sig && sig.at) || 0);
+    if (!Number.isFinite(age) || age < 0 || age > 5 * 60 * 1000) {
+        try { fs.unlinkSync(path.join(UPDATES_DIR, 'quit-for-install.json')); } catch (e) { /* 忽略 */ }
+        return;
+    }
+    _quittingForInstall = true;
+    blog('全量安装已启动，应用即将退出以释放文件占用');
+    // 给安装程序约 2 秒完成握手，然后退出本应用（不 relaunch：安装程序会启动新版）
+    setTimeout(() => { try { app.exit(0); } catch (e) { blog('退出失败: ' + e.message); } }, 2000);
+}
+
 function checkPendingSwitch() {
+    checkQuitForInstall();
     return incrementalSwitch.checkAndApply({
         runtimeDir: RUNTIME,
         updatesDir: UPDATES_DIR,

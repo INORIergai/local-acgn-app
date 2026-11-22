@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.10'
-TAG = 'v6.8.10'
+VER = '6.8.11'
+TAG = 'v6.8.11'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -73,12 +73,13 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.10 · 修复增量更新
+## v6.8.11 · 修复下载完不重启 / 重复下载
 
-- 修复「点增量却下全量」：过期 baseline 会导致 patch 名算错→404→回退全量。现会校验基线版本并现场重合成。
-- 增量前强制重查版本，避免用到过期缓存下载旧安装包。
-- 下载改为加速镜像优先、原站兜底，改善国内下载慢。
-- 内置 Android v5.1.0 安装包（versionCode 6），手机扫码/更新即可。
+- 全量安装：拉起安装程序后应用主动退出释放占用，装完自动重启新版。
+- 下载幂等：已下好的包直接复用，不再重复整包下载。
+- 下载中/完成禁用下载按钮，完成后高亮「立即安装」。
+- 含 v6.8.10 的增量修复（基线版本校验、强制重查、镜像优先）。
+- 内置 Android v5.1.0 安装包（versionCode 6）。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
