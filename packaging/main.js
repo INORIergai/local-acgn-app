@@ -196,19 +196,23 @@ try {
     blog('写入版本文件失败（后端将退化读 package.json）: ' + e.message);
 }
 
-/* 增量更新验签公钥：payload 里随包携带（公开信息，非凭据），首次启动写到
+/* 增量更新验签公钥：payload 里随包携带（公开信息，非凭据），每次启动都同步到
  * 数据目录 updates/，后端 updater.js 从同一路径读取。用户双击 EXE 无需设任何
  * 环境变量即可启用增量更新；公钥缺失时后端自动回退全量下载，不影响使用。
- * 已存在则不覆盖——运维可在数据目录替换公钥做轮换。 */
+ * ★每次覆盖：确保从旧版本升级上来时，数据目录里的旧公钥被新版公钥刷新——
+ * 否则换了签名密钥后旧用户会验不过新 patch。需要手动轮换时用 CV_UPDATE_PUBLIC_KEY
+ * 环境变量（后端 readUpdatePublicKey 里 env 优先）覆盖即可。 */
 try {
     const srcKey = path.join(PAYLOAD, 'update-public-key.pem');
     const dstDir = path.join(DATA_ROOT, 'updates');
     const dstKey = path.join(dstDir, 'update-public-key.pem');
     if (fs.existsSync(srcKey)) {
         fs.mkdirSync(dstDir, { recursive: true });
-        if (!fs.existsSync(dstKey)) {
+        // 内容不同才写，避免每次启动都刷新 mtime
+        const same = fs.existsSync(dstKey) && fs.readFileSync(dstKey).equals(fs.readFileSync(srcKey));
+        if (!same) {
             fs.copyFileSync(srcKey, dstKey);
-            blog('已部署增量验签公钥 → ' + dstKey);
+            blog('已同步增量验签公钥 → ' + dstKey);
         }
     } else {
         blog('payload 未带验签公钥，增量更新将回退全量下载');
