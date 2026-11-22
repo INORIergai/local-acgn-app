@@ -1,0 +1,29 @@
+/* ============================================================================
+   Phase A · 影视库/动漫库首页「在线最新」卡片区
+   只作用于 .online-browse / .ob-*，不碰本地 movie-grid。
+   ============================================================================ */
+.online-browse { margin: 4px 0 20px; }
+.online-browse[hidden] { display: none !important; }
+.ob-head { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
+.ob-head b { font-size:14px; color:var(--text); }
+.ob-head span { font-size:11.5px; color:var(--text-muted); }
+.ob-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(132px, 1fr));
+    gap:12px;
+}
+.ob-card {
+    display:flex; flex-direction:column; gap:5px; text-align:left;
+    border:1px solid var(--border); border-radius:10px; padding:7px;
+    background:var(--bg-elevated); cursor:pointer; color:var(--text);
+    transition:border-color .18s, transform .18s;
+}
+.ob-card:hover { border-color:var(--primary); transform:translateY(-2px); }
+.ob-cover {
+    width:100%; aspect-ratio:3/4; border-radius:6px; overflow:hidden;
+    background:linear-gradient(150deg, var(--primary-soft), var(--bg-elevated));
+    display:flex; align-items:center; justify-content:center; font-size:22px;
+}
+.ob-cover img { width:100%; height:100%; object-fit:cover; display:block; }
+.ob-name { font-size:12px; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ob-card small { font-size:10px; color:var(--text-muted); }

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>本地影库</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/online-browse.css">
     <link rel="stylesheet" href="css/magic-likes.css">
     <link rel="stylesheet" href="css/av-board.css">
     <link rel="stylesheet" href="css/motion.css">
@@ -702,6 +703,9 @@
             <!-- 多维即时聚合切片器 (Facet Slicer 2.0) -->
             <div id="facetFilterBar" class="facet-filter-bar"></div>
 
+            <!-- 在线最新（影视库/动漫库首页的"在线优先"卡片区；异步加载，失败自动隐藏） -->
+            <div id="onlineBrowseBar" class="online-browse" hidden></div>
+
             <!-- 影片网格 -->
             <div id="movieGrid" class="movie-grid"></div>
 
@@ -1244,6 +1248,7 @@
     <script src="js/command-palette.js"></script>
     <script src="js/features.js"></script>
     <script src="js/home.js"></script>
+    <script src="js/title-match.js"></script>
     <script src="js/media-source.js"></script>
     <script src="js/series-ui.js"></script>
     <script src="js/av-board.js"></script>

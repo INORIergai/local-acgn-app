@@ -303,6 +303,12 @@ const api = {
         params.set('q', q);
         params.set('sort', sortKey || 'name');
         params.set('order', orderKey || 'asc');
+        // 分类范围：在哪个库搜就只搜哪个分类；仅首页/影视库不传 type（全库展示）。
+        // 后端 /api/movie/search 已支持 type=jav|anime|comic|novel|film|cartoon。
+        const viewType = ({ jav: 'jav', anime: 'anime', comic: 'comic', novel: 'novel',
+            'recent-adult': 'jav', 'hot-adult': 'jav', 'random-adult': 'jav',
+            'guess-adult': 'jav', 'unwatched-adult': 'jav' })[currentView];
+        if (viewType) params.set('type', viewType);
         if (typeof isAdultNavHidden === 'function' && isAdultNavHidden()) params.set('privacy', 'exclude');
         const data = await request(`/api/movie/search?${params.toString()}`, { signal, viewBound: true });
         return apiData(data, []);
@@ -8844,6 +8850,10 @@ function renderSettings(config) {
                                     <input type="checkbox" id="memAutoMemory" checked>
                                     <span>自动从对话提取长期记忆（偏好 / 雷点 / 习惯）</span>
                                 </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="memLearnFromBehavior" checked>
+                                    <span>从观看 / 搜索记录学习偏好（让 AI 推荐更贴合习惯，可随时关闭）</span>
+                                </label>
                             </div>
                             <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
                                 <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;">活动窗口保留
@@ -8855,6 +8865,7 @@ function renderSettings(config) {
                             </div>
                             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                                 <button class="btn btn-sm" onclick="saveAIMemorySettings()">💾 保存记忆设置</button>
+                                <button class="btn btn-sm" onclick="learnBehaviorNow()">📊 从观看记录学习</button>
                                 <button class="btn btn-sm" onclick="compressAIMemories()">🧹 立即整理记忆</button>
                                 <span id="aiMemoryOpStatus" style="font-size:12px;"></span>
                             </div>
@@ -12500,6 +12511,7 @@ async function loadAIMemoryPanel() {
             if (el('memEnabled')) el('memEnabled').checked = s.enabled !== false;
             if (el('memAutoCompress')) el('memAutoCompress').checked = s.autoCompress !== false;
             if (el('memAutoMemory')) el('memAutoMemory').checked = s.autoMemory !== false;
+            if (el('memLearnFromBehavior')) el('memLearnFromBehavior').checked = s.learnFromBehavior !== false;
             if (el('memLiveTurns')) el('memLiveTurns').value = s.liveTurns || 10;
             if (el('memMemoryCap')) el('memMemoryCap').value = s.memoryCap || 100;
         }
@@ -12629,6 +12641,7 @@ async function saveAIMemorySettings() {
                 enabled: document.getElementById('memEnabled').checked,
                 autoCompress: document.getElementById('memAutoCompress').checked,
                 autoMemory: document.getElementById('memAutoMemory').checked,
+                learnFromBehavior: (document.getElementById('memLearnFromBehavior') || {}).checked !== false,
                 liveTurns: parseInt(document.getElementById('memLiveTurns').value) || 10,
                 memoryCap: parseInt(document.getElementById('memMemoryCap').value) || 100
             })
@@ -12639,6 +12652,24 @@ async function saveAIMemorySettings() {
     } catch (e) {
         if (st) st.textContent = e.message;
         showNotification('记忆设置保存失败', e.message, 'error');
+    }
+}
+
+// 从观看/搜索记录手动提炼偏好（受「从观看记录学习」开关约束）
+async function learnBehaviorNow() {
+    const st = document.getElementById('aiMemoryOpStatus');
+    try {
+        if (st) st.textContent = '正在从观看 / 搜索记录学习…';
+        const r = await (await fetch('/api/ai/learn-behavior', { method: 'POST' })).json();
+        if (r.code !== 0) throw new Error(r.msg || '提炼失败');
+        const d = r.data || {};
+        const msg = d.reason === 'disabled' ? '该功能已在记忆设置里关闭' : `新学习 ${d.learned || 0} 条偏好`;
+        if (st) st.textContent = '📊 ' + msg;
+        showNotification('行为学习', msg);
+        loadAIMemoryPanel();
+    } catch (e) {
+        if (st) st.textContent = e.message;
+        showNotification('行为学习失败', e.message, 'error');
     }
 }
 
@@ -13701,6 +13732,9 @@ function hideGallery() {
 function switchView(view) {
     // ★ P0：切换代次 +1，所有 viewBound 请求在返回时会发现自己已过期。
     viewToken++;
+    // Phase A：离开影视库/动漫库时收起"在线最新"卡片区
+    const ob = document.getElementById('onlineBrowseBar');
+    if (ob && !['movies', 'anime', 'movies-adult'].includes(view)) ob.hidden = true;
     // 切换视图时坚决重置可能残余的长任务等待遮罩与加载器
     if (window.NVX_LONG && typeof window.NVX_LONG.reset === 'function') {
         window.NVX_LONG.reset();
@@ -13844,6 +13878,7 @@ function switchView(view) {
         case 'movies':
             document.getElementById('movieGrid').style.display = 'grid';
             loadMovies();
+            loadOnlineBrowse('movies');
             break;
         /* round42c 隐私内容组专属视图（只管 AV/里番） */
         case 'movies-adult':
@@ -13945,6 +13980,7 @@ function switchView(view) {
             document.getElementById('sortSelect').parentElement.style.display = 'block';
             hideGallery();
             loadAnime();
+            loadOnlineBrowse('anime');
             setTimeout(() => { if (currentView === 'anime') { try { maybeShowScraperGuide(); } catch (e) {} } }, 600);
             break;
         case 'comic':
@@ -14134,6 +14170,42 @@ function switchView(view) {
 }
 
 // ========== 数据加载 ==========
+/* Phase A：影视库/动漫库首页的「在线最新」卡片区（在线优先、本地兜底）。
+   异步加载，失败静默隐藏，绝不影响本地库渲染。 */
+async function loadOnlineBrowse(view) {
+    const bar = document.getElementById('onlineBrowseBar');
+    if (!bar || !['movies', 'anime', 'movies-adult'].includes(view)) { if (bar) bar.hidden = true; return; }
+    const kind = (view === 'anime') ? 'anime' : 'film';
+    bar.hidden = false;
+    bar.innerHTML = '<div class="ob-head"><b>🌐 在线最新</b><span>正在聚合在线源…</span></div>';
+    try {
+        const r = await fetch('/api/media-source/browse?kind=' + kind + '&limit=24');
+        const j = await r.json();
+        if (j.code !== 0 || !j.data || !(j.data.items || []).length) { bar.hidden = true; return; }
+        const items = j.data.items;
+        bar.innerHTML = '<div class="ob-head"><b>🌐 在线最新</b><span>' + items.length
+            + ' 部 · 来自 ' + (j.data.groups || []).filter(g => g.count > 0).length + ' 个在线源</span></div>'
+            + '<div class="ob-grid">' + items.map((it, i) => `
+                <button class="ob-card" data-i="${i}" title="${escapeHtml(it.name)}">
+                    <span class="ob-cover">${it.cover ? '<img src="' + escapeHtml(it.cover) + '" alt="" loading="lazy">' : '<i>🌐</i>'}</span>
+                    <span class="ob-name">${escapeHtml(it.name)}</span>
+                    <small>${escapeHtml(it.sourceName || '')}</small>
+                </button>`).join('') + '</div>';
+        bar.querySelectorAll('.ob-card').forEach(btn => btn.addEventListener('click', () => {
+            const it = items[Number(btn.dataset.i)];
+            if (it) openBrowseItem(it);
+        }));
+    } catch (e) { bar.hidden = true; }
+}
+
+// 点在线卡片：走现有在线解析链路（搜番→选集→播放）
+function openBrowseItem(it) {
+    // 复用聚合搜索的待查词机制，跳到在线观看并预填作品名
+    window.__hubPendingQ = it.name;
+    window.__hubView = 'watch-anime';
+    if (typeof switchView === 'function') switchView('watch-hub');
+}
+
 async function loadMovies(page = 1) {
     currentPage = page;
     /* round42c 隐私分割器：仅当顶栏 🔒 处于「隐藏成人内容」时才排除 AV/里番。
@@ -17583,6 +17655,7 @@ function handleSearch(e) {
     }
 
     currentSearchQuery = q;
+    const searchViewAtQuery = currentView; // 记录发起搜索时的视图，用于结果范围标注
     rememberViewState(currentView, q);      // round26 #1：搜索词写进 hash，F5 后能恢复
     searchTimeout = setTimeout(async () => {
         const ac = new AbortController();
@@ -17616,12 +17689,17 @@ function handleSearch(e) {
         document.getElementById('actressGrid').style.display = 'none';
         document.getElementById('tagCloud').style.display = 'none';
         hideGallery();
+        // 搜索范围标注：让用户在结果页一眼看出「刚才搜的是哪个库」（全库/动漫/漫画/…）
+        const scopeLabels = { jav: 'AV', anime: '动漫', comic: '漫画', novel: '小说',
+            'recent-adult': 'AV', 'hot-adult': 'AV', 'random-adult': 'AV',
+            'guess-adult': 'AV', 'unwatched-adult': 'AV' };
+        const scope = scopeLabels[searchViewAtQuery] ? `（${scopeLabels[searchViewAtQuery]}库）` : '（全库）';
         if (!movies.length) {
-            updateToolbarTitle(`搜索: ${q}`, 0);
+            updateToolbarTitle(`搜索${scope}: ${q}`, 0);
             renderAISearchFallback(q, seq);
         } else {
             renderMovies(movies);
-            updateToolbarTitle(`搜索: ${q}`, movies.length);
+            updateToolbarTitle(`搜索${scope}: ${q}`, movies.length);
         }
     }, 300);
 }
