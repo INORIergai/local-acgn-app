@@ -190,6 +190,13 @@
         .chapter-content[data-html="1"] { white-space: normal; }
         .chapter-content[data-html="1"] p { margin-bottom: 1em; }
 
+        /* 滚动模式也遵循「页宽（每行字数）」设置，与翻页模式观感一致 */
+        body[data-rs-pagewidth="narrow"] #readerArea .chapter-content,
+        body[data-rs-pagewidth="medium"] #readerArea .chapter-content { max-width: 620px; margin: 0 auto; }
+        body[data-rs-pagewidth="narrow"] #readerArea .chapter-content { max-width: 460px; }
+        body[data-rs-pagewidth="wide"] #readerArea .chapter-content { max-width: 820px; margin: 0 auto; }
+        /* full 不设 max-width，铺满 readerArea */
+
         /* 空 <svg> 兜底：EPUB 里整页插图常写成 <svg><image/></svg>，<image> 转成 <img> 后
          * <svg> 只剩空壳，而空 <svg> 默认尺寸 300x150，会在插图前撑出一大块空白。
          * 后端已尽量脱壳，这里再加一道 CSS 保险。 */
@@ -1001,7 +1008,7 @@
              · pageStarts 记录本页第一个子块在第几个块上
              · fitPage() 从该块起尽可能多塞，塞不下就到上一块为止
            滚动模式完全不受影响（复用同一份 innerHTML）。 */
-        let readMode = 'scroll';        // 'scroll' | 'page'
+        let readMode = 'page';          // 'page' | 'scroll' —— 默认翻页优先（对齐 Reeden/微信读书）；老用户由 localStorage 覆盖
         let chapterBlocks = [];         // 当前章的块（字符串 HTML 片段）
         let pageStarts = [];            // 每页起始块下标
         let currentPage = 0;
@@ -1809,6 +1816,15 @@
                 pc.style.paddingLeft = currentPadding + '%';
                 pc.style.paddingRight = currentPadding + '%';
             }
+
+            // 页宽（每行字数）：翻页模式落到 .paged-inner 的 max-width，
+            // 滚动模式落到正文 .chapter-content，两者口径一致；实际每行字数由
+            // 字号 + 容器宽度共同决定，这里只改容器宽度，让浏览器按屏幕自适应。
+            var PW = { narrow: 460, medium: 620, wide: 820, full: 0 };
+            var pwMax = PW[s.pageWidth] || PW.medium;
+            var inner = document.querySelector('.paged-inner');
+            if (inner) inner.style.maxWidth = pwMax ? (pwMax + 'px') : 'none';
+            document.body.setAttribute('data-rs-pagewidth', s.pageWidth || 'medium');
 
             // 字体：正文 .chapter-content 自带宋体栈，只能靠 body[data-rs-font] 提权
             document.body.setAttribute('data-rs-font', s.fontFamily || 'serif');
