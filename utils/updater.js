@@ -662,10 +662,11 @@ function candidateDownloadUrls(cfg, asset) {
         seen.add(u);
         out.push({ url: u, label });
     };
+    // 国内直连 github.com 大文件常卡在 1MB/s，故「加速镜像优先、官方原站兜底」。
+    // 自定义 downloadPrefix 优先级最高（用户显式指定）。
     if (cfg.downloadPrefix) {
         add(cfg.downloadPrefix.replace(/\/+$/, '') + '/' + asset.downloadUrl, '自定义镜像');
     }
-    add(asset.downloadUrl, '官方原站');
     for (const p of cfg.mirrorPrefixes || []) {
         // 前缀必须是 http/https 且 host 非内网/保留地址，杜绝配置被污染后打到内网
         if (!/^https?:\/\//i.test(p)) continue;
@@ -676,6 +677,8 @@ function candidateDownloadUrls(cfg, asset) {
             (net.isIP(ph) && isBlockedIp(ph))) continue;
         add(p.replace(/\/+$/, '') + '/' + asset.downloadUrl, '加速镜像 ' + ph);
     }
+    // 原站放最后兜底（镜像全挂时才用），避免"原站能连但极慢"拖垮整体体验
+    add(asset.downloadUrl, '官方原站');
     return out;
 }
 
@@ -716,7 +719,7 @@ function normalizeManifest(m) {
 /** 增量 diff 覆盖的源码前缀：必须与 packaging/_cv_patch.py 的 ALLOWED 一致，
  *  也与发布端 build_manifest() 的扫描范围一致，否则合成 baseline 的文件集合
  *  与发布端 manifest 不对齐，本地改动检测会误报/漏报。 */
-const INCREMENTAL_FILE_PREFIXES = ['public/', 'routes/', 'utils/', 'server.js', 'package.json'];
+const INCREMENTAL_FILE_PREFIXES = ['public/', 'routes/', 'utils/', 'server.js', 'package.json', 'android-dist/'];
 
 /**
  * 从「本地已安装文件」合成 baseline manifest —— 不触网、不需要事先成功切换过。
@@ -781,10 +784,19 @@ function synthesizeBaseline(runtimeDir, version) {
  */
 function ensureBaseline(opts = {}) {
     const bp = opts.baselinePath || path.join(updateDir(), 'baseline-manifest.json');
+    // 磁盘 baseline 必须「版本等于当前安装版本」才能复用。M3 切换后它记录的是
+    // 上次 patch 的目标版本，老用户升级上来常残留过期版本（实测 6.8.5 基线跑在
+    // 6.8.7 上）。旧基线会拼出错误的 cv-patch-<旧>-<新>.zip → 404 → 回退全量，
+    // 且哈希对不上还会被本地改动检测拒绝。故版本不符一律现场重合成。
+    const wantVersion = String(opts.version || localVersion() || '').replace(/^[vV]/, '');
     try {
         if (fs.existsSync(bp)) {
             const m = normalizeManifest(JSON.parse(fs.readFileSync(bp, 'utf8')));
-            if (m.files && Object.keys(m.files).length) return m;
+            const gotVersion = String(m.version || '').replace(/^[vV]/, '');
+            if (m.files && Object.keys(m.files).length &&
+                (!wantVersion || !gotVersion || gotVersion === wantVersion)) return m;
+            console.log('[更新] 磁盘 baseline 版本 ' + (gotVersion || '?') +
+                ' 与当前版本 ' + (wantVersion || '?') + ' 不符，重新合成');
         }
     } catch (e) { /* 文件缺失/损坏/不可读 → 现场合成 */ }
 
@@ -974,8 +986,14 @@ function readUpdatePublicKey() {
  */
 async function startIncremental(opts = {}) {
     const iu = require('./incremental-updater');   // 惰性 require，避免循环依赖
-    const chk = lastCheck && lastCheck.result;
-    if (!chk || !chk.release) throw new Error('请先执行一次「检查更新」');
+    // 必须强制重查：lastCheck 是 5 分钟缓存，Release 刚发布或之前查过旧版时，
+    // 缓存里的 tag 可能是旧的 → 拼出不存在的 patch → 404 → 回退全量下载旧 Setup。
+    // 实测用户「点增量却下了 6.8.8 全量包」即源于此。force=true 跳过缓存。
+    let chk = null;
+    try {
+        chk = await checkUpdate(true);
+    } catch (e) { /* checkUpdate 内部已降级，抛错则交回退层 */ }
+    if (!chk || !chk.release) throw new Error('检查更新失败，无法确定目标版本');
 
     const target = String(chk.release.version || chk.release.tag || '').replace(/^[vV]/, '');
     // 阶段化进度：前端轮询 /api/update/status 可展示「进行到哪一步 + 预估剩余」。
