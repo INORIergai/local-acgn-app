@@ -492,6 +492,10 @@ const lightnovel = {
 
 const ADAPTERS = {};
 [dm5, zaimanhua, komiic, esj, lightnovel].forEach((a) => { ADAPTERS[a.id] = a; });
+// 轻小说文库适配器独立成文件（.cc 镜像 + GBK + 单章阅读）
+require('./wenku8-reading')({ ADAPTERS, page, clean, abs, imgProxy });
+// 次元狗资源索引适配器（最新列表 + 详情元数据 + 原站跳转，无在线阅读）
+require('./ciyuanhou-reading')({ ADAPTERS, page, clean, abs, imgProxy });
 
 // 目录页每次抓都要 2~13s，短缓存 5 分钟；打开阅读页时只等一次
 const CAT_TTL = 5 * 60 * 1000;

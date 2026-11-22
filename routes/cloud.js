@@ -515,6 +515,36 @@ router.get('/kmoe/koobone/dl', async (req, res) => {
     }
 });
 
+// 把签名 EPUB 下载到应用漫画目录（comicFolders），落库后可在漫画库应用内阅读。
+// 不保存签名直链到数据库；只存「系列标识 + 卷号」去重用的本地文件。
+router.get('/kmoe/koobone/save', async (req, res) => {
+    try {
+        const url = String(req.query.url || '');
+        const vid = String(req.query.vid || '');
+        if (!url) return res.json({ code: -1, msg: '缺少 url' });
+        const kmoeSave = require('../utils/kmoe-download');
+        const crawler = getKmoeCrawler();
+        const lookup = await kooboneLookup(crawler, url, vid);
+        if (!lookup.volume) {
+            return res.json({ code: lookup.error === 'not-in-library' ? 2 : -1,
+                needImport: lookup.error === 'not-in-library',
+                msg: '书库里找不到该卷（请先在 KOOB.ONE 导入）' });
+        }
+        const v = lookup.volume;
+        const result = await kmoeSave.saveEpubToComicFolder({
+            fetchImpl: fetch,
+            fileUrl: v.file_url,
+            title: lookup.title,
+            seq: v.seq || v.vol_seriesid,
+            seriesId: v.vol_seriesid || lookup.key,
+            comicFolder: (config.comicFolders || [])[0],
+        });
+        res.json({ code: 0, data: { ...result, title: lookup.title, volume: v.vol_name } });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
+});
+
 // 打开官方在线阅读器（换票 URL 转成本应用同源反代路径 → iframe 内自动已登录）
 router.get('/kmoe/koobone/reader-url', async (req, res) => {
     try {
@@ -1150,7 +1180,7 @@ router.post('/quark/run-login-bat', (req, res) => {
             return res.json({ code: -1, msg: '未找到「夸克登录.bat」。在下方「脚本位置」填入 bat 的完整路径后重试（项目根目录默认自带）。' });
         }
         // 可执行文件是字面量 cmd.exe（不取自环境/请求）；bat 路径已过白名单式校验。
-        // /s /c + 引号包路径：路径含空格（如 "D:\\Media\..."）时 cmd 的标准解法。
+        // /s /c + 引号包路径：路径含空格（如 "D:\ai program\..."）时 cmd 的标准解法。
         const child = spawn('cmd.exe', ['/s', '/c', '"' + bat + '"'], {
             cwd: path.dirname(bat),
             detached: true,
