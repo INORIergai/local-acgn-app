@@ -83,3 +83,6 @@ android/last-build.json
 
 # SDD 计划工作区（技能临时产物）
 .superpowers/
+
+# 签名私钥（绝不入库）
+.keys/
