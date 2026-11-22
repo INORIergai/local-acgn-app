@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.9'
-TAG = 'v6.8.9'
+VER = '6.8.10'
+TAG = 'v6.8.10'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -73,11 +73,12 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.9 · PC + Android 联合发布
+## v6.8.10 · 修复增量更新
 
-- 搜索分类（哪个库搜哪个分类）、AI 行为学习开关、影视/动漫在线发现、响应式卡片墙。
-- PC 端已内置 Android v5.1.0 安装包，手机扫码/更新即可。
-- 同包附带 Android v5.1.0 APK（versionCode 6），可独立下载安装。
+- 修复「点增量却下全量」：过期 baseline 会导致 patch 名算错→404→回退全量。现会校验基线版本并现场重合成。
+- 增量前强制重查版本，避免用到过期缓存下载旧安装包。
+- 下载改为加速镜像优先、原站兜底，改善国内下载慢。
+- 内置 Android v5.1.0 安装包（versionCode 6），手机扫码/更新即可。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
