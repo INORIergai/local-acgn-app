@@ -221,7 +221,7 @@ function stagePatch(patchBuffer, opts) {
 
 /** 复用 A 方案的 request(stream) 下载 patch（二进制；非 stream 模式会 utf8 解码损坏内容）。
  *  URL 安全由 request 内部的 assertSafeUrl 负责（含 DNS 与 302 复检），此处不绕过。 */
-async function downloadPatchBytes(cfg, asset) {
+async function downloadPatchBytes(cfg, asset, onProgress) {
     const candidates = candidateDownloadUrls(cfg, asset);
     if (!candidates.length) throw new Error('没有可用的 patch 下载源');
     const errors = [];
@@ -229,9 +229,15 @@ async function downloadPatchBytes(cfg, asset) {
         try {
             const r = await request(entry.url, { timeout: 30000 }, true);
             if (r.status !== 200) { errors.push(entry.label + ': HTTP ' + r.status); continue; }
+            const total = Number(r.length) || 0;
+            let received = 0;
             const chunks = [];
             await new Promise((resolve, reject) => {
-                r.stream.on('data', (d) => chunks.push(d));
+                r.stream.on('data', (d) => {
+                    chunks.push(d);
+                    received += d.length;
+                    if (typeof onProgress === 'function') onProgress(received, total, entry.label);
+                });
                 r.stream.on('end', resolve);
                 r.stream.on('error', reject);
             });

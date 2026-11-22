@@ -73,6 +73,7 @@ android/keystore/
 *.jks
 *.keystore
 *.apk
+android-dist/
 
 # 构建产物与工具运行态（不入库）
 android/.mimosa/

@@ -978,6 +978,20 @@ async function startIncremental(opts = {}) {
     if (!chk || !chk.release) throw new Error('请先执行一次「检查更新」');
 
     const target = String(chk.release.version || chk.release.tag || '').replace(/^[vV]/, '');
+    // 阶段化进度：前端轮询 /api/update/status 可展示「进行到哪一步 + 预估剩余」。
+    // phase: checking → downloading → verifying → staging → ready
+    const started = Date.now();
+    const setPhase = (phase, extra) => {
+        downloadState = Object.assign({
+            state: 'incremental-' + phase,
+            phase,
+            target,
+            startedAt: started,
+            percent: 0,
+            error: null,
+        }, extra || {});
+    };
+    setPhase('checking', { note: '正在检查版本与本地基线…' });
 
     /* baseline = 本地当前版本的 manifest（用于 from→to 命名 + 本地改动检测）。
      * checkUpdate.result.manifest 是「目标版本」的 manifest，只用于 target 侧参考，
@@ -1007,7 +1021,19 @@ async function startIncremental(opts = {}) {
     // 缺失时告警并抛错 → 路由层回退全量；打包版须在部署时注入 CV_UPDATE_PUBLIC_KEY。
     const pubkeyPem = requireUpdatePublicKey();
 
-    const patchBytes = await iu.downloadPatchBytes(cfg, { downloadUrl: patchUrl });
+    // 阶段2：下载 patch（带真实字节进度）
+    setPhase('downloading', { note: '正在下载增量包…', percent: 0, received: 0, total: 0 });
+    const patchBytes = await iu.downloadPatchBytes(cfg, { downloadUrl: patchUrl }, (received, total, label) => {
+        const pct = total > 0 ? Math.min(99, Math.round(received / total * 100)) : 0;
+        downloadState = Object.assign({}, downloadState, {
+            state: 'incremental-downloading', phase: 'downloading',
+            percent: pct, received, total,
+            note: '正在下载增量包…' + (total > 0 ? ' ' + pct + '%' : ''),
+            source: label,
+        });
+    });
+    // 阶段3：校验签名与逐文件 sha256
+    setPhase('verifying', { note: '正在校验签名与文件完整性…', percent: 99 });
     const updatesDir = updateDir();
     const stagingDir = path.join(updatesDir, 'staging-' + target);
 
@@ -1024,18 +1050,14 @@ async function startIncremental(opts = {}) {
     });
     if (!staged.ok) throw new Error(staged.error || 'patch 校验失败');
 
-    downloadState = {
-        state: 'incremental-ready',
-        target,
+    // 阶段4：已就绪，等待主进程轮询切换（15s 一次），切换后自动重启
+    setPhase('ready', {
         stagingPath: staged.stagingPath,
         file: staged.stagingPath,
-        received: 0,
-        total: 0,
         percent: 100,
-        startedAt: Date.now(),
         finishedAt: Date.now(),
-        error: null,
-    };
+        note: '增量包已就绪，正在自动完成更新（无需操作），稍后应用会自动重启',
+    });
     return { ok: true, mode: 'incremental', target, stagingPath: staged.stagingPath };
 }
 

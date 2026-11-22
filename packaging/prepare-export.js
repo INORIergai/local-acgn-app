@@ -18,6 +18,8 @@ const path = require('path');
 
 const SRC = path.join(__dirname, '..');
 const DST = path.join(__dirname, 'payload');
+const ANDROID_DIST = path.join(SRC, 'android-dist');
+const ANDROID_GRADLE = path.join(SRC, 'android', 'app', 'build.gradle');
 
 // 目录白名单（整目录复制）
 const COPY_DIRS = ['routes', 'utils', 'public'];
@@ -61,7 +63,8 @@ function rm_rf(p) {
         catch (e) {
             if (!['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY'].includes(e.code) || i === MAX - 1) throw e;
             const ms = 120 * (i + 1);
-            try { require('child_process').execSync(`ping -n ${Math.ceil(ms / 1000) + 1} 127.0.0.1 >nul 2>&1`, { stdio: 'ignore' }); }
+            // 同步退避：不 spawn 任何外部命令（旧的 ping 写法会引入命令执行面）
+            try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
             catch (_) { /* 退避失败也继续重试 */ }
         }
     }
@@ -98,6 +101,69 @@ function copyDir(src, dst, skip) {
     }
 }
 
+/**
+ * 读取安卓版本号（唯一来源仍是 android/app/build.gradle）。
+ * 打包后的 payload 里没有 android/ 目录，所以必须把版本固化进
+ * payload/android-version.json，否则 PC 端的 /api/app/android-version
+ * 会退化成「没有版本信息」或旧版的 4.6.0。
+ */
+function readAndroidVersion() {
+    try {
+        const raw = fs.readFileSync(ANDROID_GRADLE, 'utf8');
+        const content = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+        const code = content.match(/versionCode\s*=?\s*(\d+)/);
+        const name = content.match(/versionName\s*=?\s*["']([^"']+)["']/);
+        const minSdk = content.match(/minSdk\s*=?\s*(\d+)/);
+        if (!code || !name) throw new Error('未匹配到 versionCode / versionName');
+        if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(name[1])) throw new Error('版本号格式异常：' + name[1]);
+        return {
+            versionCode: parseInt(code[1], 10),
+            versionName: name[1],
+            minSdk: minSdk ? parseInt(minSdk[1], 10) : null,
+            source: 'android/app/build.gradle'
+        };
+    } catch (e) {
+        console.warn('  ⚠️ 读取安卓版本失败（Android 更新接口将不可用）：' + e.message);
+        return null;
+    }
+}
+
+/** 固化版本信息 + 把安装包带进 payload（手机更新走 PC 局域网，离线可用） */
+function exportAndroid() {
+    const info = readAndroidVersion();
+    if (!info) return;
+
+    // 优先用构建脚本产出的 android-dist/android-version.json（带 APK SHA/体积）；
+    // 它不存在时才退回仅版本号（服务端会因缺 SHA 拒绝下发，不会误发旧包）。
+    let meta = Object.assign({}, info, {
+        builtAt: new Date().toISOString(),
+        changelog: '',
+        apkSha256: null,
+        apkSize: 0
+    });
+    try {
+        const raw = fs.readFileSync(path.join(ANDROID_DIST, 'android-version.json'), 'utf8').replace(/^\uFEFF/, '');
+        const j = JSON.parse(raw);
+        const shaOk = /^[a-f0-9]{64}$/i.test(String(j.apkSha256 || ''));
+        if (j.versionName === info.versionName && Number(j.versionCode) === info.versionCode && shaOk) {
+            meta = Object.assign({}, info, j, { source: 'android-dist/android-version.json' });
+        } else {
+            console.warn('  ⚠️ android-dist/android-version.json 与 build.gradle 版本/哈希不一致，忽略');
+        }
+    } catch (e) {
+        console.warn('  ⚠️ 没有 android-dist/android-version.json（先跑 build-android.ps1 再打包 PC）');
+    }
+    fs.writeFileSync(path.join(DST, 'android-version.json'), JSON.stringify(meta, null, 2), 'utf8');
+    console.log(`  ✓ android-version.json → v${info.versionName} (code ${info.versionCode})${meta.apkSha256 ? ' + SHA' : '（无 SHA，暂不可下发）'}`);
+
+    if (!fs.existsSync(ANDROID_DIST)) {
+        console.warn('  ⚠️ 缺少 android-dist/（手机端暂时拿不到安装包，但不会误发旧版）');
+        return;
+    }
+    copyDir(ANDROID_DIST, path.join(DST, 'android-dist'));
+    console.log('  ✓ android-dist/ → payload/android-dist/');
+}
+
 function main() {
     console.log('清理旧导出（保留 node_modules）...');
     fs.mkdirSync(DST, { recursive: true });
@@ -122,6 +188,10 @@ function main() {
             else console.warn('  ⚠️ 缺少 ' + dir + '/' + f);
         }
     }
+
+    // 安卓版本信息 + 安装包：随 PC 更新一起下发，手机才能离线从 PC 取更新
+    console.log('导出安卓分发元数据 ...');
+    exportAndroid();
 
     // 公开仓库的 .gitignore：绝不让真实配置/数据被提交
     fs.writeFileSync(path.join(DST, '.gitignore'), [

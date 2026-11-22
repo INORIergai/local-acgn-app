@@ -1,10 +1,13 @@
 /**
  * routes/connect.js — 移动端扫码连接支持（纯增量，不影响既有功能）
  *
- * GET /api/connect/info  → 局域网所有可用地址 + 端口（供 connect.html 展示与二维码生成）
- * GET /api/connect/qr    → 二维码 PNG（?text= 默认第一个地址；供 connect.html <img>）
+ * GET  /api/connect/info        → 局域网所有可用地址 + 端口（供 connect.html 展示与二维码生成）
+ * GET  /api/connect/qr          → 二维码 PNG（?text= 默认第一个地址；供 connect.html <img>）
+ * POST /api/connect/pair-token  → 已登录的电脑端签发一次性配对 token（120s、单次）
+ * POST /api/connect/pair        → 手机持 token 换 lml_session，免输访问密码
  *
- * 手机端（CinemaVault HarmonyOS / Android）扫码即得 http://IP:PORT，免手输。
+ * 手机端（CinemaVault Android）扫码即得 http://IP:PORT，免手输。
+ * 二维码里不出现访问密码：配对 token 短时效、单次使用，且只能由电脑端已登录会话签发。
  */
 const express = require('express');
 const os = require('os');
@@ -63,7 +66,10 @@ router.get('/qr', async (req, res) => {
         }
         const list = lanAddresses();
         const text = String(req.query.text || list[0] || '');
-        if (!/^https?:\/\/[^\s]+$/.test(text)) {
+        // 允许普通 http(s) 地址，或 App 深链 cinemavault://pair?...
+        const ok = /^https?:\/\/[^\s]{1,500}$/.test(text)
+            || /^cinemavault:\/\/pair\?[^\s]{1,600}$/.test(text);
+        if (!ok) {
             return res.status(400).json({ code: -1, msg: '缺少有效地址' });
         }
         const buf = await QRCode.toBuffer(text, {

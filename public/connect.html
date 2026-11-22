@@ -41,32 +41,60 @@
   <h1>CinemaVault 移动端连接</h1>
   <p class="sub">用 午夜场 App 里的「扫码连接」扫下方二维码</p>
   <div class="qr"><img id="qr" alt="连接二维码"></div>
-  <p class="tip">手机与电脑需在同一网络（或手机连电脑热点）<br>点击任一地址可复制 · 若二维码对应地址不通，换一个重新生成</p>
+  <p class="tip">手机与电脑需在同一网络（或手机连电脑热点）<br>二维码 2 分钟内有效；过期点下方「刷新二维码」<br>点击任一地址可切换 · 若某个地址不通，换一个重新生成</p>
   <div class="addr" id="addr"></div>
+  <button id="refresh" style="margin-top:16px;padding:9px 18px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:#08090C;color:#E5A93C;font-size:13px;cursor:pointer;">刷新二维码</button>
 </div>
 <script>
 (async () => {
   const qr = document.getElementById('qr');
   const addr = document.getElementById('addr');
-  try {
-    const r = await fetch('/api/connect/info');
-    const j = await r.json();
-    const list = (j.data && j.data.addresses) || [];
-    if (!list.length) { addr.textContent = '未检测到局域网地址'; return; }
-    qr.src = '/api/connect/qr?text=' + encodeURIComponent(list[0]);
-    list.forEach(u => {
-      const s = document.createElement('span');
-      s.textContent = u;
-      s.onclick = async () => {
-        qr.src = '/api/connect/qr?text=' + encodeURIComponent(u);
-        try { await navigator.clipboard.writeText(u); s.classList.add('ok');
-          setTimeout(() => s.classList.remove('ok'), 900); } catch (e) {}
-      };
-      addr.appendChild(s);
-    });
-  } catch (e) {
-    addr.textContent = '加载失败：' + e.message;
+  let addresses = [];
+  let pairCode = null;
+
+  /** 有配对码时生成 App 深链，否则退回纯地址（手机端会要求输入访问密码） */
+  function qrTextFor(base) {
+    return pairCode
+      ? 'cinemavault://pair?u=' + encodeURIComponent(base) + '&c=' + pairCode
+      : base;
   }
+
+  function showQr(base) {
+    qr.src = '/api/connect/qr?text=' + encodeURIComponent(qrTextFor(base));
+  }
+
+  async function load() {
+    try {
+      // 电脑端已登录时拿一次性配对码；未启用密码/未登录则拿到 null，退回纯 URL
+      try {
+        const pr = await fetch('/api/app/pair-code', { method: 'POST' });
+        const pj = await pr.json();
+        pairCode = (pj && pj.data && pj.data.pairCode) || null;
+      } catch (e) { pairCode = null; }
+
+      const r = await fetch('/api/connect/info');
+      const j = await r.json();
+      addresses = (j.data && j.data.addresses) || [];
+      addr.innerHTML = '';
+      if (!addresses.length) { addr.textContent = '未检测到局域网地址'; return; }
+      addresses.forEach(u => {
+        const s = document.createElement('span');
+        s.textContent = u;
+        s.onclick = async () => {
+          showQr(u);
+          try { await navigator.clipboard.writeText(u); s.classList.add('ok');
+            setTimeout(() => s.classList.remove('ok'), 900); } catch (e) {}
+        };
+        addr.appendChild(s);
+      });
+      showQr(addresses[0]);
+    } catch (e) {
+      addr.textContent = '加载失败：' + e.message;
+    }
+  }
+
+  document.getElementById('refresh').onclick = load;
+  load();
 })();
 </script>
 </body>

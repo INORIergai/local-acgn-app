@@ -294,7 +294,8 @@ function getDirectoryImages(dirPath) {
                 const ext = path.extname(file).toLowerCase();
                 return imageExtensions.includes(ext);
             })
-            .sort();
+            // 自然排序：2.jpg 必须排在 10.jpg 前面（普通 .sort() 会按字典序排反）
+            .sort(naturalCompare);
         
         return images.map(name => path.join(dirPath, name));
     } catch (e) {
@@ -477,6 +478,8 @@ router.get('/:id/page/:pageIndex', (req, res) => {
             if (fs.existsSync(imagePath)) {
                 const contentType = getContentType(ext);
                 res.setHeader('Content-Type', contentType);
+                // 同一本书同一页内容稳定；给 Coil/浏览器一天缓存，翻回前一页不再走网络
+                res.setHeader('Cache-Control', 'private, max-age=86400');
                 return fs.createReadStream(imagePath).pipe(res);
             }
         }
@@ -486,6 +489,7 @@ router.get('/:id/page/:pageIndex', (req, res) => {
         if (imageData) {
             const contentType = getContentType(ext);
             res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'private, max-age=86400');
             return res.send(imageData);
         }
         

@@ -5740,6 +5740,8 @@ function showCloudComicModal(comic, kb, kbRaw) {
 
                     <button class="btn" onclick="downloadCloudComic('${comic.url}')">📥 下载</button>
 
+                    <button class="btn btn-sm" onclick="fetchKooboneVolumes('${comic.url}').then(j=>{const v=(j&&j.data&&j.data.volumes)||[];if(j&&j.code===0&&v.length===1){saveKmoeToComicFolder('${comic.url}',v[0].fmd,v[0].name||'');}else{showKooboneVolumePicker({title:(j&&j.data&&j.data.title)||'',volumes:v,library:(j&&j.data&&j.data.library)||0,action:'save',url:'${comic.url}'});}})" title="下载到应用漫画目录,可在漫画库内阅读">💾 存漫画库</button>
+
                     <button class="btn btn-secondary btn-sm" onclick="readCloudComic('${comic.url}')">📖 在线阅读</button>
 
                     <button class="btn btn-secondary btn-sm" onclick="openKooboneReaderSite()">🌐 KOOB.ONE 阅读器</button>
@@ -5787,7 +5789,7 @@ function showKooboneVolumePicker({ title, volumes, library, action, url }) {
     el.className = 'modal';
     el.id = 'kbVolPicker';
     el.onclick = (e) => { if (e.target === el) closeKooboneVolumePicker(); };
-    const verb = action === 'download' ? '下载' : '在线阅读';
+    const verb = action === 'save' ? '下载到漫画库' : (action === 'download' ? '下载' : '在线阅读');
     el.innerHTML = `
         <div class="modal-content" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column;">
             <div class="modal-header">
@@ -5824,6 +5826,8 @@ function showKooboneVolumePicker({ title, volumes, library, action, url }) {
             if (action === 'download') {
                 window.open(`/api/cloud/kmoe/koobone/dl?url=${encodeURIComponent(url)}&vid=${encodeURIComponent(v.fmd)}`, '_blank');
                 showNotification('已开始下载', v.name || '');
+            } else if (action === 'save') {
+                saveKmoeToComicFolder(url, v.fmd, v.name || '');
             } else {
                 openKooboneReader(url, v.fmd, v.name || '');
             }
@@ -5920,6 +5924,30 @@ async function downloadCloudComic(url) {
         return;
     }
     showKooboneVolumePicker({ title: j.data.title, volumes: vols, library: j.data.library, action: 'download', url });
+}
+
+// 下载到应用漫画目录（comicFolders），落库后可在漫画库应用内阅读
+async function saveKmoeToComicFolder(url, vid, name) {
+    showNotification('正在保存《' + (name || '') + '》到漫画目录…');
+    try {
+        const r = await fetch(`/api/cloud/kmoe/koobone/save?url=${encodeURIComponent(url)}&vid=${encodeURIComponent(vid)}`);
+        const j = await r.json();
+        if (j.code === 2 || j.needImport) {
+            showNotification('需先在 KOOB.ONE 导入该书', j.msg || '书库里没有这本书');
+            return;
+        }
+        if (j.code !== 0) throw new Error(j.msg || '保存失败');
+        const d = j.data || {};
+        if (d.skipped) {
+            showNotification('已在漫画库', (name || '') + ' 之前已保存过');
+        } else {
+            showNotification('已保存到漫画库', (name || '') + ' — 到漫画库刷新即可阅读');
+        }
+        // 触发一次漫画目录扫描，使新文件尽快入库（失败不影响保存结果）
+        try { fetch('/api/scan?type=comic&silent=1').catch(() => {}); } catch (e) {}
+    } catch (e) {
+        showNotification('保存失败', e.message);
+    }
 }
 
 // 在线阅读（KOOB.ONE）
@@ -7664,6 +7692,7 @@ async function refreshAnimSettings() {
    换台机器就可能不一致。
    ========================================================================== */
 let updPollTimer = null;
+let updIncTimer = null;
 let updReleaseUrl = '';
 let updAssets = [];
 
@@ -7776,8 +7805,27 @@ async function downloadIncrementalUpdate() {
     const wrap = document.getElementById('updProgressWrap');
     const out = document.getElementById('updInstallMsg');
     if (wrap) wrap.style.display = '';
-    if (text) text.textContent = '正在获取增量更新…';
-    if (out) out.innerHTML = '';
+    if (text) text.textContent = '正在准备增量更新…';
+    if (out) out.innerHTML = '整个过程约几秒到十几秒，分四步：检查版本 → 下载增量包 → 校验完整性 → 自动完成更新。全程无需操作，完成后应用会自动重启。';
+    const incStarted = Date.now();
+    // 发起请求后就开始轮询阶段状态（不 await），让用户实时看到进行到哪一步
+    const poll = async () => {
+        if (isPageHidden()) return;
+        try {
+            const r = await fetch('/api/update/status');
+            const j = await r.json();
+            const dl = (j.data || {}).download || {};
+            if (String(dl.state || '').indexOf('incremental-') === 0 || dl.state === 'downloading' || dl.state === 'done') {
+                showUpdateProgress(dl);
+            }
+            // ready 后继续显示倒计时，直到应用重启；其它非增量终态停轮询
+            const terminal = dl.state === 'done' || dl.state === 'error' || dl.state === 'cancelled';
+            if (terminal && dl.state !== 'done') { stopIncPolling(); return; }
+        } catch (e) { /* 抖动忽略，下一轮继续 */ }
+    };
+    stopIncPolling();
+    poll();
+    updIncTimer = setInterval(poll, 600);
     try {
         const r = await fetch('/api/update/incremental', {
             method: 'POST',
@@ -7789,19 +7837,24 @@ async function downloadIncrementalUpdate() {
         const d = j.data || {};
         if (d.mode === 'incremental') {
             if (text) text.innerHTML = '<span class="upd-ok">增量包已就绪（' + updEsc(d.target || '') + '）</span> —— 正在自动完成更新，稍后会自动重启';
-            if (out) out.innerHTML = '<span class="upd-ok">增量更新将在几秒内自动完成，无需点「立即安装」</span>';
             showNotification('增量更新', 'patch 已下载并校验通过，应用将自动完成升级');
+            // 等主进程切换（15s 轮询）；到点还没重启就提示用户手动重启
+            setTimeout(() => {
+                if (out) out.innerHTML = '<span class="upd-warn">若应用仍未自动重启，请手动关闭并重新打开即可完成升级。</span>';
+            }, 20000);
         } else {
-            // 后端已回退全量下载：切回常规进度轮询，走「下载完成 → 立即安装」流程
+            stopIncPolling();
             if (text) text.innerHTML = '<span class="upd-warn">增量不可用（' + updEsc(d.incrementalError || '未知原因') + '），已自动改为全量下载</span>';
             showNotification('增量不可用', '已自动回退全量下载：' + (d.incrementalError || ''));
             startUpdatePolling();
         }
     } catch (e) {
+        stopIncPolling();
         if (text) text.innerHTML = '<span class="upd-warn">' + updEsc(e.message) + '</span>';
         showNotification('增量更新失败', e.message);
     }
 }
+function stopIncPolling() { if (updIncTimer) { clearInterval(updIncTimer); updIncTimer = null; } }
 
 async function downloadAppUpdate() {
     const sel = document.getElementById('updAssetSel');
@@ -7861,14 +7914,35 @@ function stopUpdatePolling() {
 function showUpdateProgress(dl) {
     const bar = document.getElementById('updBarInner');
     const t = document.getElementById('updProgressText');
+    const st = String(dl.state || '');
+    const elapsed = dl.startedAt ? Math.max(0, Math.round((Date.now() - dl.startedAt) / 1000)) : 0;
+    if (st.indexOf('incremental-') === 0) {
+        // 四阶段：checking → downloading → verifying → ready
+        const stagePct = { 'incremental-checking': 5, 'incremental-downloading': 0,
+            'incremental-verifying': 99, 'incremental-ready': 100 };
+        const pct = st === 'incremental-downloading' && dl.total > 0
+            ? Math.min(99, Math.round(dl.received / dl.total * 100))
+            : (stagePct[st] || 0);
+        if (bar) bar.style.width = pct + '%';
+        const arrows = ['① 检查版本', '② 下载增量包', '③ 校验完整性', '④ 自动完成'];
+        const active = { 'incremental-checking': 0, 'incremental-downloading': 1,
+            'incremental-verifying': 2, 'incremental-ready': 3 }[st] || 0;
+        const flow = arrows.map((a, i) => (i === active ? '<b>' + a + '</b>' : (i < active ? a + '✓' : a))).join(' → ');
+        let detail = '';
+        if (st === 'incremental-downloading' && dl.total > 0) {
+            detail = ' · ' + pct + '% ' + updSize(dl.received) + ' / ' + updSize(dl.total);
+        } else if (dl.note) { detail = ' · ' + updEsc(dl.note); }
+        const waitTip = st === 'incremental-ready'
+            ? ' —— 即将自动重启，无需手动操作（若 20 秒后仍未重启，请关闭应用重开）' : '';
+        t.innerHTML = '<span class="upd-ok">增量更新 ' + (active + 1) + '/4</span> ' + flow + detail + waitTip
+            + (elapsed ? ' · 已用 ' + elapsed + 's' : '');
+        return;
+    }
     if (bar) bar.style.width = (Number(dl.percent) || 0) + '%';
     if (!t) return;
     if (dl.state === 'downloading') {
         t.textContent = (Number(dl.percent) || 0).toFixed(1) + '%  '
             + updSize(dl.received) + (dl.total ? ' / ' + updSize(dl.total) : '');
-    } else if (dl.state === 'incremental-ready') {
-        t.innerHTML = '<span class="upd-ok">增量包已就绪（' + updEsc(dl.target || '') + '）</span>'
-            + ' —— 正在自动完成更新，稍后重启';
     } else if (dl.state === 'done') {
         t.innerHTML = '<span class="upd-ok">下载完成：' + updEsc(dl.assetName) + '</span>'
             + ' —— 点「立即安装」完成升级';
