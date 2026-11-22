@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.8'
-TAG = 'v6.8.8'
+VER = '6.8.9'
+TAG = 'v6.8.9'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -23,6 +23,8 @@ EXE = os.path.join(_ROOT, 'exe')
 ASSETS = [
     ('CinemaVault-Setup-%s.exe' % VER, ['安装版', 'dist']),
     ('CinemaVault-Portable-%s.exe' % VER, ['便携版', 'dist']),
+    # Android v5.1.0 安装包：与 PC 同一 Release 下发，手机端「应用更新」可取到。
+    ('CinemaVault-v5.1.0-Android.apk', ['android-dist', 'out']),
 ]
 
 # 增量热更新产物：发布者在跑本脚本前手动执行
@@ -40,7 +42,8 @@ def _extra_assets():
         extra.append((manifest, ['out']))
     if os.path.isdir(_OUT):
         for name in sorted(os.listdir(_OUT)):
-            if name.startswith('cv-patch-') and name.endswith('.zip') \
+            # 只上传目标版本的 patch，避免把历史 patch 一并带进来变成多余附件
+            if name.startswith('cv-patch-') and name.endswith('-%s.zip' % VER) \
                     and os.path.isfile(os.path.join(_OUT, name)):
                 extra.append((name, ['out']))
     return extra
@@ -55,6 +58,8 @@ def asset_path(name, subs):
             p = os.path.join(_HERE, 'dist', name)
         elif sub == 'out':
             p = os.path.join(_OUT, name)
+        elif sub == 'android-dist':
+            p = os.path.join(_ROOT, 'android-dist', name)
         else:
             p = os.path.join(EXE, sub, name)
         if os.path.exists(p):
@@ -68,12 +73,11 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.8 · 搜索分类 + AI 学习 + 在线发现
+## v6.8.9 · PC + Android 联合发布
 
-- 搜索：在哪个库搜就只搜哪个分类（AV/动漫/漫画/小说），首页搜全库；结果标注范围。
-- AI：可从观看/搜索记录学习偏好，让推荐更贴合习惯；设置页独立开关，随时可关。
-- 影视库/动漫库首页新增「在线最新」卡片区，在线+本地一站直达；在线源失败自动隐藏。
-- 响应式：卡片墙随窗口自动增减列数，不再右侧大片留白。
+- 搜索分类（哪个库搜哪个分类）、AI 行为学习开关、影视/动漫在线发现、响应式卡片墙。
+- PC 端已内置 Android v5.1.0 安装包，手机扫码/更新即可。
+- 同包附带 Android v5.1.0 APK（versionCode 6），可独立下载安装。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
