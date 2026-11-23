@@ -236,14 +236,17 @@
             inset: 0;
             display: flex;
             flex-direction: column;
-            padding: 78px 20% 92px;
+            /* 左右留白交给 JS 按「页边距」设置用像素控制；这里只留上下给工具栏/提示，
+             * 不再写死 20% —— 那是大窗口两侧大片空白的元凶。 */
+            padding: 78px 0 92px;
             box-sizing: border-box;
         }
         .paged-inner {
             flex: 1;
             min-height: 0;
             overflow: hidden;              /* 只显示当前一页，多余裁掉 */
-            max-width: 700px;
+            /* 默认铺满可用宽度；想限制每行字数的用户可在设置里选窄/中/宽 */
+            max-width: none;
             width: 100%;
             margin: 0 auto;
             position: relative;
@@ -1808,20 +1811,25 @@
                 el.style.fontSize = currentFontSize + 'px';
                 el.style.lineHeight = String(currentLineHeight);
             });
+            // 页边距：用固定像素而不是百分比 —— 百分比在大窗口会吃掉一大块
+            // 本可放正文的区域（用户实测两侧留白很浪费）。10/20/30 直接当 px 用，
+            // 并随窗口宽度做温和放大（宽屏多留一点，窄屏不挤压正文）。
+            var padPx = currentPadding * 1.2;
             if (ra) {
-                ra.style.paddingLeft = currentPadding + '%';
-                ra.style.paddingRight = currentPadding + '%';
+                ra.style.paddingLeft = padPx + 'px';
+                ra.style.paddingRight = padPx + 'px';
             }
             if (pc) {
-                pc.style.paddingLeft = currentPadding + '%';
-                pc.style.paddingRight = currentPadding + '%';
+                pc.style.paddingLeft = padPx + 'px';
+                pc.style.paddingRight = padPx + 'px';
             }
 
             // 页宽（每行字数）：翻页模式落到 .paged-inner 的 max-width，
             // 滚动模式落到正文 .chapter-content，两者口径一致；实际每行字数由
             // 字号 + 容器宽度共同决定，这里只改容器宽度，让浏览器按屏幕自适应。
             var PW = { narrow: 460, medium: 620, wide: 820, full: 0 };
-            var pwMax = PW[s.pageWidth] || PW.medium;
+            // ★ full 对应 0（铺满），不能用 || 兜底——0 是 falsy 会被误判成未设置
+            var pwMax = Object.prototype.hasOwnProperty.call(PW, s.pageWidth) ? PW[s.pageWidth] : PW.full;
             var inner = document.querySelector('.paged-inner');
             if (inner) inner.style.maxWidth = pwMax ? (pwMax + 'px') : 'none';
             document.body.setAttribute('data-rs-pagewidth', s.pageWidth || 'medium');

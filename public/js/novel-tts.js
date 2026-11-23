@@ -32,7 +32,7 @@
   let autoContinue = false;  // 正在自动切章途中，章节变化监听不要打断
   let chaining = false;      // 自动连播推进途中（start 遇空页时据此继续跳）
   let firstIdx = -1;         // 起播段索引（首块切短用）
-  let prefetchLive = null;   // { key, p, tk } 后台预取中的合成
+  let prefetchMap = new Map();   // key -> { p, tk } 后台预取中的合成（深度 2，减少块间等待）
   let voiceCache = null;     // { vits:[{id,name}] | gpt:{voiceList,emotions} }
 
   // 语速/自动连播：本地记忆优先，没有就跟随全局配置
@@ -524,26 +524,33 @@
     for (let c = 0; c < chunks.length; c++) {
       if (tk !== token || stopped) return;
       highlight(i);
-      // —— 预取：本块开播前，把下一块（本段末块则预取下一段首块）挂到后台合成 ——
+      // —— 预取：本块开播前，把后面 2 块（段末则 + 下一段首块）挂后台合成 ——
       // ★流式模式下不预发射：预取 /synthesize 会先于当前块的流式请求进 worker 串行队列，
       //   把当前块挤到整块预取合成完之后（次序颠倒 = 首声反而更慢）。
-      let nextKey = null;
+      const nextKeys = [];
       if (!useStream) {
-        if (c + 1 < chunks.length) {
-          nextKey = chunks[c + 1];
-        } else {
-          const nEl = paras[i + 1];
-          const nt = nEl ? (nEl.textContent || '').trim() : '';
-          if (nt) nextKey = splitText(nt, (i + 1 === firstIdx) ? (breezeSmall ? 45 : 90) : (breezeSmall ? 80 : 220))[0];
+        for (let k = 1; k <= 2; k++) {
+          if (c + k < chunks.length) { nextKeys.push(chunks[c + k]); continue; }
+          if (c + k === chunks.length) {
+            const nEl = paras[i + 1];
+            const nt = nEl ? (nEl.textContent || '').trim() : '';
+            if (nt) nextKeys.push(splitText(nt, (i + 1 === firstIdx) ? (breezeSmall ? 45 : 90) : (breezeSmall ? 80 : 220))[0]);
+          }
+          break;
+        }
+        for (const key of nextKeys) {
+          if (key && !prefetchMap.has(key)) {
+            prefetchMap.set(key, { p: synthChunk(key, tk).catch(e => ({ __err: e })), tk });
+          }
         }
       }
-      const nextP = nextKey ? synthChunk(nextKey, tk).catch(e => ({ __err: e })) : null;
       // —— 取当前块：命中预取直接用；流式模式边合成边播；否则现合成后整块播 ——
       let d = null;
       let streamed = false;
-      if (prefetchLive && prefetchLive.tk === tk && prefetchLive.key === chunks[c]) {
-        d = await prefetchLive.p;
-        prefetchLive = null;
+      const pf = prefetchMap.get(chunks[c]);
+      if (pf && pf.tk === tk) {
+        d = await pf.p;
+        prefetchMap.delete(chunks[c]);
       } else if (useStream) {
         if (tk === token && !stopped) $('nvTtsTip').textContent = '正在合成语音…';
         const r = await synthPlayStreamed(chunks[c], tk);
@@ -555,7 +562,6 @@
       }
       if (d && d.__err) throw d.__err;
       if (tk !== token || stopped) return;
-      if (nextP) prefetchLive = { key: nextKey, p: nextP, tk };
       if (tk === token && !stopped) $('nvTtsTip').textContent = '朗读中';
       if (!streamed) await playUrl(String(d.path).split(/[\\/]/).pop());
     }
@@ -732,7 +738,7 @@
   function pause() {
     userStop = true;
     playing = false; stopped = true; token++; playToken++;
-    prefetchLive = null;
+    prefetchMap.clear();
     if (media) { try { media.pause(); } catch (e) { } }
     $('nvTtsToggle').textContent = '▶ 继续';
     $('nvTtsTip').textContent = '已暂停';
@@ -741,7 +747,7 @@
 
   function stop() {
     stopped = true; playing = false; token++; playToken++;
-    prefetchLive = null;
+    prefetchMap.clear();
     stopStreamAudio();   // round87：停掉 WebAudio 流式队列与在途流式请求
     if (media) { try { media.pause(); media.currentTime = 0; } catch (e) { } }
     paras.forEach(p => p.classList.remove('nv-tts-cur'));

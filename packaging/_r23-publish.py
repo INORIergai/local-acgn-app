@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.14'
+TAG = 'v6.8.15'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.14：Kazumi 规则自动更新
+COMMIT_MSG = """v6.8.15：追番/小说体验大改
 
-- KazumiRules 官方仓库自动更新（国内 GitCode 镜像优先，GitHub raw 回退）
-- 后台每 12h 静默检查 + 源面板/设置页手动「↻ 更新规则」
-- 只更新版本有变化的规则，写入覆盖目录不破坏内置、可回滚
-- 规则 headers 凭据剔除、host/规则名白名单、落点校验
-- 含 v6.8.13 的 16 个 Kazumi 规则源与自由选源
+- 修复在线播放未定义变量与抽屉盖播放器（点了没反应）
+- 播放来源卡片式UI，显示第N集可播放而非源总集数
+- 追番首页整面自适应新番海报墙
+- 小说章节名修复 + 阅读区铺满不留白 + TTS预取加速
+- 未追番新番也可点集搜源
 
-版本：6.8.14"""
+版本：6.8.15"""
 
 
 def get_token():

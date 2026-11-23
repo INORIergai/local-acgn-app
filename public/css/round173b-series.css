@@ -24,10 +24,12 @@
 .sv-section > h3 { font-size: 15px; font-weight: 500; margin: 0 0 12px; }
 .sv-section > h3 small { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
 
-/* ---------- 本周新番横条 ---------- */
+/* ---------- 新番海报墙（Kazumi 式：整面自适应网格） ---------- */
 .sv-calendar {
-    display: grid; grid-auto-flow: column; grid-auto-columns: 132px;
-    gap: 12px; overflow-x: auto; padding: 4px 2px 14px; scrollbar-width: thin;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+    padding: 4px 2px 18px;
 }
 .sv-cal-card {
     border: 1px solid var(--border); border-radius: var(--r-lg, 12px);
@@ -200,6 +202,6 @@
 
 @media (max-width: 860px) {
     #seriesView { padding: 12px 12px 50px; }
-    .sv-calendar { grid-auto-columns: 116px; }
+    .sv-calendar { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 10px; }
     .sv-board { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 }

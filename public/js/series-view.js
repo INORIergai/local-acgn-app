@@ -29,8 +29,24 @@
         if (o.body && typeof o.body === 'string') {
             o.headers = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
         }
-        const r = await fetch(url, o);
-        return r.json();
+        // 超时：默认 20s，长请求（播放解析走浏览器嗅探）可传 opts.timeout 放大
+        const ms = Number(o.timeout) || 20000;
+        delete o.timeout;
+        const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        let timer = null;
+        if (ac) {
+            o.signal = ac.signal;
+            timer = setTimeout(() => ac.abort(), ms);
+        }
+        try {
+            const r = await fetch(url, o);
+            return r.json();
+        } catch (e) {
+            if (e && e.name === 'AbortError') throw new Error('请求超时（' + Math.round(ms / 1000) + 's），请重试或换源');
+            throw e;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
     };
 
     function root() { return document.getElementById(ROOT_ID); }
@@ -56,13 +72,13 @@
             box.innerHTML = '<div class="sv-empty-line">本周放送表暂无数据（数据源不可达时可稍后刷新）</div>';
             return;
         }
-        box.innerHTML = calendarItems.slice(0, 40).map((it) => {
+        box.innerHTML = calendarItems.slice(0, 60).map((it) => {
             const following = it.followStatus === 'watching';
             const label = it.episode != null ? '第' + it.episode + '集' : (it.date || '');
             const poster = it.cover
                 ? '<img src="' + esc(it.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
                 : '<div class="sv-poster-ph"></div>';
-            return '<div class="sv-cal-card" data-sid="' + it.seriesId + '">'
+            return '<div class="sv-cal-card" data-sid="' + it.seriesId + '" data-act="detail" role="button" tabindex="0">'
                 + '<div class="sv-cal-poster">' + poster + '</div>'
                 + '<div class="sv-cal-title" title="' + esc(it.title) + '">' + esc(it.title) + '</div>'
                 + '<div class="sv-cal-meta">' + esc(label) + '</div>'
@@ -122,7 +138,17 @@
         const r = await api('/api/series/' + seriesId + '/detail');
         if (!r || r.code !== 0 || !r.data) { if (window.showNotification) showNotification('加载失败', (r && r.msg) || '未知错误'); return; }
         const d = r.data;
-        const eps = d.episodes || [];
+        let eps = d.episodes || [];
+        if (!eps.length) {
+            /* 未追番/未回填分集的新番：按总集数生成占位集（默认 12，最多 24），
+             * 让海报墙点进来的番也能像 Kazumi 那样「点集 → 全网搜源」，
+             * 而不是只能看到「还没有分集数据」。占位集不写库，仅用于交互。 */
+            const total = Math.min(24, Math.max(1,
+                Number(d.series && (d.series.totalEpisodes || d.series.episodeTotal)) || 12));
+            eps = Array.from({ length: total }, (_, i) => ({
+                id: '', episodeNo: i + 1, title: '', watched: 0, movieId: null, sourceUrl: '',
+            }));
+        }
         const rows = eps.map(e => {
             const watched = e.watched === 1;
             const pos = Number(e.position || 0), dur = Number(e.progressDuration || e.duration || 0);
@@ -292,12 +318,18 @@
     async function openEpisodeSources(seriesId, title, epNo, eid, pos) {
         let host = document.getElementById('svEpSrcHost');
         if (!host) { host = document.createElement('div'); host.id = 'svEpSrcHost'; document.body.appendChild(host); }
-        host.innerHTML = '<div class="sv-modal-mask" data-closem="1"><div class="sv-modal sv-online-modal" role="dialog" aria-modal="true">'
-            + '<div class="sv-modal-head"><h3>▶ 播放来源 · ' + esc(title) + ' · 第' + esc(epNo) + '集</h3>'
-            + '<button class="sv-modal-close" data-closem="1">✕</button></div>'
-            + '<div class="sv-online-body" id="svEpSrcBody"><div class="sv-empty">正在并发搜索所有在线源，并对齐第' + esc(epNo) + '集（约 10~25 秒）…</div></div></div></div>';
+        host.innerHTML = '<div class="epsrc-mask" data-closem="1"><div class="epsrc-panel" role="dialog" aria-modal="true">'
+            + '<div class="epsrc-head">'
+            + '<div class="epsrc-head-text"><div class="epsrc-title">▶ 播放来源</div>'
+            + '<div class="epsrc-sub" title="' + esc(title) + '">' + esc(title) + ' · 第' + esc(epNo) + '集</div></div>'
+            + '<button class="epsrc-close" data-closem="1" aria-label="关闭">✕</button></div>'
+            + '<div class="epsrc-body" id="svEpSrcBody"><div class="epsrc-loading"><span class="epsrc-spin"></span>正在并发搜索所有在线源，对齐第' + esc(epNo) + '集…</div></div>'
+            + '<div class="epsrc-foot">'
+            + '<button class="epsrc-ghost" data-act="search-bt" data-title="' + esc(title) + '" data-ep="' + esc(epNo) + '">🔍 搜 BT 兜底</button>'
+            + '<button class="epsrc-ghost" data-act="match-online" data-sid="' + esc(seriesId) + '" data-title="' + esc(title) + '">挂载整季源</button>'
+            + '</div></div></div>';
         host.querySelectorAll('[data-closem="1"]').forEach(el => el.addEventListener('click', e => {
-            if (e.target === el || e.classList.contains('sv-modal-close')) host.innerHTML = '';
+            if (e.target === el || (e.target && e.target.classList && e.target.classList.contains('epsrc-close'))) host.innerHTML = '';
         }));
         try {
             const r = await api('/api/series/episode/sources', { method: 'POST', body: JSON.stringify({
@@ -306,36 +338,39 @@
             const body = document.getElementById('svEpSrcBody');
             if (!body) return;
             if (!r || r.code !== 0) {
-                body.innerHTML = '<div class="sv-empty">搜索失败：' + esc((r && r.msg) || '服务无响应') + '</div>';
+                body.innerHTML = '<div class="epsrc-empty">搜索失败：' + esc((r && r.msg) || '服务无响应') + '</div>';
                 return;
             }
             const d = r.data || {};
             const cands = d.candidates || [];
             const ready = cands.filter(x => x.state === 'ready').length;
-            const rows = cands.map(c => {
-                const okBtn = c.state === 'ready'
-                    ? '<button class="sv-online-apply" data-act="ep-play" data-src="' + esc(c.sourceId) + '"'
+            const cards = cands.map(c => {
+                const isReady = c.state === 'ready';
+                const badge = isReady
+                    ? '<span class="epsrc-badge ok">第' + esc(epNo) + '集可播放</span>'
+                    : (c.state === 'noEpisode'
+                        ? '<span class="epsrc-badge warn">' + esc(c.error || '无此集') + '</span>'
+                        : '<span class="epsrc-badge err">' + esc(c.error || '解析失败') + '</span>');
+                const playBtn = isReady
+                    ? '<button class="epsrc-play" data-act="ep-play" data-src="' + esc(c.sourceId) + '"'
                       + ' data-url="' + esc(c.episodeUrl) + '" data-title="' + esc(title) + '"'
                       + ' data-epno="' + esc(epNo) + '" data-eid="' + esc(eid || '') + '" data-pos="' + (Number(pos) || 0) + '">▶ 播放</button>'
-                    : '';
-                const st = c.state === 'ready' ? '<b class="sv-st-ok">可播放</b>'
-                    : (c.state === 'noEpisode' ? '<span class="sv-st-warn">' + esc(c.error || '无此集') + '</span>'
-                        : '<span class="sv-st-err">' + esc(c.error || '失败') + '</span>');
-                return '<div class="sv-online-item">'
-                    + '<div class="sv-online-name" title="' + esc(c.entryName || '') + '">' + esc(c.sourceName) + '</div>'
-                    + '<span class="sv-online-src">' + esc((c.entryName || '').slice(0, 18)) + (c.totalEps ? ' · ' + c.totalEps + '集' : '') + '</span>'
-                    + st + okBtn
+                    : '<button class="epsrc-play disabled" disabled>—</button>';
+                const epCount = c.totalEps ? '<span class="epsrc-count">源共 ' + c.totalEps + ' 集</span>' : '';
+                return '<div class="epsrc-card' + (isReady ? '' : ' dim') + '">'
+                    + '<div class="epsrc-card-main">'
+                    + '<div class="epsrc-src">' + esc(c.sourceName) + '</div>'
+                    + '<div class="epsrc-meta">' + esc((c.entryName || '').slice(0, 26)) + '</div>'
+                    + '</div>'
+                    + '<div class="epsrc-card-side">' + badge + epCount + '</div>'
+                    + playBtn
                     + '</div>';
             }).join('');
-            body.innerHTML = '<div class="sv-online-stat">扫描 ' + (d.scanned || 0) + ' 个源 · 可播放 <b class="sv-st-ok">' + ready + '</b> / ' + cands.length + ' 个候选</div>'
-                + (rows || '<div class="sv-empty">没有源能定位到第' + esc(epNo) + '集。</div>')
-                + '<div class="sv-online-tip" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
-                + '<button class="sv-online-pick" data-act="search-bt" data-title="' + esc(title) + '" data-ep="' + esc(epNo) + '">🔍 搜BT 兜底</button>'
-                + '<button class="sv-online-pick" data-act="match-online" data-sid="' + esc(seriesId) + '" data-title="' + esc(title) + '">挂载整季源</button>'
-                + '</div>';
+            body.innerHTML = '<div class="epsrc-stat">扫描 <b>' + (d.scanned || 0) + '</b> 个源 · 可用 <b class="ok">' + ready + '</b> / ' + cands.length + ' 个候选</div>'
+                + (cards || '<div class="epsrc-empty">没有源能定位到第' + esc(epNo) + '集。可试右下「搜 BT 兜底」或换关键词。</div>');
         } catch (e) {
             const body = document.getElementById('svEpSrcBody');
-            if (body) body.innerHTML = '<div class="sv-empty">搜索失败：' + esc(e.message) + '</div>';
+            if (body) body.innerHTML = '<div class="epsrc-empty">搜索失败：' + esc(e.message) + '</div>';
         }
     }
 
@@ -349,11 +384,17 @@
         window.__svPlayingTitle = title;
         if (window.showNotification) showNotification('正在解析播放地址', '首次解析可能需要十几秒');
         try {
-            const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url));
+            const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url), { timeout: 90000 });
             if (d && d.code === 0 && window.showVideoPlayer) {
-                const host = document.getElementById('svEpSrcHost'); if (host) host.innerHTML = '';
+                /* ★ 必须先关掉分集抽屉与来源面板：
+                 *   抽屉的 .sv-modal-mask z-index=900，而 #playerModal 只有 520，
+                 *   不关的话播放器被盖在下面 —— 用户看到的就是「点了没反应」。 */
+                closeDetail();
+                const host0 = document.getElementById('svEpSrcHost'); if (host0) host0.innerHTML = '';
                 window.showVideoPlayer(d.data.streamUrl, title + ' · 第' + epno + '集', d.data.kind,
                     Number(btn.dataset.pos) || 0, Number(btn.dataset.eid) || 0);
+            } else if (d && d.code === 0 && !window.showVideoPlayer) {
+                if (window.showNotification) showNotification('播放器不可用', '请刷新页面后重试');
             } else if (window.showNotification) {
                 showNotification('解析失败', (d && d.msg) || '该源播放地址解析失败，换一个源试试');
             }
@@ -565,11 +606,12 @@
             window.__svPlayingTitle = btn.dataset.title || '';
             if (window.showNotification) showNotification('正在解析在线播放地址', '首次解析可能需十几秒（内置浏览器嗅探）');
             try {
-                const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url));
+                const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url), { timeout: 90000 });
                 if (d && d.code === 0 && window.showVideoPlayer) {
+                    closeDetail();   // 同 playEpisodeSource：不关抽屉会把播放器盖住
                     window.showVideoPlayer(d.data.streamUrl, btn.dataset.title + ' · 第' + (btn.dataset.epno || '') + '集', d.data.kind,
                         Number(btn.dataset.pos) || 0, Number(btn.dataset.eid) || 0);
-                } else if (window.showNotification) showNotification('解析失败', d && d.msg || '未知错误');
+                } else if (window.showNotification) showNotification('解析失败', (d && d.msg) || '未知错误');
             } catch (e) { if (window.showNotification) showNotification('解析失败', e.message); }
             return;
         }
@@ -630,7 +672,7 @@
             + '<button class="sv-refresh" data-act="check-updates">检查更新</button>'
             + '<button class="sv-refresh" id="svSources">🔌 在线源</button>'
             + '<button class="sv-refresh" id="svRefresh">刷新放送表</button></div></div>'
-            + '<section class="sv-section"><h3>本周新番 <small>点「+ 追番」加入清单</small></h3>'
+            + '<section class="sv-section"><h3>🆕 新番放送 <small>点「+ 追番」加入清单</small></h3>'
             + '<div class="sv-calendar" id="svCalendar"><div class="sv-empty-line">加载中…</div></div></section>'
             + '<section class="sv-section"><div class="sv-tabs" id="svTabs">'
             + '<button data-tab="">全部</button>'

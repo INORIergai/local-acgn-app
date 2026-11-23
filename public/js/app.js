@@ -15623,7 +15623,7 @@ function updatePlayerQueueUI() {
             const mId = typeof item === 'object' ? item.id : item;
             const mTitle = typeof item === 'object' ? (item.title || item.avid) : `影片 ${mId}`;
             const isPlaying = idx === window.currentPlaylistIndex;
-            const clickAction = currentOnlinePlayback
+            const clickAction = window.currentOnlinePlayback
                 ? `window.MediaSource.playQueue(${idx})`
                 : `playMovieInline(${JSON.stringify(mId)}, { keepPlaylist: true })`;
             return `<div class="ppd-item ${isPlaying ? 'active' : ''}" data-idx="${idx}" onclick='${clickAction}'>
@@ -15697,7 +15697,7 @@ function togglePlayerPlaylistDrawer() {
 }
 
 function playNextEpisode() {
-    if (currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.next === 'function') {
+    if (window.currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.next === 'function') {
         window.MediaSource.next();
         return;
     }
@@ -15725,7 +15725,7 @@ function playNextEpisode() {
 }
 
 function playPrevEpisode() {
-    if (currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.prev === 'function') {
+    if (window.currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.prev === 'function') {
         window.MediaSource.prev();
         return;
     }
@@ -16035,7 +16035,7 @@ function closePlayer() {
         window.AndroidBridge.setReaderMode(false);
     }
     const video = document.getElementById('videoPlayer');
-    if (currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.saveProgress === 'function') {
+    if (window.currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.saveProgress === 'function') {
         window.MediaSource.saveProgress(video.currentTime, video.duration);
         window.MediaSource.clearPlayback();
     }
@@ -16079,7 +16079,7 @@ function cleanMediaTitle(t) {
 }
 
 function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 0, episodeId = 0) {
-    if (!currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.clearPlayback === 'function') {
+    if (!window.currentOnlinePlayback && window.MediaSource && typeof window.MediaSource.clearPlayback === 'function') {
         window.MediaSource.clearPlayback();
         window.currentPlaylist = null;
         window.currentPlaylistIndex = null;
@@ -16139,7 +16139,7 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
         document.getElementById('playerProgressFill').style.width = progress + '%';
         document.getElementById('playerTime').textContent =
             `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
-        if (currentOnlinePlayback && window.MediaSource && video.duration > 0 && Date.now() - window.__epLastSave > 10000) {
+        if (window.currentOnlinePlayback && window.MediaSource && video.duration > 0 && Date.now() - window.__epLastSave > 10000) {
             window.__epLastSave = Date.now();
             window.MediaSource.saveProgress(video.currentTime, video.duration);
         }
@@ -16162,7 +16162,7 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
     };
 
     video.onended = () => {
-        if (!currentOnlinePlayback || !window.MediaSource) return;
+        if (!window.currentOnlinePlayback || !window.MediaSource) return;
         window.MediaSource.saveProgress(video.duration || video.currentTime, video.duration, true);
         window.MediaSource.next({ automatic: true, loopMode: playerLoopMode });
     };
