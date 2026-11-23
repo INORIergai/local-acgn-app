@@ -82,6 +82,14 @@
         ]
       },
       {
+        id: 'pageWidth', label: '页宽（每行字数）', type: 'choice', def: 'medium',
+        hint: '按屏幕实际宽度自适应；窄≈20字 / 中≈28字 / 宽≈38字 / 全宽铺满',
+        options: [
+          { v: 'narrow', label: '窄' }, { v: 'medium', label: '中' },
+          { v: 'wide', label: '宽' }, { v: 'full', label: '全宽' }
+        ]
+      },
+      {
         id: 'fontFamily', label: '字体', type: 'choice', def: 'serif',
         hint: '微信读书/掌阅都提供多字体切换',
         options: [

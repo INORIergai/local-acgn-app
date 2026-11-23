@@ -272,7 +272,7 @@ const mkRules = (bs) => [
     [/G:\\+zlibrary_novel/g, 'D:' + bs + 'Novels'],
     [/C:\\+Users\\+Administrator/g, '%USERPROFILE%'],
     /* 开发者本机**项目目录**本身（round24 发现：host/protocols.reg 里写着
-     * "D:\ai program\local-movie-library\host\protocol-handler.js" 这种绝对路径，
+     * "<项目根>\host\protocol-handler.js" 这种绝对路径，
      * 公开出去既泄露目录布局，别人导入也会指向不存在的路径）。
      * 换成占位符 —— 安装脚本本来就该由使用者自己填安装位置。 */
     [/[A-Za-z]:\\+ai program\\+local-movie-library/g, '%INSTALLDIR%'],

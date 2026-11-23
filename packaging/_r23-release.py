@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.11'
-TAG = 'v6.8.11'
+VER = '6.8.12'
+TAG = 'v6.8.12'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -73,12 +73,12 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.11 · 修复下载完不重启 / 重复下载
+## v6.8.12 · 小说翻页 + 123云盘免登录
 
-- 全量安装：拉起安装程序后应用主动退出释放占用，装完自动重启新版。
-- 下载幂等：已下好的包直接复用，不再重复整包下载。
-- 下载中/完成禁用下载按钮，完成后高亮「立即安装」。
-- 含 v6.8.10 的增量修复（基线版本校验、强制重查、镜像优先）。
+- 小说阅读改为翻页优先：字号/行距/页宽可调，每页字数随窗口自适应（PC/安卓/云端）。
+- 云端 EPUB 在线按页翻读，无需下载整本。
+- 123云盘：自建应用一次授权、后台自动续期，永久免登录（授权页已改为推荐路径）。
+- 含此前全部修复（增量更新、下载重启闭环）。
 - 内置 Android v5.1.0 安装包（versionCode 6）。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""

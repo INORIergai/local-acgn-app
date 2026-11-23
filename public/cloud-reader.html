@@ -214,12 +214,21 @@ function applySettings() {
             b.style.lineHeight = String(RS.lineHeight || 1.85);
             b.style.padding = '28px ' + (Number(RS.padding) || 20) * 2 + 'px 80px';
             b.style.fontFamily = FF_MAP[RS.fontFamily] || FF_MAP.sans;
+            // 页宽（每行字数）：限制正文列宽，分页按此宽度自适应
+            const PW = { narrow: 460, medium: 620, wide: 820, full: 0 };
+            const pw = PW[RS.pageWidth] || PW.medium;
+            b.style.maxWidth = pw ? (pw + 'px') : 'none';
+            b.style.marginLeft = 'auto';
+            b.style.marginRight = 'auto';
         } else {
             // 漫画：没有字号概念（comic SCHEMA 用 fit/rtl/layout 替代）
             b.style.fontSize = '';
             b.style.lineHeight = '';
             b.style.padding = '';
             b.style.fontFamily = '';
+            b.style.maxWidth = '';
+            b.style.marginLeft = '';
+            b.style.marginRight = '';
         }
         b.style.color = readInk;
     }
@@ -536,7 +545,41 @@ async function initEpub() {
     }
 
     let cur = 0;
-    function show(i, dir) {
+    let subPage = 0;          // 文字小说的章内页下标（0 起）
+    let subPages = [];        // 当前章切出的页 HTML 数组
+
+    /* 文字小说「在线分页」：把当前章的顶部块按正文容器高度贪心切成多页，
+     * 每页字数随窗口/字号/页宽自适应（对齐本地小说阅读器的翻页体验）。
+     * 图片漫画（imgpage）不走这里，仍是一章一张图翻。 */
+    function splitIntoPages(rawHtml) {
+        const b = bodyEl();
+        const tpl = document.createElement('template');
+        tpl.innerHTML = rawHtml || '';
+        const blocks = Array.from(tpl.content.childNodes).map(n => {
+            const w = document.createElement('div');
+            w.appendChild(n.cloneNode(true));
+            return w.innerHTML;
+        }).filter(s => s.trim());
+        if (!blocks.length) return [rawHtml || ''];
+        const H = Math.max(200, b.clientHeight - 12);
+        const probe = document.createElement('div');
+        probe.style.cssText = `position:absolute;visibility:hidden;left:-99999px;top:0;` +
+            `width:${b.clientWidth}px;font:inherit;`;
+        b.appendChild(probe);
+        const pages = [];
+        let buf = [], bufH = 0;
+        for (const blk of blocks) {
+            probe.innerHTML = buf.concat(blk).join('');
+            const h = probe.scrollHeight;
+            if (buf.length && h > H) { pages.push(buf.join('')); buf = [blk]; bufH = probe.scrollHeight; }
+            else { buf.push(blk); bufH = h; }
+        }
+        if (buf.length) pages.push(buf.join(''));
+        probe.remove();
+        return pages.length ? pages : [rawHtml || ''];
+    }
+
+    function show(i, dir, keepSub) {
         const idx = Math.max(0, Math.min(chapters.length - 1, i));
         const ch = chapters[idx] || {};
         const raw = rewriteEpubAssets(ch.html, ch.href) ||
@@ -551,12 +594,35 @@ async function initEpub() {
         if (st !== 'none' && window.matchMedia && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
             b.className += ' rd-anim rd-' + (st === 'curl' ? 'slide' : st);
         }
-        b.innerHTML = raw;
+
+        // 文字小说且用户开启翻页（非滚动）→ 章内分页；漫画/PDF/滚动 → 整章
+        const pagedNovel = kind === 'novel' && !imgPageMode && RS && RS.turnStyle !== 'scroll';
+        if (pagedNovel) {
+            subPages = splitIntoPages(raw);
+            if (keepSub && subPage < subPages.length) {
+                // 章内翻页：沿用 step() 已算好的 subPage
+            } else if (dir === -1) {
+                subPage = subPages.length - 1;   // 从上一章末页进来 → 显示末页
+            } else {
+                subPage = 0;                      // 从下一章/目录进来 → 显示首页（含 dir===1）
+            }
+            subPage = Math.max(0, Math.min(subPages.length - 1, subPage));
+            b.innerHTML = subPages[subPage] || '';
+        } else {
+            subPages = [];
+            subPage = 0;
+            b.style.overflow = '';
+            b.innerHTML = raw;
+        }
+        if (pagedNovel) b.style.overflow = 'hidden';
         b.scrollTop = 0;
         $('stage').scrollTop = 0;
 
         [...toc.children].forEach((d, k) => d.classList.toggle('on', k === idx));
-        $('page').textContent = `${idx + 1} / ${chapters.length}`;
+        const pageLabel = pagedNovel && subPages.length > 1
+            ? `${idx + 1}/${chapters.length} · ${subPage + 1}/${subPages.length}`
+            : `${idx + 1} / ${chapters.length}`;
+        $('page').textContent = pageLabel;
         syncPageCursor();
         updKeyboardHint();
         preload(idx + 1);
@@ -568,6 +634,16 @@ async function initEpub() {
     /* 方向键 / 点击左右区域翻页（round103 用户要求：图片漫画能上一张下一张） */
     function step(d) {
         if (!chapters.length) return;
+        // 文字小说章内还有子页：先在章内翻，翻到边界才换章
+        if (subPages.length > 1) {
+            const next = subPage + d;
+            if (next >= 0 && next < subPages.length) {
+                subPage = next;
+                show(cur, d, true);            // 保持当前章与子页，仅重渲染
+                return;
+            }
+            // 章内到边界：d=+1 进下一章从首页；d=-1 进上一章从末页
+        }
         const n = cur + d;
         if (n < 0) return;
         if (n >= chapters.length) return;

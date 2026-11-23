@@ -27,16 +27,21 @@ const CDP_CFG = config.network?.cdp || {};
 const DEFAULT_PORT = 9222;
 const DEFAULT_USER_DATA_DIR = path.join(__dirname, '..', '..', '.user-browser-data');
 
-// 浏览器路径候选（按优先级）
+// 浏览器路径候选（按优先级）。per-user 路径用当前用户的 LOCALAPPDATA 动态构造，
+// 不写死开发机用户名。
+const _local = process.env.LOCALAPPDATA || '';
 const BROWSER_CANDIDATES = [
   process.env.CHROME_PATH,
-  // Windows 本机
+  // Windows 本机（系统级）
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe',
+  // Windows 当前用户级
+  ...(_local ? [
+    require('path').join(_local, 'Google\\Chrome\\Application\\chrome.exe'),
+    require('path').join(_local, 'Microsoft\\Edge\\Application\\msedge.exe'),
+  ] : []),
   // Linux / 容器
   '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',

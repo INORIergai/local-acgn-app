@@ -9389,32 +9389,14 @@ function renderSettings(config) {
 
                     <!-- round91：123云盘 / 百度网盘 官方 OAuth 授权（round93：123 改为快速授权主通道） -->
                     <div class="settings-group">
-                        <div class="settings-group-title">123云盘 · 一键快速授权（推荐，无需注册开发者）</div>
+                        <div class="settings-group-title">123云盘 · 授权登录</div>
                         <div class="settings-item">
-                            <label>原理</label>
-                            <div style="font-size:12.5px;color:var(--text-muted);line-height:1.8;">复用 Alist 开源社区的公共授权应用：点下方按钮 → 浏览器打开 123云盘<b>官方授权页</b> → 登录并同意 → 跳到回调页后<b>整页 Ctrl+A 全选、Ctrl+C 复制</b> → 回到本应用<b>自动抽取 access_token 并验证</b>，全程无需注册开放平台开发者。</div>
-                        </div>
-                        <div class="settings-btn-row">
-                            <button class="btn btn-sm" style="background:var(--primary);" onclick="oauthQuickAuthorize('pan123')">⚡ 一键快速授权</button>
-                            <button class="btn btn-sm btn-danger" onclick="oauthDisconnect('pan123')">解除授权</button>
+                            <label>推荐：一次配置，永久免登录</label>
+                            <div style="font-size:12.5px;color:var(--text-muted);line-height:1.8;">用你自己的开放平台应用授权：浏览器打开 123云盘官方授权页 → 登录同意 → 自动跳回本应用完成（<b>无需复制</b>）。之后应用会在后台自动续期，<b>一次登录、后续都不用再登录</b>。需先在下方填一次 client_id / client_secret（个人可免费申请）。</div>
                         </div>
                         <div id="pan123OAuthStatus" style="font-size:12px;color:var(--text-muted);margin-top:8px;">状态：读取中…</div>
-                        <details style="margin-top:10px;font-size:12.5px;">
-                            <summary style="cursor:pointer;color:var(--primary);font-weight:600;">🔑 手动粘贴 Token（自动回填失败时备用）</summary>
-                            <div style="line-height:1.9;margin-top:8px;color:var(--text);">
-                                授权后浏览器会停在 Alist 的回调页，页面上有 <b>access_token</b>（长的）和 <b>refresh_token</b>（短的）两段：<br>
-                                · <b>最省事：整页 Ctrl+A 全选 → Ctrl+C 复制</b>，粘到下面 → 自动抽出能用的 access_token；<br>
-                                · 或只复制 <b>access_token</b>（长的那段，JWT 带两个点）粘进来；<br>
-                                · <span style="color:var(--text-muted);">refresh_token（短的）单独复制在快速通道里用不了，别只复制它。</span><br>
-                                <span style="color:var(--text-muted);">⚠ 回调页显示 <b>accessToken Invalid</b> 的话：不是复制姿势问题，是你的 123云盘网页登录态失效了——先打开 <b>www.123pan.com 退出账号重新登录</b>，再回来重新点「一键快速授权」。</span>
-                            </div>
-                            <div style="display:flex;gap:8px;margin-top:8px;">
-                                <input type="text" class="settings-input" id="pan123QuickToken" style="flex:1;font-size:12px;" placeholder="整页全选复制粘进来 / 只粘 access_token / 回调地址（带 code=）">
-                                <button class="btn btn-sm" style="background:var(--primary);" onclick="oauthQuickSubmit()">保存 Token</button>
-                            </div>
-                        </details>
-                        <details style="margin-top:10px;font-size:12.5px;">
-                            <summary style="cursor:pointer;color:var(--text-muted);">⚙ 自建应用模式（高级：完整 OAuth，token 可自动续期）</summary>
+                        <details open style="margin-top:10px;font-size:12.5px;">
+                            <summary style="cursor:pointer;color:var(--primary);font-weight:600;">✅ 推荐 · 自建应用授权（自动续期，永久免登录）</summary>
                             <div class="settings-item" style="margin-top:10px;">
                                 <label>client_id（AppID）</label>
                                 <input type="text" class="settings-input" id="pan123ClientId" placeholder="在 123云盘开放平台创建应用后获得">
@@ -9432,17 +9414,37 @@ function renderSettings(config) {
                             </div>
                             <div class="settings-btn-row">
                                 <button class="btn btn-sm" onclick="oauthSaveCreds('pan123')">💾 保存凭证</button>
-                                <button class="btn btn-sm" style="background:var(--primary);" onclick="oauthAuthorize('pan123')">🔐 授权（自建应用）</button>
+                                <button class="btn btn-sm" style="background:var(--primary);" onclick="oauthAuthorize('pan123')">🔐 授权（自动续期）</button>
+                                <button class="btn btn-sm btn-danger" onclick="oauthDisconnect('pan123')">解除授权</button>
                             </div>
                             <div id="pan123AppStatus" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></div>
                             <div style="display:flex;gap:8px;margin-top:8px;">
-                                <input type="text" class="settings-input" id="pan123ManualCode" style="flex:1;font-size:12px;" placeholder="手动粘贴回调地址或授权码">
+                                <input type="text" class="settings-input" id="pan123ManualCode" style="flex:1;font-size:12px;" placeholder="回调没自动跳回时，手动粘贴回调地址或授权码">
                                 <button class="btn btn-sm" onclick="oauthManualCallback('pan123')">手动完成授权</button>
                             </div>
                             <div style="line-height:1.9;margin-top:8px;color:var(--text-muted);">
                                 ① 注册 123云盘开放平台开发者并创建应用（个人可申请），拿到 client_id / client_secret；<br>
-                                ② 填好凭证点「保存凭证」→ 把「回调地址」登记到开放平台应用里 → 点「授权」。<br>
-                                此模式 token 过期可自动续期；快速授权通道的 token 过期后需重新授权一次。
+                                ② 填好凭证点「保存凭证」→ 把上方「回调地址」登记到开放平台应用 → 点「授权」。<br>
+                                授权后会自动跳回本应用完成，无需复制。token 由应用后台自动续期，长期免登录。
+                            </div>
+                        </details>
+                        <details style="margin-top:10px;font-size:12.5px;">
+                            <summary style="cursor:pointer;color:var(--text-muted);">⚡ 临时授权（免注册开发者，但 token 过期约 30 天需重新授权一次）</summary>
+                            <div style="font-size:12.5px;color:var(--text-muted);line-height:1.8;margin-top:8px;">复用 Alist 公共授权应用：点按钮打开官方授权页 → 登录同意 → 回调页整页 Ctrl+A / Ctrl+C → 回到本应用自动抽取 token。免注册，但无法自动续期。</div>
+                            <div class="settings-btn-row" style="margin-top:8px;">
+                                <button class="btn btn-sm" onclick="oauthQuickAuthorize('pan123')">⚡ 一键快速授权（临时）</button>
+                            </div>
+                            <div style="color:var(--primary);font-weight:600;margin-top:12px;">🔑 手动粘贴 Token（自动回填失败时备用）</div>
+                            <div style="line-height:1.9;margin-top:8px;color:var(--text);">
+                                授权后浏览器会停在 Alist 的回调页，页面上有 <b>access_token</b>（长的）和 <b>refresh_token</b>（短的）两段：<br>
+                                · <b>最省事：整页 Ctrl+A 全选 → Ctrl+C 复制</b>，粘到下面 → 自动抽出能用的 access_token；<br>
+                                · 或只复制 <b>access_token</b>（长的那段，JWT 带两个点）粘进来；<br>
+                                · <span style="color:var(--text-muted);">refresh_token（短的）单独复制在快速通道里用不了，别只复制它。</span><br>
+                                <span style="color:var(--text-muted);">⚠ 回调页显示 <b>accessToken Invalid</b> 的话：不是复制姿势问题，是你的 123云盘网页登录态失效了——先打开 <b>www.123pan.com 退出账号重新登录</b>，再回来重新点「一键快速授权」。</span>
+                            </div>
+                            <div style="display:flex;gap:8px;margin-top:8px;">
+                                <input type="text" class="settings-input" id="pan123QuickToken" style="flex:1;font-size:12px;" placeholder="整页全选复制粘进来 / 只粘 access_token / 回调地址（带 code=）">
+                                <button class="btn btn-sm" style="background:var(--primary);" onclick="oauthQuickSubmit()">保存 Token</button>
                             </div>
                         </details>
                     </div>

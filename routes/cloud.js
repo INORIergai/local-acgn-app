@@ -1180,7 +1180,7 @@ router.post('/quark/run-login-bat', (req, res) => {
             return res.json({ code: -1, msg: '未找到「夸克登录.bat」。在下方「脚本位置」填入 bat 的完整路径后重试（项目根目录默认自带）。' });
         }
         // 可执行文件是字面量 cmd.exe（不取自环境/请求）；bat 路径已过白名单式校验。
-        // /s /c + 引号包路径：路径含空格（如 "D:\ai program\..."）时 cmd 的标准解法。
+        // /s /c + 引号包路径：路径含空格（如 "C:\Program Files\..."）时 cmd 的标准解法。
         const child = spawn('cmd.exe', ['/s', '/c', '"' + bat + '"'], {
             cwd: path.dirname(bat),
             detached: true,

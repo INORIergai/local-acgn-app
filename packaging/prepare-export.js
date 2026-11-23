@@ -87,6 +87,27 @@ function cleanExcept(dst, keep) {
  * 这里再兜一层，防止以后又把 -backup / .backup- / _lab 之类的文件塞回 public。 */
 const JUNK_RE = /(^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$|\.(bak|old|orig|swp|swo|tmp|log|repair)$|\.bak-[\w.-]+$|\.v\d+-backup\.[a-z]+$|^\.backup-[\w.-]+$|^_[\w-]+-lab\.html$|^_magic-preview\.html$|~$)/i;
 
+/* 个人路径脱敏（兜底）：即便某份源码忘了清，导出时也把写死的开发机路径替换成占位。
+ * 只处理明确的个人目录/项目路径字面量，不碰普通文本，避免误伤业务字符串。 */
+function sanitizeText(text) {
+    return text
+        // JS 源码里的双反斜杠形式：C:\\Users\\<用户>\\ 与 D:\\ai program\\local-movie-library\\
+        .replace(/[A-Za-z]:\\\\Users\\\\[^\\"'\\s]+\\\\/g, '%USERPROFILE%\\\\')
+        .replace(/[A-Za-z]:\\\\ai program\\\\local-movie-library\\\\/gi, '%INSTALLDIR%\\\\')
+        // 纯文本/bat/注释里的单反斜杠形式
+        .replace(/[A-Za-z]:\\Users\\[^\\"'\\s\\\n]+\\/g, '%USERPROFILE%\\')
+        .replace(/[A-Za-z]:\ai program\local-movie-library\\/gi, '%INSTALLDIR%\\');
+}
+
+function copyFileSanitized(s, d) {
+    // 只脱敏文本类代码/配置；二进制（node_modules/.node/图片等）原样复制
+    if (!/\.(js|json|html|css|bat|reg|txt|md|yml|sql)$/i.test(s)) { fs.copyFileSync(s, d); return; }
+    let text;
+    try { text = fs.readFileSync(s, 'utf8'); }
+    catch (e) { fs.copyFileSync(s, d); return; }
+    fs.writeFileSync(d, sanitizeText(text), 'utf8');
+}
+
 function copyDir(src, dst, skip) {
     fs.mkdirSync(dst, { recursive: true });
     for (const name of fs.readdirSync(src)) {
@@ -97,7 +118,7 @@ function copyDir(src, dst, skip) {
         const d = path.join(dst, name);
         const st = fs.statSync(s);
         if (st.isDirectory()) copyDir(s, d, skip);
-        else fs.copyFileSync(s, d);
+        else copyFileSanitized(s, d);
     }
 }
 
@@ -173,7 +194,7 @@ function main() {
     for (const d of COPY_DIRS) copyDir(path.join(SRC, d), path.join(DST, d));
     for (const f of COPY_FILES) {
         const s = path.join(SRC, f);
-        if (fs.existsSync(s)) fs.copyFileSync(s, path.join(DST, f));
+        if (fs.existsSync(s)) copyFileSanitized(s, path.join(DST, f));
     }
     if (fs.existsSync(SIGNING_PUBLIC_KEY)) {
         fs.copyFileSync(SIGNING_PUBLIC_KEY, path.join(DST, 'update-public-key.pem'));
@@ -184,7 +205,7 @@ function main() {
         fs.mkdirSync(path.join(DST, dir), { recursive: true });
         for (const f of files) {
             const s = path.join(SRC, dir, f);
-            if (fs.existsSync(s)) fs.copyFileSync(s, path.join(DST, dir, f));
+            if (fs.existsSync(s)) copyFileSanitized(s, path.join(DST, dir, f));
             else console.warn('  ⚠️ 缺少 ' + dir + '/' + f);
         }
     }

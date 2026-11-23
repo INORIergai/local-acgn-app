@@ -8,7 +8,7 @@
  *   node quark-login.js                              自动找到在跑的影库 → 打开登录页 → 写入并校验
  *   node quark-login.js --check                      只报告，不动浏览器
  *   node quark-login.js --app http://127.0.0.1:3517   指定实例，跳过端口探测
- *   node quark-login.js --password 6799               指定访问密码（默认从该实例自己的 config 读）
+ *   node quark-login.js --password <访问密码>          指定访问密码（默认从该实例自己的 config 读）
  *   node quark-login.js --prefer docker               同时跑着多个实例时优先 Docker（默认优先本地）
  *
  * 双击「夸克登录.bat」等效于第一条。

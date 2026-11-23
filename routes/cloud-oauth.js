@@ -1377,6 +1377,27 @@ function oauthProviderDirsCfg(cfg, p) {
         } catch (e) { /* 配置异常不致命 */ }
     }, 45 * 1000);
     setInterval(async () => {
+        // ① token 自动保活（场景A：自建应用一次授权、永久免登录）
+        //    只对 app 模式 + 有 refresh_token 的提供方生效；快速授权无 refresh_token 会跳过。
+        //    提前 30 分钟续期（123 app 的 access_token 仅 2 小时，阈值必须小于它，
+        //    否则恒为真每分钟空转；同时远大于 refreshToken 的 60s 早退保护）。
+        //    refresh_token 90 天但单次有效，refreshToken() 内会立即落盘新票。
+        try {
+            const cfg = readConfig();
+            for (const p of OAUTH_PROVIDERS) {
+                const sec = cfg.cloudOAuth && cfg.cloudOAuth[p];
+                if (!sec || !sec.accessToken || !sec.refreshToken) continue;
+                const isApp = p === 'pan123' ? sec.authMode === 'app' : true;
+                if (!isApp) continue;
+                const jwtExp = jwtExpMs(sec.accessToken);
+                const exp = jwtExp || Number(sec.expireAt) || 0;
+                if (exp && exp - Date.now() < 30 * 60 * 1000) {
+                    await refreshToken(p);   // 失败内部已吞并清票，不影响主循环
+                }
+            }
+        } catch (e) { /* 保活失败不致命 */ }
+
+        // ② 原有云同步调度
         try {
             if (syncRunning) return;
             const cfg = readConfig();
