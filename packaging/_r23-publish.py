@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.13'
+TAG = 'v6.8.14'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.13：Kazumi 规则源 + 自由选源
+COMMIT_MSG = """v6.8.14：Kazumi 规则自动更新
 
-- 新增 kazumi 规则工厂（XPath 1.0 / JSONPath / delimited+nested 章节）
-- 同步 16 个 Kazumi 规则源，聚合搜索可用源翻倍
-- 源启用偏好 prefs.json + /api/media-source/prefs，追番页/设置页双入口
-- 修复全部在线源失效的 4 个解析 Bug
-- 集级搜源：点某一集并发对齐所有源，点源直接播放
+- KazumiRules 官方仓库自动更新（国内 GitCode 镜像优先，GitHub raw 回退）
+- 后台每 12h 静默检查 + 源面板/设置页手动「↻ 更新规则」
+- 只更新版本有变化的规则，写入覆盖目录不破坏内置、可回滚
+- 规则 headers 凭据剔除、host/规则名白名单、落点校验
+- 含 v6.8.13 的 16 个 Kazumi 规则源与自由选源
 
-版本：6.8.13"""
+版本：6.8.14"""
 
 
 def get_token():
