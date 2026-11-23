@@ -11,7 +11,7 @@ const app = fs.readFileSync(path.join(root, 'public/js/app.js'), 'utf8');
 assert.ok(oauth.includes('token 自动保活'), 'scheduler 应含 token 保活逻辑');
 assert.ok(oauth.includes("sec.authMode === 'app'"), '保活仅对 app 模式生效');
 assert.ok(oauth.includes('await refreshToken(p)'), '保活应调用现成 refreshToken');
-assert.ok(oauth.includes('6 * 60 * 60 * 1000'), '应提前 6 小时续期');
+assert.ok(oauth.includes('30 * 60 * 1000'), '应提前 30 分钟续期（避免每分钟空转）');
 assert.ok(oauth.includes('!sec.refreshToken'), '无 refreshToken 应跳过');
 
 // 2) refreshToken 仍只从服务端凭证读，不硬编码（安全）

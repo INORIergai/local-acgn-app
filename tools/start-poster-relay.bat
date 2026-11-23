@@ -14,6 +14,7 @@ echo.
 set "NODE_EXE="
 where node >nul 2>nul && set "NODE_EXE=node"
 if not defined NODE_EXE if exist "C:\Program Files\nodejs\node.exe" set "NODE_EXE=C:\Program Files\nodejs\node.exe"
+if not defined NODE_EXE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\nodejs\node.exe"
 
 if not defined NODE_EXE (
   echo [x] 没找到 node.exe，请先装 Node.js，或手动改这个 bat 里的路径。

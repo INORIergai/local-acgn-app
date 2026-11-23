@@ -601,8 +601,11 @@ async function initEpub() {
             subPages = splitIntoPages(raw);
             if (keepSub && subPage < subPages.length) {
                 // 章内翻页：沿用 step() 已算好的 subPage
-            } else if (dir === -1) subPage = subPages.length - 1;   // 从上一章末页进来
-            else if (dir !== 1) subPage = 0;
+            } else if (dir === -1) {
+                subPage = subPages.length - 1;   // 从上一章末页进来 → 显示末页
+            } else {
+                subPage = 0;                      // 从下一章/目录进来 → 显示首页（含 dir===1）
+            }
             subPage = Math.max(0, Math.min(subPages.length - 1, subPage));
             b.innerHTML = subPages[subPage] || '';
         } else {

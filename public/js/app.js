@@ -9434,7 +9434,7 @@ function renderSettings(config) {
                             <div class="settings-btn-row" style="margin-top:8px;">
                                 <button class="btn btn-sm" onclick="oauthQuickAuthorize('pan123')">⚡ 一键快速授权（临时）</button>
                             </div>
-                            <summary style="cursor:pointer;color:var(--primary);font-weight:600;margin-top:8px;">🔑 手动粘贴 Token（自动回填失败时备用）</summary>
+                            <div style="color:var(--primary);font-weight:600;margin-top:12px;">🔑 手动粘贴 Token（自动回填失败时备用）</div>
                             <div style="line-height:1.9;margin-top:8px;color:var(--text);">
                                 授权后浏览器会停在 Alist 的回调页，页面上有 <b>access_token</b>（长的）和 <b>refresh_token</b>（短的）两段：<br>
                                 · <b>最省事：整页 Ctrl+A 全选 → Ctrl+C 复制</b>，粘到下面 → 自动抽出能用的 access_token；<br>
