@@ -564,7 +564,11 @@ async function catalogOf(source, opts = {}) {
 function parseSearchPage(html, source, pageUrl) {
     const $ = cheerio.load(html);
     const sc = source.def.arguments.searchConfig || {};
-    const fmt = sc.subjectFormatId || 'a';
+    // 规则文件里 subjectFormatId 有 "json-path-indexed"（连字符）与 "jsonPathIndexed"（驼峰）
+    // 两种写法；旧实现只认驼峰，3 个 JSON 源（girigiri/2k/Anime7）因此永远走错分支。
+    const fmtRaw = String(sc.subjectFormatId || 'a').trim();
+    const fmt = /^json-?path-?indexed$/i.test(fmtRaw) ? 'jsonPathIndexed'
+        : fmtRaw;
     const out = [];
 
     const push = (name, link) => {
@@ -586,23 +590,25 @@ function parseSearchPage(html, source, pageUrl) {
             push($(names[i]).text(), $(links[i]).attr('href'));
         }
     } else if (fmt === 'jsonPathIndexed') {
-        // 简易 JSONPath：$[*]['url','link'] 这类「数组 -> 多候选字段」的形式
+        // JSON API 源：用真正的 JSONPath 解析，支持任意嵌套路径（如 $.info.rows[*]）。
+        // 旧实现只认 data/list/items 三个平铺字段，girigiri 这类返回 info.rows 的源
+        // 明明接口有数据却被判「站点改版」→ 整源静默失效（2026-11 追番搜不到的主因）。
         const sel = sc.selectorSubjectFormatJsonPathIndexed || {};
         try {
             const data = JSON.parse(html.trim());
-            const arr = Array.isArray(data) ? data : (data.data || data.list || data.items || []);
-            const pick = (keys) => {
-                const k = String(keys || '').replace(/^\$\[\*\]\.?/, '').replace(/[[\]']/g, '');
-                return k.split(',').map((s) => s.trim()).filter(Boolean);
-            };
-            const linkKeys = pick(sel.selectLinks);
-            const nameKeys = pick(sel.selectNames);
-            arr.forEach((it) => {
-                let link = '', name = '';
-                linkKeys.forEach((k) => { if (!link && it[k]) link = it[k]; });
-                nameKeys.forEach((k) => { if (!name && it[k]) name = it[k]; });
+            const links = jpathAll(data, sel.selectLinks);
+            const names = jpathAll(data, sel.selectNames);
+            const tpl = String(sel.linkTemplate || '');
+            const n = Math.max(links.length, names.length);
+            for (let i = 0; i < n; i++) {
+                const rawLink = links[i];
+                const name = names[i];
+                if (rawLink === undefined && name === undefined) continue;
+                let link = rawLink === undefined ? '' : String(rawLink);
+                // 规则用 linkTemplate 把 id 拼成详情页（如 /GV{value}/、/voddetail/{value}.html）
+                if (tpl && link) link = tpl.replace('{value}', encodeURIComponent(link));
                 push(name, link);
-            });
+            }
         } catch (e) { /* 不是 JSON → 没有结果 */ }
     } else {
         const sel = sc.selectorSubjectFormatA || {};
@@ -919,8 +925,13 @@ async function resolveVideo(source, episodeUrl, opts = {}) {
 
     // 2) 抽流地址
     if (!mv.matchVideoUrl) return { url: '', error: '该源没有配置地址正则' };
+    // 规则正则来自 Dart 生态，常见内联修饰符 (?i)；JS 不支持，必须剥离并提升为 flag，
+    // 否则 new RegExp 直接抛「Invalid regular expression」→ 该源永远解析不出播放地址。
+    const rawPattern = String(mv.matchVideoUrl);
+    const inlineIgnoreCase = /\(\?[a-z]*i[a-z]*\)/i.test(rawPattern);
+    const cleanPattern = rawPattern.replace(/\(\?[a-z]*i[a-z]*\)/gi, '');
     let re;
-    try { re = new RegExp(mv.matchVideoUrl, 'g'); } catch (e) { return { url: '', error: '地址正则不合法：' + e.message }; }
+    try { re = new RegExp(cleanPattern, inlineIgnoreCase ? 'gi' : 'g'); } catch (e) { return { url: '', error: '地址正则不合法：' + e.message }; }
 
     // 优先 m3u8（可自适应码率、能走 hls.js），其次 mp4
     const found = [];
