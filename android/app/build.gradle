@@ -27,11 +27,17 @@ android {
         targetSdk 34
         // ⚠ 版本号唯一可信来源：此处的 versionCode / versionName。
         //   服务端 routes/app-update.js 会解析本文件，原生侧读 BuildConfig，前端读 /api/app/android-version。
-        // v5.1.0：应用内更新 + 扫码连接 + 阅读器分页
-        versionCode 6
-        versionName "5.1.0"
+        // v5.2.0：小说翻页改造 + 脱离PC的公网更新(国内镜像)
+        versionCode 7
+        versionName "5.2.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // 公网更新源（非凭据，URL 常量）：手机不连 PC 时从这里检查/下载更新。
+        // GitHub API 与 Release 直链经国内镜像前缀加速；镜像不可达时自动回退原站。
+        buildConfigField "String", "PUBLIC_REPO", '"INORIergai/local-acgn-app"'
+        buildConfigField "String", "PUBLIC_VERSION_JSON", '"https://raw.githubusercontent.com/INORIergai/local-acgn-app/main/android-version-public.json"'
+        buildConfigField "String", "PUBLIC_MIRRORS", '"https://gh-proxy.com/,https://ghfast.top/,https://github.moeyy.xyz/"'
     }
 
     signingConfigs {
