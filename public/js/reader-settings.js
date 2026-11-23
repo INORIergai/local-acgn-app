@@ -35,7 +35,11 @@
         hint: '漫画 / 小说页面演出的形式',
         options: [
           { v: 'curl', label: '仿真卷曲' },
+          { v: 'cover', label: '覆盖' },
+          { v: 'stack', label: '堆叠' },
           { v: 'slide', label: '平移' },
+          { v: 'scroll', label: '垂直滚动' },
+          { v: 'sweep', label: '渐变扫过' },
           { v: 'fade', label: '淡入' },
           { v: 'none', label: '无动画' }
         ]
@@ -87,6 +91,29 @@
         options: [
           { v: 'narrow', label: '窄' }, { v: 'medium', label: '中' },
           { v: 'wide', label: '宽' }, { v: 'full', label: '全宽' }
+        ]
+      },
+      {
+        id: 'dualPage', label: '双页模式', type: 'choice', def: 'off',
+        hint: '一屏两页；「自动」在横屏/宽窗口下启用',
+        options: [
+          { v: 'off', label: '单页' }, { v: 'on', label: '双页' }, { v: 'auto', label: '自动' }
+        ]
+      },
+      {
+        id: 'showHeader', label: '页眉', type: 'choice', def: 'off',
+        hint: '顶部显示章节名 / 阅读进度 / 时间',
+        options: [
+          { v: 'off', label: '关闭' }, { v: 'chapter', label: '章节名' },
+          { v: 'progress', label: '进度' }, { v: 'all', label: '全部' }
+        ]
+      },
+      {
+        id: 'showFooter', label: '页脚', type: 'choice', def: 'page',
+        hint: '底部显示页码 / 进度 / 时间 / 电量',
+        options: [
+          { v: 'off', label: '关闭' }, { v: 'page', label: '页码' },
+          { v: 'progress', label: '进度' }, { v: 'all', label: '全部' }
         ]
       },
       {

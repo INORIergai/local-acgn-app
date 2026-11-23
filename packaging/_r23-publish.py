@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.15'
+TAG = 'v6.8.16'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.15：追番/小说体验大改
+COMMIT_MSG = """v6.8.16：阅读器进阶排版
 
-- 修复在线播放未定义变量与抽屉盖播放器（点了没反应）
-- 播放来源卡片式UI，显示第N集可播放而非源总集数
-- 追番首页整面自适应新番海报墙
-- 小说章节名修复 + 阅读区铺满不留白 + TTS预取加速
-- 未追番新番也可点集搜源
+- 双页模式(单页/双页/自动)一屏两栏,分隔线,翻页按2页推进
+- 页眉页脚:章节名/进度/页码/时间/电量可自由组合
+- 翻页动画扩充:覆盖/堆叠/平移/垂直滚动/渐变扫过/淡入
+- 双页与 PaperCurl 卷曲互斥处理
 
-版本：6.8.15"""
+版本：6.8.16"""
 
 
 def get_token():
