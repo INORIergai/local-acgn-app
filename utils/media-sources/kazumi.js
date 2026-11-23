@@ -12,7 +12,11 @@
  *   · 只读解析，不执行规则里的任何 JS（captchaScript 一律忽略）；
  *   · 实际网络请求仍走 engine 的 grab（带协议/SSRF 校验）。
  */
-const { JSDOM } = require('jsdom');
+const { JSDOM } = (() => {
+    // 增量更新只覆盖源码、不含 node_modules：旧版本热更上来时可能还没有 jsdom。
+    // 这里做优雅降级——XPath 源给出明确提示，API 源照常工作，不让整个追番崩掉。
+    try { return require('jsdom'); } catch (e) { return { JSDOM: null }; }
+})();
 
 const MAX_API_LEVEL = 9;
 
@@ -61,6 +65,7 @@ function absUrl(href, base) {
 
 /* -------------------------------------------------------------- XPath */
 function makeDom(html) {
+    if (!JSDOM) throw new Error('XPath 源需要完整更新到最新版（缺少 jsdom 依赖）');
     return new JSDOM(String(html || ''), { contentType: 'text/html' });
 }
 

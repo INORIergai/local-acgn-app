@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.12'
-TAG = 'v6.8.12'
+VER = '6.8.13'
+TAG = 'v6.8.13'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -73,12 +73,12 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.12 · 小说翻页 + 123云盘免登录
+## v6.8.13 · Kazumi 规则源 + 自由选源
 
-- 小说阅读改为翻页优先：字号/行距/页宽可调，每页字数随窗口自适应（PC/安卓/云端）。
-- 云端 EPUB 在线按页翻读，无需下载整本。
-- 123云盘：自建应用一次授权、后台自动续期，永久免登录（授权页已改为推荐路径）。
-- 含此前全部修复（增量更新、下载重启闭环）。
+- 接入 Kazumi 规则源：点某一集并发搜所有源、按集号对齐，点源直接播放。
+- 新增 16 个 Kazumi 规则源（AGE/akianime/giriGiriLove/mgnacg 等），含 XPath 与 JSON 接口两种模式。
+- 在线源可自由勾选：追番页「🔌 在线源」或设置→数据源，随时启用/关闭。
+- 修复 4 个导致全部在线源失效的解析 Bug（JSONPath 嵌套/格式名/正则修饰符/POST 缺 Content-Type）。
 - 内置 Android v5.1.0 安装包（versionCode 6）。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
