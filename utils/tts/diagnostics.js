@@ -23,9 +23,11 @@ const VITS_REQUIRED = ['torch', 'numba', 'librosa', 'scipy', 'numpy',
 function candidatePythons() {
   const c = [];
   const add = (p) => { if (p && !/WindowsApps/i.test(p) && !c.includes(p)) c.push(p); };
-  add('%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python312\\python.exe');
-  add('%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python311\\python.exe');
-  add('%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python310\\python.exe');
+  // 用当前用户的 LOCALAPPDATA 动态构造，避免把开发机用户名写死在公开代码里
+  const local = process.env.LOCALAPPDATA || '';
+  for (const v of ['Python312', 'Python311', 'Python310']) {
+    if (local) add(path.join(local, 'Programs', 'Python', v, 'python.exe'));
+  }
   // 从 PATH 里找，但排除 WindowsApps
   for (const d of (process.env.PATH || '').split(';')) {
     const p = path.join(d.trim(), 'python.exe');
@@ -88,7 +90,8 @@ print("MISS:"+",".join(miss))`;
   };
 }
 
-let VITS_HINT_DIR = 'D:\\Alife\\VITS';
+// VITS 目录由使用者通过环境变量/配置指定，不写死开发机路径
+let VITS_HINT_DIR = process.env.CV_VITS_DIR || '';
 
 async function checkGpu(python) {
   if (!python) return { level: 'warn', title: 'GPU', key: 'gpu', detail: '未检测（缺 Python）', fix: { label: '', kind: 'none' } };
@@ -345,7 +348,7 @@ async function diagnose(cfg) {
 function scanCandidates(searchRoots) {
   const roots = searchRoots && searchRoots.length
     ? searchRoots
-    : ['D:\\Media', '%USERPROFILE%'];
+    : [path.join(__dirname, '..', '..'), process.env.USERPROFILE || require('os').homedir()];
   const vits = P.findDirs(roots, d => {
     try { return fs.existsSync(path.join(d, 'speakers_list.txt')) && fs.existsSync(path.join(d, 'models.py')); } catch (e) { return false; }
   });
