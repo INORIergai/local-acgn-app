@@ -61,7 +61,7 @@ body.night-mode .rs-hint { color: rgba(255, 255, 255, .38); }
     font-size: 13px;
     color: inherit;
     background: transparent;
-    transition: background .2s ease, border-color .2s ease, color .2s ease;
+    transition: background var(--mv2-d2, .2s) var(--mv2-snap, ease), border-color var(--mv2-d2, .2s) var(--mv2-snap, ease), color var(--mv2-d2, .2s) var(--mv2-snap, ease);
     user-select: none;
 }
 
@@ -90,7 +90,7 @@ body.night-mode .rs-option { border-color: rgba(255, 255, 255, .1); }
     cursor: pointer;
     border: 2px solid rgba(0, 0, 0, .12);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
-    transition: border-color .2s ease, transform .2s ease;
+    transition: border-color var(--mv2-d2, .2s) var(--mv2-snap, ease), transform var(--mv2-d2, .2s) var(--mv2-snap, ease);
     user-select: none;
 }
 
@@ -176,6 +176,100 @@ body[data-turn-style="fade"] .page-in {
     to   { opacity: 1; }
 }
 
+/* ---- Reeden 式扩展动画 ---- */
+/* cover 覆盖：新页从右滑入并盖住旧页（带阴影） */
+body[data-turn-style="cover"] .page-in {
+    animation-name: rs-cover-in;
+    animation-duration: var(--rs-turn-dur, 320ms);
+    animation-timing-function: cubic-bezier(.22,.61,.36,1);
+    animation-fill-mode: both;
+}
+body[data-turn-style="cover"].turn-back .page-in { animation-name: rs-cover-in-back; }
+@keyframes rs-cover-in {
+    from { transform: translate3d(100%, 0, 0); box-shadow: -12px 0 28px rgba(0,0,0,.28); }
+    to   { transform: translate3d(0, 0, 0); box-shadow: none; }
+}
+@keyframes rs-cover-in-back {
+    from { transform: translate3d(-100%, 0, 0); box-shadow: 12px 0 28px rgba(0,0,0,.28); }
+    to   { transform: translate3d(0, 0, 0); box-shadow: none; }
+}
+/* stack 堆叠：新页轻微缩放下沉再落定 */
+body[data-turn-style="stack"] .page-in {
+    animation-name: rs-stack-in;
+    animation-duration: var(--rs-turn-dur, 320ms);
+    animation-timing-function: cubic-bezier(.22,.61,.36,1);
+    animation-fill-mode: both;
+}
+@keyframes rs-stack-in {
+    from { opacity: .4; transform: scale(.96) translateY(10px); }
+    to   { opacity: 1; transform: none; }
+}
+/* scroll 垂直滚动：新页从下方滑入 */
+body[data-turn-style="scroll"] .page-in {
+    animation-name: rs-scroll-in;
+    animation-duration: var(--rs-turn-dur, 320ms);
+    animation-timing-function: cubic-bezier(.22,.61,.36,1);
+    animation-fill-mode: both;
+}
+body[data-turn-style="scroll"].turn-back .page-in { animation-name: rs-scroll-in-back; }
+@keyframes rs-scroll-in {
+    from { transform: translate3d(0, 100%, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+@keyframes rs-scroll-in-back {
+    from { transform: translate3d(0, -100%, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+/* sweep 渐变扫过：一道柔光横向扫过新页 */
+body[data-turn-style="sweep"] .page-in {
+    animation-name: rs-sweep-in;
+    animation-duration: var(--rs-turn-dur, 320ms);
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+}
+@keyframes rs-sweep-in {
+    from { opacity: .2; filter: brightness(1.5); transform: translate3d(var(--rs-turn-x, 26px), 0, 0); }
+    to   { opacity: 1; filter: none; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     body[data-turn-style] .page-in { animation: none !important; }
 }
+
+/* ============================================================
+   双页模式 + 页眉页脚（Reeden 式）
+   ============================================================ */
+/* 双页：.paged-inner 变成两列网格（左 #pagedTitle+#pagedText，右 #pagedText2）。
+   为了让卷曲层与两栏共存，dual 模式下强制走非 curl 动画。 */
+body.dual-page .paged-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    column-gap: 22px;
+    max-width: none !important;   /* 双页要铺满，忽略单页的页宽限制 */
+}
+body.dual-page .page-header { grid-column: 1 / -1; grid-row: 1; }
+body.dual-page #pagedTitle { grid-column: 1 / -1; grid-row: 2; margin: 8px 0 12px; }
+body.dual-page #pagedText  { grid-column: 1; grid-row: 3; }
+body.dual-page #pagedText2 { display: block !important; grid-column: 2; grid-row: 3;
+    border-left: 1px solid rgba(127,127,127,.22); padding-left: 22px; }
+body.dual-page .page-footer { grid-column: 1 / -1; grid-row: 4; }
+
+/* 页眉/页脚：默认隐藏，设置开启后 body 加 class 显示 */
+.page-header, .page-footer {
+    display: none;
+    flex: 0 0 auto;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 11.5px;
+    color: var(--text-muted, rgba(0,0,0,.45));
+    padding: 2px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+body.show-header .page-header { display: flex; }
+body.show-footer .page-footer { display: flex; }
+body.night-mode .page-header, body.night-mode .page-footer { color: rgba(255,255,255,.45); }
+#pghRight, #pgfRight { text-align: right; }
+

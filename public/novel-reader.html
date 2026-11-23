@@ -905,8 +905,13 @@
             <!-- 翻页模式（round25 #2）：一屏一页，左右翻 -->
             <div id="pagedContent" class="paged-content" style="display:none;">
                 <div class="paged-inner">
+                    <!-- 页眉（Reeden 式：章节名/进度/时间/电量，可在设置里开关与自定义字段） -->
+                    <div class="page-header" id="pageHeader"><span id="pghLeft"></span><span id="pghRight"></span></div>
                     <h1 class="chapter-title" id="pagedTitle"></h1>
                     <div class="chapter-content" id="pagedText"></div>
+                    <!-- 双页模式右栏（默认隐藏，开启双页后显示；两栏共享同一份 pageStarts，逐 2 页翻） -->
+                    <div class="chapter-content paged-right" id="pagedText2" style="display:none;"></div>
+                    <div class="page-footer" id="pageFooter"><span id="pgfLeft"></span><span id="pgfRight"></span></div>
                 </div>
                 <div class="paged-hint">
                     <span id="pagedInfo">1 / 1</span>
@@ -1338,7 +1343,9 @@
             // 手动翻页要重置自动翻页倒计时，否则设置里的秒数会被半路截胡
             if (typeof restartNovelAutoTurn === 'function') restartNovelAutoTurn();
             const last = pageStarts.length - 1;
-            let target = currentPage + dir;
+            // 双页模式一次翻两页（左右两栏各一页）
+            const step = isDualPage() ? 2 : 1;
+            let target = currentPage + dir * step;
             if (target < 0) {
                 if (currentChapter > 0) { pendingSeek = 'last'; loadChapter(currentChapter - 1); return; }
                 target = 0;
@@ -1356,13 +1363,15 @@
                  slide -> 平移；fade -> 淡入；none -> 硬切
                后三者走 CSS animation，body[data-turn-style] 已在 applyNovelSettings 写好 */
             var style = (novelRS && novelRS.turnStyle) || 'curl';
+            // 双页模式不走卷曲（PaperCurl 只支持单目标）；强制降级为 slide
+            if (isDualPage() && style === 'curl') style = 'slide';
             if (style === 'curl' && pageCurl && window.PaperCurl && !window.PaperCurl.REDUCED) {
                 curlTarget = target;
                 window.PaperCurl.setSpeed(novelRS ? novelRS.turnSpeed : 'normal');
                 pageCurl.turn(dir);
                 return;
             }
-            if (style === 'slide') {
+            if (style === 'slide' || style === 'cover' || style === 'scroll') {
                 document.body.classList.toggle('turn-back', dir < 0);
                 clearTimeout(window.__turnBackTimer);
                 window.__turnBackTimer = setTimeout(function () {
@@ -1385,16 +1394,67 @@
          *   ② 卷曲期间 currentPage 必须**保持旧值**，直到卷过半真正换页；
          *      提前改会让「上一页/下一页」的边界判断读到新页，末页判断失效。
          */
-        function fillPage(idx) {
-            const box = document.getElementById('pagedText');
+        /** 是否处于双页显示：设置 on 恒开；auto 在宽屏(≥1100px)或横屏时开。 */
+        function isDualPage() {
+            const v = (novelRS && novelRS.dualPage) || 'off';
+            if (v === 'on') return true;
+            if (v === 'auto') return (window.innerWidth >= 1100) || (window.innerWidth > window.innerHeight);
+            return false;
+        }
+
+        function fillColumn(box, idx) {
+            if (!box) return;
             const start = pageStarts[idx];
             const end = idx + 1 < pageStarts.length ? pageStarts[idx + 1] : chapterBlocks.length;
             box.innerHTML = chapterBlocks.slice(start, end).join('');
             box.querySelectorAll('img').forEach(img => {
                 img.addEventListener('error', () => { img.classList.add('img-broken'); });
             });
-            document.getElementById('pagedInfo').textContent = `${idx + 1} / ${pageStarts.length}`;
+        }
+
+        function fillPage(idx) {
+            const box = document.getElementById('pagedText');
+            fillColumn(box, idx);
+            const dual = isDualPage();
+            const box2 = document.getElementById('pagedText2');
+            if (dual) {
+                // 右栏：下一逻辑页；没有就留白（章末最后一页）
+                const r = idx + 1;
+                if (r < pageStarts.length) fillColumn(box2, r);
+                else if (box2) box2.innerHTML = '';
+            } else if (box2) {
+                box2.innerHTML = '';
+            }
+            const total = pageStarts.length;
+            const label = (dual && idx + 2 <= total)
+                ? `${idx + 1}-${idx + 2} / ${total}`
+                : `${idx + 1} / ${total}`;
+            const infoEl = document.getElementById('pagedInfo');
+            if (infoEl) infoEl.textContent = label;
+            updatePageHeaderFooter(idx, total, dual);
             saveProgress();
+        }
+
+        /** 页眉页脚：按 showHeader/showFooter 设置填充章节名/页码/进度/时间/电量 */
+        function updatePageHeaderFooter(idx, total, dual) {
+            const title = (document.getElementById('pagedTitle') || {}).textContent || '';
+            const pct = total > 0 ? Math.round((idx + 1) / total * 100) : 0;
+            const now = new Date();
+            const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            const hOpt = (novelRS && novelRS.showHeader) || 'off';
+            const fOpt = (novelRS && novelRS.showFooter) || 'page';
+            const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+            if (hOpt === 'off') { set('pghLeft', ''); set('pghRight', ''); }
+            else {
+                set('pghLeft', (hOpt === 'all' || hOpt === 'chapter') ? title.slice(0, 24) : '');
+                set('pghRight', (hOpt === 'all' || hOpt === 'progress') ? ('进度 ' + pct + '%') : '');
+            }
+            if (fOpt === 'off') { set('pgfLeft', ''); set('pgfRight', ''); }
+            else {
+                const pageTxt = (dual && idx + 2 <= total) ? (idx + 1) + '-' + (idx + 2) : (idx + 1);
+                set('pgfLeft', (fOpt === 'all' || fOpt === 'page') ? ('第 ' + pageTxt + ' / ' + total + ' 页') : '');
+                set('pgfRight', fOpt === 'all' ? (pct + '% · ' + hhmm) : (fOpt === 'progress' ? (pct + '%') : hhmm));
+            }
         }
 
         // 不带动效的换页（首屏、换章、repaginate 复位都用它）
@@ -1541,7 +1601,8 @@
             const chat = document.getElementById('chapterContent');
             const btn = document.getElementById('btnReadMode');
             // round79：进入翻页模式时惰性建立卷曲舞台（此时 DOM 已就位）
-            if (readMode === 'page') initPageCurl();
+            // ★ 双页模式用 grid 两栏，卷曲舞台会改写 .paged-inner 的 DOM，必须跳过
+            if (readMode === 'page' && !isDualPage()) initPageCurl();
             if (readMode === 'page') {
                 document.body.classList.add('read-mode-page');
                 paged.style.display = 'flex';
@@ -1843,10 +1904,29 @@
 
             // 翻页演出
             var dur = ReaderSettings.speedMs(s.turnSpeed);
-            document.body.setAttribute('data-turn-style', s.turnStyle || 'curl');
+            var effStyle = (s.turnStyle || 'curl');
+            if (isDualPage() && effStyle === 'curl') effStyle = 'slide';   // 双页不卷曲
+            document.body.setAttribute('data-turn-style', effStyle);
             document.body.style.setProperty('--rs-turn-dur', dur + 'ms');
             document.body.style.setProperty('--rs-turn-x', '26px');
             if (window.PaperCurl) window.PaperCurl.setSpeed(s.turnSpeed);
+
+            // 双页 / 页眉 / 页脚
+            if (isDualPage()) {
+                // 从单页卷曲切过来时，拆掉 PaperCurl 注入的层，恢复原始两栏结构
+                const inner = document.querySelector('.paged-inner');
+                if (inner && inner.classList.contains('curl-armed')) {
+                    inner.classList.remove('curl-armed');
+                    inner.querySelectorAll('.curl-upper,.curl-lower').forEach(el => {
+                        while (el.firstChild) inner.appendChild(el.firstChild);
+                        el.remove();
+                    });
+                }
+            }
+            document.body.classList.toggle('dual-page', isDualPage());
+            document.body.classList.toggle('show-header', (s.showHeader || 'off') !== 'off');
+            document.body.classList.toggle('show-footer', (s.showFooter || 'off') !== 'off');
+            if (typeof pageStarts !== 'undefined' && pageStarts.length) updatePageHeaderFooter(currentPage, pageStarts.length, isDualPage());
 
             restartNovelAutoTurn();
 
@@ -1867,7 +1947,8 @@
             if (id !== 'autoTurn') restartNovelAutoTurn();
             applyNovelSettings({ repag: false });
             // 排版类改动要重排（repaginateIfNeeded 自带 120ms 去抖）
-            if (id === 'fontSize' || id === 'lineHeight' || id === 'padding') repaginateIfNeeded();
+            if (id === 'fontSize' || id === 'lineHeight' || id === 'padding' ||
+                id === 'pageWidth' || id === 'dualPage' || id === 'showHeader' || id === 'showFooter') repaginateIfNeeded();
             if (id === 'turnStyle' || id === 'turnSpeed') showToast('翻页：' + turnStyleLabel() + ' / ' + (ReaderSettings.speedMs(novelRS.turnSpeed)) + 'ms');
         }
 
