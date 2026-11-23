@@ -67,7 +67,8 @@
         const h = ensureHost();
         h.innerHTML = '<div class="sp-mask"><div class="sp-panel" role="dialog" aria-modal="true">'
             + '<div class="sp-head"><h3>🔌 在线源管理</h3>'
-            + '<div class="sp-actions"><button class="sp-btn" data-sp="all">全选</button>'
+            + '<div class="sp-actions"><button class="sp-btn" data-sp="refresh-rules">↻ 更新规则</button>'
+            + '<button class="sp-btn" data-sp="all">全选</button>'
             + '<button class="sp-btn" data-sp="none">全不选</button>'
             + '<button class="sp-close" data-sp="close">✕</button></div></div>'
             + '<div class="sp-hint">勾选后，追番搜源 / 点集搜源只问你选中的源。关掉的源随时可再打开。</div>'
@@ -83,6 +84,28 @@
         h.querySelector('[data-sp="all"]').onclick = () => toggleAll(true);
         h.querySelector('[data-sp="none"]').onclick = () => toggleAll(false);
         h.querySelector('[data-sp="reload"]').onclick = () => { cache = null; render(); };
+        // Kazumi 规则自动更新：手动触发一次（后台每 12h 也会自动检查）
+        const ruleBtn = h.querySelector('[data-sp="refresh-rules"]');
+        if (ruleBtn) {
+            ruleBtn.onclick = async () => {
+                const old = ruleBtn.textContent;
+                ruleBtn.disabled = true;
+                ruleBtn.textContent = '检查中…';
+                try {
+                    const r = await api('/api/media-source/refresh-kazumi', {
+                        method: 'POST', body: JSON.stringify({}),
+                    });
+                    if (!r || r.code !== 0) throw new Error((r && r.msg) || '更新失败');
+                    if (window.showNotification) window.showNotification('规则更新', r.msg || '已检查');
+                    cache = null;
+                    await render();
+                } catch (e) {
+                    if (window.showNotification) window.showNotification('规则更新失败', e.message);
+                    ruleBtn.disabled = false;
+                    ruleBtn.textContent = old;
+                }
+            };
+        }
         document.addEventListener('keydown', onKey, true);
 
         try {
@@ -161,4 +184,21 @@
     }
 
     global.SourcePicker = { open, close, bindButton };
+
+    /** 设置页按钮复用：手动触发一次 Kazumi 规则更新 */
+    global.__cvRefreshKazumiRules = async function (btn) {
+        const old = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+        try {
+            const r = await api('/api/media-source/refresh-kazumi', {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            if (!r || r.code !== 0) throw new Error((r && r.msg) || '更新失败');
+            if (window.showNotification) window.showNotification('规则更新', r.msg || '已检查');
+        } catch (e) {
+            if (window.showNotification) window.showNotification('规则更新失败', e.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = old; }
+        }
+    };
 })(window);

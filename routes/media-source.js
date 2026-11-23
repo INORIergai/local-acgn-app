@@ -546,6 +546,54 @@ router.get('/freshness', (req, res) => {
     res.json({ code: 0, data: engine.subscriptionFreshness() });
 });
 
+/* ---------------- Kazumi 规则自动更新 ----------------
+ * POST /api/media-source/refresh-kazumi   拉 KazumiRules 官方仓库
+ *   body: { force?: true }  force=忽略版本对比、全部重拉
+ * 站点改版只需上游更新规则，用户点一下就能救回来，不必等应用发版。
+ */
+router.post('/refresh-kazumi', async (req, res) => {
+    try {
+        const force = !!(req.body && req.body.force);
+        const r = await engine.refreshKazumiRules({ force });
+        if (r.error) return res.json({ code: -1, msg: r.error, data: r });
+        res.json({
+            code: 0,
+            msg: 'Kazumi 规则已检查：更新 ' + r.updated + ' / 跳过 ' + r.skipped + (r.failed ? ' / 失败 ' + r.failed : ''),
+            data: r,
+        });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/** Kazumi 规则新鲜度：本地 kazumi 目录最新 mtime */
+router.get('/kazumi-freshness', (req, res) => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const dirs = [path.join(engine.BUILTIN_DIR, 'kazumi'), path.join(engine.OVERRIDE_DIR, 'kazumi')];
+        let latest = 0;
+        let count = 0;
+        for (const d of dirs) {
+            let files = [];
+            try { files = fs.readdirSync(d); } catch (e) { continue; }
+            for (const f of files) {
+                if (!f.endsWith('.json')) continue;
+                try {
+                    const m = fs.statSync(path.join(d, f)).mtimeMs;
+                    if (m > latest) latest = m;
+                    count++;
+                } catch (e) { /* 忽略 */ }
+            }
+        }
+        const ageDays = latest ? (Date.now() - latest) / 86400000 : null;
+        res.json({ code: 0, data: {
+            lastRefresh: latest,
+            ageDays: ageDays == null ? null : Math.round(ageDays * 10) / 10,
+            stale: ageDays == null || ageDays > 7,
+            count,
+        } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
 // ==================================================================
 // round185 A2：人机验证救回（有头浏览器过验证 → 存 cookie 复用）
 // ==================================================================
@@ -632,3 +680,24 @@ router.get('/reading/chapter', async (req, res) => {
 });
 
 module.exports = router;
+
+/* ---------------- Kazumi 规则自动更新调度 ----------------
+ * 启动 90 秒后静默检查一次（避开启动高峰），之后每 12 小时一次。
+ * 只在有版本变化时写盘；失败静默（下次再试），不打扰用户。
+ * unref() 让定时器不阻止进程退出。 */
+(function installKazumiRuleSync() {
+    const run = () => {
+        Promise.resolve()
+            .then(() => engine.refreshKazumiRules({}))
+            .then((r) => {
+                if (r && r.updated > 0) {
+                    console.log('[kazumi] 规则自动更新 ' + r.updated + ' 份（来源 ' + r.mirror + '）');
+                }
+            })
+            .catch(() => { /* 网络不可达时静默跳过 */ });
+    };
+    const first = setTimeout(run, 90 * 1000);
+    if (first && typeof first.unref === 'function') first.unref();
+    const timer = setInterval(run, 12 * 60 * 60 * 1000);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+})();

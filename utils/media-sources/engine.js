@@ -1231,6 +1231,112 @@ async function refreshSubscription() {
     return { updated, failed, skippedSchema, error: '' };
 }
 
+/* ==================================================================
+ * Kazumi 规则自动更新（站点改版自动救源）
+ * ------------------------------------------------------------------
+ * 规则来自 Predidit/KazumiRules 官方仓库：
+ *   · 首选国内 GitCode 镜像（raw.gitcode.com），失败回退 GitHub raw；
+ *   · 只拉 version 有变化的规则，写入 override 目录（不覆盖内置，可随时回滚）；
+ *   · 规则 headers 里的 apikey/authorization 一律剔除，杜绝凭据落盘；
+ *   · host 固定白名单、规则名白名单、落点必须在 override/kazumi 内。
+ * ================================================================== */
+const KAZUMI_MIRRORS = [
+    { host: 'raw.gitcode.com', base: 'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/' },
+    { host: 'raw.githubusercontent.com', base: 'https://raw.githubusercontent.com/Predidit/KazumiRules/main/' },
+];
+const KAZUMI_NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
+// 与内置规则保持一致：跳过内嵌第三方 key 的源（本项目已有「稀饭动漫 Next」等价实现）
+const KAZUMI_SKIP = new Set(['xfdmnext']);
+const KAZUMI_SENSITIVE_HEADERS = new Set(['apikey', 'authorization', 'x-api-key', 'cookie']);
+
+function scrubKazumiRule(obj) {
+    if (Array.isArray(obj)) return obj.map(scrubKazumiRule);
+    if (!obj || typeof obj !== 'object') return obj;
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+        if (k === 'headers' && v && typeof v === 'object' && !Array.isArray(v)) {
+            const clean = {};
+            for (const [hk, hv] of Object.entries(v)) {
+                if (!KAZUMI_SENSITIVE_HEADERS.has(String(hk).toLowerCase())) clean[hk] = hv;
+            }
+            out[k] = clean;
+        } else {
+            out[k] = scrubKazumiRule(v);
+        }
+    }
+    return out;
+}
+
+/** 读本地某条 Kazumi 规则的版本号（内置优先，override 其次）。 */
+function localKazumiVersion(name) {
+    const dirs = [path.join(BUILTIN_DIR, 'kazumi'), path.join(OVERRIDE_DIR, 'kazumi')];
+    let ver = '';
+    for (const d of dirs) {
+        try {
+            const j = JSON.parse(fs.readFileSync(path.join(d, name + '.json'), 'utf8'));
+            if (j && j.version != null) ver = String(j.version);
+        } catch (e) { /* 没有就跳过 */ }
+    }
+    return ver;
+}
+
+/**
+ * 刷新 Kazumi 规则。
+ * @param {{force?: boolean}} opts force=true 时忽略版本对比、全部重拉
+ * @returns {{mirror?, checked, updated, failed, skipped, error}}
+ */
+async function refreshKazumiRules(opts = {}) {
+    const force = opts.force === true;
+    let lastErr = '';
+    for (const m of KAZUMI_MIRRORS) {
+        try {
+            const idx = await grab(m.base + 'index.json', { timeout: 15000 });
+            if (!idx.ok || !idx.text) { lastErr = (m.host + ' index HTTP ' + idx.status); continue; }
+            let index;
+            try { index = JSON.parse(idx.text); } catch (e) { lastErr = m.host + ' index 非 JSON'; continue; }
+            if (!Array.isArray(index)) { lastErr = m.host + ' index 不是数组'; continue; }
+
+            const outDir = path.join(OVERRIDE_DIR, 'kazumi');
+            const outRoot = path.resolve(outDir);
+            let updated = 0;
+            let failed = 0;
+            let skipped = 0;
+
+            for (const it of index) {
+                const name = String((it && it.name) || '');
+                if (!KAZUMI_NAME_RE.test(name)) { failed++; continue; }
+                if (KAZUMI_SKIP.has(name)) { skipped++; continue; }
+                const remoteVer = String((it && it.version) || '');
+                const localVer = localKazumiVersion(name);
+                if (!force && localVer && remoteVer && localVer === remoteVer) { skipped++; continue; }
+
+                const r = await grab(m.base + name + '.json', { timeout: 20000 });
+                if (!r.ok || !r.text) { failed++; continue; }
+                let rule;
+                try { rule = JSON.parse(r.text); } catch (e) { failed++; continue; }
+                if (!rule || typeof rule !== 'object' || Array.isArray(rule)) { failed++; continue; }
+                // 结构校验：至少要有搜索入口，避免把错误页/半成品写进规则
+                if (!rule.baseURL && !rule.searchURL && !rule.searchApiConfig) { failed++; continue; }
+
+                const clean = scrubKazumiRule(rule);
+                clean.factoryId = 'kazumi';
+                const outPath = path.resolve(outDir, name + '.json');
+                if (!outPath.startsWith(outRoot + path.sep)) { failed++; continue; }
+                fs.mkdirSync(outDir, { recursive: true });
+                fs.writeFileSync(outPath, JSON.stringify(clean, null, 2), 'utf8');
+                updated++;
+            }
+            if (updated > 0) loadSources(true);
+            return { mirror: m.host, checked: index.length, updated, failed, skipped, error: '' };
+        } catch (e) {
+            lastErr = typeOfErr(e) + ': ' + String((e && e.message) || e).slice(0, 120);
+        }
+    }
+    return { mirror: '', checked: 0, updated: 0, failed: 0, skipped: 0, error: lastErr || '所有镜像不可达' };
+}
+
+function typeOfErr(e) { return (e && e.name) || 'Error'; }
+
 /** round182 P0-3：订阅新鲜度——用 override 目录里最新 json 的 mtime 当"上次刷新时间" */
 function subscriptionFreshness() {
     try {
@@ -1280,5 +1386,7 @@ module.exports = {
     isSourceEnabled,
     setSourceEnabled,
     setDisabledSources,
-    loadPrefs
+    loadPrefs,
+    // Kazumi 规则自动更新
+    refreshKazumiRules
 };
