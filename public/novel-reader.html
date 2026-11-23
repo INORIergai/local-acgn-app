@@ -1055,6 +1055,7 @@
             
             loadNovelInfo();
             setupKeyboardControls();
+            setupWheelControls();
             setupTouchGestures();
 
             // 移动端：默认完全隐藏工具栏与状态条，进入 100% 纯净全屏
@@ -2074,6 +2075,27 @@
                         break;
                 }
             });
+        }
+
+        // 鼠标滚轮翻页：翻页模式下滚轮上/下 = 上/下一页（到边界自动换章）；
+        // 滚动模式保持浏览器原生滚动，不拦。
+        function setupWheelControls() {
+            const area = document.getElementById('readerArea');
+            if (!area) return;
+            let last = 0;
+            area.addEventListener('wheel', (e) => {
+                if (readMode !== 'page') return;                       // 滚动模式不接管
+                if (e.target.closest('.settings-panel, .catalog-sidebar, .paged-hint, .toolbar')) return;
+                if (Math.abs(e.deltaY) < 6 && Math.abs(e.deltaX) < 6) return;
+                e.preventDefault();
+                const now = Date.now();
+                if (now - last < 320) return;                          // 节流，避免一次滚动连翻多页
+                last = now;
+                // 以纵向为主；也兼容横向滚轮（触摸板/侧滚轮）
+                const dir = Math.abs(e.deltaY) >= Math.abs(e.deltaX)
+                    ? (e.deltaY > 0 ? 1 : -1) : (e.deltaX > 0 ? 1 : -1);
+                pageTurn(dir);
+            }, { passive: false });
         }
 
         // 移动端触控手势（翻页模式下左右横滑翻页，滚动模式下大幅横滑切换章节）

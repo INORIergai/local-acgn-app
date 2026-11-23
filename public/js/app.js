@@ -3241,10 +3241,78 @@ async function loadAnime(page = 1) {
 }
 
 // 加载漫画列表
+/**
+ * Reeden 式「继续阅读 / 随机来一本」横幅（小说库、漫画库共用）。
+ * 放在列表最上方，让用户一进来就能续读上次那本，或随手挑一本，
+ * 不必在整屏清单里翻找。数据：/api/media/resume（最近未读完）+ 库列表（随机）。
+ */
+async function renderResumeBar(type) {
+    const grid = document.getElementById('movieGrid');
+    if (!grid || !grid.parentNode) return;
+    let bar = document.getElementById('readResumeBar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'readResumeBar';
+        bar.className = 'read-resume-bar';
+        grid.parentNode.insertBefore(bar, grid);
+    }
+    const openFn = type === 'novel' ? 'openNovelReader' : 'openComicReader';
+    try {
+        const [rv, lr] = await Promise.all([
+            fetch('/api/media/resume?type=' + encodeURIComponent(type)).then(r => r.json()).catch(() => null),
+            fetch('/api/movie?type=' + encodeURIComponent(type) + '&limit=300').then(r => r.json()).catch(() => null),
+        ]);
+        const resume = rv && rv.code === 0 ? rv.data : null;
+        const arr = Array.isArray(lr) ? lr : ((lr && lr.data && (lr.data.items || lr.data)) || []);
+        const items = Array.isArray(arr) ? arr : [];
+        const pickIdx = (() => {
+            try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % items.length; }
+            catch (e) { return Math.floor(Math.random() * items.length); }
+        })();
+        const random = items.length ? items[pickIdx] : null;
+        if (!resume && !random) { bar.style.display = 'none'; return; }
+
+        let html = '';
+        if (resume) {
+            const cover = resume.coverPath
+                ? '<img src="' + escapeAttr(resume.coverPath) + '" alt="" onerror="this.style.display=\'none\'">'
+                : '<div class="rrb-ph"></div>';
+            const prog = resume.total > 0
+                ? ('第 ' + (Number(resume.chapter) + 1) + ' / ' + resume.total + ' 章')
+                : (resume.percent + '%');
+            const pct = Math.max(0, Math.min(100, Number(resume.percent) || 0));
+            html += '<div class="rrb-continue" role="button" tabindex="0" onclick="' + openFn + '(' + Number(resume.id) + ')">'
+                + '<div class="rrb-cover">' + cover + '</div>'
+                + '<div class="rrb-meta">'
+                + '<div class="rrb-k">继续阅读</div>'
+                + '<div class="rrb-t" title="' + escapeAttr(resume.title) + '">' + escapeHtml(resume.title || '') + '</div>'
+                + '<div class="rrb-p">' + prog + '</div>'
+                + '<div class="rrb-bar"><i style="width:' + pct + '%"></i></div>'
+                + '</div>'
+                + '<button class="rrb-go">继续 ›</button>'
+                + '</div>';
+        }
+        if (random) {
+            html += '<div class="rrb-random" role="button" tabindex="0" onclick="' + openFn + '(' + Number(random.id) + ')">'
+                + '<div class="rrb-k">🎲 随机来一本</div>'
+                + '<div class="rrb-t" title="' + escapeAttr(random.title) + '">' + escapeHtml(random.title || '') + '</div>'
+                + '<div class="rrb-p">点这里直接开读</div>'
+                + '</div>';
+        }
+        bar.innerHTML = html;
+        // 异步返回时用户可能已切走视图，避免横幅串台
+        bar.style.display = (currentView === type) ? '' : 'none';
+    } catch (e) {
+        bar.style.display = 'none';
+    }
+}
+
 async function loadComic(page = 1) {
     updateToolbarTitle('📚 漫画库');
     currentView = 'comic';
     currentPage = page;
+    // Reeden 式入口：最显眼处「继续阅读上次 + 随机来一本」
+    renderResumeBar('comic');
     const prevGuess = document.getElementById('avGuessBoard');
     if (prevGuess) {
         const g = document.getElementById('movieGrid');
@@ -5981,6 +6049,8 @@ async function loadNovel(page = 1) {
     updateToolbarTitle('📖 小说库');
     currentView = 'novel';
     currentPage = page;
+    // Reeden 式入口：最显眼处「继续阅读上次 + 随机来一本」
+    renderResumeBar('novel');
     const prevGuess = document.getElementById('avGuessBoard');
     if (prevGuess) {
         const g = document.getElementById('movieGrid');
@@ -13769,6 +13839,9 @@ function switchView(view) {
     // Phase A：离开影视库/动漫库时收起"在线最新"卡片区
     const ob = document.getElementById('onlineBrowseBar');
     if (ob && !['movies', 'anime', 'movies-adult'].includes(view)) ob.hidden = true;
+    // 离开小说库/漫画库时收起「继续阅读」横幅
+    const rrb = document.getElementById('readResumeBar');
+    if (rrb && !['novel', 'comic'].includes(view)) rrb.style.display = 'none';
     // 切换视图时坚决重置可能残余的长任务等待遮罩与加载器
     if (window.NVX_LONG && typeof window.NVX_LONG.reset === 'function') {
         window.NVX_LONG.reset();

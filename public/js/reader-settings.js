@@ -210,6 +210,13 @@
           def[k] = saved[k];
         }
       });
+      /* 迁移：6.8.16 之前 pageWidth 默认 'medium'(620px)，大窗口两侧会留一大块空白。
+       * 老用户从未主动选过这一项，这里一次性迁到 'full'（铺满），并打版本标记防止反复覆盖。 */
+      if (!saved.__rsVer) {
+        if (kind === 'novel' && def.pageWidth === 'medium') def.pageWidth = 'full';
+        def.__rsVer = 2;
+        try { localStorage.setItem(KEY[kind], JSON.stringify(def)); } catch (e) { /* 忽略 */ }
+      }
     } catch (e) { /* localStorage 不可用 / JSON 坏了 → 用默认值 */ }
     return def;
   }

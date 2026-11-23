@@ -1,0 +1,83 @@
+/* ============================================================
+   read-resume.css —— 小说库/漫画库「继续阅读 + 随机来一本」横幅
+   Reeden 式：一进库页面就能续读上次那本，或随手挑一本。
+   ============================================================ */
+.read-resume-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 14px;
+    margin: 4px 2px 18px;
+}
+@media (max-width: 720px) {
+    .read-resume-bar { grid-template-columns: 1fr; }
+}
+
+/* 继续阅读主卡 */
+.read-resume-bar .rrb-continue {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--border, rgba(0,0,0,.08));
+    background: var(--bg-elevated, rgba(127,127,127,.06));
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, transform .12s ease;
+    min-width: 0;
+}
+.read-resume-bar .rrb-continue:hover {
+    background: rgba(127,127,127,.12);
+    border-color: var(--primary, #a8762c);
+    transform: translateY(-1px);
+}
+.read-resume-bar .rrb-cover {
+    flex: 0 0 auto; width: 56px; height: 78px;
+    border-radius: 8px; overflow: hidden;
+    background: rgba(127,127,127,.16);
+    box-shadow: 0 3px 10px rgba(0,0,0,.12);
+}
+.read-resume-bar .rrb-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.read-resume-bar .rrb-ph { width: 100%; height: 100%; }
+
+.read-resume-bar .rrb-meta { flex: 1 1 auto; min-width: 0; }
+.read-resume-bar .rrb-k {
+    font-size: 11px; letter-spacing: .6px; color: var(--primary, #a8762c); font-weight: 600;
+}
+.read-resume-bar .rrb-t {
+    margin-top: 3px; font-size: 15px; font-weight: 600; color: var(--text, #2a241c);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.read-resume-bar .rrb-p { margin-top: 3px; font-size: 12px; color: var(--text-muted, #8b8377); }
+.read-resume-bar .rrb-bar {
+    margin-top: 7px; height: 4px; border-radius: 999px;
+    background: rgba(127,127,127,.2); overflow: hidden;
+}
+.read-resume-bar .rrb-bar > i { display: block; height: 100%; background: var(--primary, #a8762c); border-radius: inherit; }
+
+.read-resume-bar .rrb-go {
+    flex: 0 0 auto; border: 0; border-radius: 10px;
+    background: var(--primary, #a8762c); color: #fff;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: filter .15s ease;
+}
+.read-resume-bar .rrb-continue:hover .rrb-go { filter: brightness(1.08); }
+
+/* 随机一本小卡 */
+.read-resume-bar .rrb-random {
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    padding: 14px 16px; border-radius: 16px;
+    border: 1px dashed var(--border, rgba(0,0,0,.14));
+    background: transparent; cursor: pointer; min-width: 0;
+    transition: background .18s ease, border-color .18s ease;
+}
+.read-resume-bar .rrb-random:hover {
+    background: rgba(127,127,127,.08);
+    border-color: var(--primary, #a8762c);
+}
+.read-resume-bar .rrb-random .rrb-t { font-size: 13.5px; }
+
+body.night-mode .read-resume-bar .rrb-continue { background: rgba(255,255,255,.05); border-color: #35312c; }
+body.night-mode .read-resume-bar .rrb-continue:hover { background: rgba(255,255,255,.09); }
+body.night-mode .read-resume-bar .rrb-t { color: #ece6da; }
+body.night-mode .read-resume-bar .rrb-random { border-color: #35312c; }
+body.night-mode .read-resume-bar .rrb-random:hover { background: rgba(255,255,255,.07); }
