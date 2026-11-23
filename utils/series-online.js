@@ -13,6 +13,20 @@
  */
 const engine = require('./media-sources/engine');
 
+/** 固定并发池：避免一次把几十个源全打出去（见 searchAllWeb 的注释）。 */
+async function pool(items, limit, worker) {
+    const out = new Array(items.length);
+    let cursor = 0;
+    const n = Math.max(1, Math.min(limit, items.length));
+    await Promise.all(Array.from({ length: n }, async () => {
+        while (cursor < items.length) {
+            const i = cursor++;
+            out[i] = await worker(items[i]);
+        }
+    }));
+    return out;
+}
+
 // ==================================================================
 // 标题匹配打分
 // ==================================================================
@@ -101,7 +115,10 @@ const AUTO_THRESHOLD = 0.55;
  */
 async function searchAllWeb(keyword, opts = {}) {
     const kw = String(keyword || '').trim();
-    const web = engine.loadSources(true).filter((x) => x.kind === 'web');
+    // 与 /api/media-source/search 一致：用缓存源列表。此前每次 force 重载会把
+    // 22 份规则文件全部重解析（HTTP 高频调用时既慢又容易与其他请求互相干扰）。
+    const web = engine.loadSources()
+        .filter((x) => x.kind === 'web' && engine.isSourceEnabled(x.id));
     const force = opts.force === true;
     const timeout = opts.timeout || 12000;
 
@@ -114,7 +131,10 @@ async function searchAllWeb(keyword, opts = {}) {
         else runnable.push(src);
     });
 
-    const settled = await Promise.all(runnable.map(async (src) => {
+    /* 池并发 6 —— 不能用 Promise.all 一次打 22 个源：
+     * 实测全并发会把 undici 连接池和站点侧限流同时打爆，22 个源集体超时（success 0），
+     * 而逐个/小并发时同一批源都能正常返回。与 /api/media-source/search 的并发策略保持一致。 */
+    const settled = await pool(runnable, 6, async (src) => {
         try {
             const r = await engine.searchOn(src, kw, { timeout });
             const items = (r.items || []).slice(0, 20);
@@ -129,7 +149,7 @@ async function searchAllWeb(keyword, opts = {}) {
             return { sourceId: src.id, sourceName: src.name, tier: src.tier, items: [],
                      error: e.message, state: 'error', bestScore: 0 };
         }
-    }));
+    });
 
     const coolingRows = cooling.map(({ src, cd }) => ({
         sourceId: src.id, sourceName: src.name, tier: src.tier, items: [],

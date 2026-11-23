@@ -22,7 +22,14 @@
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const api = async (url, opts) => {
-        const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+        const o = Object.assign({ credentials: 'same-origin' }, opts || {});
+        /* ★ 有 body 的请求必须显式带 JSON Content-Type：
+         * express.json() 只在 content-type 匹配时才解析，缺了它 req.body 恒为 {}
+         * → 后端所有 POST 都读不到参数（「搜在线源」长期报"缺少关键词"的根因）。 */
+        if (o.body && typeof o.body === 'string') {
+            o.headers = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
+        }
+        const r = await fetch(url, o);
         return r.json();
     };
 
@@ -126,8 +133,10 @@
                 + '<span class="sv-ep-stat">' + (watched ? '✓ 已看' : (pct ? pct + '%' : '未看')) + '</span>'
                 + (e.movieId ? '<button class="sv-ep-play" data-act="play" data-movie="' + e.movieId + '" data-ep="' + e.id + '" data-title="' + esc(d.series.title) + '">播放</button>'
                              : (e.sourceUrl ? '<button class="sv-ep-play sv-ep-online" data-act="play-online" data-eid="' + e.id + '" data-src="' + esc(e.sourceId || '') + '" data-url="' + esc(e.sourceUrl) + '" data-epno="' + esc(e.episodeNo) + '" data-pos="' + (watched ? 0 : pos) + '" data-title="' + esc(d.series.title) + '">🌐 在线</button>'
-                             : '<button class="sv-ep-nosrc sv-ep-search" data-act="search-bt" data-title="' + esc(d.series.title) + '" data-ep="' + esc(e.episodeNo) + '">🔍 搜BT</button>'))
-                + '<button class="sv-ep-link" data-act="link-local" data-eid="' + e.id + '" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '" data-epno="' + esc(e.episodeNo) + '" title="手动挂本地影片">' + (e.movieId ? '换源' : '📎') + '</button>'
+                             : '<button class="sv-ep-play sv-ep-find" data-act="ep-sources" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '" data-epno="' + esc(e.episodeNo) + '" data-eid="' + e.id + '" data-pos="' + (watched ? 0 : pos) + '">▶ 播放</button>'))
+                // Kazumi 式「换源」：任何一集都能点开全网源面板，不必先挂载
+                + '<button class="sv-ep-search" data-act="ep-sources" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '" data-epno="' + esc(e.episodeNo) + '" data-eid="' + e.id + '" data-pos="' + (watched ? 0 : pos) + '" title="全网在线源找这一集">' + (e.movieId || e.sourceUrl ? '换源' : '🔍') + '</button>'
+                + '<button class="sv-ep-link" data-act="link-local" data-eid="' + e.id + '" data-sid="' + d.series.id + '" data-title="' + esc(d.series.title) + '" data-epno="' + esc(e.episodeNo) + '" title="手动挂本地影片">' + (e.movieId ? '📎' : '📎') + '</button>'
                 + '</div>';
         }).join('');
         const html = '<div class="sv-modal-mask" data-act="close-detail">'
@@ -274,6 +283,83 @@
         }
     }
 
+    // ---------- Kazumi 式：点某一集 → 全网源对齐这一集 → 点源直接播 ----------
+    /**
+     * 与「搜在线源」（系列级、挂整季）不同：这里只关心当前这一集，
+     * 并发问每个源的剧集列表，按集号对齐，直接给出可播的播放页。
+     * 用户点某个源的「播放」即走 /api/media-source/resolve 出流，无需先挂载。
+     */
+    async function openEpisodeSources(seriesId, title, epNo, eid, pos) {
+        let host = document.getElementById('svEpSrcHost');
+        if (!host) { host = document.createElement('div'); host.id = 'svEpSrcHost'; document.body.appendChild(host); }
+        host.innerHTML = '<div class="sv-modal-mask" data-closem="1"><div class="sv-modal sv-online-modal" role="dialog" aria-modal="true">'
+            + '<div class="sv-modal-head"><h3>▶ 播放来源 · ' + esc(title) + ' · 第' + esc(epNo) + '集</h3>'
+            + '<button class="sv-modal-close" data-closem="1">✕</button></div>'
+            + '<div class="sv-online-body" id="svEpSrcBody"><div class="sv-empty">正在并发搜索所有在线源，并对齐第' + esc(epNo) + '集（约 10~25 秒）…</div></div></div></div>';
+        host.querySelectorAll('[data-closem="1"]').forEach(el => el.addEventListener('click', e => {
+            if (e.target === el || e.classList.contains('sv-modal-close')) host.innerHTML = '';
+        }));
+        try {
+            const r = await api('/api/series/episode/sources', { method: 'POST', body: JSON.stringify({
+                keyword: title, episodeNo: Number(epNo), timeout: 12000, maxSources: 8
+            }) });
+            const body = document.getElementById('svEpSrcBody');
+            if (!body) return;
+            if (!r || r.code !== 0) {
+                body.innerHTML = '<div class="sv-empty">搜索失败：' + esc((r && r.msg) || '服务无响应') + '</div>';
+                return;
+            }
+            const d = r.data || {};
+            const cands = d.candidates || [];
+            const ready = cands.filter(x => x.state === 'ready').length;
+            const rows = cands.map(c => {
+                const okBtn = c.state === 'ready'
+                    ? '<button class="sv-online-apply" data-act="ep-play" data-src="' + esc(c.sourceId) + '"'
+                      + ' data-url="' + esc(c.episodeUrl) + '" data-title="' + esc(title) + '"'
+                      + ' data-epno="' + esc(epNo) + '" data-eid="' + esc(eid || '') + '" data-pos="' + (Number(pos) || 0) + '">▶ 播放</button>'
+                    : '';
+                const st = c.state === 'ready' ? '<b class="sv-st-ok">可播放</b>'
+                    : (c.state === 'noEpisode' ? '<span class="sv-st-warn">' + esc(c.error || '无此集') + '</span>'
+                        : '<span class="sv-st-err">' + esc(c.error || '失败') + '</span>');
+                return '<div class="sv-online-item">'
+                    + '<div class="sv-online-name" title="' + esc(c.entryName || '') + '">' + esc(c.sourceName) + '</div>'
+                    + '<span class="sv-online-src">' + esc((c.entryName || '').slice(0, 18)) + (c.totalEps ? ' · ' + c.totalEps + '集' : '') + '</span>'
+                    + st + okBtn
+                    + '</div>';
+            }).join('');
+            body.innerHTML = '<div class="sv-online-stat">扫描 ' + (d.scanned || 0) + ' 个源 · 可播放 <b class="sv-st-ok">' + ready + '</b> / ' + cands.length + ' 个候选</div>'
+                + (rows || '<div class="sv-empty">没有源能定位到第' + esc(epNo) + '集。</div>')
+                + '<div class="sv-online-tip" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+                + '<button class="sv-online-pick" data-act="search-bt" data-title="' + esc(title) + '" data-ep="' + esc(epNo) + '">🔍 搜BT 兜底</button>'
+                + '<button class="sv-online-pick" data-act="match-online" data-sid="' + esc(seriesId) + '" data-title="' + esc(title) + '">挂载整季源</button>'
+                + '</div>';
+        } catch (e) {
+            const body = document.getElementById('svEpSrcBody');
+            if (body) body.innerHTML = '<div class="sv-empty">搜索失败：' + esc(e.message) + '</div>';
+        }
+    }
+
+    // 点某个源的「播放」：解析出流并唤起播放器
+    async function playEpisodeSource(btn) {
+        const src = btn.dataset.src, url = btn.dataset.url;
+        if (!src || !url) { if (window.showNotification) showNotification('无法播放', '候选信息缺失'); return; }
+        const title = btn.dataset.title || '';
+        const epno = btn.dataset.epno || '';
+        window.__svPlayingEpisode = Number(btn.dataset.eid) || 0;
+        window.__svPlayingTitle = title;
+        if (window.showNotification) showNotification('正在解析播放地址', '首次解析可能需要十几秒');
+        try {
+            const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url));
+            if (d && d.code === 0 && window.showVideoPlayer) {
+                const host = document.getElementById('svEpSrcHost'); if (host) host.innerHTML = '';
+                window.showVideoPlayer(d.data.streamUrl, title + ' · 第' + epno + '集', d.data.kind,
+                    Number(btn.dataset.pos) || 0, Number(btn.dataset.eid) || 0);
+            } else if (window.showNotification) {
+                showNotification('解析失败', (d && d.msg) || '该源播放地址解析失败，换一个源试试');
+            }
+        } catch (e) { if (window.showNotification) showNotification('解析失败', e.message); }
+    }
+
     // ---------- v6.4.0④ 手动挂本地影片 ----------
     async function openLinkLocal(episodeId, title, epno) {
         let host = document.getElementById('svLinkHost');
@@ -359,6 +445,11 @@
         const act = btn.dataset.act;
         const sid = Number(btn.dataset.sid);
         if (act === 'close-detail') { if (e.target === btn || btn.classList.contains('sv-modal-close')) closeDetail(); return; }
+        if (act === 'ep-sources') {
+            openEpisodeSources(btn.dataset.sid, btn.dataset.title || '', btn.dataset.epno || '', btn.dataset.eid, btn.dataset.pos);
+            return;
+        }
+        if (act === 'ep-play') { playEpisodeSource(btn); return; }
         if (act === 'check-updates') {
             btn.disabled = true;
             const old = btn.textContent; btn.textContent = '检查中…';
@@ -505,6 +596,7 @@
         const bt = document.getElementById('svBtHost'); if (bt) bt.innerHTML = '';
         const lk = document.getElementById('svLinkHost'); if (lk) lk.innerHTML = '';
         const om = document.getElementById('svOnlineHost'); if (om) om.innerHTML = '';
+        const es = document.getElementById('svEpSrcHost'); if (es) es.innerHTML = '';
     }
 
     // ---------- 对外接口 ----------
@@ -536,6 +628,7 @@
             + '<div class="sv-head"><h2>📺 追番</h2>'
             + '<div class="sv-head-actions">'
             + '<button class="sv-refresh" data-act="check-updates">检查更新</button>'
+            + '<button class="sv-refresh" id="svSources">🔌 在线源</button>'
             + '<button class="sv-refresh" id="svRefresh">刷新放送表</button></div></div>'
             + '<section class="sv-section"><h3>本周新番 <small>点「+ 追番」加入清单</small></h3>'
             + '<div class="sv-calendar" id="svCalendar"><div class="sv-empty-line">加载中…</div></div></section>'
@@ -550,6 +643,12 @@
             + '</div>';
         r.dataset.built = '1';
         r.querySelector('#svRefresh').addEventListener('click', () => loadCalendar(true));
+        // Kazumi 式：自由勾选聚合搜索要问哪些源
+        const srcBtn = r.querySelector('#svSources');
+        if (srcBtn) srcBtn.addEventListener('click', () => {
+            if (window.SourcePicker) window.SourcePicker.open();
+            else if (window.showNotification) showNotification('暂不可用', '源管理模块未加载');
+        });
         r.querySelector('#svTabs').addEventListener('click', (e) => {
             const b = e.target.closest('[data-tab]');
             if (!b) return;

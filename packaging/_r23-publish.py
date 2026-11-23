@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.12'
+TAG = 'v6.8.13'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,17 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.12：小说翻页 + 123云盘免登录
+COMMIT_MSG = """v6.8.13：Kazumi 规则源 + 自由选源
 
-- 小说阅读翻页优先：字号/行距/页宽可调，每页字数随窗口自适应(PC/Android/云端)
-- 云端 EPUB 在线按页翻读，无需下载整本
-- 123云盘 app 模式后台自动续期，一次授权永久免登录
-- 授权 UI 推荐自建应用路径，去掉复制 token 依赖
-- 清理包体本机路径 + prepare-export 脱敏兜底
-- 含此前全部修复(增量更新/下载重启闭环)
-- 内置 Android v5.1.0 安装包
+- 新增 kazumi 规则工厂（XPath 1.0 / JSONPath / delimited+nested 章节）
+- 同步 16 个 Kazumi 规则源，聚合搜索可用源翻倍
+- 源启用偏好 prefs.json + /api/media-source/prefs，追番页/设置页双入口
+- 修复全部在线源失效的 4 个解析 Bug
+- 集级搜源：点某一集并发对齐所有源，点源直接播放
 
-版本：6.8.12"""
+版本：6.8.13"""
 
 
 def get_token():

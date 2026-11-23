@@ -188,6 +188,55 @@ function classifyHttp(r) {
 // 目的不是惩罚源，而是别让用户每次搜源都白等 20 个必挂的站。
 const BLACKLIST_FILE = path.join(__dirname, '..', '..', 'data', 'media-sources', 'blacklist.json');
 
+/* ---------------- 源启用偏好（对齐 Kazumi 的「自由选择要哪些源」） ----------------
+ * 用户在追番页/设置页勾选想用的源，落盘 data/media-sources/prefs.json。
+ * 只影响聚合搜索，不删规则文件——随时可再勾回来。 */
+const PREFS_FILE = path.join(__dirname, '..', '..', 'data', 'media-sources', 'prefs.json');
+let _prefs = null;
+
+function loadPrefs() {
+    if (_prefs) return _prefs;
+    try {
+        const j = JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8')) || {};
+        _prefs = { disabled: Array.isArray(j.disabled) ? j.disabled.map(String) : [] };
+    } catch (e) {
+        _prefs = { disabled: [] };
+    }
+    return _prefs;
+}
+
+function savePrefs(p) {
+    _prefs = p;
+    try {
+        fs.mkdirSync(path.dirname(PREFS_FILE), { recursive: true });
+        fs.writeFileSync(PREFS_FILE, JSON.stringify(p, null, 2), 'utf8');
+    } catch (e) { /* 写盘失败只影响下次启动的偏好记忆 */ }
+}
+
+/** 某源是否被用户启用（默认启用）。 */
+function isSourceEnabled(id) {
+    const p = loadPrefs();
+    return !p.disabled.includes(String(id));
+}
+
+/** 批量设置启用状态：on=false 加入禁用名单，on=true 移出。 */
+function setSourceEnabled(id, on) {
+    const p = loadPrefs();
+    const s = new Set(p.disabled);
+    if (on) s.delete(String(id));
+    else s.add(String(id));
+    p.disabled = Array.from(s);
+    savePrefs(p);
+    return !p.disabled.includes(String(id));
+}
+
+/** 一次性替换禁用名单（设置页"全选/全不选"用）。 */
+function setDisabledSources(ids) {
+    const uniq = Array.from(new Set((ids || []).map(String)));
+    savePrefs({ disabled: uniq });
+    return uniq;
+}
+
 // round185 A2：人机验证过后的 cookie。过验证用的是有头浏览器（见 verify.js），
 // 过完把 storageState 的 cookies 落盘，之后 fetch 请求自动带上——否则用户白过一遍验证。
 const COOKIE_DIR = path.join(__dirname, '..', '..', 'data', 'media-sources', 'cookies');
@@ -394,10 +443,14 @@ function loadSources(force) {
         } catch (e) {
             return;
         }
-        const args = def.arguments || {};
+        // Kazumi 规则是「顶层字段」结构（name/baseURL/searchMode...），没有 arguments 包一层
+        const isKazumi = String(def.factoryId || '') === 'kazumi';
+        const args = def.arguments || (isKazumi ? def : {});
         const sc = args.searchConfig || {};
         // json-api 源没有 searchUrl，入口在 search.request.url；统一给一个「搜索地址」便于状态灯/UI
-        const searchEntry = sc.searchUrl || String((sc.search && sc.search.request && sc.search.request.url) || '');
+        const searchEntry = sc.searchUrl
+            || String((sc.search && sc.search.request && sc.search.request.url) || '')
+            || (isKazumi ? String(def.searchURL || (def.searchApiConfig && def.searchApiConfig.request && def.searchApiConfig.request.url) || '') : '');
         const host = hostOf(searchEntry);
         const rec = {
             id: rel.replace(/\.json$/, ''),
@@ -407,7 +460,7 @@ function loadSources(force) {
             factoryId: def.factoryId,
             version: def.version || 1,
             kind: def.factoryId === 'rss' ? 'bt' : 'web',
-            tier: typeof args.tier === 'number' ? args.tier : 9,
+            tier: typeof args.tier === 'number' ? args.tier : (isKazumi ? 2 : 9),
             host,
             searchUrl: searchEntry,
             origin,
@@ -469,6 +522,20 @@ function urlCandidates(text) {
 
 async function searchOn(source, keyword, opts = {}) {
     if (source.factoryId === 'json-api') return searchOnApi(source, keyword, opts);
+    if (source.factoryId === 'kazumi') {
+        // Kazumi 原生规则：XPath 或 JSON API，规则形态由 source.def 顶层字段决定
+        const kz = require('./kazumi');
+        const r = await kz.search(source.def, keyword, { grab, timeout: opts.timeout || 15000 });
+        return {
+            items: (r.items || []).map((it) => ({
+                name: it.name, url: it.url,
+                sourceId: source.id, sourceName: source.name,
+                tier: source.tier, kind: 'web',
+            })),
+            error: r.error || '',
+            state: r.state,
+        };
+    }
     const sc = source.def.arguments.searchConfig || {};
     if (!sc.searchUrl) return { items: [], error: '该源没有搜索地址', state: 'error' };
 
@@ -564,7 +631,11 @@ async function catalogOf(source, opts = {}) {
 function parseSearchPage(html, source, pageUrl) {
     const $ = cheerio.load(html);
     const sc = source.def.arguments.searchConfig || {};
-    const fmt = sc.subjectFormatId || 'a';
+    // 规则文件里 subjectFormatId 有 "json-path-indexed"（连字符）与 "jsonPathIndexed"（驼峰）
+    // 两种写法；旧实现只认驼峰，3 个 JSON 源（girigiri/2k/Anime7）因此永远走错分支。
+    const fmtRaw = String(sc.subjectFormatId || 'a').trim();
+    const fmt = /^json-?path-?indexed$/i.test(fmtRaw) ? 'jsonPathIndexed'
+        : fmtRaw;
     const out = [];
 
     const push = (name, link) => {
@@ -586,23 +657,25 @@ function parseSearchPage(html, source, pageUrl) {
             push($(names[i]).text(), $(links[i]).attr('href'));
         }
     } else if (fmt === 'jsonPathIndexed') {
-        // 简易 JSONPath：$[*]['url','link'] 这类「数组 -> 多候选字段」的形式
+        // JSON API 源：用真正的 JSONPath 解析，支持任意嵌套路径（如 $.info.rows[*]）。
+        // 旧实现只认 data/list/items 三个平铺字段，girigiri 这类返回 info.rows 的源
+        // 明明接口有数据却被判「站点改版」→ 整源静默失效（2026-11 追番搜不到的主因）。
         const sel = sc.selectorSubjectFormatJsonPathIndexed || {};
         try {
             const data = JSON.parse(html.trim());
-            const arr = Array.isArray(data) ? data : (data.data || data.list || data.items || []);
-            const pick = (keys) => {
-                const k = String(keys || '').replace(/^\$\[\*\]\.?/, '').replace(/[[\]']/g, '');
-                return k.split(',').map((s) => s.trim()).filter(Boolean);
-            };
-            const linkKeys = pick(sel.selectLinks);
-            const nameKeys = pick(sel.selectNames);
-            arr.forEach((it) => {
-                let link = '', name = '';
-                linkKeys.forEach((k) => { if (!link && it[k]) link = it[k]; });
-                nameKeys.forEach((k) => { if (!name && it[k]) name = it[k]; });
+            const links = jpathAll(data, sel.selectLinks);
+            const names = jpathAll(data, sel.selectNames);
+            const tpl = String(sel.linkTemplate || '');
+            const n = Math.max(links.length, names.length);
+            for (let i = 0; i < n; i++) {
+                const rawLink = links[i];
+                const name = names[i];
+                if (rawLink === undefined && name === undefined) continue;
+                let link = rawLink === undefined ? '' : String(rawLink);
+                // 规则用 linkTemplate 把 id 拼成详情页（如 /GV{value}/、/voddetail/{value}.html）
+                if (tpl && link) link = tpl.replace('{value}', encodeURIComponent(link));
                 push(name, link);
-            });
+            }
         } catch (e) { /* 不是 JSON → 没有结果 */ }
     } else {
         const sel = sc.selectorSubjectFormatA || {};
@@ -670,6 +743,21 @@ function parseRss(xml, source, kw) {
 // ==================================================================
 async function episodesOf(source, detailUrl, opts = {}) {
     if (source.factoryId === 'json-api') return episodesOfApi(source, detailUrl, opts);
+    if (source.factoryId === 'kazumi') {
+        const kz = require('./kazumi');
+        const r = await kz.episodes(source.def, detailUrl, { grab, timeout: opts.timeout || 15000 });
+        return {
+            episodes: (r.episodes || []).map((e) => ({
+                name: e.name || '',
+                sort: Number.isFinite(e.sort) ? e.sort : NaN,
+                channel: e.channel || '',
+                channelTier: 0,
+                url: e.url || '',
+            })).filter((e) => e.url),
+            error: r.error || '',
+            state: r.state,
+        };
+    }
     const r = await grab(detailUrl, { timeout: opts.timeout || 15000,
         cookie: opts.cookie || sourceCookieHeader(source.id) });
     const cls = classifyHttp(r);
@@ -890,6 +978,11 @@ async function episodesOfApi(source, detailUrl, opts = {}) {
 // ==================================================================
 async function resolveVideo(source, episodeUrl, opts = {}) {
     if (source.factoryId === 'json-api') return resolveVideoApi(source, episodeUrl, opts);
+    if (source.factoryId === 'kazumi') {
+        // Kazumi 规则不产出流地址，播放页交给浏览器嗅探（与 Kazumi 的 WebView 方案等价）
+        const kz = require('./kazumi');
+        return kz.resolve(source.def, episodeUrl, { timeout: opts.timeout || 40000 });
+    }
     const sc = source.def.arguments.searchConfig || {};
     const mv = sc.matchVideo || {};
     // round185 A2：规则里写死的 cookie 优先，没有就用「过验证」时存下来的
@@ -919,8 +1012,13 @@ async function resolveVideo(source, episodeUrl, opts = {}) {
 
     // 2) 抽流地址
     if (!mv.matchVideoUrl) return { url: '', error: '该源没有配置地址正则' };
+    // 规则正则来自 Dart 生态，常见内联修饰符 (?i)；JS 不支持，必须剥离并提升为 flag，
+    // 否则 new RegExp 直接抛「Invalid regular expression」→ 该源永远解析不出播放地址。
+    const rawPattern = String(mv.matchVideoUrl);
+    const inlineIgnoreCase = /\(\?[a-z]*i[a-z]*\)/i.test(rawPattern);
+    const cleanPattern = rawPattern.replace(/\(\?[a-z]*i[a-z]*\)/gi, '');
     let re;
-    try { re = new RegExp(mv.matchVideoUrl, 'g'); } catch (e) { return { url: '', error: '地址正则不合法：' + e.message }; }
+    try { re = new RegExp(cleanPattern, inlineIgnoreCase ? 'gi' : 'g'); } catch (e) { return { url: '', error: '地址正则不合法：' + e.message }; }
 
     // 优先 m3u8（可自适应码率、能走 hls.js），其次 mp4
     const found = [];
@@ -1176,5 +1274,11 @@ module.exports = {
     OVERRIDE_DIR,
     BUILTIN_DIR,
     BLACKLIST_FILE,
-    COOKIE_DIR
+    COOKIE_DIR,
+    // 源启用偏好（Kazumi 式自由选源）
+    PREFS_FILE,
+    isSourceEnabled,
+    setSourceEnabled,
+    setDisabledSources,
+    loadPrefs
 };

@@ -223,6 +223,82 @@ router.post('/match-online', async (req, res) => {
 });
 
 /**
+ * Kazumi 式「点某一集 → 并发问所有源要这一集」的候选端点。
+ * 与 /match-online 的区别：这里会把每个命中源的剧集列表也取回来，按集号对齐，
+ * 直接给出「能播这一集的播放页 URL」。前端点候选 → /api/media-source/resolve 播放，
+ * 不需要先把整季挂到 DB（挂载仍保留给「一键追番」用）。
+ */
+router.post('/episode/sources', async (req, res) => {
+  try {
+    const kw = String(req.body.keyword || '').trim();
+    const epNo = Number(req.body.episodeNo || 0);
+    if (!kw) return res.json({ code: -1, msg: '缺少关键词' });
+    if (!epNo) return res.json({ code: -1, msg: '缺少集号' });
+    const online = require('../utils/series-online');
+    const engine = require('../utils/media-sources/engine');
+    const found = await online.searchAllWeb(kw, {
+      timeout: Number(req.body.timeout) || 10000,
+      force: req.body.force === true,
+    });
+    const maxSources = Math.min(12, Math.max(1, Number(req.body.maxSources) || 8));
+    const targets = (found.hits || []).slice(0, maxSources);
+
+    const numOf = (e) => {
+      const n = Number(e.episodeNo ?? e.no ?? e.sort);
+      if (Number.isFinite(n) && n > 0) return n;
+      const m = /第\s*([\d.]+)\s*[话集]/.exec(String(e.name || ''));
+      return m ? parseFloat(m[1]) : NaN;
+    };
+
+    const out = [];
+    let cursor = 0;
+    // 小并发（3）取剧集：整季页面通常较重，并发过高容易被 WAF 判爬
+    const worker = async () => {
+      while (cursor < targets.length) {
+        const h = targets[cursor++];
+        const src = engine.getSource(h.sourceId);
+        const row = {
+          sourceId: h.sourceId, sourceName: h.sourceName, tier: h.tier,
+          entryName: '', detailUrl: '', episodeName: '', episodeUrl: '',
+          totalEps: 0, state: 'error', error: '',
+        };
+        if (!src) { row.error = '源已失效'; out.push(row); continue; }
+        // 该源里挑标题最像的一条
+        const item = (h.items || []).slice().sort(
+          (a, b) => String(a.name || '').length - String(b.name || '').length)[0];
+        if (!item) { row.state = 'noResult'; row.error = '无匹配条目'; out.push(row); continue; }
+        row.entryName = item.name;
+        row.detailUrl = item.url;
+        try {
+          const epRes = await engine.episodesOf(src, item.url, { timeout: 12000 });
+          const eps = epRes.episodes || [];
+          row.totalEps = eps.length;
+          const hit = eps.find((e) => numOf(e) === epNo) || eps[epNo - 1];
+          if (hit && hit.url) {
+            row.state = 'ready';
+            row.episodeName = hit.name || ('第' + epNo + '集');
+            row.episodeUrl = hit.url;
+          } else {
+            row.state = 'noEpisode';
+            row.error = eps.length ? ('该源没有第' + epNo + '集（共 ' + eps.length + ' 集）') : (epRes.error || '剧集解析为空');
+          }
+        } catch (e) {
+          row.state = 'error';
+          row.error = (e && e.message) || '剧集解析失败';
+        }
+        out.push(row);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    out.sort((a, b) => (a.state === 'ready' ? 0 : 1) - (b.state === 'ready' ? 0 : 1) || a.tier - b.tier);
+    res.json({ code: 0, data: {
+      keyword: kw, episodeNo: epNo, candidates: out,
+      states: found.states, scanned: found.scanned,
+    } });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/**
  * 一键挂载：搜源 → 按标题相似度 + tier 选最优 → 解析剧集 → 写进 episodes。
  * 前端「+ 追番」成功后直接调它，失败了再降级成手动选源弹窗。
  */

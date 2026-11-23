@@ -8588,6 +8588,16 @@ function renderSettings(config) {
                     </div>
 
                     <div class="settings-group">
+                        <div class="settings-group-title" style="display:flex;align-items:center;justify-content:space-between;">
+                            <span>🔌 在线源管理（追番聚合搜索）</span>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="window.SourcePicker && window.SourcePicker.open()" style="font-size:12px;">选择要启用的源</button>
+                        </div>
+                        <p style="font-size:12px;color:var(--text-muted);margin:6px 0 2px;">
+                            自由勾选追番搜源要问哪些站点（含 Kazumi 规则源）。关掉的源不参与聚合搜索，随时可再打开。设置与追番页顶部的「🔌 在线源」是同一份配置。
+                        </p>
+                    </div>
+
+                    <div class="settings-group">
                         <div class="settings-group-title">代理设置</div>
                         <div class="settings-item">
                             <label>代理服务器地址</label>
