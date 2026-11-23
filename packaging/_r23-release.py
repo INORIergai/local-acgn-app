@@ -17,14 +17,33 @@ TAG = 'v6.8.13'
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 EXE = os.path.join(_ROOT, 'exe')
+
+
+def _android_ver():
+    """当前 Android 发行包版本号：优先 android-dist/android-version.json，回退 build.gradle。"""
+    try:
+        with open(os.path.join(_ROOT, 'android-dist', 'android-version.json'), encoding='utf-8') as f:
+            v = str(json.load(f).get('versionName') or '').strip()
+            if v:
+                return v
+    except Exception:
+        pass
+    try:
+        import re
+        with open(os.path.join(_ROOT, 'android', 'app', 'build.gradle'), encoding='utf-8') as f:
+            m = re.search(r'versionName\s*=?\s*["\']([^"\']+)["\']', f.read())
+            return m.group(1) if m else ''
+    except Exception:
+        return ''
 # 成品落点（按顺序找第一个存在的）：
 #   exe\<子目录>\    ← 整理后的自用区（round24 起本地只留免安装版，安装版/便携版通常不在这儿）
 #   packaging\dist\ ← electron-builder 的默认产出目录（刚打完包就在这）
 ASSETS = [
     ('CinemaVault-Setup-%s.exe' % VER, ['安装版', 'dist']),
     ('CinemaVault-Portable-%s.exe' % VER, ['便携版', 'dist']),
-    # Android v5.1.0 安装包：与 PC 同一 Release 下发，手机端「应用更新」可取到。
-    ('CinemaVault-v5.1.0-Android.apk', ['android-dist', 'out']),
+    # Android 安装包：与 PC 同一 Release 下发。版本号从 android-version.json 动态读，
+    # 避免发新版 APK 时还得回来改这里（曾因写死 v5.1.0 导致上传被跳过）。
+    ('CinemaVault-v%s-Android.apk' % _android_ver(), ['android-dist', 'out']),
 ]
 
 # 增量热更新产物：发布者在跑本脚本前手动执行
