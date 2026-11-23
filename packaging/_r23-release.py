@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.13'
-TAG = 'v6.8.13'
+VER = '6.8.14'
+TAG = 'v6.8.14'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,13 +92,13 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.13 · Kazumi 规则源 + 自由选源
+## v6.8.14 · Kazumi 规则自动更新
 
-- 接入 Kazumi 规则源：点某一集并发搜所有源、按集号对齐，点源直接播放。
-- 新增 16 个 Kazumi 规则源（AGE/akianime/giriGiriLove/mgnacg 等），含 XPath 与 JSON 接口两种模式。
-- 在线源可自由勾选：追番页「🔌 在线源」或设置→数据源，随时启用/关闭。
-- 修复 4 个导致全部在线源失效的解析 Bug（JSONPath 嵌套/格式名/正则修饰符/POST 缺 Content-Type）。
-- 内置 Android v5.1.0 安装包（versionCode 6）。
+- 追番源规则可从 KazumiRules 官方仓库自动更新（国内镜像优先），站点改版自动救源。
+- 后台每 12 小时静默检查一次；源面板/设置页也可手动「↻ 更新规则」。
+- 只更新版本有变化的规则，写入覆盖目录不破坏内置规则，可随时回滚。
+- 含 v6.8.13 的 16 个 Kazumi 规则源与自由选源。
+- 内置 Android v5.2.0 安装包。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
