@@ -628,6 +628,7 @@
             + '<div class="sv-head"><h2>📺 追番</h2>'
             + '<div class="sv-head-actions">'
             + '<button class="sv-refresh" data-act="check-updates">检查更新</button>'
+            + '<button class="sv-refresh" id="svSources">🔌 在线源</button>'
             + '<button class="sv-refresh" id="svRefresh">刷新放送表</button></div></div>'
             + '<section class="sv-section"><h3>本周新番 <small>点「+ 追番」加入清单</small></h3>'
             + '<div class="sv-calendar" id="svCalendar"><div class="sv-empty-line">加载中…</div></div></section>'
@@ -642,6 +643,12 @@
             + '</div>';
         r.dataset.built = '1';
         r.querySelector('#svRefresh').addEventListener('click', () => loadCalendar(true));
+        // Kazumi 式：自由勾选聚合搜索要问哪些源
+        const srcBtn = r.querySelector('#svSources');
+        if (srcBtn) srcBtn.addEventListener('click', () => {
+            if (window.SourcePicker) window.SourcePicker.open();
+            else if (window.showNotification) showNotification('暂不可用', '源管理模块未加载');
+        });
         r.querySelector('#svTabs').addEventListener('click', (e) => {
             const b = e.target.closest('[data-tab]');
             if (!b) return;

@@ -117,7 +117,8 @@ async function searchAllWeb(keyword, opts = {}) {
     const kw = String(keyword || '').trim();
     // 与 /api/media-source/search 一致：用缓存源列表。此前每次 force 重载会把
     // 22 份规则文件全部重解析（HTTP 高频调用时既慢又容易与其他请求互相干扰）。
-    const web = engine.loadSources().filter((x) => x.kind === 'web');
+    const web = engine.loadSources()
+        .filter((x) => x.kind === 'web' && engine.isSourceEnabled(x.id));
     const force = opts.force === true;
     const timeout = opts.timeout || 12000;
 

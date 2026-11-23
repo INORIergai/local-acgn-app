@@ -188,6 +188,55 @@ function classifyHttp(r) {
 // 目的不是惩罚源，而是别让用户每次搜源都白等 20 个必挂的站。
 const BLACKLIST_FILE = path.join(__dirname, '..', '..', 'data', 'media-sources', 'blacklist.json');
 
+/* ---------------- 源启用偏好（对齐 Kazumi 的「自由选择要哪些源」） ----------------
+ * 用户在追番页/设置页勾选想用的源，落盘 data/media-sources/prefs.json。
+ * 只影响聚合搜索，不删规则文件——随时可再勾回来。 */
+const PREFS_FILE = path.join(__dirname, '..', '..', 'data', 'media-sources', 'prefs.json');
+let _prefs = null;
+
+function loadPrefs() {
+    if (_prefs) return _prefs;
+    try {
+        const j = JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8')) || {};
+        _prefs = { disabled: Array.isArray(j.disabled) ? j.disabled.map(String) : [] };
+    } catch (e) {
+        _prefs = { disabled: [] };
+    }
+    return _prefs;
+}
+
+function savePrefs(p) {
+    _prefs = p;
+    try {
+        fs.mkdirSync(path.dirname(PREFS_FILE), { recursive: true });
+        fs.writeFileSync(PREFS_FILE, JSON.stringify(p, null, 2), 'utf8');
+    } catch (e) { /* 写盘失败只影响下次启动的偏好记忆 */ }
+}
+
+/** 某源是否被用户启用（默认启用）。 */
+function isSourceEnabled(id) {
+    const p = loadPrefs();
+    return !p.disabled.includes(String(id));
+}
+
+/** 批量设置启用状态：on=false 加入禁用名单，on=true 移出。 */
+function setSourceEnabled(id, on) {
+    const p = loadPrefs();
+    const s = new Set(p.disabled);
+    if (on) s.delete(String(id));
+    else s.add(String(id));
+    p.disabled = Array.from(s);
+    savePrefs(p);
+    return !p.disabled.includes(String(id));
+}
+
+/** 一次性替换禁用名单（设置页"全选/全不选"用）。 */
+function setDisabledSources(ids) {
+    const uniq = Array.from(new Set((ids || []).map(String)));
+    savePrefs({ disabled: uniq });
+    return uniq;
+}
+
 // round185 A2：人机验证过后的 cookie。过验证用的是有头浏览器（见 verify.js），
 // 过完把 storageState 的 cookies 落盘，之后 fetch 请求自动带上——否则用户白过一遍验证。
 const COOKIE_DIR = path.join(__dirname, '..', '..', 'data', 'media-sources', 'cookies');
@@ -394,10 +443,14 @@ function loadSources(force) {
         } catch (e) {
             return;
         }
-        const args = def.arguments || {};
+        // Kazumi 规则是「顶层字段」结构（name/baseURL/searchMode...），没有 arguments 包一层
+        const isKazumi = String(def.factoryId || '') === 'kazumi';
+        const args = def.arguments || (isKazumi ? def : {});
         const sc = args.searchConfig || {};
         // json-api 源没有 searchUrl，入口在 search.request.url；统一给一个「搜索地址」便于状态灯/UI
-        const searchEntry = sc.searchUrl || String((sc.search && sc.search.request && sc.search.request.url) || '');
+        const searchEntry = sc.searchUrl
+            || String((sc.search && sc.search.request && sc.search.request.url) || '')
+            || (isKazumi ? String(def.searchURL || (def.searchApiConfig && def.searchApiConfig.request && def.searchApiConfig.request.url) || '') : '');
         const host = hostOf(searchEntry);
         const rec = {
             id: rel.replace(/\.json$/, ''),
@@ -407,7 +460,7 @@ function loadSources(force) {
             factoryId: def.factoryId,
             version: def.version || 1,
             kind: def.factoryId === 'rss' ? 'bt' : 'web',
-            tier: typeof args.tier === 'number' ? args.tier : 9,
+            tier: typeof args.tier === 'number' ? args.tier : (isKazumi ? 2 : 9),
             host,
             searchUrl: searchEntry,
             origin,
@@ -469,6 +522,20 @@ function urlCandidates(text) {
 
 async function searchOn(source, keyword, opts = {}) {
     if (source.factoryId === 'json-api') return searchOnApi(source, keyword, opts);
+    if (source.factoryId === 'kazumi') {
+        // Kazumi 原生规则：XPath 或 JSON API，规则形态由 source.def 顶层字段决定
+        const kz = require('./kazumi');
+        const r = await kz.search(source.def, keyword, { grab, timeout: opts.timeout || 15000 });
+        return {
+            items: (r.items || []).map((it) => ({
+                name: it.name, url: it.url,
+                sourceId: source.id, sourceName: source.name,
+                tier: source.tier, kind: 'web',
+            })),
+            error: r.error || '',
+            state: r.state,
+        };
+    }
     const sc = source.def.arguments.searchConfig || {};
     if (!sc.searchUrl) return { items: [], error: '该源没有搜索地址', state: 'error' };
 
@@ -676,6 +743,21 @@ function parseRss(xml, source, kw) {
 // ==================================================================
 async function episodesOf(source, detailUrl, opts = {}) {
     if (source.factoryId === 'json-api') return episodesOfApi(source, detailUrl, opts);
+    if (source.factoryId === 'kazumi') {
+        const kz = require('./kazumi');
+        const r = await kz.episodes(source.def, detailUrl, { grab, timeout: opts.timeout || 15000 });
+        return {
+            episodes: (r.episodes || []).map((e) => ({
+                name: e.name || '',
+                sort: Number.isFinite(e.sort) ? e.sort : NaN,
+                channel: e.channel || '',
+                channelTier: 0,
+                url: e.url || '',
+            })).filter((e) => e.url),
+            error: r.error || '',
+            state: r.state,
+        };
+    }
     const r = await grab(detailUrl, { timeout: opts.timeout || 15000,
         cookie: opts.cookie || sourceCookieHeader(source.id) });
     const cls = classifyHttp(r);
@@ -896,6 +978,11 @@ async function episodesOfApi(source, detailUrl, opts = {}) {
 // ==================================================================
 async function resolveVideo(source, episodeUrl, opts = {}) {
     if (source.factoryId === 'json-api') return resolveVideoApi(source, episodeUrl, opts);
+    if (source.factoryId === 'kazumi') {
+        // Kazumi 规则不产出流地址，播放页交给浏览器嗅探（与 Kazumi 的 WebView 方案等价）
+        const kz = require('./kazumi');
+        return kz.resolve(source.def, episodeUrl, { timeout: opts.timeout || 40000 });
+    }
     const sc = source.def.arguments.searchConfig || {};
     const mv = sc.matchVideo || {};
     // round185 A2：规则里写死的 cookie 优先，没有就用「过验证」时存下来的
@@ -1187,5 +1274,11 @@ module.exports = {
     OVERRIDE_DIR,
     BUILTIN_DIR,
     BLACKLIST_FILE,
-    COOKIE_DIR
+    COOKIE_DIR,
+    // 源启用偏好（Kazumi 式自由选源）
+    PREFS_FILE,
+    isSourceEnabled,
+    setSourceEnabled,
+    setDisabledSources,
+    loadPrefs
 };

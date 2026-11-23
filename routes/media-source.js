@@ -65,9 +65,47 @@ router.get('/sources', async (req, res) => {
             description: s.description,
             origin: s.origin,
             version: s.version,
-            status: st[s.id] || null
+            status: st[s.id] || null,
+            enabled: engine.isSourceEnabled(s.id),
+            factory: s.factoryId || ''
         }))
     });
+});
+
+/* ---------------- 源启用偏好（Kazumi 式自由选源） ----------------
+ * GET  /api/media-source/prefs          全部源 + enabled
+ * POST /api/media-source/prefs          { id, enabled } 单个；或 { disabled: [...] } 整批
+ */
+router.get('/prefs', (req, res) => {
+    try {
+        const list = engine.loadSources().map((s) => ({
+            id: s.id,
+            name: s.name,
+            kind: s.kind,
+            tier: s.tier,
+            host: s.host || '',
+            factory: s.factoryId || '',
+            origin: s.origin || '',
+            enabled: engine.isSourceEnabled(s.id),
+        }));
+        res.json({ code: 0, data: { sources: list, prefsFile: engine.PREFS_FILE } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/prefs', (req, res) => {
+    try {
+        const body = req.body || {};
+        if (Array.isArray(body.disabled)) {
+            const saved = engine.setDisabledSources(body.disabled);
+            return res.json({ code: 0, data: { disabled: saved } });
+        }
+        if (typeof body.id === 'string' && body.id) {
+            const on = body.enabled !== false;
+            const now = engine.setSourceEnabled(body.id, on);
+            return res.json({ code: 0, data: { id: body.id, enabled: now } });
+        }
+        res.json({ code: -1, msg: '需要 { id, enabled } 或 { disabled: [...] }' });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
 router.get('/status', async (req, res) => {
@@ -85,7 +123,7 @@ router.get('/search', async (req, res) => {
     const only = String(req.query.sources || '').split(',').filter(Boolean);
     const excluded = new Set(String(req.query.exclude || '').split(',').filter(Boolean));
     const timeout = Math.min(30000, Math.max(5000, Number(req.query.timeout) || 15000));
-    let list = engine.loadSources().filter((s) => s.kind === 'web' && !excluded.has(s.id));
+    let list = engine.loadSources().filter((s) => s.kind === 'web' && !excluded.has(s.id) && engine.isSourceEnabled(s.id));
     if (only.length) list = list.filter((s) => only.includes(s.id));
 
     const results = await pool(list, 6, async (s) => {

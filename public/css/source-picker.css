@@ -1,0 +1,72 @@
+/* 在线源管理面板（source-picker.js） */
+#sourcePickerHost .sp-mask {
+    position: fixed; inset: 0; z-index: 1800;
+    background: rgba(12, 10, 8, .55);
+    backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+}
+#sourcePickerHost .sp-panel {
+    width: min(760px, 94vw); max-height: 86vh;
+    display: flex; flex-direction: column;
+    background: var(--card, #fffdf8);
+    color: var(--text, #2a241c);
+    border: 1px solid var(--line, rgba(0,0,0,.08));
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, .32);
+    overflow: hidden;
+}
+#sourcePickerHost .sp-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 16px 18px 10px;
+}
+#sourcePickerHost .sp-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+#sourcePickerHost .sp-actions { display: flex; gap: 8px; align-items: center; }
+#sourcePickerHost .sp-btn,
+#sourcePickerHost .sp-close {
+    border: 1px solid var(--line, rgba(0,0,0,.12));
+    background: transparent; color: inherit;
+    border-radius: 8px; padding: 5px 10px;
+    font-size: 12.5px; cursor: pointer;
+}
+#sourcePickerHost .sp-btn:hover { background: rgba(0,0,0,.05); }
+#sourcePickerHost .sp-close { padding: 5px 9px; }
+#sourcePickerHost .sp-hint {
+    padding: 0 18px 10px;
+    font-size: 12px; line-height: 1.7;
+    color: var(--text-muted, #8b8377);
+}
+#sourcePickerHost .sp-body {
+    flex: 1; min-height: 0; overflow: auto;
+    padding: 4px 12px 12px;
+}
+#sourcePickerHost .sp-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: 9px;
+    cursor: pointer;
+}
+#sourcePickerHost .sp-row:hover { background: rgba(0,0,0,.04); }
+#sourcePickerHost .sp-check { width: 16px; height: 16px; accent-color: var(--primary, #a8762c); cursor: pointer; }
+#sourcePickerHost .sp-name { flex: 0 0 auto; min-width: 130px; font-size: 13.5px; font-weight: 600; }
+#sourcePickerHost .sp-tag {
+    flex: 0 0 auto; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    background: rgba(168, 118, 44, .12); color: var(--primary, #a8762c);
+}
+#sourcePickerHost .sp-fac { flex: 0 0 auto; font-size: 11px; color: var(--text-muted, #8b8377); }
+#sourcePickerHost .sp-host {
+    flex: 1; min-width: 0; text-align: right;
+    font-size: 11.5px; color: var(--text-muted, #8b8377);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#sourcePickerHost .sp-empty { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--text-muted, #8b8377); }
+#sourcePickerHost .sp-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 18px 14px;
+    border-top: 1px solid var(--line, rgba(0,0,0,.08));
+    font-size: 12.5px; color: var(--text-muted, #8b8377);
+}
+#sourcePickerHost .sp-save { color: var(--primary, #a8762c); border-color: currentColor; }
+
+body.night-mode #sourcePickerHost .sp-panel { background: #1c1a18; color: #ece6da; border-color: #33302c; }
+body.night-mode #sourcePickerHost .sp-row:hover { background: rgba(255,255,255,.06); }
+body.night-mode #sourcePickerHost .sp-foot { border-color: #33302c; }
