@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.14'
-TAG = 'v6.8.14'
+VER = '6.8.15'
+TAG = 'v6.8.15'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,12 +92,13 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.14 · Kazumi 规则自动更新
+## v6.8.15 · 追番/小说体验大改
 
-- 追番源规则可从 KazumiRules 官方仓库自动更新（国内镜像优先），站点改版自动救源。
-- 后台每 12 小时静默检查一次；源面板/设置页也可手动「↻ 更新规则」。
-- 只更新版本有变化的规则，写入覆盖目录不破坏内置规则，可随时回滚。
-- 含 v6.8.13 的 16 个 Kazumi 规则源与自由选源。
+- 修复在线播放：未定义变量导致「点了没反应」，抽屉盖住播放器问题一并解决。
+- 播放来源改为卡片式排版，显示「第N集可播放」而非源总集数。
+- 追番首页改为整面自适应新番海报墙。
+- 小说章节名修复（不再全显示书名），阅读区铺满窗口不再左右留白。
+- TTS 预取加速，减少句间等待。
 - 内置 Android v5.2.0 安装包。
 
 首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
