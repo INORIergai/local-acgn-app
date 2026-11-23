@@ -1,8 +1,8 @@
 {
   "versionCode": 7,
   "versionName": "5.2.0",
-  "apkSha256": "06293185b51cb90292d207ac00342d0166dbec342ff591ce3df08890ff54946f",
-  "apkSize": 18886550,
+  "apkSha256": "4164ac08a32bbc535a78a7e8757b1ab167928b922f8b6dbeec50a7b997d49de6",
+  "apkSize": 19024909,
   "apkFileName": "CinemaVault-v5.2.0-Android.apk",
   "minSdk": 24,
   "changelog": "小说翻页改造 + 脱离PC公网更新(国内镜像)"
