@@ -22,7 +22,14 @@
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const api = async (url, opts) => {
-        const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+        const o = Object.assign({ credentials: 'same-origin' }, opts || {});
+        /* ★ 有 body 的请求必须显式带 JSON Content-Type：
+         * express.json() 只在 content-type 匹配时才解析，缺了它 req.body 恒为 {}
+         * → 后端所有 POST 都读不到参数（「搜在线源」长期报"缺少关键词"的根因）。 */
+        if (o.body && typeof o.body === 'string') {
+            o.headers = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
+        }
+        const r = await fetch(url, o);
         return r.json();
     };
 
