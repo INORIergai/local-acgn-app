@@ -341,6 +341,30 @@ function setGoal(scope, patch) {
     return getGoal(sc);
 }
 
+/** 最近阅读：给「小说库/漫画库」功能页做「继续阅读」入口。
+ *  join movies 取标题/封面，按 updatedAt 倒序取未读完的一本。 */
+function getResume(kind) {
+    const k = normKind(kind);
+    try {
+        const row = db.prepare(`SELECT p.movieId AS id, p.chapter, p.page, p.total, p.percent, p.updatedAt,
+                                       m.title, m.coverPath, m.type
+                                FROM media_progress p JOIN movies m ON m.id = p.movieId
+                                WHERE p.kind = ? AND p.state <> 'done'
+                                ORDER BY p.updatedAt DESC LIMIT 1`).get(k);
+        if (!row) return null;
+        return {
+            id: row.id,
+            title: row.title || '',
+            coverPath: row.coverPath || '',
+            chapter: Number(row.chapter) || 0,
+            page: Number(row.page) || 0,
+            total: Number(row.total) || 0,
+            percent: Number(row.percent) || 0,
+            updatedAt: Number(row.updatedAt) || 0,
+        };
+    } catch (e) { return null; }
+}
+
 module.exports = {
     DONE_THRESHOLD,
     calcPercent,
@@ -354,4 +378,5 @@ module.exports = {
     readingDigest,
     getGoal,
     setGoal,
+    getResume,
 };

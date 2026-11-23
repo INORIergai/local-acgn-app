@@ -38,6 +38,14 @@ router.get('/progress-map', (req, res) => {
   }
 });
 
+// 最近阅读（功能页「继续阅读」入口）
+router.get('/resume', (req, res) => {
+  try {
+    const k = kindOf(req.query.type) || 'novel';
+    res.json({ code: 0, data: mp.getResume(k) });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
 // 状态计数（筛选 chips 上的数字）
 router.get('/stats', (req, res) => {
   try {
