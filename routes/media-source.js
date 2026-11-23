@@ -274,34 +274,40 @@ function newToken(ctx) {
 }
 
 router.get('/resolve', async (req, res) => {
-    const id = String(req.query.source || '');
-    const url = String(req.query.url || '');
-    const s = engine.getSource(id);
-    if (!s) return res.json({ code: -1, msg: '未知源：' + id });
-    if (!/^https?:\/\//i.test(url)) return res.json({ code: -1, msg: '地址不合法' });
+    try {
+        const id = String(req.query.source || '');
+        const url = String(req.query.url || '');
+        const s = engine.getSource(id);
+        if (!s) return res.json({ code: -1, msg: '未知源：' + id });
+        if (!/^https?:\/\//i.test(url)) return res.json({ code: -1, msg: '地址不合法' });
 
-    // browser=0 → 只用静态正则（快，但多数现代站点抽不到）；默认失败时开浏览器兜底
-    const r = await engine.resolveVideo(s, url, {
-        timeout: 25000,
-        browser: req.query.browser !== '0'
-    });
-    if (!r.url) return res.json({ code: -1, msg: r.error || '没解析到播放地址', via: r.via || '' });
+        // browser=0 → 只用静态正则（快，但多数现代站点抽不到）；默认失败时开浏览器兜底
+        const r = await engine.resolveVideo(s, url, {
+            timeout: 25000,
+            browser: req.query.browser !== '0'
+        });
+        if (!r.url) return res.json({ code: -1, msg: r.error || '没解析到播放地址', via: r.via || '' });
 
-    const token = newToken({ headers: r.headers || {}, cookie: r.cookie || '' });
-    const isHls = /\.m3u8(\?|$)/i.test(r.url);
-    const streamUrl = `/api/media-source/${isHls ? 'stream' : 'seg'}?token=${encodeURIComponent(token)}&u=${encodeURIComponent(r.url)}`;
-    res.json({
-        code: 0,
-        data: {
-            url: r.url,
-            streamUrl,
-            kind: isHls ? 'hls' : 'mp4',
-            sourceId: id,
-            sourceName: s.name,
-            from: r.from || url,
-            via: r.via || 'regex'
-        }
-    });
+        const token = newToken({ headers: r.headers || {}, cookie: r.cookie || '' });
+        const isHls = /\.m3u8(\?|$)/i.test(r.url);
+        const streamUrl = `/api/media-source/${isHls ? 'stream' : 'seg'}?token=${encodeURIComponent(token)}&u=${encodeURIComponent(r.url)}`;
+        res.json({
+            code: 0,
+            data: {
+                url: r.url,
+                streamUrl,
+                kind: isHls ? 'hls' : 'mp4',
+                sourceId: id,
+                sourceName: s.name,
+                from: r.from || url,
+                via: r.via || 'regex'
+            }
+        });
+    } catch (e) {
+        // 解析器（尤其是浏览器嗅探）偶发抛错时必须给出 JSON，否则前端 fetch 永远等不到响应
+        try { res.json({ code: -1, msg: '解析异常：' + (e && e.message || e) }); }
+        catch (e2) { /* 头已发就放弃 */ }
+    }
 });
 
 // ==================================================================

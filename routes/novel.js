@@ -334,7 +334,8 @@ function getEpubContent(filePath, novelId) {
                 const resolve = makeResolver(chapterDir === '.' ? '' : chapterDir);
                 const rich = htmlForReader(htmlContent, resolve);
                 const plain = htmlToText(htmlContent);
-                const chapterTitle = extractChapterTitle(htmlContent) || path.basename(href);
+                const chapterTitle = normalizeChapterTitle(
+                    extractChapterTitle(htmlContent), path.basename(href), title, chapters.length + 1);
 
                 chapters.push({
                     title: chapterTitle,
@@ -358,7 +359,8 @@ function getEpubContent(filePath, novelId) {
                 const resolve = makeResolver(chapterDir === '.' ? '' : chapterDir);
                 const rich = htmlForReader(htmlContent, resolve);
                 const plain = htmlToText(htmlContent);
-                const chapterTitle = extractChapterTitle(htmlContent) || path.basename(entry.entryName);
+                const chapterTitle = normalizeChapterTitle(
+                    extractChapterTitle(htmlContent), path.basename(entry.entryName), title, chapters.length + 1);
                 
                 chapters.push({
                     title: chapterTitle,
@@ -561,16 +563,36 @@ const MIME_BY_EXT = {
  * 从HTML中提取章节标题
  */
 function extractChapterTitle(html) {
-    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-    if (titleMatch) return titleMatch[1].trim();
-    
-    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    if (h1Match) return h1Match[1].trim();
-    
-    const h2Match = html.match(/<h2[^>]*>([^<]+)<\/h2>/i);
-    if (h2Match) return h2Match[1].trim();
-    
+    const pick = (re) => {
+        const m = html.match(re);
+        return m && m[1] ? String(m[1]).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
+    };
+    // 1) 标准标题标签（h1→h4 都可能承载章节名；EPUB 很多章节根本没有 <title>）
+    for (const tag of ['title', 'h1', 'h2', 'h3', 'h4']) {
+        const t = pick(new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>', 'i'));
+        if (t) return t;
+    }
+    // 2) 常见章节标题 class（出版商五花八门，大量不走 h1）
+    const byClass = pick(/<(?:div|p|span|section)[^>]+class="[^"]*(?:chapter[-_]?title|chaptername|chapter-name|headline)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|p|span|section)>/i);
+    if (byClass && byClass.length <= 60) return byClass;
+    // 3) 兜底：正文第一个像「第X章 XXX」的短段
+    const first = pick(/<(?:p|div)[^>]*>([\s\S]{1,80}?)<\/(?:p|div)>/i);
+    if (first && first.length <= 40 && /^[第序楔引尾后番]|^chapter|^\d+[.、]?\s/i.test(first)) {
+        return first.replace(/[。.!！?？].*$/, '');
+    }
     return null;
+}
+
+/** 章节标题归一：空/文件名/与书名相同/过长 → 用「第 N 章」，避免目录全是书名。 */
+function normalizeChapterTitle(raw, fileName, bookTitle, index) {
+    const t = String(raw || '').replace(/\s+/g, ' ').trim();
+    const bt = String(bookTitle || '').replace(/\s+/g, ' ').trim();
+    const isBad = !t
+        || /\.x?html?$/i.test(t)
+        || /\.(xml|opf|ncx)$/i.test(t)
+        || (bt && t === bt)
+        || t.length > 60;
+    return isBad ? ('第 ' + index + ' 章') : t;
 }
 
 // 获取小说信息

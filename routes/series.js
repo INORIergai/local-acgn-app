@@ -246,8 +246,12 @@ router.post('/episode/sources', async (req, res) => {
     const numOf = (e) => {
       const n = Number(e.episodeNo ?? e.no ?? e.sort);
       if (Number.isFinite(n) && n > 0) return n;
-      const m = /第\s*([\d.]+)\s*[话集]/.exec(String(e.name || ''));
-      return m ? parseFloat(m[1]) : NaN;
+      const name = String(e.name || '');
+      const m = /第\s*([\d.]+)\s*[话集]/.exec(name);
+      if (m) return parseFloat(m[1]);
+      // 很多源的集名就是「01」「1」「12.5」这种纯数字（前导零也要认）
+      const m2 = /^\s*(\d+(?:\.\d+)?)\s*$/.exec(name);
+      return m2 ? parseFloat(m2[1]) : NaN;
     };
 
     const out = [];
@@ -263,24 +267,32 @@ router.post('/episode/sources', async (req, res) => {
           totalEps: 0, state: 'error', error: '',
         };
         if (!src) { row.error = '源已失效'; out.push(row); continue; }
-        // 该源里挑标题最像的一条
+        // 选标题最像的一条（原来按名字最短挑，多季合页时会挑到「第1-3季258集」那种合集）
+        const { titleScore } = require('../utils/series-online');
         const item = (h.items || []).slice().sort(
-          (a, b) => String(a.name || '').length - String(b.name || '').length)[0];
+          (a, b) => titleScore(b.name, kw) - titleScore(a.name, kw))[0];
         if (!item) { row.state = 'noResult'; row.error = '无匹配条目'; out.push(row); continue; }
         row.entryName = item.name;
         row.detailUrl = item.url;
         try {
           const epRes = await engine.episodesOf(src, item.url, { timeout: 12000 });
           const eps = epRes.episodes || [];
-          row.totalEps = eps.length;
-          const hit = eps.find((e) => numOf(e) === epNo) || eps[epNo - 1];
+          row.totalEps = eps.length;   // 源侧总集数（多季合页时会很大，仅供参考）
+          /* 只认「集号真正等于 epNo」的条目。原来还带 `|| eps[epNo-1]` 的下标兜底，
+           * 多季合页时会静默取到别的季的第 N 集（用户点了第1集却播成第2季第1集）。 */
+          const exact = eps.filter((e) => numOf(e) === epNo);
+          // 同集号有多条时优先第一线路（channelTier 小）
+          exact.sort((a, b) => (a.channelTier || 0) - (b.channelTier || 0));
+          const hit = exact[0];
           if (hit && hit.url) {
             row.state = 'ready';
-            row.episodeName = hit.name || ('第' + epNo + '集');
+            row.episodeName = '第' + epNo + '集';
             row.episodeUrl = hit.url;
           } else {
             row.state = 'noEpisode';
-            row.error = eps.length ? ('该源没有第' + epNo + '集（共 ' + eps.length + ' 集）') : (epRes.error || '剧集解析为空');
+            row.error = eps.length
+              ? ('未定位到第' + epNo + '集（源共 ' + eps.length + ' 集，可能是多季合页）')
+              : (epRes.error || '剧集解析为空');
           }
         } catch (e) {
           row.state = 'error';

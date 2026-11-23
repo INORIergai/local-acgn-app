@@ -215,8 +215,9 @@ function applySettings() {
             b.style.padding = '28px ' + (Number(RS.padding) || 20) * 2 + 'px 80px';
             b.style.fontFamily = FF_MAP[RS.fontFamily] || FF_MAP.sans;
             // 页宽（每行字数）：限制正文列宽，分页按此宽度自适应
+            // 页宽（每行字数）：默认铺满；full=0 不能用 || 兜底（0 是 falsy）
             const PW = { narrow: 460, medium: 620, wide: 820, full: 0 };
-            const pw = PW[RS.pageWidth] || PW.medium;
+            const pw = Object.prototype.hasOwnProperty.call(PW, RS.pageWidth) ? PW[RS.pageWidth] : PW.full;
             b.style.maxWidth = pw ? (pw + 'px') : 'none';
             b.style.marginLeft = 'auto';
             b.style.marginRight = 'auto';
