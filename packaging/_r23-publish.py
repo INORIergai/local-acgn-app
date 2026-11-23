@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.11'
+TAG = 'v6.8.12'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,16 +35,17 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.11：修复全量更新不重启 / 重复下载
+COMMIT_MSG = """v6.8.12：小说翻页 + 123云盘免登录
 
-- 安装程序拉起后写退出信号，主进程主动退出释放 exe 占用，装完自动重启新版
-- startDownload 幂等：已完成且文件存在时复用，不再重复整包下载
-- 前端下载中/完成禁用下载按钮，done 时高亮立即安装
-- 增量轮询在 done/ready 等终态停止，避免空转
-- 含 v6.8.10 增量修复：基线版本校验、强制重查、镜像优先
+- 小说阅读翻页优先：字号/行距/页宽可调，每页字数随窗口自适应(PC/Android/云端)
+- 云端 EPUB 在线按页翻读，无需下载整本
+- 123云盘 app 模式后台自动续期，一次授权永久免登录
+- 授权 UI 推荐自建应用路径，去掉复制 token 依赖
+- 清理包体本机路径 + prepare-export 脱敏兜底
+- 含此前全部修复(增量更新/下载重启闭环)
 - 内置 Android v5.1.0 安装包
 
-版本：6.8.11"""
+版本：6.8.12"""
 
 
 def get_token():
