@@ -48,7 +48,9 @@ const SUBSET = {
 const EXTRA_SKIP = [
     'node_modules', '.git', 'data', 'cache', 'posters', 'docs', 'skills',
     'backups', 'backup-frontend.bat', 'restore-frontend.bat',
-    'config.json', 'config.docker.json',
+    /* 不要把 config.json 放这里：copyDir 按文件名匹配会跳过任意层级，
+       实测会把 utils/tts/vits-runtime/model/config.json（VITS 模型参数）一起跳掉。
+       项目根的 config.json / config.docker.json 不在 COPY_FILES 白名单里，本来就不会进包。 */
 ];
 
 /**

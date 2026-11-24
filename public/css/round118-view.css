@@ -1,0 +1,105 @@
+/* ============================================================
+   round118 · 首页 / 影片库的形状收口（P13 续）
+   ------------------------------------------------------------
+   上一轮（round116）只把「小说库视图」的圆角收到 5 种。实测另外两个视图：
+     · 首页   **16 种**（0/6/12/10/999/9/50%/4/20/12-12-0/16-16-16-4/8/24/24-24-0-0/0-0-24-24/22）
+     · 影片库 **8 种**（0/6/999/10/50%/12/2/14）
+   原因一样：每个组件各自写自己的圆角，没有令牌。
+
+   本轮把这两个视图归到同一套 5 档（0 / 6 / 10 / 999 / 50%）：
+     · 小控件（芯片 / 标签 / 小按钮）→ 6
+     · 面板、卡片、图片（成块的东西）→ 10
+     · 胶囊 / 圆点 → 999
+     · 内嵌在大面板里、本来就看不见角的 → 0
+
+   回滚 = 删 library.html 里本文件那一行 link。
+   ============================================================ */
+
+/* ------------------------------------------------------------------
+   1. 首页：日历 / 排行 / 对话卡
+   ------------------------------------------------------------------ */
+html body .cal-chip,
+html body .cal-tab,
+html body .rank-tag,
+html body .home-chat-mic-btn {
+    border-radius: var(--r-1, 6px) !important;
+}
+html body .cal-item,
+html body .cal-cover {
+    border-radius: var(--r-2, 10px) !important;
+}
+
+/* 对话卡：外层 24、内层上下各圆一半、输入框 22、气泡 12/16 混用 ——
+   一共贡献了 5 种档位。统一成「外层 10，内层 0」：
+   内层本来就被外层 overflow 裁掉，给它圆角只是让统计多出几个数。 */
+html body .home-chat-card { border-radius: var(--r-2, 10px) !important; }
+html body .home-chat-messages,
+html body .home-chat-input,
+html body .home-chat-input textarea { border-radius: 0 !important; }
+/* 气泡原来的「左下留尾巴」是不对称圆角（12 12 0 / 16 16 16 4）。
+   这类造型本身没错，但它让圆角档位多出两种；改成四角同值，靠底色区分自己与他人。
+   ⚠️ 必须写成 `.home-msg .bubble`：原规则是 `.home-msg.ai .bubble`（两个类）+ !important，
+      只写 `html body .bubble`（一个类）压不过它 —— 第一版就是这么漏的。 */
+/* ⚠️ 这里必须是 `.home-msg.ai`（三个类，0-3-2），
+   而不是 `html body .home-msg .bubble`（两个类 + 两个元素 = 0-2-2）——
+   **元素选择器不计入 class 位**，0-2-2 输给 round75 的 `.home-msg.ai .bubble`（0-3-0）。
+   这个坑我在项目里踩到第三次了：加 `html body` 不等于加分。 */
+html body .home-msg.ai .bubble,
+html body .home-msg.user .bubble,
+html body .ai-msg.ai .bubble,
+html body .ai-agent-steps { border-radius: var(--r-2, 10px) !important; }
+
+/* ------------------------------------------------------------------
+   2. 影片库：卡片 / 筛选条 / 轮播点
+   ------------------------------------------------------------------ */
+html body .sq-card { border-radius: var(--r-2, 10px) !important; }          /* 12 → 10 */
+html body .facet-filter-bar { border-radius: var(--r-2, 10px) !important; } /* 14 → 10 */
+html body .gallery-dot { border-radius: var(--r-pill, 999px) !important; }  /* 2 → 胶囊 */
+
+/* ------------------------------------------------------------------
+   3. 影片库「NEW」徽标：还在用桃红渐变
+   ------------------------------------------------------------------
+   round116 把 `--av-pink` 改成了墨，但 `.movie-badge-new` 的渐变是两个**字面色**
+   （#ff008c → #d5187d），不经过令牌 ⇒ 换不掉。这里直接覆盖。
+   ⚠️ 这个徽标只在影片库出现，上一轮只测小说库，所以漏了 —— 又是口径问题。 */
+html body .movie-badge-new {
+    background: var(--ink-accent, #8A5A12) !important;
+    color: #FFFCF4 !important;
+    box-shadow: none !important;   /* 45 个徽标各带一条投影，静态内容不需要 */
+}
+
+/* ------------------------------------------------------------------
+   4. 影片库卡片去容器（与小说/漫画库统一）
+   ------------------------------------------------------------------
+   小说库在 round116 就已经是「封面 + 两行字、没有外框」，
+   影片库这边还是「1px 边框 + 卡片底色 + 标题在卡内的一条色带」——
+   同一个应用里两种卡片语言，一眼能看出是不同年代做的。
+   去掉边框与底色，标题直接落在纸上（padding 从 6/7 收到 8/2，与封面左缘对齐）。 */
+html body .movie-card.movie-card-compact {
+    border-width: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    /* matinee 皮肤单独给过 5px（theme-matinee.css:71），是夜里的第 6 种圆角 */
+    border-radius: var(--r-2, 10px) !important;
+}
+html body .movie-card-compact .movie-title-below {
+    background: transparent !important;
+    padding: 8px 2px 4px !important;
+}
+/* 悬停时不再靠边框变色提示（没有边框了），用一层薄影 */
+html body #movieGrid .movie-card.movie-card-compact:hover {
+    box-shadow: var(--e-1, 0 8px 24px -14px rgba(20, 17, 14, .3)) !important;
+}
+
+/* ------------------------------------------------------------------
+   5. 影片卡标题：11.5 → 14（与小说/漫画卡同一档）
+   ------------------------------------------------------------------
+   round115 定下的正文档是 14px（`--t-body`），小说卡标题已经吃到了，
+   影片卡还停在 11.5px —— 同样是"书名"，一屏之内两种字号没有道理。
+   标题仍是两行截断（-webkit-line-clamp:2），不会撑破卡片。 */
+html body .movie-card-compact .movie-title-below {
+    font-size: var(--t-body, 14px) !important;
+}
+html body .movie-card-compact .movie-title-below .mtb-meta {
+    font-size: var(--t-micro, 11.5px) !important;
+}

@@ -1,0 +1,217 @@
+/* ============================================================
+ * round136 · 最近任务（后台作业面板 + 顶栏角标）
+ * 目标：批量作业（换海报等）跑在后台，可能比对话活得更久。
+ *       顶栏「最近任务」打开即可看进度、取消，不用回聊天里翻。
+ * 纯新增类名（.dsn-jobs-panel / .dsn-jobs-badge / .djp-*），
+ * 不改动既有任何选择器，删掉本文件即回滚。
+ *
+ * 对比度教训（round124/125）：玻璃面板上的文字**不能继承 body 字面色**，
+ * 必须给容器一个明确的 color，否则白天纸白底 + 暖白字 = 1.05:1。
+ * ============================================================ */
+
+/* 顶栏按钮角标：运行中的作业数 */
+.dsn-jobs-badge {
+    display: inline-block;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 4px;
+    margin-left: 5px;
+    border-radius: 999px;
+    background: #b3261e;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+    font-family: var(--font-mono, monospace);
+    vertical-align: 1px;
+}
+html[data-v4skin="matinee"] .dsn-jobs-badge,
+body.dark .dsn-jobs-badge { background: #d4553f; }
+
+/* 面板本体：与 #aiModal .dsn-popover 同一套玻璃语言（round131 同款令牌） */
+.dsn-jobs-panel {
+    position: absolute;
+    top: 54px;
+    right: 20px;
+    width: 400px;
+    max-width: calc(100vw - 32px);
+    max-height: 480px;
+    overflow-y: auto;
+    border-radius: 14px;
+    padding: 14px;
+    z-index: 100;
+    background: rgba(var(--cv-scrim-strong-rgb, 253, 251, 247), 0.88);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    border: 1px solid var(--cv-glass-edge-2, rgba(160, 140, 110, 0.20));
+    box-shadow: var(--cv-glass-shadow, 0 16px 40px rgba(0, 0, 0, 0.35));
+    color: #2b2519;               /* 明确字面色，不继承 */
+    animation: djpFadeUp 200ms cubic-bezier(.16, 1, .3, 1) forwards;
+}
+
+@keyframes djpFadeUp {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: none; }
+}
+
+.djp-empty {
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #6b6157;
+    padding: 26px 10px;
+}
+
+/* ---------- 单个作业卡 ---------- */
+.djp-job {
+    border: 1px solid rgba(160, 140, 110, 0.22);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.45);
+    padding: 9px 11px 10px;
+    margin-bottom: 9px;
+}
+.djp-job:last-child { margin-bottom: 0; }
+.djp-job[data-status="done"] { opacity: .82; }
+
+.djp-job-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    margin-bottom: 7px;
+}
+.djp-job-type { font-weight: 700; color: #2b2519; }
+
+.djp-job-status {
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+.djp-st-running,
+.djp-st-queued { color: #8a5a12; background: rgba(160, 106, 18, .12); border-color: rgba(160, 106, 18, .3); }
+.djp-st-done { color: #1c6b45; background: rgba(28, 107, 69, .10); border-color: rgba(28, 107, 69, .28); }
+.djp-st-failed { color: #8c1d18; background: rgba(179, 38, 30, .10); border-color: rgba(179, 38, 30, .28); }
+.djp-st-cancelled { color: #5f584c; background: rgba(95, 88, 76, .10); border-color: rgba(95, 88, 76, .25); }
+
+.djp-cancel {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(179, 38, 30, .35);
+    background: transparent;
+    color: #8c1d18;
+    cursor: pointer;
+    transition: background 150ms ease;
+}
+.djp-cancel:hover { background: rgba(179, 38, 30, .10); }
+
+/* 进度条：running 时细纹流动，一眼看出「还活着」 */
+.djp-bar {
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(120, 100, 70, .16);
+    overflow: hidden;
+}
+.djp-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #c98a2e, #e0a54a);
+    transition: width .35s ease;
+}
+.djp-job[data-status="running"] .djp-bar-fill {
+    background-image: linear-gradient(90deg, #c98a2e, #e0a54a),
+        repeating-linear-gradient(45deg, rgba(255, 255, 255, .22) 0 5px, transparent 5px 10px);
+    background-size: 100% 100%, 22px 100%;
+    animation: djpStripes 1s linear infinite;
+}
+@keyframes djpStripes { to { background-position: 0 0, 22px 0; } }
+.djp-job[data-status="done"] .djp-bar-fill { background: #4c9a72; }
+.djp-job[data-status="failed"] .djp-bar-fill { background: #b3261e; }
+
+.djp-job-meta {
+    margin-top: 6px;
+    font-size: 11.5px;
+    font-family: var(--font-mono, monospace);
+    color: #6b6157;
+}
+.djp-current {
+    margin-top: 3px;
+    font-size: 11.5px;
+    color: #8a5a12;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.djp-recent { margin-top: 6px; border-top: 1px dashed rgba(120, 100, 70, .18); padding-top: 5px; }
+.djp-recent-row {
+    font-size: 11px;
+    line-height: 1.65;
+    color: #57503f;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.djp-recent-tag { color: #8a5a12; font-size: 10px; }
+.djp-error {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #8c1d18;
+    word-break: break-all;
+}
+
+/* ---------- 深色皮肤（夜 · matinee）：两个挂载点都要写 ---------- */
+html[data-v4skin="matinee"] .dsn-jobs-panel,
+body.dark .dsn-jobs-panel {
+    background: rgba(var(--cv-scrim-strong-rgb, 30, 27, 24), 0.90);
+    color: #f0e9dd;
+    border-color: rgba(255, 255, 255, 0.10);
+}
+html[data-v4skin="matinee"] .djp-empty,
+body.dark .djp-empty { color: rgba(255, 255, 255, 0.55); }
+
+html[data-v4skin="matinee"] .djp-job,
+body.dark .djp-job {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.09);
+}
+html[data-v4skin="matinee"] .djp-job-type,
+body.dark .djp-job-type { color: #f5efe2; }
+html[data-v4skin="matinee"] .djp-job-meta,
+body.dark .djp-job-meta { color: rgba(255, 255, 255, 0.58); }
+html[data-v4skin="matinee"] .djp-current,
+body.dark .djp-current { color: #e8b96a; }
+html[data-v4skin="matinee"] .djp-recent-row,
+body.dark .djp-recent-row { color: rgba(255, 255, 255, 0.72); }
+html[data-v4skin="matinee"] .djp-recent-tag,
+body.dark .djp-recent-tag { color: #e8b96a; }
+html[data-v4skin="matinee"] .djp-error,
+body.dark .djp-error { color: #f2b8b0; }
+html[data-v4skin="matinee"] .djp-bar,
+body.dark .djp-bar { background: rgba(255, 255, 255, 0.12); }
+html[data-v4skin="matinee"] .djp-st-running,
+html[data-v4skin="matinee"] .djp-st-queued,
+body.dark .djp-st-running,
+body.dark .djp-st-queued { color: #e8b96a; background: rgba(232, 185, 106, .12); border-color: rgba(232, 185, 106, .32); }
+html[data-v4skin="matinee"] .djp-st-done,
+body.dark .djp-st-done { color: #8fd3ae; background: rgba(143, 211, 174, .10); border-color: rgba(143, 211, 174, .28); }
+html[data-v4skin="matinee"] .djp-st-failed,
+body.dark .djp-st-failed { color: #f2b8b0; background: rgba(242, 184, 176, .10); border-color: rgba(242, 184, 176, .28); }
+html[data-v4skin="matinee"] .djp-st-cancelled,
+body.dark .djp-st-cancelled { color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .16); }
+html[data-v4skin="matinee"] .djp-cancel,
+body.dark .djp-cancel { color: #f2b8b0; border-color: rgba(242, 184, 176, .4); }
+html[data-v4skin="matinee"] .djp-cancel:hover,
+body.dark .djp-cancel:hover { background: rgba(242, 184, 176, .12); }
+
+/* 手机窄屏：面板占满宽，别被 400px 定死 */
+@media (max-width: 860px) {
+    .dsn-jobs-panel {
+        right: 12px;
+        left: 12px;
+        width: auto;
+    }
+}

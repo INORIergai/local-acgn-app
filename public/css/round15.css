@@ -104,7 +104,7 @@
     padding: 4px 12px;
     border-radius: 99px;
     cursor: pointer;
-    transition: all .15s ease;
+    transition: all var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .rw-chip:hover, .rw-chip.on { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
 

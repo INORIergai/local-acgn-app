@@ -2,7 +2,12 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = path.join(__dirname, '../db/movie.db');
+/* round112：允许用环境变量把库指到别处。
+ * 唯一用途是「离线压测 / 回归脚本用真实库的副本跑，不污染线上库」——
+ * 生产（EXE / 开发树直跑）不设这个变量，路径与旧版完全一致。 */
+const dbPath = process.env.CINEMAVAULT_DB_PATH
+    ? path.resolve(process.env.CINEMAVAULT_DB_PATH)
+    : path.join(__dirname, '../db/movie.db');
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
@@ -214,7 +219,12 @@ function migrate() {
     // posterPath 非空，于是 1100 张视频抽帧截图被当成健康，任何自动补封面都跳过它们。
     ['posterHealth', 'TEXT DEFAULT ""'],        // ok / suspect / bad / missing
     ['posterHealthReason', 'TEXT DEFAULT ""'],  // 判定理由，如「视频截图(16:9宽幅)」
-    ['posterHealthAt', 'INTEGER DEFAULT 0']     // 判定时间戳（毫秒）
+    ['posterHealthAt', 'INTEGER DEFAULT 0'],     // 判定时间戳（毫秒）
+    // ★ round132：用户手改过的字段清单（逗号分隔，如 "title,overview"）。
+    // 起因：编辑弹窗保存只写 SQLite，而扫描时标题按「NFO → 网络 → 文件名清洗」推导，
+    // 从不看库里已有值 ⇒ 手改标题在下一次扫描就被文件名冲掉（实测复现）。
+    // 有了这列，扫描遇到用户手改过的字段一律让路，除非本次 NFO 里给了真标题。
+    ['manualFields', 'TEXT DEFAULT ""']
   ];
 
   for (const [name, def] of addMovieFields) {
@@ -223,6 +233,53 @@ function migrate() {
       console.log(`[数据库迁移] movies 表新增字段: ${name}`);
     }
   }
+
+  // 第一档②：跳过片头片尾区间按 series/episode 存 DB（替代按片名存 localStorage）
+  try {
+    const epCols = db.prepare('PRAGMA table_info(episode_progress)').all().map(c => c.name);
+    for (const [name, def] of [['skipOp', 'REAL DEFAULT 0'], ['skipEd', 'REAL DEFAULT 0']]) {
+      if (!epCols.includes(name)) {
+        db.exec(`ALTER TABLE episode_progress ADD COLUMN ${name} ${def}`);
+        console.log(`[数据库迁移] episode_progress 表新增字段: ${name}`);
+      }
+    }
+  } catch (e) { /* 表还不存在时忽略（首次建库在建表之后才有） */ }
+
+  // round181：追番在线源闭环——每集可挂一个在线源（sourceId/sourceUrl），与 movieId 二选一播放
+  try {
+    const epCols2 = db.prepare('PRAGMA table_info(episodes)').all().map(c => c.name);
+    for (const [name, def] of [
+      ['sourceId', 'TEXT DEFAULT ""'],
+      ['sourceUrl', 'TEXT DEFAULT ""'],
+      ['sourceName', 'TEXT DEFAULT ""']
+    ]) {
+      if (!epCols2.includes(name)) {
+        db.exec(`ALTER TABLE episodes ADD COLUMN ${name} ${def}`);
+        console.log(`[数据库迁移] episodes 表新增字段: ${name}`);
+      }
+    }
+  } catch (e) { /* 表还不存在时忽略 */ }
+
+  /* round185 B3：进度双键。
+   * episodes 记住 Bangumi 的 episode id —— 番剧被删了重导、或换源重建 episode 行之后，
+   * 仍能按 Bangumi 集号把进度接回来（原来只认本地自增 id，行一换进度就归零）。
+   * bangumi_progress 是与本地行解耦的账本，主键就是 bangumiEpisodeId。 */
+  try {
+    const epCols3 = db.prepare('PRAGMA table_info(episodes)').all().map(c => c.name);
+    if (!epCols3.includes('bangumiEpisodeId')) {
+      db.exec('ALTER TABLE episodes ADD COLUMN bangumiEpisodeId INTEGER');
+      console.log('[数据库迁移] episodes 表新增字段: bangumiEpisodeId');
+    }
+    db.exec(`CREATE TABLE IF NOT EXISTS bangumi_progress (
+      bangumiEpisodeId INTEGER PRIMARY KEY,
+      seriesId   INTEGER,
+      episodeNo  INTEGER,
+      position   REAL DEFAULT 0,
+      duration   REAL DEFAULT 0,
+      watched    INTEGER DEFAULT 0,
+      updatedAt  INTEGER DEFAULT 0
+    )`);
+  } catch (e) { /* 表还不存在时忽略 */ }
 
   const actressColumns = db.prepare('PRAGMA table_info(actresses)').all();
   const actressFields = actressColumns.map(c => c.name);
@@ -387,6 +444,36 @@ function migrate() {
     );
   `);
 
+  /* 在线观看历史（站点解析播放）。
+     独立于本地影片 watch_history：items 不一定是媒体库里的 movieId；
+     以 sourceId + 单集 url 作为跨设备去重键，updatedAt 负责新旧写入合并。 */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS online_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sourceId TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      episode TEXT DEFAULT '',
+      sourceName TEXT DEFAULT '',
+      workUrl TEXT DEFAULT '',
+      episodes TEXT DEFAULT '[]',
+      episodeIndex INTEGER DEFAULT 0,
+      kind TEXT DEFAULT '',
+      position REAL DEFAULT 0,
+      duration REAL DEFAULT 0,
+      completed INTEGER DEFAULT 0,
+      watchedAt INTEGER DEFAULT 0,
+      updatedAt INTEGER DEFAULT 0,
+      UNIQUE(sourceId, url)
+    );
+    CREATE INDEX IF NOT EXISTS idx_online_history_updated ON online_history(updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_online_history_work ON online_history(sourceId, workUrl);
+    CREATE TABLE IF NOT EXISTS online_history_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+
   /* round73：漫画 / 小说的阅读进度（落库版）。
      ★ 为什么单独建表而不是往 movies 加字段、或复用 playback_progress：
        - 往 movies 加列：movies 已 37 字段，且 FTS 触发器 movies_fts_update 历史上出过
@@ -434,6 +521,26 @@ function migrate() {
       UNIQUE(kind, scope)
     );
   `);
+
+  /* 2026-11：阅读书摘 / 划线（小说 + 漫画通用）。
+     只存「用户选中并保存的原文」+ 可选 AI 解释/笔记；不存整章正文。
+     source: manual=手动摘抄 / ai=AI 智能摘抄 / ask=划线提问留下的句子。 */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reading_notes (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      movieId      INTEGER NOT NULL,
+      kind         TEXT    NOT NULL DEFAULT 'novel',
+      chapter      INTEGER DEFAULT 0,
+      chapterTitle TEXT    DEFAULT '',
+      quote        TEXT    NOT NULL,
+      note         TEXT    DEFAULT '',
+      source       TEXT    DEFAULT 'manual',
+      createdAt    INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(movieId) REFERENCES movies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_reading_notes_kind ON reading_notes(kind, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_reading_notes_movie ON reading_notes(movieId, kind, createdAt DESC);
+  `);
   // 给历史行补 startedAt / finishedAt（SQLite ADD COLUMN 有 DEFAULT 限制，老表用 ALTER）
   const mpCols = db.prepare('PRAGMA table_info(media_progress)').all().map(c => c.name);
   for (const [name, def] of [['startedAt', 'INTEGER DEFAULT 0'], ['finishedAt', 'INTEGER DEFAULT 0']]) {
@@ -472,6 +579,87 @@ function migrate() {
       last_opened INTEGER DEFAULT 0,
       open_count INTEGER DEFAULT 0
     );
+  `);
+
+  /* ==================== round173 · 追番数据地基 ====================
+     设计铁律（吸取 round73 的 FTS 事故教训）：
+     1. **绝不 ALTER movies 加列**。movies 有 FTS5 外部内容表 + 触发器，历史加列
+        撞出过「整表任何 UPDATE 都报 database disk image is malformed」。关联一律
+        走新表自己的列（episodes.movieId），零 FTS 交互。
+     2. 一部番 = series 一行；季 = seasons（多数番只有 1 季，seasonId 默认 1，
+        不用 NULL，否则 SQLite UNIQUE(seriesId,seasonId,episodeNo) 对 NULL 失效）；
+        集 = episodes，movieId 可空（本地有文件才挂，在线源无本地文件）。
+     3. 追番清单 follows 与分集进度 episode_progress 都是独立表，主键即外键，
+        一个番/一集只有一行，天然幂等。 */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS series (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      title         TEXT NOT NULL,
+      originalTitle TEXT DEFAULT '',
+      provider      TEXT DEFAULT '',        -- bangumi / anilist / tmdb / custom
+      providerId    TEXT DEFAULT '',        -- 第三方条目 ID
+      type          TEXT DEFAULT 'cartoon', -- cartoon(普通向) / anime(里番) / film ...
+      overview      TEXT DEFAULT '',
+      posterPath    TEXT DEFAULT '',        -- 本地缓存路径或远程 URL（追番侧独立，不复用 movies）
+      airDate       TEXT DEFAULT '',        -- 首播日期 YYYY-MM-DD
+      status        TEXT DEFAULT 'ongoing', -- ongoing / finished / upcoming
+      episodeCount  INTEGER DEFAULT 0,      -- 总集数
+      createdAt     INTEGER DEFAULT 0,
+      updatedAt     INTEGER DEFAULT 0,
+      UNIQUE(provider, providerId)
+    );
+
+    CREATE TABLE IF NOT EXISTS seasons (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      seriesId   INTEGER NOT NULL,
+      seasonNo   INTEGER NOT NULL DEFAULT 1,
+      title      TEXT DEFAULT '',
+      posterPath TEXT DEFAULT '',
+      FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+      UNIQUE(seriesId, seasonNo)
+    );
+
+    CREATE TABLE IF NOT EXISTS episodes (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      seriesId  INTEGER NOT NULL,
+      seasonId  INTEGER NOT NULL DEFAULT 1,
+      episodeNo INTEGER NOT NULL,           -- 第几集（0=OVA/特别篇）
+      title     TEXT DEFAULT '',
+      airDate   TEXT DEFAULT '',
+      duration  REAL DEFAULT 0,
+      movieId   INTEGER,                    -- 本地文件关联，可空；不设 FK 避免 FTS 侧连锁
+      createdAt INTEGER DEFAULT 0,
+      FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+      UNIQUE(seriesId, seasonId, episodeNo)
+    );
+
+    CREATE TABLE IF NOT EXISTS follows (
+      seriesId  INTEGER PRIMARY KEY,
+      status    TEXT DEFAULT 'watching',    -- watching / planned / completed / dropped
+      favorite  INTEGER DEFAULT 0,
+      addedAt   INTEGER DEFAULT 0,
+      updatedAt INTEGER DEFAULT 0,
+      FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS episode_progress (
+      episodeId INTEGER PRIMARY KEY,
+      position  REAL DEFAULT 0,             -- 播放位置（秒）
+      duration  REAL DEFAULT 0,
+      watched   INTEGER DEFAULT 0,          -- 是否已看完
+      skipOp    REAL DEFAULT 0,             -- 跳过片头结束位置（秒，0=不跳）
+      skipEd    REAL DEFAULT 0,             -- 跳过片尾开始位置（秒，0=不跳）
+      updatedAt INTEGER DEFAULT 0,
+      FOREIGN KEY(episodeId) REFERENCES episodes(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_series_provider ON series(provider, providerId);
+    CREATE INDEX IF NOT EXISTS idx_series_type ON series(type, airDate DESC);
+    CREATE INDEX IF NOT EXISTS idx_seasons_series ON seasons(seriesId);
+    CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(seriesId, seasonId, episodeNo);
+    CREATE INDEX IF NOT EXISTS idx_episodes_movie ON episodes(movieId) WHERE movieId IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_follows_status ON follows(status, updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_episode_progress_watched ON episode_progress(watched, updatedAt DESC);
   `);
 
   db.exec(`
@@ -622,6 +810,13 @@ const searchMovies = db.prepare(`
   SELECT * FROM movies
   WHERE title LIKE @kw OR fileName LIKE @kw OR originalTitle LIKE @kw OR avid LIKE @kw
   ORDER BY hotScore DESC, lastScanTime DESC
+`);
+
+/* round127：模糊搜索的候选投影 —— 只取参与匹配的文本列 + id，
+ * 避免本已 2848 行、每行还带 overview/genres 的大表被整表 SELECT * 拉进内存。 */
+const getMovieSearchKeys = db.prepare(`
+  SELECT id, title, originalTitle, fileName, avid, cleanName
+  FROM movies ORDER BY hotScore DESC, lastScanTime DESC
 `);
 
 const getMovieById = db.prepare(`SELECT * FROM movies WHERE id = ?`);
@@ -887,6 +1082,187 @@ const getAllTags = db.prepare(`
 
 const getTagById = db.prepare(`SELECT * FROM tags WHERE id = ?`);
 const getTagByName = db.prepare(`SELECT * FROM tags WHERE name = ?`);
+
+/* ============================================================
+ * round168 · 五库标签作用域
+ *
+ * 设计：不迁移 tags 表（9310 部影片 / 4629 条关系，动表风险远大于收益）。
+ *   「五个库各一套」在查询层实现 —— 用 movies.type 判定归属，
+ *   同一个标签名在不同库里各自算独立计数、独立联想空间、独立可见性。
+ *   ⇒ 好处：零迁移、可随时回滚；代价：同名标签跨库共用一条 tags 记录
+ *     （真要独立命名空间再做一次迁移，届时才有必要）。
+ * ============================================================ */
+const TAG_LIB_TYPES = {
+    film: ['film', 'cartoon'],   // 影视库（film 与 cartoon 合并为一个库口径）
+    anime: ['anime'],            // 动漫库
+    comic: ['comic'],            // 漫画库
+    novel: ['novel'],            // 小说库
+    jav: ['jav']                 // AV 库（成人，受右上角锁控制）
+};
+const TAG_LIB_ADULT = { jav: true };
+
+const _tagStmtCache = new Map();
+function _tagPrep(sql) {
+    let s = _tagStmtCache.get(sql);
+    if (!s) { s = db.prepare(sql); _tagStmtCache.set(sql, s); }
+    return s;
+}
+/** 生成 type 作用域片段与参数（lib 为空/非法 ⇒ 不过滤） */
+function _tagScope(lib) {
+    const types = TAG_LIB_TYPES[lib];
+    if (!types) return { sql: '', args: [] };
+    return { sql: ` AND m.type IN (${types.map(() => '?').join(',')})`, args: types.slice() };
+}
+
+/**
+ * 某库的标签列表。
+ * ★ 只返回「在本库至少挂着 1 部作品」的标签 —— INNER JOIN 天然排除了 0 关系的幽灵标签。
+ *   之前的 includeEmpty 参数是**假的**（JOIN 已经把它们滤掉，参数传了也没用），
+ *   所以直接删掉，幽灵标签统一走 /prune-empty 那个出口，语义才不打架。
+ */
+function getTagsByLib(lib) {
+    const sc = _tagScope(lib);
+    /* ★ 不要写 HAVING movieCount >= ? / ORDER BY movieCount ——
+     *   tags 表本身就有一个 movieCount 列（历史遗留、值已过期），
+     *   SQLite 会优先把它当成列而不是聚合别名 ⇒ 列表只剩 7 条且顺序错乱。
+     *   一律用聚合表达式 COUNT(m.id) 本体，别名只给前端看。 */
+    const sql = `
+        SELECT t.id, t.name, t.category, t.hotScore,
+               COUNT(m.id) AS movieCount,
+               COALESCE(SUM(CASE WHEN m.watched = 1 THEN 1 ELSE 0 END), 0) AS watchedCount,
+               MAX(m.releaseDate) AS latestDate
+        FROM tags t
+        JOIN movie_tag mt ON mt.tagId = t.id
+        JOIN movies m ON m.id = mt.movieId
+        WHERE 1 = 1${sc.sql}
+        GROUP BY t.id
+        HAVING COUNT(m.id) >= 1
+        ORDER BY COUNT(m.id) DESC, t.name ASC`;
+    return _tagPrep(sql).all(...sc.args);
+}
+
+/** 某库的 Top 标签（修掉 getTopTags 写死 LIMIT 30 的问题） */
+function getTopTagsByLib(lib, limit = 30) {
+    const sc = _tagScope(lib);
+    if (sc.sql) {
+        const sql = `SELECT t.id, t.name, COUNT(m.id) AS movieCount
+            FROM tags t
+            JOIN movie_tag mt ON mt.tagId = t.id
+            JOIN movies m ON m.id = mt.movieId
+            WHERE 1 = 1${sc.sql}
+            GROUP BY t.id
+            ORDER BY COUNT(m.id) DESC
+            LIMIT ?`;
+        return _tagPrep(sql).all(...sc.args, limit);
+    }
+    const sqlAll = `SELECT t.id, t.name, COUNT(mt.movieId) AS movieCount
+        FROM tags t JOIN movie_tag mt ON mt.tagId = t.id
+        GROUP BY t.id ORDER BY COUNT(mt.movieId) DESC LIMIT ?`;
+    return _tagPrep(sqlAll).all(limit);
+}
+
+/** 某个标签在指定库内的计数（详情页/卡片徽标用） */
+function getTagCountInLib(tagId, lib) {
+    const sc = _tagScope(lib);
+    const sql = `SELECT COUNT(*) AS n FROM movie_tag mt JOIN movies m ON m.id = mt.movieId
+        WHERE mt.tagId = ?${sc.sql}`;
+    return _tagPrep(sql).get(tagId, ...sc.args).n || 0;
+}
+
+/** 轻量海报：只回 id + 一张海报路径（悬停预览专用，904KB → ~1KB） */
+function getTagPosters(tagId, lib, limit = 6) {
+    const sc = _tagScope(lib);
+    const sql = `
+        SELECT m.id, m.title, m.fileName,
+               CASE WHEN m.localPosterPath IS NOT NULL AND m.localPosterPath <> ''
+                    THEN m.localPosterPath ELSE m.posterPath END AS poster
+        FROM movies m
+        JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId = ?${sc.sql}
+        ORDER BY m.hotScore DESC, m.lastScanTime DESC
+        LIMIT ?`;
+    return _tagPrep(sql).all(tagId, ...sc.args, limit)
+        .filter(r => r.poster)
+        .map(r => {
+            /* ★★ 封面路径有两种形态，前端不能一视同仁（round172 实锤）：
+             *   ① `cache/posters/<hash>.jpg`   → 走 /api/movie/poster/:hash（只在这个目录里找）
+             *   ② `J:\manga\作品\xxx-poster.jpg` → 作品目录里的原图，**不在 cache 里**
+             *   旧代码把 ② 也当 ①，只取 basename 去 cache 目录找 ⇒ 必然 400/404。
+             *   实测漫画库 90 张墙图里 50 张破图（55.6%），全是这个原因。
+             *   ⇒ 明确返回 kind，前端据此选接口。 */
+            const p = String(r.poster);
+            const isDisk = /^[A-Za-z]:[\\/]/.test(p);
+            return { id: r.id, poster: p, kind: isDisk ? 'disk' : 'cache', title: r.title || r.fileName || '' };
+        });
+}
+
+/** 系列键：把「_第03话」「_01卷」这类卷次差异抹平，用于同一标签下海报去重 */
+function seriesKey(title) {
+    let s = String(title || '');
+    s = s.replace(/\.(pdf|epub|mobi|azw3|txt|cbz|cbr|zip|rar)$/i, '');
+    s = s.replace(/[_ ]+\d{1,4}\s*(卷|话|話|章|回|期)?\s*$/g, '');
+    s = s.replace(/\s*\d{1,4}\s*(卷|话|話|章|回|期)\s*$/g, '');
+    s = s.replace(/[-_]\s*\d{1,4}\s*$/g, '');
+    s = s.replace(/\s*第\s*\d{1,4}\s*[话話章回]\s*$/g, '');
+    return s.trim().toLowerCase();
+}
+
+/** 某标签在某库内的影片（详情页代表作品 / 进入筛选结果） */
+function getTagMovies(tagId, lib, limit = 0, offset = 0) {
+    const sc = _tagScope(lib);
+    const lim = limit > 0 ? ' LIMIT ? OFFSET ?' : '';
+    const sql = `SELECT m.* FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId = ?${sc.sql} ORDER BY m.hotScore DESC, m.lastScanTime DESC${lim}`;
+    const args = [tagId, ...sc.args];
+    if (limit > 0) args.push(limit, offset);
+    return _tagPrep(sql).all(...args);
+}
+
+/** 多标签组合筛选：mode='and'（同时包含全部）| 'or'（命中任一） */
+function getTagsFilter(tagIds, lib, mode = 'and') {
+    if (!tagIds || !tagIds.length) return [];
+    const sc = _tagScope(lib);
+    const ph = tagIds.map(() => '?').join(',');
+    if (mode === 'or') {
+        const sql = `SELECT m.* FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+            WHERE mt.tagId IN (${ph})${sc.sql}
+            GROUP BY m.id ORDER BY m.hotScore DESC, m.lastScanTime DESC`;
+        return _tagPrep(sql).all(...tagIds, ...sc.args);
+    }
+    const sql = `SELECT m.* FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId IN (${ph})${sc.sql}
+        GROUP BY m.id HAVING COUNT(DISTINCT mt.tagId) = ?
+        ORDER BY m.hotScore DESC, m.lastScanTime DESC`;
+    return _tagPrep(sql).all(...tagIds, ...sc.args, tagIds.length);
+}
+
+/** 某标签的年份分布（详情页柱状） */
+function getTagYearHistogram(tagId, lib) {
+    const sc = _tagScope(lib);
+    const sql = `SELECT SUBSTR(m.releaseDate, 1, 4) AS year, COUNT(*) AS n
+        FROM movies m JOIN movie_tag mt ON mt.movieId = m.id
+        WHERE mt.tagId = ?${sc.sql} AND m.releaseDate IS NOT NULL AND LENGTH(m.releaseDate) >= 4
+        GROUP BY year ORDER BY year ASC`;
+    return _tagPrep(sql).all(tagId, ...sc.args).filter(r => /^\d{4}$/.test(r.year || ''));
+}
+
+/** 共现矩阵（思维空间的「结构关系」边）：同库内两个标签同时出现在一部作品上 */
+function getTagCooccurrence(lib, minCo = 2) {
+    const sc = _tagScope(lib);
+    const sql = `SELECT a.tagId AS a, b.tagId AS b, COUNT(*) AS co
+        FROM movie_tag a
+        JOIN movie_tag b ON b.movieId = a.movieId AND b.tagId > a.tagId
+        JOIN movies m ON m.id = a.movieId
+        WHERE 1 = 1${sc.sql}
+        GROUP BY a.tagId, b.tagId
+        HAVING co >= ?`;
+    return _tagPrep(sql).all(...sc.args, minCo);
+}
+
+/** 别名表（合并后保留的旧名） */
+const getTagAliases = db.prepare(`SELECT tagId, aliasName FROM tag_alias`);
+const getAliasesOfTag = db.prepare(`SELECT aliasName FROM tag_alias WHERE tagId = ?`);
+const insertTagAlias = db.prepare(`INSERT OR IGNORE INTO tag_alias (tagId, aliasName) VALUES (?, ?)`);
 
 const getMovieTags = db.prepare(`
   SELECT t.id, t.name, t.category FROM tags t
@@ -1168,6 +1544,68 @@ const getAllScrapeFailures = db.prepare(`
   ORDER BY sf.failedAt DESC
 `);
 
+/* ===== round127：清掉「已经不存在」的刮削失败记录 =====
+ * 用户原话：「刮削失败的功能页，就算是已经删除的内容也还是会在这里面展示，点击刷新也没有用」。
+ * 失败记录是按 filePath 独立存的一张表，删片 / 移盘 / 清理目录都不会顺带清理它，
+ * 而失败清单是 LEFT JOIN movies —— 影片没了，记录照样被列出来，刷新的只是重查。
+ * 判死条件（任一）：
+ *   ① 找不到同路径的影片，且记录里那个 movieId 在库里也已经不存在 ⇒ 指向的条目已被删；
+ *   ② 没有任何 movieId 兜底、文件在磁盘上也不存在 ⇒ 拿不到元数据也重刮不了；
+ *   ③ 影片行还在但文件确实没了（外接盘在线、路径可判定）⇒ 只剩一条僵尸记录。
+ * ★ ③ 必须挂「盘是否在线」的闸：NAS / 移动硬盘掉线时 existsSync 对所有文件都是 false，
+ *   不设闸就会在一次掉线后把整张失败表清空 —— 那是销毁数据，不是修 bug。
+ * 反过来：库里有这部片（还能点开换封面）、或文件还在盘上（下次扫描还能重刮）的记录一律保留。 */
+const _deleteScrapeFailureById = db.prepare(`DELETE FROM scrape_failures WHERE id = ?`);
+
+/** 文件「确实被删」而不是「盘没挂」：只要最近一级存在的祖先目录能找到，就说明盘是在线的 */
+function mediaRootReachable(filePath) {
+  let dir;
+  try { dir = path.dirname(filePath); } catch (e) { return false; }
+  for (let i = 0; i < 64; i++) {
+    let exists = false;
+    try { exists = fs.existsSync(dir); } catch (e) { exists = false; }
+    if (exists) return true;                     // 祖先目录在 ⇒ 盘在线，缺文件＝真删了
+    const up = path.dirname(dir);
+    if (up === dir) return false;                // 一路到根都不存在 ⇒ 盘没挂，别动
+    dir = up;
+  }
+  return false;
+}
+
+function pruneDeadScrapeFailures() {
+  let dead = [];
+  try {
+    const rows = db.prepare(`
+      SELECT sf.id, sf.filePath, sf.movieId, m.id AS liveId
+      FROM scrape_failures sf
+      LEFT JOIN movies m ON m.filePath = sf.filePath
+    `).all();
+    for (const r of rows) {
+      let exists = false;
+      try { exists = !!r.filePath && fs.existsSync(r.filePath); } catch (e) { exists = false; }
+      if (r.liveId) {
+        /* 影片还在库里：只有「盘在线但文件没了」才判死（僵尸记录） */
+        if (!exists && mediaRootReachable(r.filePath)) dead.push(r.id);
+        continue;
+      }
+      if (r.movieId != null && r.movieId !== '') {
+        dead.push(r.id);                                       // 指向的影片已被删除
+        continue;
+      }
+      if (!exists) dead.push(r.id);
+    }
+    if (dead.length) {
+      const tx = db.transaction(ids => { for (const id of ids) _deleteScrapeFailureById.run(id); });
+      tx(dead);
+      console.log(`[刮削失败] 清理失效记录 ${dead.length} 条`);
+    }
+  } catch (e) {
+    console.log('[刮削失败] 清理失效记录失败:', e.message);
+    dead = [];
+  }
+  return dead.length;
+}
+
 // ========== 工具函数 ==========
 function updateMovieRelations(movieId, { tags = [], actresses = [] }) {
   const tx = db.transaction(() => {
@@ -1313,6 +1751,7 @@ module.exports = {
   getUnwatchedMovies,
   getFavoriteMovies,
   searchMovies,
+  getMovieSearchKeys,
   getMovieById,
   getMovieByPath,
   getMoviesByActress,
@@ -1364,6 +1803,21 @@ module.exports = {
   getStatsByYear,
   getTopActresses,
   getTopTags,
+  // round168 · 五库标签作用域
+  TAG_LIB_TYPES,
+  TAG_LIB_ADULT,
+  getTagsByLib,
+  getTopTagsByLib,
+  getTagCountInLib,
+  getTagPosters,
+  seriesKey,
+  getTagMovies,
+  getTagsFilter,
+  getTagYearHistogram,
+  getTagCooccurrence,
+  getTagAliases,
+  getAliasesOfTag,
+  insertTagAlias,
   getStatsByResolution,
   getStatsByDuration,
   getStatsByFormat,
@@ -1388,6 +1842,7 @@ module.exports = {
   getAllPlaybackProgress,
   // 刮削失败
   recordScrapeFailure,
+  pruneDeadScrapeFailures,
   clearScrapeFailure,
   getScrapeFailureByPath,
   getAllScrapeFailures,

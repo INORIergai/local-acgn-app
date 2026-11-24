@@ -8,7 +8,7 @@
 :root {
     --mv-ease: cubic-bezier(0.16, 1, 0.3, 1);
     --mv-ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
-    --mv-fast: 180ms;
+    --mv-fast: var(--mv2-d1, 180ms);   /* round113：旧令牌指向新档位（d1=140ms），删令牌层即回退 180ms */
     --mv-slow: 360ms;
     --gold-glow: rgba(249, 162, 32, 0.28);
     --gold-primary: #f59e0b;
@@ -33,7 +33,7 @@
     visibility: visible;
     pointer-events: auto;
     transform: translateY(0) scale(1);
-    transition: opacity 220ms var(--mv-ease), transform 220ms var(--mv-ease);
+    transition: opacity var(--mv2-d2, 220ms) var(--mv-ease), transform var(--mv2-d2, 220ms) var(--mv-ease);
 }
 
 html.mv-on .movie-card img,
@@ -86,8 +86,8 @@ html.mv-on .pld-poster-item img.mv-loaded {
  * 极致清晰度设计：纯白高光滑块 + 碳黑文字 (19:1对比度)
  * 未选态采用明亮白灰字，彻底杜绝发灰发虚看不清
  * ----------------------------------------------------------- */
+/* 仅视频/深色业务切片保留物理滑块；通用 facet 在 workspace.css 中使用语义色。 */
 .nr-tabs,
-.facet-group,
 .r34-slice-bar {
     position: relative !important;
     display: inline-flex !important;
@@ -99,6 +99,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     box-sizing: border-box !important;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35) !important;
 }
+.facet-group { position: relative; }
 
 .mv-slide-pill {
     position: absolute !important;
@@ -106,10 +107,10 @@ html.mv-on .pld-poster-item img.mv-loaded {
     background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%) !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 1px rgba(0, 0, 0, 0.2) !important;
     transform: translateX(0);
-    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
-                width 240ms cubic-bezier(0.16, 1, 0.3, 1),
-                top 240ms cubic-bezier(0.16, 1, 0.3, 1),
-                height 240ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+    transition: transform var(--mv2-d2, 240ms) cubic-bezier(0.16, 1, 0.3, 1),
+                width var(--mv2-d2, 240ms) cubic-bezier(0.16, 1, 0.3, 1),
+                top var(--mv2-d2, 240ms) cubic-bezier(0.16, 1, 0.3, 1),
+                height var(--mv2-d2, 240ms) cubic-bezier(0.16, 1, 0.3, 1) !important;
     pointer-events: none !important;
     z-index: 1 !important;
     opacity: 1 !important;
@@ -117,7 +118,6 @@ html.mv-on .pld-poster-item img.mv-loaded {
 
 /* 按钮浮在滑块之上，背景透明，字体顺滑过渡 */
 .nr-tabs .nr-tab,
-.facet-group .f-pill,
 .r34-slice-bar .r34-slice-tab {
     position: relative !important;
     z-index: 2 !important;
@@ -127,13 +127,12 @@ html.mv-on .pld-poster-item img.mv-loaded {
     color: #cbd5e1 !important;
     font-size: 12px !important;
     font-weight: 600 !important;
-    transition: color 180ms ease, transform 180ms ease !important;
+    transition: color var(--mv2-d1, 180ms) var(--mv2-snap, ease), transform var(--mv2-d1, 180ms) var(--mv2-snap, ease) !important;
     cursor: pointer !important;
 }
 
 /* 选中项：纯黑碳字居于白色滑块正上方，对比度极高极清晰 */
 .nr-tabs .nr-tab.active,
-.facet-group .f-pill.active,
 .r34-slice-bar .r34-slice-tab.active {
     color: #09090b !important;
     font-weight: 800 !important;
@@ -144,7 +143,6 @@ html.mv-on .pld-poster-item img.mv-loaded {
 
 /* 悬停未激活态纯白高亮 */
 .nr-tabs .nr-tab:not(.active):hover,
-.facet-group .f-pill:not(.active):hover,
 .r34-slice-bar .r34-slice-tab:not(.active):hover {
     color: #ffffff !important;
 }
@@ -184,7 +182,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
 .deck-carousel-stage { user-select: none; }
 .deck-carousel-stage img { -webkit-user-drag: none; user-drag: none; }
 .deck-carousel-wrap.mv-dragging .deck-card { transition: none !important; }
-.deck-card.is-active { transition: transform 450ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.deck-card.is-active { transition: transform var(--mv2-d3, 450ms) cubic-bezier(0.34, 1.56, 0.64, 1); }
 .deck-card.is-active:hover { filter: brightness(1.04); }
 
 /* Cookie 导入弹层 */
@@ -194,7 +192,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     transition: opacity var(--mv-fast) var(--mv-ease), visibility 0s linear var(--mv-fast);
     display: flex; align-items: center; justify-content: center;
 }
-.cimp-mask.show { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 220ms var(--mv-ease); }
+.cimp-mask.show { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--mv2-d2, 220ms) var(--mv-ease); }
 .cimp-card {
     width: min(560px, calc(100vw - 48px)); background: var(--card-bg); border: 1px solid var(--border);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 20px 22px;
@@ -465,7 +463,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
 }
 .nr-feed-cover img {
     width: 100%; height: 100%; object-fit: cover; object-position: center 20%;
-    display: block; transition: transform 450ms var(--mv-ease);
+    display: block; transition: transform var(--mv2-d3, 450ms) var(--mv-ease);
 }
 .nr-feed-card:hover .nr-feed-cover img {
     transform: scale(1.08);
@@ -582,13 +580,13 @@ html.mv-on .pld-poster-item img.mv-loaded {
     box-shadow: 0 0 0 1px rgba(0,0,0,0.8),
                 0 18px 40px -10px rgba(0,0,0,0.85),
                 0 0 32px -4px rgba(245, 158, 11, 0.22);
-    transition: transform 380ms var(--mv-ease),
-                box-shadow 380ms var(--mv-ease),
-                border-color 380ms var(--mv-ease);
+    transition: transform var(--mv2-d3, 380ms) var(--mv-ease),
+                box-shadow var(--mv2-d3, 380ms) var(--mv-ease),
+                border-color var(--mv2-d3, 380ms) var(--mv-ease);
 }
 .gallery-canvas img {
     width: 100%; height: 100%; object-fit: cover; display: block;
-    transition: transform 450ms var(--mv-ease);
+    transition: transform var(--mv2-d3, 450ms) var(--mv-ease);
 }
 
 /* 悬停聚光灯高亮与 3D 前推浮出 */
@@ -676,8 +674,8 @@ html.mv-on .pld-poster-item img.mv-loaded {
     background: #000;
     border: 1px solid rgba(255,255,255,0.15);
     box-shadow: 0 10px 24px rgba(0,0,0,0.45);
-    transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
-                opacity 320ms var(--mv-ease);
+    transition: transform var(--mv2-d3, 420ms) cubic-bezier(0.34, 1.56, 0.64, 1),
+                opacity var(--mv2-d2, 320ms) var(--mv-ease);
     will-change: transform;
 }
 .pld-poster-item img {
@@ -905,13 +903,13 @@ html.mv-on .pld-poster-item img.mv-loaded {
     z-index: 9999;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 220ms var(--mv-ease), transform 220ms var(--mv-ease), visibility 0s linear 220ms;
+    transition: opacity var(--mv2-d2, 220ms) var(--mv-ease), transform var(--mv2-d2, 220ms) var(--mv-ease), visibility 0s linear var(--mv2-d2, 220ms);
 }
 .asr-indicator.show {
     opacity: 1;
     visibility: visible;
     transform: translateX(-50%) translateY(0) scale(1);
-    transition: opacity 220ms var(--mv-ease), transform 220ms var(--mv-ease);
+    transition: opacity var(--mv2-d2, 220ms) var(--mv-ease), transform var(--mv2-d2, 220ms) var(--mv-ease);
 }
 .asr-dot {
     width: 10px;
@@ -939,7 +937,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+    transition: background var(--mv2-d1, 180ms) var(--mv2-snap, ease), color var(--mv2-d1, 180ms) var(--mv2-snap, ease), transform var(--mv2-d1, 180ms) var(--mv2-snap, ease);
     margin-right: 6px;
     vertical-align: middle;
 }
@@ -973,7 +971,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     cursor: pointer;
     z-index: 850;
     font-size: 20px;
-    transition: transform 200ms var(--mv-ease), box-shadow 200ms var(--mv-ease), border-color 200ms var(--mv-ease);
+    transition: transform var(--mv2-d2, 200ms) var(--mv-ease), box-shadow var(--mv2-d2, 200ms) var(--mv-ease), border-color var(--mv2-d2, 200ms) var(--mv-ease);
 }
 .global-asr-fab:hover {
     transform: scale(1.1) translateY(-2px);
@@ -1032,7 +1030,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    transition: all 180ms var(--mv-ease);
+    transition: all var(--mv2-d1, 180ms) var(--mv-ease);
 }
 .dsn-new-btn:hover {
     background: var(--primary, #f59e0b);
@@ -1057,7 +1055,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     cursor: pointer;
     font-size: 13px;
     color: var(--text-muted, #a8a29e);
-    transition: all 150ms ease;
+    transition: all var(--mv2-d1, 150ms) var(--mv2-snap, ease);
     position: relative;
 }
 .dsn-session-item:hover {
@@ -1152,7 +1150,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    transition: all 180ms ease;
+    transition: all var(--mv2-d1, 180ms) var(--mv2-snap, ease);
 }
 .dsn-pill-btn:hover {
     background: rgba(255, 255, 255, 0.12);
@@ -1192,7 +1190,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 14px;
     padding: 8px 12px;
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition: border-color var(--mv2-d2, 200ms) var(--mv2-snap, ease), box-shadow var(--mv2-d2, 200ms) var(--mv2-snap, ease);
 }
 .dsn-input-box:focus-within {
     border-color: var(--primary, #f59e0b);
@@ -1220,7 +1218,7 @@ html.mv-on .pld-poster-item img.mv-loaded {
     border: none;
     cursor: pointer;
     font-size: 13px;
-    transition: transform 150ms ease;
+    transition: transform var(--mv2-d1, 150ms) var(--mv2-snap, ease);
 }
 .dsn-send-btn:hover {
     transform: scale(1.04);

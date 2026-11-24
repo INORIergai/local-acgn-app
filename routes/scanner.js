@@ -4,7 +4,7 @@ const { startFullScan, startQuickScan, getScanStatus, getAnimeScanStatus, startA
 const { startComicQuickScan, getComicScanStatus } = require('../utils/comic-scanner');
 const { startNovelQuickScan, getNovelScanStatus } = require('../utils/novel-scanner');
 const { previewRename, startBatchRename, getRenameStatus } = require('../utils/rename-service');
-const { getAllScrapeFailures } = require('../utils/db');
+const { getAllScrapeFailures, pruneDeadScrapeFailures } = require('../utils/db');
 const { toHostPath } = require('../utils/path-map');
 const dirWatch = require('../utils/dir-watch');
 // 修复：补充缺失的定时器变量定义，解决 scanStatusTimer is not defined
@@ -14,12 +14,16 @@ let scanStatusTimer = null;
 // 失败列表（关联影片信息用于展示）
 router.get('/failures', (req, res) => {
     try {
+        /* round127：先清掉指向「已删影片 / 已消失文件」的记录，
+         * 否则删片之后清单里永远挂着那几条，点刷新也只是重查同一张表。 */
+        let pruned = 0;
+        try { pruned = pruneDeadScrapeFailures(); } catch (e) { /* 清理失败照常返回列表 */ }
         const list = getAllScrapeFailures.all().map(f => ({
             ...f,
             hostPath: toHostPath(f.filePath),
             title: f.title || f.fileName
         }));
-        res.json({ code: 0, data: list });
+        res.json({ code: 0, data: list, pruned });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }
@@ -64,13 +68,37 @@ router.get('/watch-status', (req, res) => {
     }
 });
 
-/** 手动立即检查一次（前端「🔄 检查新增」按钮）。检查完把轮询节奏拉回起始间隔。 */
+/** 手动立即检查一次（前端「🔄 检查新增」按钮）。
+ *  ★ round110：busy 时禁止再返回「本次没有发现新文件」——那是谎话。
+ *    scanNow 现在会分辨三种情况：别的扫描在跑（只发现 + 排队补检）/
+ *    上一轮还没跑完 / 正常查完。discovered 始终是磁盘真实差集数
+ *    （不受单轮 maxPerTick=200 上限影响），用户看到的就是硬盘上的真相。 */
 router.post('/watch-now', async (req, res) => {
     try {
-        const st = dirWatch.getStatus();
-        if (st.running) return res.json({ code: -1, msg: '正在检查中，请稍候' });
-        const found = await dirWatch.scanNow();
-        res.json({ code: 0, data: { found }, msg: found > 0 ? `发现 ${found} 个新文件，正在入库` : '本次没有发现新文件' });
+        const r = await dirWatch.scanNow();
+        if (r.busy === 'checking') {
+            return res.json({ code: -1, msg: '正在检查中，请稍候' });
+        }
+        if (r.busy === 'other-scan') {
+            return res.json({
+                code: 0,
+                data: { found: 0, discovered: r.discovered, queued: true },
+                msg: r.discovered > 0
+                    ? `媒体库扫描正在进行：磁盘上已有 ${r.discovered} 个新文件，已排到扫描结束后自动入库`
+                    : '媒体库扫描正在进行，扫描结束后会自动再查一次'
+            });
+        }
+        const unstable = dirWatch.getStatus().lastUnstable || 0;
+        let msg;
+        if (r.found > 0) {
+            msg = `发现 ${r.found} 个新文件，正在入库`;
+        } else if (unstable > 0) {
+            // 有文件但都不过稳定判据（大小/mtime 仍在变）——说清楚，别甩一句「没有新增」
+            msg = `本次没有发现新文件（有 ${unstable} 个文件还在下载或拷贝中，完成后会自动入库）`;
+        } else {
+            msg = '本次没有发现新文件';
+        }
+        res.json({ code: 0, data: { found: r.found, discovered: r.discovered, queued: false, unstable }, msg });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }
@@ -169,7 +197,7 @@ router.post('/cartoon', (req, res) => {
 // 获取扫描状态
 router.get('/status', (req, res) => {
     const module = req.query.module || 'movie';
-    
+
     let status;
     switch (module) {
         case 'comic':
@@ -190,8 +218,26 @@ router.get('/status', (req, res) => {
         default:
             status = getScanStatus();
     }
-    
+
+    /* ★ round112：漫画/小说是两阶段扫描 —— Phase A 入库（几秒~几分钟）
+     *   → Phase B 后台补封面（不联网）。第二阶段的进度也塞进这里，
+     *   前端不用再开一条轮询，用户也能看到「已经入库了，封面还在补」。 */
+    if (module === 'comic' || module === 'novel') {
+        try {
+            status.enrich = require('../utils/enrich-covers').getEnrichStatus();
+        } catch (e) { /* 补图模块不可用不影响状态接口 */ }
+    }
+
     res.json({ code: 0, data: status });
+});
+
+/* 网络刮削熔断状态（诊断用）：哪个源被暂停了、还剩多久、最近一次错误 */
+router.get('/scrape-health', (req, res) => {
+    try {
+        res.json({ code: 0, data: require('../utils/scrape-guard').state() });
+    } catch (e) {
+        res.json({ code: -1, msg: e.message });
+    }
 });
 
 // 预览重命名
@@ -246,9 +292,9 @@ router.post('/export-nfo', async (req, res) => {
     if (exportNfoStatus.running) {
         return res.json({ code: -1, msg: '正在导出中，请稍候' });
     }
-    
+
     const { overwrite = false } = req.body || {};
-    
+
     exportNfoStatus = {
         running: true,
         total: 0,
@@ -257,38 +303,38 @@ router.post('/export-nfo', async (req, res) => {
         failed: 0,
         skipped: 0
     };
-    
+
     res.json({ code: 0, msg: '已开始批量导出NFO' });
-    
+
     // 后台执行
     (async () => {
         const db = require('../utils/db');
         const { generateNfo } = require('../utils/nfo_utils');
         const path = require('path');
         const fs = require('fs');
-        
+
         const movies = db.getAllMovies();
         exportNfoStatus.total = movies.length;
-        
+
         for (let i = 0; i < movies.length; i++) {
             const movie = movies[i];
             exportNfoStatus.current = i + 1;
-            
+
             try {
                 const dir = path.dirname(movie.filePath);
                 const stem = path.basename(movie.filePath, path.extname(movie.filePath));
                 const nfoPath = path.join(dir, `${stem}.nfo`);
-                
+
                 // 如果已经存在且不覆盖，跳过
                 if (fs.existsSync(nfoPath) && !overwrite) {
                     exportNfoStatus.skipped++;
                     continue;
                 }
-                
+
                 // 获取女优和标签
                 const actresses = db.getMovieActresses(movie.id) || [];
                 const tags = db.getMovieTags(movie.id) || [];
-                
+
                 // 生成NFO
                 generateNfo({
                     ...movie,
@@ -296,14 +342,14 @@ router.post('/export-nfo', async (req, res) => {
                     genres: tags.map(t => t.name),
                     actresses: actresses.map(a => a.name)
                 }, nfoPath);
-                
+
                 exportNfoStatus.success++;
-                
+
             } catch (e) {
                 exportNfoStatus.failed++;
             }
         }
-        
+
         exportNfoStatus.running = false;
     })();
 });

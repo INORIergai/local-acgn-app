@@ -122,11 +122,11 @@ async function getMovie(req, domain, token, movieId) {
 function buildVideo(number, domain, data) {
   const maker = (data.studio || {}).studioName || '';
   const series = (data.series || {}).seriesName || '';
-  
+
   const actress = (data.star || [])
     .map(s => s.starName)
     .filter(n => n);
-  
+
   const genres = (data.genre || [])
     .map(g => g.genreName)
     .filter(g => g);
@@ -159,7 +159,7 @@ function buildVideo(number, domain, data) {
 async function lookup(req, domain, token, number) {
   const movieId = await searchMovieId(req, domain, token, number);
   if (!movieId) return null;
-  
+
   const data = await getMovie(req, domain, token, movieId);
   return buildVideo(number, domain, data);
 }
@@ -195,10 +195,10 @@ async function searchAvsoxByAvid(avid) {
         // token 失效，清缓存重试一次
         workingDomain = null;
         csrfToken = null;
-        
+
         const retry = await ensureSession(req);
         if (!retry.domain) return null;
-        
+
         return await lookup(req, retry.domain, retry.token, number);
       }
       throw e;

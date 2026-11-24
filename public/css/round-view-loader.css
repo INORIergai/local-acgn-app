@@ -46,7 +46,7 @@
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .nvl-v1 .nvl-center, .nvl-v2 .nvl-center { opacity: 1; }
 .nvl-reel { width: 72px; height: 72px; display: block; position: relative; }
@@ -69,7 +69,7 @@
   border-radius: 4px;
   overflow: hidden;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
   background: repeating-linear-gradient(90deg,
     var(--bg-elev-3, #26262F) 0 18px, var(--bg-elev-2, #1D1D25) 18px 22px);
 }
@@ -88,7 +88,7 @@
 }
 
 /* 旧内容压暗虚化（不清空；就位后同帧解除） */
-main.content { transition: filter 0.15s ease; }
+main.content { transition: filter var(--mv2-d1, 0.15s) var(--mv2-snap, ease); }
 main.content.nvl-dim { filter: brightness(0.78) blur(1px); }
 
 /* hidden 必须赢过 display 规则 */
@@ -109,7 +109,7 @@ main.content.nvl-dim { filter: brightness(0.78) blur(1px); }
 }
 .nvl-pixels i {
   background: rgba(8, 8, 14, 0.96);
-  animation: nvlPix 0.5s ease both;
+  animation: nvlPix 0.5s var(--mv2-settle, ease) both;
   animation-delay: var(--pd, 0s);
 }
 @keyframes nvlPix { to { opacity: 0; } }

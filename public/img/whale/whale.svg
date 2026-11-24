@@ -1,0 +1,129 @@
+<svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="bd" x1=".1" y1="0" x2=".75" y2="1">
+    <stop offset="0" stop-color="#3C6A99"></stop>
+    <stop offset=".38" stop-color="#24486F"></stop>
+    <stop offset="1" stop-color="#112742"></stop>
+  </linearGradient>
+  <linearGradient id="belly" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#9CCBEF" stop-opacity=".42"></stop>
+    <stop offset="1" stop-color="#9CCBEF" stop-opacity=".04"></stop>
+  </linearGradient>
+  <linearGradient id="rimT" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#F2FAFF" stop-opacity=".92"></stop>
+    <stop offset=".6" stop-color="#9CCBEF" stop-opacity=".40"></stop>
+    <stop offset="1" stop-color="#4E86BF" stop-opacity=".06"></stop>
+  </linearGradient>
+  <linearGradient id="fluke" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#2E5C8F"></stop><stop offset="1" stop-color="#1A3B60"></stop>
+  </linearGradient>
+  <filter id="soft"><feGaussianBlur stdDeviation="11"></feGaussianBlur></filter>
+</defs>
+
+<!-- light shafts -->
+<g>
+  <path d="M140 -40 L204 -40 L282 580 L196 580 Z" fill="#7FB6E8" opacity=".028"></path>
+  <path d="M352 -40 L392 -40 L346 580 L288 580 Z" fill="#7FB6E8" opacity=".019"></path>
+  <path d="M690 -40 L720 -40 L672 580 L634 580 Z" fill="#CFE6FA" opacity=".014"></path>
+</g>
+
+<!-- ════════ WHALE ════════ -->
+<g>
+  <!-- ── tail flukes (horizontal, seen slightly from above) ── -->
+  <path d="M742 250
+           C770 236 800 230 824 234
+           C816 250 794 262 768 266
+           C756 268 748 262 742 250 Z" fill="#2A5686"></path>
+  <path d="M742 252
+           C768 268 794 290 806 314
+           C786 318 760 306 742 288
+           C734 280 734 262 742 252 Z" fill="#1D4067"></path>
+
+  <!-- ── peduncle → body ── -->
+  <path d="M170 274
+           C176 232 216 200 282 188
+           C372 172 476 178 562 194
+           C644 209 716 230 744 250
+           C716 274 644 296 560 308
+           C474 321 366 324 282 312
+           C214 302 176 296 170 274 Z" fill="url(#bd)"></path>
+
+  <!-- ── belly ── -->
+  <path d="M180 280 C214 302 292 313 380 316 C474 319 578 306 668 288
+           C624 300 520 314 418 318 C322 321 226 306 180 280 Z" fill="url(#belly)"></path>
+
+  <!-- ── head: blunt rounded rostrum ── -->
+  <path d="M172 272
+           C160 268 148 262 141 253
+           C135 245 136 234 144 228
+           C156 219 172 216 186 220
+           C198 224 202 240 198 258
+           C194 270 184 274 172 272 Z" fill="#2A5686"></path>
+  <!-- jaw line (gentle upward curve to the mouth corner) -->
+  <path d="M146 252 C176 264 214 272 248 274" stroke="#0A192C" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".62"></path>
+  <!-- gape suggestion -->
+  <path d="M146 252 C142 248 142 242 147 239" stroke="#0A192C" stroke-width="2" fill="none" stroke-linecap="round" opacity=".5"></path>
+
+  <!-- ── eye ── -->
+  <ellipse cx="204" cy="252" rx="5.4" ry="4.6" fill="#07121F"></ellipse>
+  <ellipse cx="206" cy="250" rx="1.7" ry="1.4" fill="#D8ECFB" opacity=".9"></ellipse>
+  <path d="M196 246 C201 242 209 242 213 246" stroke="#0A192C" stroke-width="1.6" fill="none" opacity=".45" stroke-linecap="round"></path>
+
+  <!-- ── throat grooves ── -->
+  <g stroke="#8FC2EC" stroke-opacity=".16" fill="none" stroke-linecap="round">
+    <path d="M162 262 C206 276 262 282 320 283" stroke-width="1.5"></path>
+    <path d="M170 272 C214 288 270 294 330 295" stroke-width="1.3"></path>
+    <path d="M182 282 C226 298 282 304 342 305" stroke-width="1.1"></path>
+  </g>
+
+  <!-- ── dorsal fin ── -->
+  <path d="M540 187 C554 170 574 160 592 159 C583 173 566 185 548 190 Z" fill="#1E4468"></path>
+  <path d="M546 188 C558 174 574 165 588 163" stroke="#9CCBEF" stroke-opacity=".28" stroke-width="1.4" fill="none" stroke-linecap="round"></path>
+
+  <!-- ── pectoral fin (near) ── -->
+  <path d="M340 300
+           C356 344 388 380 424 396
+           C402 404 368 394 344 372
+           C322 352 318 320 326 300 Z" fill="url(#fluke)"></path>
+  <path d="M342 306 C358 344 386 376 418 392" stroke="#9CCBEF" stroke-opacity=".30" stroke-width="1.6" fill="none" stroke-linecap="round"></path>
+
+  <!-- ── rim: top contour ── -->
+  <path d="M150 224 C190 200 262 186 372 178 C486 170 620 194 730 240" stroke="url(#rimT)" stroke-width="2.8" fill="none" stroke-linecap="round"></path>
+  <!-- rostrum tip -->
+  <path d="M140 240 C142 231 148 225 157 221" stroke="#EAF6FF" stroke-opacity=".60" stroke-width="1.9" fill="none" stroke-linecap="round"></path>
+  <!-- belly rim (dimmer) -->
+  <path d="M182 306 C242 320 356 326 466 320 C560 315 650 300 712 276" stroke="#8FC2EC" stroke-opacity=".13" stroke-width="1.8" fill="none" stroke-linecap="round"></path>
+
+  <!-- ── bioluminescent flank dots ── -->
+  <g fill="#BFE0FF">
+    <circle cx="276" cy="228" r="2" opacity=".8"></circle>
+    <circle cx="324" cy="220" r="1.6" opacity=".65"></circle>
+    <circle cx="374" cy="214" r="1.3" opacity=".5"></circle>
+    <circle cx="434" cy="212" r="1.1" opacity=".38"></circle>
+    <circle cx="484" cy="218" r="1.4" opacity=".48"></circle>
+    <circle cx="530" cy="230" r="1.1" opacity=".34"></circle>
+    <circle cx="582" cy="246" r="1.3" opacity=".4"></circle>
+  </g>
+</g>
+
+<!-- ════════ ambience ════════ -->
+<g fill="none" stroke="#A9D2F5" stroke-opacity=".19">
+  <circle cx="128" cy="132" r="7.4"></circle><circle cx="102" cy="186" r="4.2"></circle>
+  <circle cx="156" cy="78" r="3.4"></circle><circle cx="208" cy="130" r="2.4"></circle>
+  <circle cx="812" cy="396" r="8"></circle><circle cx="846" cy="336" r="4.6"></circle>
+  <circle cx="774" cy="444" r="3.2"></circle><circle cx="856" cy="452" r="2.4"></circle>
+</g>
+<g fill="#BFE0FF">
+  <circle cx="252" cy="98" r="1.6" opacity=".55"></circle>
+  <circle cx="366" cy="74" r="1.2" opacity=".42"></circle>
+  <circle cx="612" cy="110" r="1.4" opacity=".46"></circle>
+  <circle cx="712" cy="84" r="1.1" opacity=".36"></circle>
+  <circle cx="94" cy="400" r="1.4" opacity=".36"></circle>
+  <circle cx="726" cy="486" r="1.3" opacity=".36"></circle>
+  <circle cx="452" cy="466" r="1.1" opacity=".26"></circle>
+</g>
+<g fill="none" stroke="#8FC2EC" stroke-opacity=".06" filter="url(#soft)">
+  <circle cx="838" cy="146" r="28"></circle><circle cx="66" cy="308" r="22"></circle>
+</g>
+
+</svg>

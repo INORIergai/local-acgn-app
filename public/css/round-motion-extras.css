@@ -29,7 +29,7 @@
   z-index: 600;
   background: #050508;
   opacity: 0;
-  transition: opacity 0.6s ease;
+  transition: opacity var(--mv2-d3, 0.6s) var(--mv2-snap, ease);
   pointer-events: none;
 }
 .nv-idle.on { opacity: 1; pointer-events: auto; cursor: none; }
@@ -67,7 +67,8 @@
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: background var(--mv2-d1, 0.14s) var(--mv2-snap, ease),
+              transform var(--mv2-d2, 0.22s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1));
   vertical-align: middle;
 }
 .nv-annual-btn:hover { background: rgba(251, 191, 36, 0.24); transform: translateY(-1px); }
@@ -113,7 +114,7 @@
   position: relative;
   opacity: 0;
   transform: translateY(var(--tyf, 40px));
-  animation: nvxRace 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: nvxRace 0.72s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
   animation-delay: var(--nvd, 0ms);
 }
 @keyframes nvxRace {
@@ -131,7 +132,7 @@
   border-radius: 10px;
   pointer-events: none;
   opacity: 0;
-  animation: nvxFlash 0.8s ease forwards;
+  animation: nvxFlash 0.8s var(--mv2-settle, ease) forwards;
   animation-delay: var(--nvd, 0ms);
 }
 @keyframes nvxFlash {
@@ -143,14 +144,14 @@
 .nvx-annual .an-rank .an-rank-bar {
   transform: scaleX(0);
   transform-origin: left center;
-  animation: nvxBarX 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: nvxBarX 0.8s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
   animation-delay: calc(var(--nvd, 0ms) + 260ms);
 }
 @keyframes nvxBarX { to { transform: scaleX(1); } }
 /* 海报弹入 */
 .nvx-annual .annual-rank-poster {
   transform: scale(0);
-  animation: nvxPoster 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: nvxPoster 0.5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) forwards;
   animation-delay: calc(var(--nvd, 0ms) + 120ms);
 }
 @keyframes nvxPoster { to { transform: scale(1); } }
@@ -164,18 +165,18 @@
 @keyframes nvxDraw { to { stroke-dashoffset: 0; } }
 .nvx-annual .an-area-fill {
   opacity: 0;
-  animation: nvxFade 0.6s ease 1.4s forwards;
+  animation: nvxFade 0.6s var(--mv2-settle, ease) 1.4s forwards;
 }
 .nvx-annual .an-dot-c {
   transform-box: fill-box;
   transform-origin: center;
   transform: scale(0);
-  animation: nvxPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: nvxPop 0.45s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) forwards;
   animation-delay: calc(0.4s + var(--i, 0) * 0.1s);
 }
 .nvx-annual .an-m {
   opacity: 0;
-  animation: nvxFade 0.4s ease forwards;
+  animation: nvxFade 0.4s var(--mv2-settle, ease) forwards;
   animation-delay: calc(0.5s + var(--i, 0) * 0.1s);
 }
 @keyframes nvxFade { to { opacity: 1; } }
@@ -193,29 +194,32 @@
   opacity: 0;
   transform: translateY(14px);
   filter: blur(6px);
-  animation: tbIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: tbIn 0.55s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 @keyframes tbIn {
   to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 /* 每页辨识色（语义色随导航） */
-body[data-view="annual"] #toolbarTitle i { color: #FBBF24; }
-body[data-view="guess"] #toolbarTitle i { color: #818CF8; }
-body[data-view="hot"] #toolbarTitle i { color: #FB923C; }
-body[data-view="random"] #toolbarTitle i { color: #22D3EE; }
-body[data-view="movies"] #toolbarTitle i { color: #FCD34D; }
-body[data-view="jav"] #toolbarTitle i { color: #F9A8D4; }
-body[data-view="anime"] #toolbarTitle i { color: #7DD3FC; }
-body[data-view="film"] #toolbarTitle i { color: #C9C9D6; }
-body[data-view="cartoon"] #toolbarTitle i { color: #5EEAD4; }
-body[data-view="comic"] #toolbarTitle i { color: #FACC15; }
-body[data-view="novel"] #toolbarTitle i { color: #C08552; }
-body[data-view="favorites"] #toolbarTitle i { color: #F87171; }
-body[data-view="recent"] #toolbarTitle i { color: #C7D2FE; }
-body[data-view="new-releases"] #toolbarTitle i { color: #FFE08A; }
-body[data-view="settings"] #toolbarTitle i { color: #D7DEE9; }
-body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
+body[data-view="annual"] #toolbarTitle i { --tb-c: #FBBF24; }
+body[data-view="guess"] #toolbarTitle i { --tb-c: #818CF8; }
+body[data-view="hot"] #toolbarTitle i { --tb-c: #FB923C; }
+body[data-view="random"] #toolbarTitle i { --tb-c: #22D3EE; }
+body[data-view="movies"] #toolbarTitle i { --tb-c: #FCD34D; }
+body[data-view="jav"] #toolbarTitle i { --tb-c: #F9A8D4; }
+body[data-view="anime"] #toolbarTitle i { --tb-c: #7DD3FC; }
+body[data-view="film"] #toolbarTitle i { --tb-c: #C9C9D6; }
+body[data-view="cartoon"] #toolbarTitle i { --tb-c: #5EEAD4; }
+body[data-view="comic"] #toolbarTitle i { --tb-c: #FACC15; }
+body[data-view="novel"] #toolbarTitle i { --tb-c: #C08552; }
+body[data-view="favorites"] #toolbarTitle i { --tb-c: #F87171; }
+body[data-view="recent"] #toolbarTitle i { --tb-c: #C7D2FE; }
+body[data-view="new-releases"] #toolbarTitle i { --tb-c: #FFE08A; }
+body[data-view="settings"] #toolbarTitle i { --tb-c: #D7DEE9; }
+body[data-view="watch"] #toolbarTitle i { --tb-c: #67E8F8; }
+/* round113-P5：辨识色改为令牌 --tb-c，最终字色由 round113-p5.css 混墨算出。
+   这条兜底保证「删掉 p5 层」时仍按原色显示（回滚安全）。 */
+#toolbarTitle i { color: var(--tb-c, currentColor); }
 
 @media (prefers-reduced-motion: reduce) {
   .nvx-annual .annual-rank, .nvx-annual .an-rank,
@@ -236,7 +240,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
   gap: 16px;
   margin: 2px 0 14px;
   min-height: 68px;
-  animation: pgHeroIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: pgHeroIn 0.5s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 @keyframes pgHeroIn {
   0% { opacity: 0; transform: translateX(-18px) skewX(-5deg); }
@@ -245,7 +249,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 .pg-motif {
   width: 46px; height: 46px; flex: none;
   filter: drop-shadow(0 3px 6px rgba(0,0,0,0.45)) drop-shadow(0 0 14px var(--pgc-g, rgba(129,140,248,0.4)));
-  animation: pgMotifIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both 0.18s;
+  animation: pgMotifIn 0.55s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both 0.18s;
 }
 @keyframes pgMotifIn {
   0% { opacity: 0; transform: rotate(-100deg) scale(0.25); }
@@ -266,7 +270,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 .pg-ch {
   display: inline-block;
   opacity: 0;
-  animation: pgIn 0.62s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: pgIn 0.62s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) forwards;
   animation-delay: calc(var(--i, 0) * 50ms + 0.08s);
   will-change: transform, filter;
 }
@@ -289,7 +293,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 }
 .pg-style-gold .pg-underline {
   background: linear-gradient(90deg, #FCD34D, #F97B4A 60%, transparent);
-  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.6s forwards;
+  animation: pgUnder 0.55s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) 0.6s forwards;
 }
 
 /* S2 霓虹描边（在线/科技系）：厚描边 + 双层辉光 + 通电闪烁 */
@@ -309,7 +313,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 }
 .pg-style-neon .pg-underline {
   background: linear-gradient(90deg, var(--pgc, #67E8F9), transparent);
-  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.65s forwards;
+  animation: pgUnder 0.55s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) 0.65s forwards;
 }
 
 /* S3 套印错位（工具系）：青紫双影 + 斜切，印刷套版感 */
@@ -321,7 +325,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 }
 .pg-style-duo .pg-underline {
   background: linear-gradient(90deg, #C084FC, #22D3EE, transparent);
-  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.55s forwards;
+  animation: pgUnder 0.55s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) 0.55s forwards;
 }
 
 /* S4 印章色块（收藏/档案系）：色块盖章 + 900 白字 + 硬阴影 */
@@ -334,14 +338,14 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
   background: linear-gradient(135deg, var(--pgc, #818CF8), color-mix(in srgb, var(--pgc, #818CF8) 62%, #000));
   transform: rotate(-2deg) scaleX(0);
   transform-origin: left center;
-  animation: pgStamp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.06s forwards;
+  animation: pgStamp 0.5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) 0.06s forwards;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
 }
 @keyframes pgStamp { to { transform: rotate(-2deg) scaleX(1); } }
 .pg-style-stamp .pg-title, .pg-style-stamp .pg-ch { z-index: 1; }
 .pg-style-stamp .pg-underline {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), transparent);
-  animation: pgUnder 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.55s forwards;
+  animation: pgUnder 0.55s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) 0.55s forwards;
 }
 @keyframes pgUnder { to { width: 100%; } }
 
@@ -350,7 +354,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 .nvx-annual .an-area {
   transform: rotateX(14deg);
   transform-origin: 50% 100%;
-  animation: anTiltIn 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: anTiltIn 0.95s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 @keyframes anTiltIn {
   0% { transform: rotateX(40deg) scale(0.92); opacity: 0.35; }
@@ -399,10 +403,10 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
   -webkit-backdrop-filter: blur(16px) saturate(1.35);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   text-align: center;
-  transform: translateX(-50%) translateY(-26px) scale(0.9);
+  transform: translateX(-50%) translateY(-16px) scale(0.96);
   transform-origin: center top;
-  transition: opacity 0.3s ease,
-              transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity var(--mv2-d2, 0.26s) var(--mv2-snap, ease),
+              transform var(--mv2-d2, 0.26s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .notification.show { transform: translateX(-50%) translateY(0) scale(1); }
 .notification::before {
@@ -441,7 +445,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
   pointer-events: none;
   z-index: 70;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+  transition: transform var(--mv2-d2, 0.3s) cubic-bezier(0.34, 1.56, 0.64, 1), opacity var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
 }
 .sidebar.rail .nav-item:hover .nvx-tip {
   opacity: 1;
@@ -455,7 +459,7 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
 .nvx-o, .nvx-n { display: inline-block; }
 .nvx-o { animation: nvxRollOut 0.5s cubic-bezier(0.5, 0, 0.75, 0) forwards; }
 .nvx-n { position: absolute; left: 0; top: 0;
-         animation: nvxRollIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both; }
+         animation: nvxRollIn 0.5s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) 0.08s both; }
 @keyframes nvxRollOut {
   to { transform: translateY(-110%); opacity: 0; }
 }
@@ -464,28 +468,28 @@ body[data-view="watch"] #toolbarTitle i { color: #67E8F8; }
   to   { transform: translateY(0); opacity: 1; }
 }
 .stat-card:hover .num {
-  animation: nvxStatBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: nvxStatBounce 0.45s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
 }
 @keyframes nvxStatBounce {
   0%, 100% { transform: none; }
   50% { transform: translateY(-3px) scale(1.08); color: var(--primary); }
 }
 
-/* ④ skiper3 Apple play button → 播放按钮：悬停膨胀回弹 + 按下压扁 */
+/* ④ skiper3 Apple play button → 播放按钮：克制微升 + 按下微缩 */
 .play-btn {
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 0.35s ease, background 0.3s ease;
+  transition: transform var(--mv2-d1, 0.14s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--mv2-d2, 0.26s) var(--mv2-snap, ease), background var(--mv2-d1, 0.14s) var(--mv2-snap, ease);
 }
 .play-btn:hover {
-  transform: scale(1.12);
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--primary, #818CF8) 45%, transparent);
+  transform: scale(1.04);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--primary, #818CF8) 35%, transparent);
 }
-.play-btn:active { transform: scale(0.94); transition-duration: 0.1s; }
+.play-btn:active { transform: scale(0.96); transition-duration: var(--mv2-dpress, 0.1s) var(--mv2-snap, ease); }
 
-/* ⑤ skiper4 Theme toggle → 主题球点击弹性翻转 */
-.theme-toggle { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.theme-toggle:hover { transform: scale(1.1); }
-.nvx-tspin { animation: nvxTspin 0.55s cubic-bezier(0.34, 1.56, 0.64, 1); }
+/* ⑤ skiper4 Theme toggle → 主题按钮克制反馈 */
+.theme-toggle { transition: transform var(--mv2-d1, 0.14s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)); }
+.theme-toggle:hover { transform: scale(1.04); }
+.nvx-tspin { animation: nvxTspin 0.36s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)); }
 @keyframes nvxTspin {
   0%   { transform: rotateY(0) scale(1); }
   40%  { transform: rotateY(180deg) scale(0.82); }
@@ -506,7 +510,7 @@ main.content::-webkit-scrollbar-thumb {
     color-mix(in srgb, var(--primary, #818CF8) 18%, transparent));
   border: 2px solid transparent;
   background-clip: padding-box;
-  transition: background 0.25s ease;
+  transition: background var(--mv2-d2, 0.25s) var(--mv2-snap, ease);
 }
 .sidebar::-webkit-scrollbar-thumb:hover,
 main.content::-webkit-scrollbar-thumb:hover {
@@ -545,7 +549,7 @@ main.content::-webkit-scrollbar-thumb:hover {
 
 /* ⑩ skiper103 Bouncy accordion → 详情区块弹跳入场（每次弹窗重渲染自动触发） */
 .detail-section {
-  animation: nvxSecIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: nvxSecIn 0.55s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
 }
 .detail-section:nth-child(2) { animation-delay: 0.05s; }
 .detail-section:nth-child(3) { animation-delay: 0.1s; }
@@ -578,9 +582,9 @@ main.content::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
   backdrop-filter: blur(28px) saturate(190%) !important;
   -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
-  animation: nvxLongIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: nvxLongIn 0.45s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
 }
-#nvxLong.bye { animation: nvxLongOut 0.25s ease both; }
+#nvxLong.bye { animation: nvxLongOut 0.25s var(--mv2-snap, ease) both; }
 /* 半透明磨砂背景轻纱 */
 #nvxLongVeil {
   position: fixed;
@@ -590,9 +594,9 @@ main.content::-webkit-scrollbar-thumb:hover {
   background: rgba(8, 8, 14, 0.42) !important;
   backdrop-filter: blur(6px) !important;
   -webkit-backdrop-filter: blur(6px) !important;
-  animation: nvxVeilIn 0.35s ease both;
+  animation: nvxVeilIn 0.35s var(--mv2-settle, ease) both;
 }
-#nvxLongVeil.bye { animation: nvxVeilOut 0.25s ease both; }
+#nvxLongVeil.bye { animation: nvxVeilOut 0.25s var(--mv2-snap, ease) both; }
 @keyframes nvxVeilIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes nvxVeilOut { to { opacity: 0; } }
 @keyframes nvxLongIn {
@@ -615,7 +619,7 @@ main.content::-webkit-scrollbar-thumb:hover {
 }
 #nvxLong b i {
   display: inline-block; font-style: normal;
-  animation: nvxWordIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: nvxWordIn 0.5s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
   animation-delay: var(--wd, 0ms);
 }
 @keyframes nvxWordIn {
@@ -660,13 +664,13 @@ main.content::-webkit-scrollbar-thumb:hover {
   border-radius: 22px;
   backdrop-filter: blur(18px) saturate(1.35);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
-  animation: nvxCpIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: nvxCpIn 0.5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
 }
 @keyframes nvxCpIn {
   from { opacity: 0; transform: translateY(-18px) scale(0.92); filter: blur(6px); }
   to   { opacity: 1; transform: none; filter: blur(0); }
 }
-.cp-overlay.show .cp-item.hl { animation: nvxCpHl 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.cp-overlay.show .cp-item.hl { animation: nvxCpHl 0.25s var(--mv2-snap, cubic-bezier(0.34, 1.56, 0.64, 1)); }
 @keyframes nvxCpHl {
   0% { transform: scale(0.97); }
   60% { transform: scale(1.015); }
@@ -678,7 +682,7 @@ main.content::-webkit-scrollbar-thumb:hover {
    ========================================================================== */
 #searchInput {
   position: relative;
-  transition: box-shadow 0.4s ease, border-color 0.3s ease;
+  transition: box-shadow var(--mv2-d3, 0.4s) var(--mv2-snap, ease), border-color var(--mv2-d2, 0.3s) var(--mv2-snap, ease);
 }
 #searchInput:focus {
   border-color: transparent;
@@ -706,7 +710,7 @@ main.content::-webkit-scrollbar-thumb:hover {
 }
 .modal.show .modal-content {
   border-radius: 22px;
-  animation: nvxModalIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: nvxModalIn 0.5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
 }
 @keyframes nvxModalIn {
   from { opacity: 0; transform: translateY(26px) scale(0.92); filter: blur(8px); }
@@ -714,11 +718,11 @@ main.content::-webkit-scrollbar-thumb:hover {
 }
 /* 全按钮触感（skiper3 微交互语言泛化） */
 .btn, .dbtn, .magic-btn, .theme-toggle {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  transition: transform var(--mv2-d2, 0.3s) cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--mv2-d2, 0.3s) var(--mv2-snap, ease);
 }
 .btn:active, .dbtn:active, .magic-btn:active, .theme-toggle:active {
   transform: scale(0.94);
-  transition-duration: 0.08s;
+  transition-duration: var(--mv2-dpress, 0.08s) var(--mv2-snap, ease);
 }
 
 /* ⑭ 播放器 iOS 视觉重构：Apple TV / QuickTime 毛玻璃拟物与极简悬浮岛 */
@@ -799,7 +803,7 @@ main.content::-webkit-scrollbar-thumb:hover {
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+  transition: all var(--mv2-d2, 0.2s) cubic-bezier(0.25, 1, 0.5, 1) !important;
   padding: 0 !important;
 }
 .player-modal .player-head .close-btn:hover {
@@ -849,7 +853,7 @@ main.content::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.1) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   color: rgba(255, 255, 255, 0.9) !important;
-  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+  transition: all var(--mv2-d2, 0.2s) cubic-bezier(0.25, 1, 0.5, 1) !important;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
 }
 .player-modal .player-foot .btn:hover {
@@ -931,7 +935,7 @@ main.content::-webkit-scrollbar-thumb:hover {
   backdrop-filter: blur(16px) saturate(1.35);
   -webkit-backdrop-filter: blur(16px) saturate(1.35);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
-  animation: nvxScanIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: nvxScanIn 0.55s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
 }
 @keyframes nvxScanIn {
   from { opacity: 0; transform: translateY(-22px) scale(0.92); }
@@ -986,10 +990,10 @@ body.fx-pblur-off .settings-lan-box::after { display: none; }
    round52 动效广泛适配 P1（全部接入动效库开关 fx-avtree/fx-favtab/fx-reveal）
    ========================================================================== */
 /* A skiper103 → 漫画/小说库目录树（.av-tree）：展开级联弹跳 + 箭头弹簧旋转 */
-.avt-arrow { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.avt-arrow { transition: transform var(--mv2-d3, 0.4s) cubic-bezier(0.34, 1.56, 0.64, 1); }
 .avt-node.open > .avt-kids > .avt-node > .avt-row,
 .avt-node.open > .avt-kids.avt-files > .avt-row {
-  animation: nvxTreeIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: nvxTreeIn 0.5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
 }
 .avt-node.open > .avt-kids > .avt-node:nth-child(1) > .avt-row { animation-delay: 0.03s; }
 .avt-node.open > .avt-kids > .avt-node:nth-child(2) > .avt-row { animation-delay: 0.07s; }
@@ -1021,7 +1025,7 @@ body.fx-avtree-off .avt-arrow { transition: none; }
   opacity: 0;
   pointer-events: none;
   z-index: 0;
-  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--mv2-d3, 0.45s) cubic-bezier(0.34, 1.56, 0.64, 1), width var(--mv2-d3, 0.45s) cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--primary, #F59E0B) 40%, transparent);
 }
 .nvx-tab-slider ~ .btn:not(.btn-secondary) { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
@@ -1029,7 +1033,7 @@ body.fx-favtab-off .nvx-tab-slider { display: none; }
 
 /* C skiper71/104 → 海报墙揭示级联（IO 触发加类，会话内每张一次） */
 img.movie-poster.nvx-reveal-in {
-  animation: nvxPosterReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: nvxPosterReveal 0.6s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
   animation-delay: var(--rd, 0ms);
 }
 @keyframes nvxPosterReveal {
@@ -1063,10 +1067,10 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   justify-content: center !important;
   gap: 5px !important;
   cursor: pointer !important;
-  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 0.24s ease,
-              border-color 0.2s ease,
-              background 0.2s ease !important;
+  transition: transform var(--mv2-d2, 0.24s) cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow var(--mv2-d2, 0.24s) var(--mv2-snap, ease),
+              border-color var(--mv2-d2, 0.2s) var(--mv2-snap, ease),
+              background var(--mv2-d2, 0.2s) var(--mv2-snap, ease) !important;
 }
 .detail-actions .dbtn:hover {
   transform: translateY(-2px) scale(1.12) !important;
@@ -1092,7 +1096,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
 .detail-actions .dbtn[data-act="del-movie"] { --d-clr: #EF4444; }
 /* 顶栏与工具栏刷新按钮微动效 */
 #globalRefreshBtn .ic-refresh, #watchNowBtn .ic-refresh {
-  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--mv2-d3, 0.45s) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 #globalRefreshBtn:hover .ic-refresh, #watchNowBtn:hover .ic-refresh {
   transform: rotate(180deg);
@@ -1111,7 +1115,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   justify-content: center !important;
   flex-shrink: 0 !important;
   pointer-events: none !important;
-  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.25s ease !important;
+  transition: transform var(--mv2-d2, 0.28s) cubic-bezier(0.34, 1.56, 0.64, 1), filter var(--mv2-d2, 0.25s) var(--mv2-snap, ease) !important;
 }
 .dbtn .nv-ic video, .dbtn .nv-ic img,
 .settings-nav-item .nv-ic video, .settings-nav-item .nv-ic img {
@@ -1136,10 +1140,10 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 0.24s ease,
-              border-color 0.2s ease,
-              background 0.2s ease !important;
+  transition: transform var(--mv2-d2, 0.24s) cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow var(--mv2-d2, 0.24s) var(--mv2-snap, ease),
+              border-color var(--mv2-d2, 0.2s) var(--mv2-snap, ease),
+              background var(--mv2-d2, 0.2s) var(--mv2-snap, ease) !important;
 }
 .dbtn:hover {
   transform: translateY(-3px) scale(1.14) !important;
@@ -1164,7 +1168,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   padding: 8px 12px !important;
   border-radius: 10px !important;
   cursor: pointer !important;
-  transition: background 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition: background var(--mv2-d2, 0.2s) var(--mv2-snap, ease), transform var(--mv2-d2, 0.2s) cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 .settings-nav-item:hover {
   background: rgba(255, 255, 255, 0.06) !important;
@@ -1234,9 +1238,9 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65) !important;
   cursor: pointer !important;
-  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
-              opacity 0.45s ease,
-              box-shadow 0.3s ease !important;
+  transition: transform var(--mv2-d3, 0.45s) cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity var(--mv2-d3, 0.45s) var(--mv2-snap, ease),
+              box-shadow var(--mv2-d2, 0.3s) var(--mv2-snap, ease) !important;
   user-select: none !important;
 }
 .deck-card.is-active {
@@ -1258,7 +1262,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.92)) !important;
   color: #fff !important;
   opacity: 0 !important;
-  transition: opacity 0.25s ease !important;
+  transition: opacity var(--mv2-d2, 0.25s) var(--mv2-snap, ease) !important;
 }
 .deck-card.is-active .deck-card-info, .deck-card:hover .deck-card-info {
   opacity: 1 !important;
@@ -1299,7 +1303,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition: all var(--mv2-d2, 0.2s) cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 .deck-arrow:hover {
   background: var(--primary, #F59E0B) !important;
@@ -1387,7 +1391,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   font-size: 14px !important;
   line-height: 1.5 !important;
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3) !important;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition: all var(--mv2-d2, 0.25s) cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 
 .home-chat-input textarea:focus {
@@ -1407,7 +1411,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   color: #fff !important;
   font-size: 17px !important;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--primary, #F59E0B) 40%, transparent) !important;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease !important;
+  transition: transform var(--mv2-d2, 0.2s) cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--mv2-d2, 0.2s) var(--mv2-snap, ease) !important;
   border: none !important;
 }
 .home-chat-input .btn-send:hover {
@@ -1423,7 +1427,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   padding: 10px 20px !important;
   border: 1px solid rgba(255, 255, 255, 0.16) !important;
   background: color-mix(in srgb, var(--bg, #12100c) 80%, rgba(255, 255, 255, 0.05)) !important;
-  transition: all 0.2s ease !important;
+  transition: all var(--mv2-d2, 0.2s) var(--mv2-snap, ease) !important;
 }
 #aiModal #aiInput:focus {
   border-color: var(--primary, #F59E0B) !important;
@@ -1441,7 +1445,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   background: rgba(0, 0, 0, 0.45) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;
-  transition: opacity 0.25s ease !important;
+  transition: opacity var(--mv2-d2, 0.25s) var(--mv2-snap, ease) !important;
 }
 
 #aiModal .modal-content.ai-modal-card {
@@ -1453,7 +1457,7 @@ body.fx-reveal-off img.movie-poster.nvx-reveal-in { animation: none; }
   padding: 20px 22px !important;
   display: flex !important;
   flex-direction: column !important;
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease !important;
+  transition: transform var(--mv2-d2, 0.35s) cubic-bezier(0.34, 1.56, 0.64, 1), opacity var(--mv2-d2, 0.25s) var(--mv2-snap, ease) !important;
 }
 
 #aiModal .ai-modal-messages {
@@ -1549,7 +1553,7 @@ html[data-ai-mode="modal"] #aiModal.show .modal-content.ai-modal-card {
   background: var(--card-bg);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-2);
-  animation: brnSlideIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: brnSlideIn 0.28s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1));
 }
 @keyframes brnSlideIn {
   from { transform: translateX(48px); opacity: 0; }
@@ -1613,7 +1617,7 @@ html[data-ai-mode="modal"] #aiModal.show .modal-content.ai-modal-card {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  transition: border-color 0.2s ease, opacity 0.2s ease;
+  transition: border-color var(--mv2-d2, 0.2s) var(--mv2-snap, ease), opacity var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
 }
 .brn-row.same, .brn-row.skip { opacity: 0.62; }
 .brn-row.is-ok { border-color: var(--ok); }

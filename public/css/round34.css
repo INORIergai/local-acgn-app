@@ -25,7 +25,7 @@
     background: var(--bg-elevated, #1C1915);
     overflow: hidden;
     box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.8);
-    animation: r34GateIn 0.22s ease-out;
+    animation: r34GateIn 0.22s var(--mv2-settle, ease-out);
 }
 @keyframes r34GateIn {
     from { transform: translateY(14px) scale(0.98); opacity: 0; }
@@ -85,7 +85,7 @@
     font-family: "Cascadia Mono", Consolas, monospace;
     letter-spacing: 0.2em;
     outline: none;
-    transition: border-color 0.15s;
+    transition: border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 #gatePwd:focus { border-color: var(--primary, #E5A63C); }
 
@@ -106,7 +106,7 @@
     font-size: 14px;
     font-weight: 700;
     cursor: pointer;
-    transition: background 0.15s, transform 0.1s;
+    transition: background var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-dpress, 0.1s) var(--mv2-snap, ease);
 }
 .r34-gate-btn:hover { background: #F2BC5E; }
 .r34-gate-btn:active { transform: translateY(1px); }
@@ -135,7 +135,7 @@
     color: var(--text-muted, #9C9282);
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .r34-slice-tab:hover {
     color: var(--text, #EFE9DC);
@@ -172,7 +172,7 @@
     left: -6px;
     transform-origin: 20% 100%;
     animation: r34MascotFloat 3.6s ease-in-out infinite;
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), filter 0.28s;
+    transition: transform var(--mv2-d2, 0.28s) cubic-bezier(0.22, 1, 0.36, 1), filter var(--mv2-d2, 0.28s) var(--mv2-snap, ease);
     cursor: pointer;
     pointer-events: auto;           /* 需要接 hover */
 }
@@ -339,7 +339,7 @@
 .hub-search input {
     flex: 1; padding: 11px 16px; font-size: 15px; border-radius: 10px;
     border: 1px solid var(--border); background: var(--card-bg); color: var(--text);
-    outline: none; transition: border-color .15s;
+    outline: none; transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .hub-search input:focus { border-color: var(--accent); }
 .hub-h { font-size: 15px; font-weight: 700; color: var(--text); margin: 22px 0 10px; display: flex; align-items: baseline; gap: 8px; }
@@ -366,7 +366,7 @@
 .hub-local-item {
     display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
     border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg);
-    transition: border-color .15s, transform .15s;
+    transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .hub-local-item:hover { border-color: var(--accent); transform: translateY(-1px); }
 .hub-local-t { font-size: 13.5px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -375,7 +375,7 @@
 .hub-rank-item {
     display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer;
     border-radius: 9px; background: var(--card-bg); border: 1px solid transparent;
-    transition: border-color .15s;
+    transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .hub-rank-item:hover { border-color: var(--accent); }
 .hub-rank-n { width: 22px; text-align: center; font-size: 12px; font-weight: 700; color: var(--text-muted); flex: none; }
@@ -417,7 +417,7 @@
     display: inline-flex; align-items: center; gap: 6px;
     padding: 7px 14px; font-size: 12.5px; border-radius: 20px;
     border: 1px solid var(--border); background: var(--card-bg); color: var(--text);
-    cursor: pointer; transition: border-color .15s, background .15s;
+    cursor: pointer; transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .cal-tab:hover { border-color: var(--accent); }
 .cal-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
@@ -428,7 +428,7 @@
 .cal-item {
     display: flex; align-items: center; gap: 10px; padding: 8px 10px;
     border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg);
-    cursor: pointer; transition: border-color .15s, transform .15s;
+    cursor: pointer; transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .cal-item:hover { border-color: var(--accent); transform: translateY(-1px); }
 .cal-cover {

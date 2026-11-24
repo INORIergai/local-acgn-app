@@ -62,6 +62,23 @@
           { v: 8000, label: '8 秒' },
           { v: 12000, label: '12 秒' }
         ]
+      },
+      {
+        id: 'tapZone', label: '点击区', type: 'choice', def: 'thirds',
+        hint: '左侧上一页 / 中间显隐工具栏 / 右侧下一页',
+        options: [
+          { v: 'thirds', label: '左中右三区' },
+          { v: 'sides', label: '仅左右' },
+          { v: 'off', label: '关闭点击翻页' }
+        ]
+      },
+      {
+        id: 'wheelDir', label: '滚轮方向', type: 'choice', def: 'normal',
+        hint: '向下滚动 = 下一页（可反转）',
+        options: [
+          { v: 'normal', label: '向下翻下一页' },
+          { v: 'invert', label: '反转（向下上一页）' }
+        ]
       }
     ],
     /* 小说专属：排版类 */
@@ -143,9 +160,10 @@
     comic: [
       {
         id: 'layout', label: '排版方式', type: 'choice', def: 'single',
-        hint: '单页 / 双页跨页拼合',
+        hint: '单页 / 双页跨页 / 长条（Webtoon 条漫）',
         options: [
-          { v: 'single', label: '单页' }, { v: 'dual', label: '双页' }
+          { v: 'single', label: '单页' }, { v: 'dual', label: '双页' },
+          { v: 'strip', label: '长条' }
         ]
       },
       {

@@ -11,7 +11,7 @@
 /* ---------------- #5 刮削失败清单 ---------------- */
 .fail-row.is-clickable {
     cursor: pointer;
-    transition: background .18s ease, border-color .18s ease, transform .18s ease;
+    transition: background var(--mv2-d1, .18s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 
 .fail-row.is-clickable:hover {
@@ -35,7 +35,7 @@
     background: var(--bg-elevated);
     color: var(--text-muted);
     white-space: nowrap;
-    transition: background .18s ease, color .18s ease, border-color .18s ease;
+    transition: background var(--mv2-d1, .18s) var(--mv2-snap, ease), color var(--mv2-d1, .18s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 
 .fail-row.is-clickable:hover .fail-open {
@@ -105,7 +105,7 @@
     color: var(--text-muted);
     cursor: pointer;
     white-space: nowrap;
-    transition: background .18s ease, color .18s ease, border-color .18s ease;
+    transition: background var(--mv2-d1, .18s) var(--mv2-snap, ease), color var(--mv2-d1, .18s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 
 .tl-chip:hover { color: var(--text); border-color: var(--accent, #d5187d); }

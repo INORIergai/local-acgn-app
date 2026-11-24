@@ -42,7 +42,7 @@
     line-height: 1;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.18s ease;
+    transition: opacity var(--mv2-d1, 0.18s) var(--mv2-snap, ease);
     pointer-events: auto;
 }
 #companionStage:hover .companion-close { opacity: 1; }
@@ -65,7 +65,7 @@
     opacity: 0;
     pointer-events: none;
     transform: translateX(8px);
-    transition: opacity 0.24s ease, transform 0.24s ease;
+    transition: opacity var(--mv2-d2, 0.24s) var(--mv2-snap, ease), transform var(--mv2-d2, 0.24s) var(--mv2-snap, ease);
     word-break: break-all;
     white-space: pre-wrap;
     z-index: 30;

@@ -1457,7 +1457,7 @@
             : 'img/extras/walk-character.webp';
         pane.innerHTML = `
             ${note ? `<div class="watch-note">${escapeHtml(note)}</div>` : ''}
-            <div class="watch-frame-mask" style="position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:5;transition:opacity .35s ease;">
+            <div class="watch-frame-mask" style="position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:5;transition:opacity var(--mv2-d2, .35s) var(--mv2-snap, ease);">
                 <img src="${loaderSrc}" style="width:72px;height:84px;object-fit:contain;filter:drop-shadow(0 6px 16px rgba(0,0,0,0.3));" alt="">
                 <div style="font-size:14.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;">
                     <span>正在加载 ${escapeHtml(site ? site.name : '')}</span>
@@ -1586,7 +1586,7 @@
             : 'img/extras/walk-character.webp';
         const mask = document.createElement('div');
         mask.className = 'watch-frame-mask';
-        mask.style.cssText = 'position:absolute;inset:0;top:44px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:5;transition:opacity .35s ease;';
+        mask.style.cssText = 'position:absolute;inset:0;top:44px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:5;transition:opacity var(--mv2-d2, .35s) var(--mv2-snap, ease);';
         mask.innerHTML = `
             <img src="${loaderSrc}" style="width:72px;height:84px;object-fit:contain;filter:drop-shadow(0 6px 16px rgba(0,0,0,0.3));" alt="">
             <div style="font-size:14.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;">
@@ -1854,7 +1854,14 @@
     const HUB_CONCURRENCY = 2;
     const HUB_BROWSE_LIMIT = 16;   // 浏览模式每源取多少条（多了慢，少了不成墙）
     const BOARD_VIEW = { anime: 'watch-anime', av: 'watch', hanime: 'watch-hanime', comic: 'watch-comic', novel: 'watch-novel' };
-    const HUB_BOARDS = [['anime', '🌸 动漫'], ['av', '📺 AV'], ['hanime', '🔞 里番'], ['comic', '📚 漫画'], ['novel', '📖 小说']];
+    /* 2026-11：聚合搜索去掉「动漫」板块 —— 排行榜/详情里的「去观看」现在直接进
+       「在线观看 → 动漫」对应站点的站内搜索，避免和追番/在线观看动漫重复。
+       AV / 里番只有在成人入口解锁时才出现。 */
+    function hubBoards() {
+        const adultHidden = (typeof window.isAdultNavHidden === 'function') && window.isAdultNavHidden();
+        const list = [['comic', '📚 漫画'], ['novel', '📖 小说']];
+        return adultHidden ? list : [['av', '📺 AV'], ['hanime', '🔞 里番']].concat(list);
+    }
 
     // ================= round53：收藏夹 =================
     // 在线板块 → 收藏板块的默认落点（av/hanime 没有专门板块，落「其他网页」，弹窗里可改）。
@@ -1972,16 +1979,17 @@
     async function showWatchHub(viewName, q) {
         await loadCaps();
         const board0 = BOARD_OF_VIEW[viewName] || 'av';
+        const boards = hubBoards();
         const view = $('#featureView');
         view.style.display = 'block';
-        let hubBoard = board0;
+        let hubBoard = boards.some((b) => b[0] === board0) ? board0 : boards[0][0];
         let seq = 0;                     // 搜索代次：切板块/重搜后，旧回包一律作废
 
         view.innerHTML = `
             <div class="hub-wrap">
                 <div class="hub-bar">
                     <div class="hub-boards">
-                        ${HUB_BOARDS.map(([b, n]) => `<button class="hub-board${b === board0 ? ' on' : ''}" data-board="${b}">${n}</button>`).join('')}
+                        ${boards.map(([b, n]) => `<button class="hub-board${b === hubBoard ? ' on' : ''}" data-board="${b}">${n}</button>`).join('')}
                     </div>
                     <input id="hubQ" class="hub-input" type="search" placeholder="番号 / 片名 / 演员 —— 一次搜遍所有在线源" value="${escapeHtml(q || '')}">
                     <button class="btn btn-sm" id="hubGo">🔍 搜遍全部源</button>
@@ -2063,7 +2071,6 @@
             // round56（用户需求）：带词搜索时，首个命中源的结果一出来就自动
             // 「应用内开原站」（进站点窗口带词），不用再手动点一遍。
             // browse 模式不触发；聚合视图保留在背后，自动进站失败时切回来还能看到结果墙。
-            let autoOpened = false;
             const paint = (final) => {
                 const tail = browsing ? `已拿到 ${hits} 条` : `已命中 ${hits} 条`;
                 stat.textContent = final
@@ -2132,11 +2139,9 @@
                                 playWebPage(el.dataset.play);
                             });
                         });
-                        // round56：首个命中源 → 自动进站点窗口（搜索结果出来就打开，省一次手动点击）
-                        if (!browsing && !autoOpened && my === seq) {
-                            autoOpened = true;
-                            openInWindow(site.key, w);
-                        }
+                        /* r153 · D：不再自动跳进原站 iframe。
+                         * 聚合墙本身就是我们的原生前端，点海报直接 resolve → 应用内播放。
+                         * 「应用内开原站」按钮保留，只在解析失败/过 CF 盾时手动用。 */
                     } else {
                         dot.className = 'hub-dot bad';
                         note.textContent = (browsing ? '没取到' : '没搜到') + (d && d.msg ? '（' + d.msg + '）' : '');
@@ -2173,9 +2178,46 @@
         if (typeof window.switchView === 'function') window.switchView('watch-hub');
     };
 
+    /* 2026-11：动漫不再进聚合搜索，直接进「在线观看 → 动漫」默认站点的站内搜索页。
+       这样点击排行榜「▶」一定有真实内容（站点搜索页），也不会和聚合页的动漫板块重复。 */
+    window.openWatchSiteSearch = async function (viewName, q) {
+        const word = String(q || '').trim();
+        if (!word) return;
+        const vn = viewName || 'watch-anime';
+        if (typeof window.switchView === 'function') window.switchView(vn);
+        try {
+            await showWatch(vn);
+            await loadCaps();
+            const board = BOARD_OF_VIEW[vn] || 'anime';
+            const sites = WATCH_SITES.filter(function (s) {
+                if ((s.board || 'av') !== board) return false;
+                const caps = SITE_CAPS[s.key] || {};
+                return caps.canSearch !== false && (caps.searchPath || s.searchPath);
+            });
+            const site = sites[0] || WATCH_SITES.find(function (s) { return (s.board || 'av') === board; });
+            if (!site) { window.openWatchHub(vn, word); return; }
+            await openWatchTab(site.key, word);
+        } catch (e) {
+            window.openWatchHub(vn, word);
+        }
+    };
+
     window.openWatchWithSearch = async function (viewName, q) {
-        if (!q) return;
-        window.openWatchHub(viewName, q);
+        const word = String(q || '').trim();
+        if (!word) return;
+        /* 动漫/里番优先走「在线源聚合搜索」（Kazumi 规则源，MediaSource）：
+           不依赖 webview 站点是否对当前 IP 开放（次元城实测会按地区拒绝服务），
+           搜到源直接应用内播放，也与追番页共用同一套解析链路。 */
+        const isAnime = viewName === 'watch-anime' || viewName === 'watch-hanime';
+        if (isAnime && window.MediaSource && typeof window.MediaSource.openWithQuery === 'function') {
+            if (typeof window.switchView === 'function') window.switchView(viewName === 'watch-hanime' ? 'watch-hanime' : 'series');
+            window.MediaSource.openWithQuery(word);
+            return;
+        }
+        if (viewName === 'watch-anime' && typeof window.openWatchSiteSearch === 'function') {
+            return window.openWatchSiteSearch(viewName, word);
+        }
+        window.openWatchHub(viewName, word);
     };
 
     window.Features = {

@@ -29,7 +29,13 @@
         // round42：不写内联 display（内联会盖掉 CSS 的两栏 grid），交给 .active 规则
         v.style.display = '';
 
+        // r137：「Live2D 形象」模式下把伴侣 stage 搬进左栏展示区（chat 模式无感知）
+        if (typeof window.applyHomePaneMode === 'function') {
+            try { window.applyHomePaneMode(); } catch (e) { }
+        }
+
         // 若有未加载的问候，这里补一次（页面首次进入时调用）
+        loadCuratedStage(false);
         renderRankPreview();
         loadCalendar(false);
     }
@@ -39,6 +45,10 @@
         if (!v) return;
         v.classList.remove('active');
         v.style.display = 'none';
+        // r137：stage 搬回 body 右下角，其它视图恢复常驻浮层
+        if (typeof window.unmountHomePane === 'function') {
+            try { window.unmountHomePane(); } catch (e) { }
+        }
     }
 
     // ---------- AI 对话 ----------
@@ -51,12 +61,23 @@
        原样 innerHTML 会满屏星号竖线。必须在 esc() 之后跑，无 XSS 面。 */
     function mdLite(s) {
         return String(s || '')
-            .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+            .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*\*/g, '')
+            .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+            .replace(/^\s*[-*_]{3,}\s*$/gm, '<hr class="md-hr">')
+            .replace(/^\s*####\s+(.+)$/gm, '<div class="md-h4">$1</div>')
+            .replace(/^\s*###\s+(.+)$/gm, '<div class="md-h3">$1</div>')
+            .replace(/^\s*##\s+(.+)$/gm, '<div class="md-h2">$1</div>')
+            .replace(/^\s*#\s+(.+)$/gm, '<div class="md-h1">$1</div>')
+            .replace(/^\s*[-*•]\s+(.+)$/gm, '<div class="md-li"><span class="md-bullet">◆</span><span>$1</span></div>')
+            .replace(/^\s*(\d+)\.\s+(.+)$/gm, '<div class="md-li md-oli"><span class="md-num">$1.</span><span>$2</span></div>')
             .replace(/^\s*\|(.+)\|\s*$/gm, (m, row) => {
                 const cells = row.split('|').map(c => c.trim()).filter(c => c);
                 if (!cells.length || cells.every(c => /^[-: ]*$/.test(c))) return '';
-                return cells.join(' · ');
-            });
+                return '<div class="md-tr">' + cells.map(c => '<span class="md-td">' + c + '</span>').join('<span class="md-sep">·</span>') + '</div>';
+            })
+            .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
+            .replace(/\n{3,}/g, '\n\n');
     }
 
     function addMsg(role, text, opts) {
@@ -110,6 +131,38 @@
         if (!approval) return;
         const box = document.getElementById('homeChatMessages');
         if (!box) return;
+
+        /* round135：新运行时给的是「单次调用」审批（有 approval.id）。
+         * 老逻辑是「批准后把整条消息重发一次」，在新链路上不成立 ——
+         * 那样清不掉挂起的等待，用户点了也白点，最后 180s 超时自动拒绝。
+         * 这里分流：有 id 走新接口，没有 id 才回退老路径。 */
+        if (approval.id && window.decideAgentApproval) {
+            const cid = 'appr_' + Date.now();
+            const wrap = document.createElement('div');
+            wrap.className = 'home-msg ai';
+            wrap.innerHTML = window.renderAIApprovalCardHtml(approval, cid);
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+            const card = document.getElementById(cid);
+            if (!card) return;
+            const done = (text, ok) => {
+                const tip = document.createElement('div');
+                tip.style.cssText = 'font-size:12px;padding:6px 0;color:' + (ok ? 'var(--gold-primary)' : 'var(--text-muted)') + ';';
+                tip.textContent = text;
+                card.querySelector('.aab-actions')?.replaceChildren(tip);
+            };
+            card.querySelector('.aab-btn-approve')?.addEventListener('click', async () => {
+                done('✓ 已允许，正在执行…', true);
+                const r = await window.decideAgentApproval(approval.id, true);
+                done(r && r.code === 0 ? '✓ 已允许，执行中' : ('裁决失败：' + ((r && r.msg) || '网络异常')), r && r.code === 0);
+            });
+            card.querySelector('.aab-btn-reject')?.addEventListener('click', async () => {
+                done('✕ 已拒绝，未做任何修改', false);
+                await window.decideAgentApproval(approval.id, false);
+            });
+            return;
+        }
+
         const cid = 'appr_' + Date.now();
         const wrap = document.createElement('div');
         wrap.className = 'home-msg ai';
@@ -133,7 +186,7 @@
                     const d = await res.json();
                     if (d.code === 0 && d.data) {
                         if (d.data.steps) addStepsBlock(d.data.steps);
-                        if (d.data.reply) addMsg('ai', esc(d.data.reply));
+                        if (d.data.reply) addMsg('ai', mdLite(esc(d.data.reply)));
                         if (window.executeAIUiActions) window.executeAIUiActions(d.data.uiActions);
                     }
                 } catch(e) {
@@ -167,14 +220,39 @@
 
         let streamingBubble = null;
         let streamedText = '';
+        let cardSeen = false;      // round140：本轮是否已经画过卡片，done 时不再重复
+        if (window.resetAIPlayCardsSeen) window.resetAIPlayCardsSeen();   // 新的一轮，去重记忆清零
+        const hist = Array.isArray(window.__aiHistory) ? window.__aiHistory : [];
+        hist.push({ role: 'user', content: msg });
+        window.__aiHistory = hist.slice(-12);
 
-        await window.fetchAIStream(msg, { sessionId: 'main' }, {
+        const sid = (window.getAISessionId ? window.getAISessionId() : 'main');
+        await window.fetchAIStream(msg, { sessionId: sid, history: hist.slice(-12) }, {
             onStart: () => {},
-            onStep: (step) => {
-                addStepsBlock([step]);
+            onPhase: (ev) => {
+                const el = document.querySelector('#homeChatMessages .typing');
+                if (el) el.textContent = ev.text || '思考中…';
             },
             onApproval: (approval) => {
                 addApprovalBlock(approval, msg);
+            },
+            onStep: (step) => {
+                addStepsBlock([step]);
+            },
+            onStepPatch: () => { /* 首页只展示步骤名，不追状态 */ },
+            onCards: (ev) => {
+                /* round140：工具一跑完就画「可点击播放卡片」，用户立刻能点，
+                   不必等模型把总结写完 —— 这正是「只给名字」诉求的正解。 */
+                if (!ev || !Array.isArray(ev.cards) || !ev.cards.length) return;
+                cardSeen = true;
+                if (typing) { typing.remove(); }
+                window.insertAIPlayCards(ev.cards, ev.kind || 'movie', {
+                    container: document.getElementById('homeChatMessages')
+                });
+            },
+            onRun: (ev) => {
+                if (typing) typing.textContent = '正在思考…';
+                window.__lastAgentRunId = ev.runId;
             },
             onAction: (act) => {
                 if (window.executeAIUiActions) window.executeAIUiActions([act]);
@@ -198,9 +276,18 @@
                 const formatted = mdLite(esc(reply)).replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (m, id, title) =>
                     `<span class="ai-movie-ref" data-movie-id="${id}" onclick="window.jumpToMovieFromAI && window.jumpToMovieFromAI(${id})">📎 ${title}</span>`);
                 streamingBubble.innerHTML = formatted;
+                /* round140：兜底补画。onCards 事件因网络分段/降级没收到时，
+                   用 done 里的全量卡片补一次；已画过就不再叠一层。 */
+                if (!cardSeen && Array.isArray(full.cards) && full.cards.length) {
+                    cardSeen = true;
+                    window.insertAIPlayCards(full.cards, 'movie', {
+                        container: document.getElementById('homeChatMessages')
+                    });
+                }
                 if (window.CVCompanion) window.CVCompanion.aiEvent('reply', reply);
                 btn.disabled = false;
                 if (ta) ta.focus();
+                if (window.refreshHomeSessionList) window.refreshHomeSessionList();
             },
             onError: (err) => {
                 if (typing) typing.remove();
@@ -765,26 +852,378 @@
     // 绑定输入框事件（在 DOMContentLoaded 后由 app.js 调用 bindHome）
     /* v3.0-c：首页聊天框与 AI 抽屉共用同一永久会话 —— 进入首页时恢复最近几条，
        与 AI 抽屉里看到的上下文一致。只补空状态，不打断已在进行的对话。 */
-    let homeChatRestored = false;
-    async function restoreHomeChat() {
-        if (homeChatRestored) return;
-        homeChatRestored = true;
+    // ---------- V5 今夜主映 · 典藏放映台（round151） ----------
+    const stageState = {
+        items: [],
+        activeIndex: 0,
+        stats: { novel: 0, comic: 0, film: 0, total: 0 },
+        loaded: false,
+        loading: false
+    };
+
+    function cleanStageTitle(m) {
+        const raw = (m && (m.title || m.fileName)) || '未命名藏品';
+        return (typeof window.cvCleanTitle === 'function') ? window.cvCleanTitle(raw) : raw;
+    }
+
+    function stageTypeMeta(type) {
+        if (type === 'novel') return { badge: '📖 典藏小说', cta: '📖 立即翻阅', isBook: true };
+        if (type === 'comic') return { badge: '✒️ 典藏漫画', cta: '✒️ 立即翻阅', isBook: true };
+        if (type === 'anime' || type === 'cartoon') return { badge: '📺 馆藏动画', cta: '▶ 立即放映', isBook: false };
+        return { badge: '🎬 馆藏影片', cta: '▶ 立即放映', isBook: false };
+    }
+
+    function stageCoverUrl(m) {
+        if (!m) return '';
+        if (typeof window.getPosterUrl === 'function') {
+            try {
+                const u = window.getPosterUrl(m);
+                if (u) return u;
+            } catch (e) {}
+        }
+        if (m.posterFile) return '/api/movie/poster/' + m.posterFile;
+        if (m.posterUrl) return m.posterUrl;
+        return '';
+    }
+
+    function renderCuratedStage() {
+        const host = document.getElementById('homeCuratedStage');
+        if (!host) return;
+        const items = stageState.items || [];
+        const active = items[stageState.activeIndex] || items[0] || null;
+        const st = stageState.stats || { novel: 0, comic: 0, film: 0, total: 0 };
+        const books = Number((st.novel || 0) + (st.comic || 0));
+        const totalText = Number(st.total || 0).toLocaleString();
+        const booksText = books ? books.toLocaleString() : '—';
+        const whMovies = document.getElementById('whHeroMovies');
+        if (whMovies) whMovies.textContent = Math.max(0, Number(st.total || 0) - books).toLocaleString();
+        const whBooks = document.getElementById('whHeroBooks');
+        if (whBooks) whBooks.textContent = booksText;
+        const whTotal = document.getElementById('whHeroTotal');
+        if (whTotal) whTotal.textContent = totalText;
+        ['wh', 'pp', 'nt', 'ik', 'am'].forEach((p) => {
+            if (p === 'wh') return;
+            const total = document.getElementById(p + 'HeroMovies');
+            if (total) total.textContent = totalText;
+            const book = document.getElementById(p + 'HeroBooks');
+            if (book) book.textContent = booksText;
+        });
+
+        if (!active) {
+            const loading = !!stageState.loading;
+            host.innerHTML =
+                '<div class="hcs-shell is-empty">' +
+                    '<div class="hcs-sprocket" aria-hidden="true"></div>' +
+                    '<div class="hcs-main">' +
+                        '<div class="hcs-info">' +
+                            '<div class="hcs-kicker-row">' +
+                                '<span class="hcs-kicker">🎬 CURATED SCREENING · 今夜主映</span>' +
+                                '<span class="hcs-greeting">' + esc(greeting()) + ' · 私人典藏放映室</span>' +
+                            '</div>' +
+                            '<h2 class="hcs-title">' + (loading ? '正在从馆藏中挑出今夜主映…' : '今夜主映台暂时空着') + '</h2>' +
+                            '<p class="hcs-reason">' + (loading
+                                ? '连接私人媒体库与阅读档案，稍候片刻即可开映。'
+                                : '当前隐私口径下没有可主映的藏品。去「全部内容」挑一部，或直接随机来一部。') + '</p>' +
+                            (loading ? '' :
+                                '<div class="hcs-actions">' +
+                                    '<button type="button" class="hcs-btn hcs-btn-primary" data-stage-nav="movies-adult">🗂 全部内容</button>' +
+                                    '<button type="button" class="hcs-btn hcs-btn-secondary" data-stage-nav="random-adult">🎲 随机一部</button>' +
+                                '</div>') +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            return;
+        }
+
+        const title = cleanStageTitle(active);
+        const tm = stageTypeMeta(active.type);
+        const cover = stageCoverUrl(active);
+        const sub = (typeof window.cvExtractBookSubLabel === 'function' && tm.isBook)
+            ? window.cvExtractBookSubLabel(active)
+            : (active.code || (active.releaseDate ? String(active.releaseDate).slice(0, 10) : '') || '馆藏精选');
+        const score = Number(active.rating || 0) > 0 ? Number(active.rating).toFixed(1) : '';
+        const reason = active.aiReason || '馆长私享推荐 · 从你的私人典藏库中甄选';
+        const firstChar = (title.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').charAt(0) || '藏').toUpperCase();
+        const bgStyle = cover ? 'style="--stage-bg:url(\'' + esc(cover) + '\')"' : '';
+
+        const reelHtml = items.slice(0, 6).map((it, idx) => {
+            const cUrl = stageCoverUrl(it);
+            const tClean = cleanStageTitle(it);
+            const isAct = idx === stageState.activeIndex;
+            const ch = (tClean.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').charAt(0) || '藏').toUpperCase();
+            return '<button type="button" class="hcs-reel-item' + (isAct ? ' active' : '') + '" data-stage-idx="' + idx + '" title="' + esc(tClean) + '">' +
+                (cUrl
+                    ? '<img src="' + esc(cUrl) + '" alt="' + esc(tClean) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+                      '<span class="hcs-reel-fallback" style="display:none">' + esc(ch) + '</span>'
+                    : '<span class="hcs-reel-fallback">' + esc(ch) + '</span>') +
+                '<span class="hcs-reel-idx">' + String(idx + 1).padStart(2, '0') + '</span>' +
+            '</button>';
+        }).join('');
+
+        host.innerHTML =
+            '<div class="hcs-shell" ' + bgStyle + '>' +
+                '<div class="hcs-ambient" aria-hidden="true"></div>' +
+                '<div class="hcs-sprocket" aria-hidden="true"></div>' +
+                '<div class="hcs-body">' +
+                    '<div class="hcs-main">' +
+                        '<div class="hcs-cover-stage ' + (tm.isBook ? 'is-book' : 'is-film') + '" data-stage-detail="' + active.id + '" title="点击查看藏品档案">' +
+                            (cover
+                                ? '<img class="hcs-cover-img" src="' + esc(cover) + '" alt="' + esc(title) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+                                  '<div class="hcs-cover-typo" style="display:none"><span class="hcs-typo-seal">' + esc(firstChar) + '</span><span class="hcs-typo-name">' + esc(title) + '</span></div>'
+                                : '<div class="hcs-cover-typo"><span class="hcs-typo-seal">' + esc(firstChar) + '</span><span class="hcs-typo-name">' + esc(title) + '</span></div>') +
+                            '<span class="hcs-spine-sheen" aria-hidden="true"></span>' +
+                        '</div>' +
+                        '<div class="hcs-info">' +
+                            '<div class="hcs-kicker-row">' +
+                                '<span class="hcs-kicker">' + (window.uiIcon ? window.uiIcon('film', 13) : '') + ' TONIGHT\'S FEATURE · 今夜主映</span>' +
+                                '<span class="hcs-greeting">' + esc(greeting()) + ' · 典藏放映室</span>' +
+                                '<span class="hcs-ticket-no">ARCHIVE #' + String(active.id || 1).padStart(4, '0') + '</span>' +
+                            '</div>' +
+                            '<h2 class="hcs-title" title="' + esc(title) + '">' + esc(title) + '</h2>' +
+                            '<div class="hcs-badges">' +
+                                '<span class="hcs-badge is-type">' + tm.badge + '</span>' +
+                                (sub ? '<span class="hcs-badge">' + esc(sub) + '</span>' : '') +
+                                (score ? '<span class="hcs-badge is-score">★ ' + esc(score) + '</span>' : '') +
+                                (active.playCount > 0 ? '<span class="hcs-badge">已阅 ' + active.playCount + ' 次</span>' : '<span class="hcs-badge">待启封典藏</span>') +
+                            '</div>' +
+                            '<p class="hcs-reason">✦ ' + esc(reason) + '</p>' +
+                            '<div class="hcs-actions">' +
+                                '<button type="button" class="hcs-btn hcs-btn-primary" data-stage-open="' + active.id + '" data-stage-type="' + esc(active.type || '') + '">' + tm.cta + '</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-secondary" data-stage-detail="' + active.id + '">' + (window.uiIcon ? window.uiIcon('folder', 14) : '') + ' 藏品档案</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-next="1" title="切换下一部主映藏品">' + (window.uiIcon ? window.uiIcon('shuffle', 14) : '') + ' 换一部</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-ask="' + esc(title) + '" title="让 AI 策展人介绍这部作品">' + (window.uiIcon ? window.uiIcon('chat', 14) : '') + ' AI 导读</button>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="hcs-side">' +
+                        '<div class="hcs-pulse-head">' +
+                            '<span class="hcs-side-label">ARCHIVE PULSE · 馆藏脉搏</span>' +
+                            '<button type="button" class="hcs-side-link" data-stage-nav="guess">进入挑片台 →</button>' +
+                        '</div>' +
+                        '<div class="hcs-pulse-grid">' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="novel"><span class="hcs-pulse-num">' + Number(st.novel || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('book', 12) : '') + ' 典藏小说</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="comic"><span class="hcs-pulse-num">' + Number(st.comic || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('comic', 12) : '') + ' 典藏漫画</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="film"><span class="hcs-pulse-num">' + Number(st.film || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('film', 12) : '') + ' 馆藏影视</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="guess"><span class="hcs-pulse-num">' + Number(st.total || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('layers', 12) : '') + ' 全馆总计</span></button>' +
+                        '</div>' +
+                        '<div class="hcs-reel-head">' +
+                            '<span class="hcs-side-label">CURATED REEL · 今夜候选胶片</span>' +
+                            '<span class="hcs-reel-pos">' + (stageState.activeIndex + 1) + ' / ' + Math.min(items.length, 6) + '</span>' +
+                        '</div>' +
+                        '<div class="hcs-reel-strip">' + reelHtml + '</div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+    }
+
+    async function loadCuratedStage(force) {
+        const host = document.getElementById('homeCuratedStage');
+        if (!host) return;
+        if (stageState.loading) return;
+        if (stageState.loaded && !force && stageState.items.length) {
+            renderCuratedStage();
+            return;
+        }
+        stageState.loading = true;
+        if (!stageState.items.length) renderCuratedStage();
         try {
-            const r = await (await fetch('/api/ai/history?sessionId=main&limit=6')).json();
+            const [guessRes, totRes, novRes, comRes, filmRes] = await Promise.all([
+                fetch('/api/recommend/guess?count=8' +
+                    ((typeof isAdultNavHidden === 'function' && isAdultNavHidden()) ? '&privacy=exclude' : ''))
+                    .then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview?type=novel').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview?type=comic').then(r => r.json()).catch(() => null),
+                fetch('/api/stats/overview?type=film').then(r => r.json()).catch(() => null)
+            ]);
+            if (guessRes && guessRes.code === 0 && Array.isArray(guessRes.data) && guessRes.data.length) {
+                const list = guessRes.data.slice().sort((a, b) => {
+                    const ca = (a.posterFile || a.posterUrl) ? 1 : 0;
+                    const cb = (b.posterFile || b.posterUrl) ? 1 : 0;
+                    return cb - ca;
+                });
+                stageState.items = list;
+                stageState.activeIndex = 0;
+                stageState.loaded = true;
+            }
+            stageState.stats = {
+                total: (totRes && totRes.data && totRes.data.totalMovies) || 0,
+                novel: (novRes && novRes.data && novRes.data.totalMovies) || 0,
+                comic: (comRes && comRes.data && comRes.data.totalMovies) || 0,
+                film: (filmRes && filmRes.data && filmRes.data.totalMovies) || 0
+            };
+        } catch (e) {}
+        stageState.loading = false;
+        renderCuratedStage();
+    }
+
+    /* cut-the-curve §5：Rack-Focus Blur-Cut（单反拉焦切镜）
+       出画保持 100% 不透明，110ms 拉焦至峰值 blur(9px) scale(1.035)，在峰值帧换片，
+       再以 expo.out (cubic-bezier(0.16,1,0.3,1)) 收焦落定 + §6 Waterfall Entry 错峰入场 */
+    let stageSwapTimer = 0;
+    function rackFocusStageSwap(mutateFn) {
+        const host = document.getElementById('homeCuratedStage');
+        const main = host && host.querySelector('.hcs-main');
+        if (!main || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+            mutateFn();
+            return;
+        }
+        if (stageSwapTimer) { clearTimeout(stageSwapTimer); stageSwapTimer = 0; }
+        main.classList.remove('is-rack-in');
+        main.classList.add('is-rack-out');
+        stageSwapTimer = setTimeout(() => {
+            stageSwapTimer = 0;
+            mutateFn();
+            const nextMain = host.querySelector('.hcs-main');
+            if (nextMain) {
+                nextMain.classList.add('is-rack-in');
+                setTimeout(() => { nextMain.classList.remove('is-rack-in'); }, 340);
+            }
+        }, 110);
+    }
+
+    function bindCuratedStageEvents() {
+        const host = document.getElementById('homeCuratedStage');
+        if (!host || host.__stageBound) return;
+        host.__stageBound = true;
+        host.addEventListener('click', (e) => {
+            const openBtn = e.target.closest('[data-stage-open]');
+            if (openBtn) {
+                const id = parseInt(openBtn.getAttribute('data-stage-open'), 10);
+                const t = openBtn.getAttribute('data-stage-type') || '';
+                if (!id) return;
+                if (t === 'novel' && typeof window.openNovelReader === 'function') {
+                    window.openNovelReader(id);
+                } else if (t === 'comic' && typeof window.openComicReader === 'function') {
+                    window.openComicReader(id);
+                } else if ((t === 'film' || t === 'jav' || t === 'anime' || t === 'cartoon') && typeof window.playMovieInline === 'function') {
+                    window.playMovieInline(id);
+                } else if (typeof window.showMovieDetail === 'function') {
+                    window.showMovieDetail(id);
+                }
+                return;
+            }
+            const detailBtn = e.target.closest('[data-stage-detail]');
+            if (detailBtn) {
+                const id = parseInt(detailBtn.getAttribute('data-stage-detail'), 10);
+                if (id && typeof window.showMovieDetail === 'function') window.showMovieDetail(id);
+                return;
+            }
+            const nextBtn = e.target.closest('[data-stage-next]');
+            if (nextBtn) {
+                const max = Math.min(stageState.items.length, 6);
+                if (max > 1 && stageState.activeIndex + 1 < max) {
+                    rackFocusStageSwap(() => {
+                        stageState.activeIndex += 1;
+                        renderCuratedStage();
+                    });
+                } else {
+                    rackFocusStageSwap(() => {
+                        loadCuratedStage(true);
+                    });
+                }
+                return;
+            }
+            const askBtn = e.target.closest('[data-stage-ask]');
+            if (askBtn) {
+                const title = askBtn.getAttribute('data-stage-ask') || '';
+                if (title) askPreset('请帮我导读并评析馆藏作品《' + title + '》的看点、风格与适合阅读/观看的心情');
+                return;
+            }
+            const idxBtn = e.target.closest('[data-stage-idx]');
+            if (idxBtn) {
+                const idx = parseInt(idxBtn.getAttribute('data-stage-idx'), 10);
+                if (Number.isFinite(idx) && stageState.items[idx] && idx !== stageState.activeIndex) {
+                    rackFocusStageSwap(() => {
+                        stageState.activeIndex = idx;
+                        renderCuratedStage();
+                    });
+                }
+                return;
+            }
+            const navBtn = e.target.closest('[data-stage-nav]');
+            if (navBtn) {
+                const v = navBtn.getAttribute('data-stage-nav');
+                if (v && typeof window.switchView === 'function') window.switchView(v);
+            }
+        });
+    }
+
+    function askPreset(promptText) {
+        const ta = document.getElementById('homeChatInput');
+        if (!ta || !promptText) return;
+        ta.value = promptText;
+        ta.focus();
+        sendHomeMessage();
+    }
+
+    let homeChatRestoredFor = null;
+    async function restoreHomeChat(force) {
+        const sid = (window.getAISessionId ? window.getAISessionId() : 'main');
+        if (!force && homeChatRestoredFor === sid) return;
+        homeChatRestoredFor = sid;
+        try {
+            const r = await (await fetch('/api/ai/history?sessionId=' + encodeURIComponent(sid) + '&limit=20')).json();
             if (r.code !== 0) return;
             const msgs = r.data.messages || [];
-            if (!msgs.length) return;
             const box = document.getElementById('homeChatMessages');
-            if (!box || box.querySelector('.home-msg')) return;   // 已经聊上了就不动
+            if (!box) return;
+            box.innerHTML = '';
+            if (!msgs.length) {
+                box.innerHTML = '<div class="home-chat-empty">👋 你好，我是你的影库 AI 助手<br><span class="hc-sub">可以问我：推荐几部好看的、找有 XX 标签的影片、翻译片名…</span></div>';
+                return;
+            }
             for (const m of msgs) {
-                const text = esc(m.content || '').replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (mm, id, title) =>
+                const rawEsc = esc(m.content || '');
+                const rendered = (m.role === 'assistant' ? mdLite(rawEsc) : rawEsc)
+                    .replace(/\[\[(\d+)\|([^\]]+)\]\]/g, (mm, id, title) =>
                     `<span class="ai-movie-ref" data-movie-id="${id}" onclick="window.jumpToMovieFromAI && window.jumpToMovieFromAI(${id})">📎 ${esc(title)}</span>`);
-                addMsg(m.role === 'assistant' ? 'ai' : 'user', text);
+                addMsg(m.role === 'assistant' ? 'ai' : 'user', rendered);
             }
         } catch (e) { /* 记忆引擎未就绪时保持空态 */ }
     }
 
+    /* 与右侧 AI 工作台共用 aiMemory 会话：任一端发完消息或切会话后，
+     * 另一端从服务端同一份记录重绘，保证两边永远看到同一段对话。 */
+    window.Home = window.Home || {};
+    window.Home.syncFromSession = async function (sid) {
+        if (window.setAISessionId) window.setAISessionId(sid);
+        homeChatRestoredFor = null;
+        await restoreHomeChat(true);
+        await refreshHomeSessionList();
+    };
+    window.Home.refreshSessions = function () { return refreshHomeSessionList(); };
+
+    async function refreshHomeSessionList() {
+        const sel = document.getElementById('homeSessionSelect');
+        if (!sel) return;
+        try {
+            const r = await (await fetch('/api/ai/sessions?archived=0')).json();
+            if (r.code !== 0) return;
+            const list = r.data || [];
+            const cur = window.getAISessionId ? window.getAISessionId() : 'main';
+            sel.innerHTML = list.map(s =>
+                '<option value="' + esc(s.id) + '">' + esc(s.title || '新对话') + '</option>').join('');
+            if (!list.some(s => s.id === cur)) {
+                sel.insertAdjacentHTML('afterbegin', '<option value="' + esc(cur) + '">默认对话</option>');
+            }
+            sel.value = cur;
+            syncHomeSessionBtn();
+        } catch (e) { /* 会话服务未就绪时保持默认项 */ }
+    }
+    window.refreshHomeSessionList = refreshHomeSessionList;
+
+    function syncHomeSessionBtn() {
+        const sel = document.getElementById('homeSessionSelect');
+        const btn = document.getElementById('homeSessionBtn');
+        if (!sel || !btn) return;
+        const cur = sel.options[sel.selectedIndex];
+        btn.textContent = cur ? cur.textContent : '默认对话';
+    }
+
     function bindHome() {
+        bindCuratedStageEvents();
+        loadCuratedStage(false);
         const ta = document.getElementById('homeChatInput');
         const btn = document.getElementById('homeChatSend');
         if (ta) {
@@ -797,13 +1236,54 @@
             });
         }
         if (btn) btn.addEventListener('click', sendHomeMessage);
+        const sessSel = document.getElementById('homeSessionSelect');
+        if (sessSel) {
+            sessSel.addEventListener('change', async () => {
+                const sid = sessSel.value;
+                syncHomeSessionBtn();
+                if (window.setAISessionId) window.setAISessionId(sid);
+                homeChatRestoredFor = null;
+                await restoreHomeChat(true);
+                if (window.syncAIChatViews) window.syncAIChatViews(sid);
+            });
+        }
+        bindHomeSessionPicker();
+        const newBtn = document.getElementById('homeNewChatBtn');
+        if (newBtn) {
+            newBtn.addEventListener('click', async () => {
+                if (typeof window.dsnNewSession === 'function') {
+                    await window.dsnNewSession();
+                } else {
+                    try {
+                        const r = await (await fetch('/api/ai/sessions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ title: '新对话' })
+                        })).json();
+                        if (r.code === 0 && r.data) {
+                            if (window.setAISessionId) window.setAISessionId(r.data.id);
+                            homeChatRestoredFor = null;
+                            await restoreHomeChat(true);
+                            await refreshHomeSessionList();
+                        }
+                    } catch (e) { }
+                }
+            });
+        }
+        const wbBtn = document.getElementById('homeOpenWorkbenchBtn');
+        if (wbBtn) {
+            wbBtn.addEventListener('click', () => {
+                if (typeof window.showAIAssistant === 'function') window.showAIAssistant();
+            });
+        }
         const mic = document.getElementById('homeChatMic');
         if (mic) {
             mic.addEventListener('click', () => {
                 if (window.CinemaASR) window.CinemaASR.toggle(ta);
             });
         }
-        restoreHomeChat();
+        restoreHomeChat(false);
+        refreshHomeSessionList();
         document.querySelectorAll('.home-rank-tab[data-src]').forEach(t =>
             t.addEventListener('click', () => switchRankSource(t.dataset.src)));
         document.querySelectorAll('.home-rank-tab[data-lib]').forEach(t =>
@@ -829,5 +1309,58 @@
         window.addEventListener('resize', applyPh);
     }
 
-    window.Home = { showHome, hideHome, showAcgBoard, hideAcgBoard, bindHome, openAcgDetail, closeAcgDetail, switchAcgPeriod, switchAcgCat, switchSubTab };
+    /* round161：原生 select 弹层在暗色皮肤下会透出背景图，文字看不清。
+       select 只做数据源，入口换成 body 级不透明菜单。 */
+    function bindHomeSessionPicker() {
+        const sel = document.getElementById('homeSessionSelect');
+        const btn = document.getElementById('homeSessionBtn');
+        if (!sel || !btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        let menu = null;
+        const close = () => { if (menu) menu.hidden = true; };
+        const open = () => {
+            if (!menu) {
+                menu = document.createElement('div');
+                menu.className = 'hsm-menu';
+                menu.addEventListener('click', (e) => {
+                    const item = e.target.closest('.hsm-item');
+                    if (!item) return;
+                    sel.value = item.dataset.sid;
+                    close();
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                document.body.appendChild(menu);
+            }
+            const rect = btn.getBoundingClientRect();
+            const width = Math.max(190, Math.min(280, Math.max(rect.width, 190)));
+            menu.style.width = width + 'px';
+            menu.innerHTML = Array.from(sel.options).map((o) =>
+                '<button type="button" class="hsm-item' + (o.selected ? ' on' : '') + '" data-sid="'
+                + esc(o.value) + '">' + esc(o.textContent) + '</button>').join('');
+            menu.hidden = false;
+            const h = Math.min(menu.scrollHeight, 320);
+            let top = rect.bottom + 6;
+            if (top + h > window.innerHeight - 12) top = Math.max(12, rect.top - 6 - h);
+            menu.style.top = top + 'px';
+            menu.style.left = Math.max(12, Math.min(rect.right - width, window.innerWidth - 12 - width)) + 'px';
+            const on = menu.querySelector('.hsm-item.on');
+            if (on) on.scrollIntoView({ block: 'nearest' });
+        };
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (menu && !menu.hidden) close(); else open();
+        });
+        document.addEventListener('click', (e) => {
+            if (menu && !menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+        window.addEventListener('resize', close);
+    }
+
+    window.Home = Object.assign(window.Home || {}, {
+        showHome, hideHome, showAcgBoard, hideAcgBoard, bindHome, openAcgDetail, closeAcgDetail,
+        switchAcgPeriod, switchAcgCat, switchSubTab, askPreset, loadCuratedStage
+    });
+    if (!window.Home.syncFromSession) window.Home.syncFromSession = async function (sid) { window.setAISessionId?.(sid); await restoreHomeChat(true); };
+    if (!window.Home.refreshSessions) window.Home.refreshSessions = refreshHomeSessionList;
 })();

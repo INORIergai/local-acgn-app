@@ -16,7 +16,7 @@
     justify-content: center;
     cursor: pointer;
     opacity: 1;
-    transition: opacity 0.45s ease;
+    transition: opacity var(--mv2-d3, 0.45s) var(--mv2-snap, ease);
 }
 #startupSplash.ss-hide { opacity: 0; pointer-events: none; }
 #startupSplash video {
@@ -53,7 +53,7 @@
     bottom: calc(100% - 40px);         /* 锚点=.home-chat 顶(=卡片顶)：img 底越过卡片顶 40px，
                                           切割线+羽化白边完全沉入卡片内，手「搭」在卡片后沿 */
     opacity: 0;
-    transition: opacity 0.22s ease;
+    transition: opacity var(--mv2-d2, 0.22s) var(--mv2-snap, ease);
     pointer-events: none;              /* 动画态不接 hover 事件（由 .home-chat:hover 统一处理） */
 }
 .home-mascot-anim.anim-show { opacity: 1; }
@@ -79,7 +79,7 @@
     transform-origin: 50% 100%;
     width: 300px;
     bottom: calc(100% - 56px);         /* img 底沉入卡片内 56px：桌条被卡片顶边接住 */
-    transition: opacity 0.22s ease;
+    transition: opacity var(--mv2-d2, 0.22s) var(--mv2-snap, ease);
     filter: none;
     cursor: default;
 }

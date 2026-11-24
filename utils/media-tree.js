@@ -76,9 +76,19 @@ function buildTree(movies, roots) {
   }
 
   // 递归排序：文件夹按名称自然排序，条目按文件名自然排序
+  const zhCollator = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+  const isBrokenPrefix = (s) => /^[\s_.…()（）\[\]【】\-—·]+/.test(String(s || ''));
+  const cleanSortKey = (s) => String(s || '').replace(/^[\s_.…()（）\[\]【】\-—·]+/, '').trim();
   const sortNode = (n) => {
-    n.children.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
-    n.items.sort((a, b) => (a.fileName || '').localeCompare(b.fileName || '', 'zh-Hans-CN', { numeric: true }));
+    n.children.sort((a, b) => zhCollator.compare(cleanSortKey(a.name), cleanSortKey(b.name)));
+    n.items.sort((a, b) => {
+      const fa = a.title || a.fileName || '';
+      const fb = b.title || b.fileName || '';
+      const ba = isBrokenPrefix(fa) ? 1 : 0;
+      const bb = isBrokenPrefix(fb) ? 1 : 0;
+      if (ba !== bb) return ba - bb;
+      return zhCollator.compare(cleanSortKey(fa), cleanSortKey(fb));
+    });
     n.children.forEach(sortNode);
   };
   sortNode(rootNode);

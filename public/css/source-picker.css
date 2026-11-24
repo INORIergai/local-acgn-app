@@ -70,3 +70,25 @@
 body.night-mode #sourcePickerHost .sp-panel { background: #1c1a18; color: #ece6da; border-color: #33302c; }
 body.night-mode #sourcePickerHost .sp-row:hover { background: rgba(255,255,255,.06); }
 body.night-mode #sourcePickerHost .sp-foot { border-color: #33302c; }
+
+/* v4：插件商店搜索与类型筛选 */
+#sourcePickerHost .sp-toolbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 0 18px 8px;
+}
+#sourcePickerHost .sp-toolbar input {
+    flex: 1 1 220px; min-width: 160px; height: 32px; padding: 0 11px;
+    border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 8px;
+    background: transparent; color: inherit; font-size: 12.5px; outline: none;
+}
+#sourcePickerHost .sp-toolbar input:focus { border-color: var(--primary, #a8762c); }
+#sourcePickerHost .sp-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+#sourcePickerHost .sp-chip {
+    border: 1px solid var(--line, rgba(0,0,0,.12)); background: transparent; color: var(--text-muted, #8b8377);
+    border-radius: 999px; padding: 3px 9px; font-size: 11.5px; cursor: pointer;
+}
+#sourcePickerHost .sp-chip i { font-style: normal; opacity: .65; margin-left: 2px; }
+#sourcePickerHost .sp-chip:hover { color: var(--primary, #a8762c); border-color: currentColor; }
+#sourcePickerHost .sp-chip.active { background: var(--primary, #a8762c); border-color: var(--primary, #a8762c); color: #fff; }
+#sourcePickerHost .sp-chip.active i { opacity: .85; }
+body.night-mode #sourcePickerHost .sp-toolbar input { border-color: #33302c; }

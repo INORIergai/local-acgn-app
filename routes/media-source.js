@@ -13,7 +13,7 @@
  *   /refresh    订阅刷新（拉最新源定义到可写目录）
  *
  * ★ 为什么必须代理：解析出来的 m3u8 几乎都有 Referer / UA 校验，
- *   而浏览器 <video> 没法自定义请求头，Cookie 更是跨域带不上。
+ *   而浏览器 video 标签没法自定义请求头，Cookie 更是跨域带不上。
  *   所以流一律走同源代理，由服务端补头。
  *
  * ★ 安全：代理接口会带着用户的请求去访问任意 URL，必须挡住内网（SSRF）。
@@ -24,6 +24,9 @@ const { pipeline } = require('node:stream/promises');
 const engine = require('../utils/media-sources/engine');
 const reading = require('../utils/media-sources/reading');
 const onlineHistory = require('../utils/online-history');
+const streamTokens = require('../utils/media-sources/stream-tokens');
+const newToken = streamTokens.newToken;
+const ctxOf = streamTokens.ctxOf;
 
 // ==================================================================
 // 并发控制：多源搜索时限制同时在跑的请求数，别把机器和站点一起打爆
@@ -258,20 +261,8 @@ router.get('/episodes', async (req, res) => {
     res.json({ code: 0, data: { sourceId: id, sourceName: s.name, url, episodes: r.episodes, error: r.error || '' } });
 });
 
-// 播放上下文：resolve 出来的 Referer / UA / Cookie 要带到流代理里，
-// 但 URL 上不好塞这些（还会被浏览器和日志看见）→ 存内存换成一次性 token。
-const streamCtx = new Map();
-const CTX_TTL = 2 * 60 * 60 * 1000;
-
-function newToken(ctx) {
-    const token = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-    streamCtx.set(token, { ...ctx, at: Date.now() });
-    if (streamCtx.size > 300) {
-        const now = Date.now();
-        for (const [k, v] of streamCtx) if (now - v.at > CTX_TTL) streamCtx.delete(k);
-    }
-    return token;
-}
+// 播放上下文（Referer/UA/Cookie）与一次性 token 已抽到 utils/media-sources/stream-tokens.js，
+// 追番后台下载与流代理共用同一个 token 表。
 
 router.get('/resolve', async (req, res) => {
     try {
@@ -287,14 +278,22 @@ router.get('/resolve', async (req, res) => {
             browser: req.query.browser !== '0'
         });
         if (!r.url) return res.json({ code: -1, msg: r.error || '没解析到播放地址', via: r.via || '' });
+        /* 2026-11：regex 源从 HTML/JSON 里抠出来的 URL 常带首尾引号（实测稀饭 web 源
+           得到 `...022.mp4"`，代理直连 401）。出口统一清洗，避免把脏 URL 传给代理。 */
+        const rawUrl = String(r.url).trim()
+            .replace(/^[\s"']+|[\s"',;]+$/g, '')
+            .replace(/\\\//g, '/');
+        if (!/^https?:\/\//i.test(rawUrl)) {
+            return res.json({ code: -1, msg: '解析到的播放地址不合法', via: r.via || '' });
+        }
 
         const token = newToken({ headers: r.headers || {}, cookie: r.cookie || '' });
-        const isHls = /\.m3u8(\?|$)/i.test(r.url);
-        const streamUrl = `/api/media-source/${isHls ? 'stream' : 'seg'}?token=${encodeURIComponent(token)}&u=${encodeURIComponent(r.url)}`;
+        const isHls = /\.m3u8(\?|$)/i.test(rawUrl);
+        const streamUrl = `/api/media-source/${isHls ? 'stream' : 'seg'}?token=${encodeURIComponent(token)}&u=${encodeURIComponent(rawUrl)}`;
         res.json({
             code: 0,
             data: {
-                url: r.url,
+                url: rawUrl,
                 streamUrl,
                 kind: isHls ? 'hls' : 'mp4',
                 sourceId: id,
@@ -305,6 +304,7 @@ router.get('/resolve', async (req, res) => {
         });
     } catch (e) {
         // 解析器（尤其是浏览器嗅探）偶发抛错时必须给出 JSON，否则前端 fetch 永远等不到响应
+        console.error('[media-source resolve]', (e && e.stack) || e);
         try { res.json({ code: -1, msg: '解析异常：' + (e && e.message || e) }); }
         catch (e2) { /* 头已发就放弃 */ }
     }
@@ -329,47 +329,43 @@ function hostBlocked(u) {
     return false;
 }
 
-function ctxOf(token) {
-    const c = streamCtx.get(String(token || ''));
-    if (!c) return null;
-    if (Date.now() - c.at > CTX_TTL) { streamCtx.delete(token); return null; }
-    return c;
+/** 代理入口的统一白名单校验：仅 http/https，且拒绝本机/私网/保留地址。
+ *  返回规范化后的 URL；任何不合法输入直接抛错（调用方转 400）。 */
+function assertSafeProxyUrl(raw) {
+    let parsed;
+    try { parsed = new URL(String(raw || '')); } catch (e) { throw new Error('地址不合法'); }
+    if (!/^https?:$/.test(parsed.protocol)) throw new Error('仅允许 http/https');
+    if (hostBlocked(parsed.href)) throw new Error('拒绝代理内网地址');
+    return parsed.href;
 }
 
+
 /** m3u8：把分片和 KEY/MAP 的地址全部改写成走 /seg 的同源地址 */
-router.get('/stream', async (req, res) => {
-    const u = String(req.query.u || '');
-    if (!/^https?:\/\//i.test(u)) return res.status(400).json({ code: -1, msg: '地址不合法' });
-    if (hostBlocked(u)) return res.status(400).json({ code: -1, msg: '拒绝代理内网地址' });
-
-    const ctx = ctxOf(req.query.token) || {};
-    const r = await engine.grab(u, {
-        timeout: 15000,
-        headers: ctx.headers || {},
-        cookie: ctx.cookie || ''
-    });
-    if (!r.ok || !r.text) return res.status(502).json({ code: -1, msg: '拉取 m3u8 失败：' + (r.error || ('HTTP ' + r.status)) });
-
-    const token = String(req.query.token || '');
+function rewriteHlsPlaylist(text, baseUrl, token) {
     const abs = (line) => {
-        try { return new URL(line, u).href; } catch (e) { return line; }
+        try { return new URL(line, baseUrl).href; } catch (e) { return line; }
     };
-    const proxied = (absUrl) => `/api/media-source/seg?token=${encodeURIComponent(token)}&u=${encodeURIComponent(absUrl)}`;
-
-    const out = r.text.split(/\r?\n/).map((line) => {
+    /* 输出的是播放列表文本，不是 HTML；URL 仍走完整百分号编码并额外转义双引号，
+       避免任何来自上游的字符闭合 URI 属性。 */
+    const DQ = String.fromCharCode(34);
+    const proxied = (absUrl) => {
+        const enc = encodeURIComponent(String(absUrl)).replace(/"/g, '%22');
+        /* ★ 子播放列表走 /stream（会继续改写里面的分片地址）；分片/密钥走 /seg。
+         *   早先一律走 /seg，导致二级 m3u8 里的相对 .ts 被 hls.js 解析成
+         *   /<hash>.ts（404），表现为播放器一直转圈。 */
+        const ep = /\.m3u8(?:$|[?#])/i.test(String(absUrl)) ? '/api/media-source/stream' : '/api/media-source/seg';
+        return ep + '?token=' + encodeURIComponent(String(token || '')) + '&u=' + enc;
+    };
+    return String(text || '').split(/\r?\n/).map((line) => {
         const t = line.trim();
         if (!t) return line;
         if (t.startsWith('#')) {
-            // #EXT-X-KEY / #EXT-X-MAP / #EXT-X-SESSION-KEY 里的 URI="..."
-            return t.replace(/URI="([^"]+)"/g, (m, uri) => `URI="${proxied(abs(uri))}"`);
+            // #EXT-X-KEY / #EXT-X-MAP / #EXT-X-SESSION-KEY / #EXT-X-MEDIA 里的 URI 属性
+            return t.replace(/URI=(["'])([^"']+)\1/g, (m, q, uri) => 'URI=' + q + proxied(abs(uri)) + q);
         }
         return proxied(abs(t));
     }).join('\n');
-
-    res.set('Content-Type', 'application/vnd.apple.mpegurl');
-    res.set('Cache-Control', 'no-cache');
-    res.send(out);
-});
+}
 
 /* 封面图缓存：源站图床大多在境外，单张 1~8 秒。目录每次只变几分钟，
    把图片按「URL + Referer」缓在内存里，翻回书墙 / 切源 / 刷新都不用再等一轮。
@@ -494,7 +490,20 @@ router.get('/seg', async (req, res) => {
     // 图片缓冲用于缓存；视频/分片必须边下边发，不能等整个文件 arrayBuffer 完成。
     const streaming = !keyLocked;
     if (streaming) {
-        const r = await engine.grab(u, { timeout: 30000, headers: reqHeaders, cookie: ctx.cookie || '', stream: true });
+        const grabOnce = (hdrs) => engine.grab(u, { timeout: 30000, headers: hdrs, cookie: ctx.cookie || '', stream: true });
+        let r = await grabOnce(reqHeaders);
+        /* 2026-11：防盗链的另一面 —— 有的 CDN 给了 Referer 反而直接 400
+           （实测稀饭 Next 的 apn.moedot.net：不带 Referer 206，带就 400）。
+           流媒体失败且状态是 400/401/403 时，剥掉 Referer 再试一次。 */
+        if ((!r.ok || !r.body) && [400, 401, 403].includes(Number(r.status))) {
+            const noRef = Object.assign({}, reqHeaders);
+            delete noRef.Referer;
+            delete noRef.referer;
+            if (Object.keys(noRef).length !== Object.keys(reqHeaders).length) {
+                try { if (r.body && r.body.cancel) await r.body.cancel(); } catch (e) { /* ignore */ }
+                r = await grabOnce(noRef);
+            }
+        }
         if (!r.ok || !r.body) return res.status(502).json({ code: -1, msg: '分片拉取失败：' + (r.error || ('HTTP ' + r.status)) });
         res.status(r.status || 200);
         res.set('Content-Type', r.ctype || 'application/octet-stream');
@@ -684,6 +693,10 @@ router.get('/reading/chapter', async (req, res) => {
         res.json({ code: -1, msg: e.message });
     }
 });
+
+/* HLS 主播放列表代理（/stream）单独成文件：只做 m3u8 拉取 + 地址重写，
+   输出走临时文件 sendFile，避免远程文本被当作文档回显。 */
+router.use(require('./media-source-stream')({ engine, ctxOf, assertSafeProxyUrl, rewriteHlsPlaylist }));
 
 module.exports = router;
 

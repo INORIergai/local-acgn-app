@@ -9,6 +9,7 @@
     let cpItems = [];       // 当前候选
     let cpIndex = 0;        // 键盘高亮位置
     let cpTimer = null;
+    let cpSeq = 0;
 
     const overlay = () => document.getElementById('cpOverlay');
     const input = () => document.getElementById('cpInput');
@@ -78,6 +79,7 @@
 
     async function search(q) {
         if (!q) { renderQuick(''); return; }
+        const my = ++cpSeq;
         let ftsResults = [];
         try {
             const res = await fetch(`/api/movie/fts-search?q=${encodeURIComponent(q)}`);
@@ -93,6 +95,33 @@
                 }));
             }
         } catch (e) { }
+        if (my !== cpSeq) return;
+        /* r153 · C1：字面/FTS 都 0 命中时，让 AI 语义召回接管同一块面板 */
+        if (!ftsResults.length && q.length >= 2) {
+            try {
+                const r = await fetch('/api/ai/semantic-search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        q,
+                        privacy: (typeof isAdultNavHidden === 'function' && isAdultNavHidden()) ? 'exclude' : ''
+                    })
+                });
+                const d = await r.json();
+                if (my !== cpSeq) return;
+                if (d.code === 0) {
+                    ftsResults = (d.data || []).map(m => ({
+                        kind: 'movie',
+                        id: m.id,
+                        title: m.title || m.fileName,
+                        sub: (m.aiWhy ? '✨ ' + m.aiWhy : [m.avid, formatDuration(m.duration || 0)].filter(Boolean).join(' · ')),
+                        type: m.type || 'jav',
+                        poster: getPosterUrl(m)
+                    }));
+                }
+            } catch (e) { /* AI 不可用就保持“没有匹配” */ }
+        }
+        if (my !== cpSeq) return;
         const actions = QUICK_ACTIONS.filter(a => a.title.toLowerCase().includes(q.toLowerCase()));
         cpItems = [
             ...ftsResults.map(r => ({ kind: 'movie', ...r })),

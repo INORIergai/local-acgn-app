@@ -21,7 +21,8 @@ class ReaderRepository {
     data class Chapter(val index: Int, val title: String, val length: Int, val hasImage: Boolean)
     data class NovelInfo(
         val id: Long, val title: String, val readKind: String,
-        val totalChapters: Int, val currentChapter: Int, val chapters: List<Chapter>
+        val totalChapters: Int, val currentChapter: Int, val currentPosition: Int,
+        val chapters: List<Chapter>
     ) {
         companion object {
             fun from(j: org.json.JSONObject): NovelInfo {
@@ -33,7 +34,8 @@ class ReaderRepository {
                         c.optInt("length"), c.optBoolean("hasImage")))
                 }
                 return NovelInfo(j.optLong("id"), j.optString("title"), j.optString("readKind"),
-                    j.optInt("totalChapters"), j.optInt("currentChapter"), list)
+                    j.optInt("totalChapters"), j.optInt("currentChapter"),
+                    j.optInt("currentPosition"), list)
             }
         }
     }
@@ -50,17 +52,21 @@ class ReaderRepository {
         return NovelInfo.from(ApiClient.unwrap(root))
     }
 
-    data class ChapterContent(val index: Int, val title: String, val content: String, val isHtml: Boolean)
+    data class ChapterContent(
+        val index: Int, val title: String, val content: String,
+        val isHtml: Boolean, val plainText: String
+    )
 
     suspend fun chapter(id: Long, index: Int): ChapterContent {
         val root = ApiClient.get("/api/novel/$id/chapter/$index")
         if (root.optInt("code", -1) != 0) throw Exception(root.optString("msg", "章节超出范围"))
         val d = ApiClient.unwrap(root)
         val html = d.optBoolean("isHtml")
-        var text = if (html) d.optString("content") else d.optString("text").ifBlank { d.optString("content") }
+        val plain = d.optString("text")
+        var text = if (html) d.optString("content") else plain.ifBlank { d.optString("content") }
         // 图片相对路径补全为绝对 URL（带 Cookie 由 Coil 加载）
         text = text.replace("src=\"/api/novel/", "src=\"${ServerConfig.baseUrl}/api/novel/")
-        return ChapterContent(d.optInt("index"), d.optString("title"), text, html)
+        return ChapterContent(d.optInt("index"), d.optString("title"), text, html, plain)
     }
 
     /** 当前章机翻润色：服务端按书/章缓存，结果不覆盖原书。 */
@@ -80,9 +86,14 @@ class ReaderRepository {
     }
 
     suspend fun saveNovelProgress(id: Long, chapter: Int, total: Int) {
+        saveNovelProgress(id, chapter, 0, total)
+    }
+
+    /** position = 章内字符偏移；重开时用 /info 的 currentPosition 恢复页内位置。 */
+    suspend fun saveNovelProgress(id: Long, chapter: Int, position: Int, total: Int) {
         try {
             ApiClient.post("/api/novel/$id/progress", org.json.JSONObject()
-                .put("chapter", chapter).put("position", 0).put("total", total))
+                .put("chapter", chapter).put("position", position).put("total", total))
         } catch (_: Exception) { }
     }
 

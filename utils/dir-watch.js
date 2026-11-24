@@ -108,6 +108,8 @@ const S = {
     done: 0,
     failed: 0,
     unstableStreak: 0,
+    pendingManual: false,   // round110：忙时用户点过「检查新增」，扫描让路后自动补跑一次
+    lastUnstable: 0,        // round110：上轮手动检查时「有文件但都不过稳定判据」的条数
     recent: [],             // 最近 20 条发现
 
     eventAttached: 0,
@@ -222,11 +224,19 @@ async function stableFilter(paths) {
 /**
  * 只做「发现」：walk 全树 → 与已知集合求差集 → 稳定判据过滤。
  * 不做任何入库 / 刮削，供外部（验收脚本、手动检查）单独调用。
+ * opts:
+ *   noCap    —— 不受 maxPerTick 限制，返回全部候选（round110：忙时诚实报数用）
+ *   noStable —— 跳过稳定判据，原样返回差集（round110：数「还在下载中」的条数用）
+ *   roots    —— 限定根列表（诊断用）
  * @returns {Array<{path:string,type:string}>}
  */
 async function collectCandidates(opts) {
     const o = opts || {};
     refreshKnown();
+    // round110：已经在队列里等入库的文件不算「新发现」。
+    //   refreshKnown 只读库，而入队到真正落库之间有窗口期；不排除的话，
+    //   同一批文件每轮都被重新数一遍、重新入队一遍（差集数字虚高 + 队列空转）。
+    for (const j of queue) known.add(j.path);
     const roots = o.roots || getRoots();
     const cands = [];
     const seen = new Set();
@@ -243,8 +253,9 @@ async function collectCandidates(opts) {
             cands.push({ path: f, type: r.type });
         }
     }
-    const capped = cands.slice(0, S.maxPerTick);
+    const capped = o.noCap ? cands : cands.slice(0, S.maxPerTick);
     if (!capped.length) return [];
+    if (o.noStable) return capped;                   // 只数数，不判稳定
     const ready = new Set(await stableFilter(capped.map(c => c.path)));
     return capped.filter(c => ready.has(c.path));
 }
@@ -278,15 +289,16 @@ function pushRecent(c) {
 
 // ==================== 入队与串行处理 ====================
 
-async function runOne(job) {
+async function runOne(job, opts) {
     const p = job.path;
+    const o = opts || {};
     S.lastFile = path.basename(p);
     if (job.type === 'anime') {
         await lazy('scanner').processSingleAnimeFile(p);
     } else if (job.type === 'comic') {
-        await lazy('comic-scanner').processSingleComic(p);
+        await lazy('comic-scanner').processSingleComic(p, { network: o.network !== false });
     } else if (job.type === 'novel') {
-        await lazy('novel-scanner').processSingleNovelFile(p);
+        await lazy('novel-scanner').processSingleNovelFile(p, { network: o.network !== false });
     } else if (job.type === 'film' || job.type === 'cartoon') {
         // round34 新四库：影视/动漫走通用视频处理，searchMovie 按 type 分流刮削
         await lazy('scanner').processSingleFile(p, job.type);
@@ -311,10 +323,25 @@ async function drain() {
         while (queue.length) {
             const job = queue.shift();
             S.queueLength = queue.length;
+            // ★ round112：批量（>10 个）时不做网络刮削 —— 一个文件一次搜索就是 3 秒起步，
+            //   200 个攒一起拷进来会变成十几分钟纯等待。批量场景先入库，封面交给后台补图任务。
+            //   零星几个（用户手动拖进来 1~5 个）仍走完整刮削，和旧行为一致。
+            const allowNetwork = (queue.length + 1) <= 10;
             try {
-                await runOne(job);
+                await runOne(job, { network: allowNetwork });
                 S.done++;
                 console.log(`[目录监控] 已入库: ${path.basename(job.path)}（${job.type}）`);
+                // round173h：追番自动归集——视频入库后挂到对应 series/episode，
+                // 让追番页「继续看第 N 集」能直接播刚下的文件。失败绝不影响入库。
+                if (['anime', 'cartoon', 'film'].includes(job.type)) {
+                    try {
+                        const movie = require('./db').getMovieByPath.get(job.path);
+                        if (movie) {
+                            const r = require('./series-ingest').linkMovieToSeries(movie);
+                            if (r.linked) console.log(`[追番归集] ${path.basename(job.path)} → 第${r.episodeNo}集已挂接 (series=${r.seriesId})`);
+                        }
+                    } catch (e) { /* 归集失败不影响入库 */ }
+                }
                 // round34 批次B：发现新作 → 站内通知（用户可按偏好关闭）
                 try {
                     require('./notify').notify('newItem', '📥 发现新作',
@@ -336,8 +363,12 @@ async function drain() {
 
 // ==================== 一轮检查 ====================
 
-async function runTick(reason) {
-    if (!S.enabled || S.stopped) return 0;
+async function runTick(reason, opts) {
+    // round110：force = 用户显式点击「检查新增」。此时即使 watch.enabled=false 也要查——
+    //   开关管的是「自动监控」，不该把一次显式检查吞成一句「本次没有发现新文件」的谎话。
+    const force = !!(opts && opts.force);
+    if (S.stopped) return 0;
+    if (!S.enabled && !force) return 0;
     if (S.ticking) return 0;
 
     // 别的扫描在跑：本轮作废，但**不推进退避**（忙 ≠ 没新增）
@@ -365,6 +396,18 @@ async function runTick(reason) {
         }
         S.queueLength = queue.length;
         if (queue.length) drain();   // 不 await：检查线程继续，入库在后台串行跑
+
+        // round110：手动检查一无所获时，数一下「有文件但都不过稳定判据」的条数
+        //   （仍在下载/拷贝中的文件进不了库，但接口不该因此说「没有新增」）。
+        //   只对手动轮做——poll 轮走快速路径，用户没在等这句实话。
+        if (found === 0 && reason === 'manual') {
+            try {
+                const raw = await collectCandidates({ noCap: true, noStable: true });
+                S.lastUnstable = raw.filter(c => (attempts.get(c.path) || 0) < MAX_ATTEMPTS).length;
+            } catch (e) { S.lastUnstable = 0; }
+        } else if (found > 0) {
+            S.lastUnstable = 0;
+        }
     } catch (e) {
         S.lastError = (e && e.message) || String(e);
         console.log('[目录监控] 本轮异常:', S.lastError);
@@ -388,6 +431,14 @@ async function runTick(reason) {
             S.intervalMs = Math.min(S.intervalMs * 2, S.maxIntervalMs);
         }
         if (reason === 'poll' || reason === 'manual' || found > 0) scheduleNext();
+
+        // round110：忙时用户点过「检查新增」（pendingManual）→ 这一轮没让路，
+        //   说明扫描已结束，自动补跑一次手动检查，把用户点过的按钮兑现。
+        //   先清标志再排，不会自我循环；补跑本身也是 manual+force，enabled=false 也生效。
+        if (S.pendingManual && !otherScanBusy()) {
+            S.pendingManual = false;
+            setImmediate(() => { runTick('manual', { force: true }); });
+        }
     }
     return found;
 }
@@ -466,14 +517,43 @@ function setEnabled(on) {
     return S.enabled;
 }
 
-/** 手动立即检查（前端「🔄 检查新增」按钮走这里） */
+/**
+ * 手动立即检查（前端「🔄 检查新增」按钮走这里）。
+ * ★ round110 起返回结构体（不再只回一个数字，数字 0 会被接口翻译成谎话）：
+ *   { found, discovered, queued, busy }
+ *   - busy='other-scan'：别的扫描正在跑。不插一脚，但**不撒谎**：
+ *     只做发现（walk + 差集 + 稳定判据，不受 maxPerTick 限制），把磁盘真实数量报回去；
+ *     同时置 pendingManual —— 扫描让路后的下一轮自动补跑一次手动检查。
+ *   - busy='checking'：上一轮检查恰好还没跑完（stableFilter 要约 1.2s 的极端竞态）
+ *     → 接口回「正在检查中，请稍候」。
+ *   - busy=null：正常查完，found = 本轮入队条数。
+ * 另：enabled=false 时也查（force）—— 开关管自动监控，不管显式点击。
+ */
 async function scanNow() {
-    const found = await runTick('manual');
     // 手动检查后把节奏拉回起点：用户主动点了，说明他正在等结果
     S.intervalMs = S.baseIntervalMs;
     S.unstableStreak = 0;
+
+    if (otherScanBusy()) {
+        let discovered = 0;
+        try {
+            discovered = (await collectCandidates({ noCap: true })).length;
+        } catch (e) { discovered = 0; }
+        S.pendingManual = true;
+        scheduleNext();
+        return { found: 0, discovered, queued: true, busy: 'other-scan' };
+    }
+
+    // 有一轮 poll/event 正在跑：等它跑完再查，别刚好错过它这一轮（否则又会返回 0）
+    let guard = 0;
+    while (S.ticking && guard++ < 40) await sleep(250);   // 最多等 10 秒
+    if (S.ticking) {
+        return { found: 0, discovered: 0, queued: false, busy: 'checking' };
+    }
+
+    const found = await runTick('manual', { force: true });
     scheduleNext();
-    return found;
+    return { found, discovered: found, queued: false, busy: null };
 }
 
 function getStatus() {
@@ -482,6 +562,9 @@ function getStatus() {
         started: S.started,
         mode: S.mode,
         running: S.ticking || S.draining,
+        ticking: S.ticking,              // round110：区分「正在检查」与「正在入库」
+        draining: S.draining,
+        pendingManual: S.pendingManual,  // round110：忙时用户点过检查新增，待自动补跑
         queueLength: S.queueLength,
 
         baseIntervalMs: S.baseIntervalMs,
@@ -497,6 +580,7 @@ function getStatus() {
         lastTickAt: S.lastTickAt,
         lastReason: S.lastReason,
         lastFound: S.lastFound,
+        lastUnstable: S.lastUnstable,    // round110：上轮手动检查「有文件但不过稳定判据」条数
 
         foundTotal: S.foundTotal,
         done: S.done,

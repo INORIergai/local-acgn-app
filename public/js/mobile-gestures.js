@@ -181,6 +181,99 @@
                 });
             } catch (err) { /* 老内核没有 addEventListener，忽略 */ }
         }
+
+        initPlayerGestures();
+    }
+
+    /* ---------- 播放器移动端手势（双击左右快进/退 + 顶部下滑关闭） ---------- */
+    function initPlayerGestures() {
+        var playerModal = document.getElementById('playerModal');
+        var video = document.getElementById('videoPlayer');
+        if (!playerModal || !video) return;
+
+        var lastTapTime = 0;
+        var touchStartX = 0;
+        var touchStartY = 0;
+
+        // 创建反馈 HUD 提示框
+        var hud = document.getElementById('playerGestureHud');
+        if (!hud) {
+            hud = document.createElement('div');
+            hud.id = 'playerGestureHud';
+            hud.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.9);' +
+                'background:rgba(0,0,0,0.78);color:#fff;padding:12px 22px;border-radius:24px;font-size:15px;' +
+                'font-weight:bold;pointer-events:none;opacity:0;transition:opacity var(--mv2-d1, .18s) var(--mv2-snap, ease),transform var(--mv2-d1, .18s) var(--mv2-snap, ease);z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
+            (playerModal.querySelector('.modal-content') || playerModal).appendChild(hud);
+        }
+
+        var hudTimer = null;
+        function showHud(text) {
+            hud.textContent = text;
+            hud.style.opacity = '1';
+            hud.style.transform = 'translate(-50%,-50%) scale(1)';
+            clearTimeout(hudTimer);
+            hudTimer = setTimeout(function () {
+                hud.style.opacity = '0';
+                hud.style.transform = 'translate(-50%,-50%) scale(0.9)';
+            }, 600);
+        }
+
+        video.addEventListener('touchstart', function (e) {
+            if (!isMobile() || e.touches.length !== 1) return;
+            var t = e.touches[0];
+            touchStartX = t.clientX;
+            touchStartY = t.clientY;
+        }, { passive: true });
+
+        video.addEventListener('touchend', function (e) {
+            if (!isMobile() || e.changedTouches.length !== 1) return;
+            var t = e.changedTouches[0];
+            var dx = Math.abs(t.clientX - touchStartX);
+            var dy = Math.abs(t.clientY - touchStartY);
+            if (dx > 16 || dy > 16) return;
+
+            var now = Date.now();
+            if (now - lastTapTime < 320) {
+                var rect = video.getBoundingClientRect();
+                var p = (t.clientX - rect.left) / rect.width;
+                if (p < 0.38) {
+                    video.currentTime = Math.max(0, video.currentTime - 10);
+                    showHud('⏪ 快退 10 秒');
+                } else if (p > 0.62) {
+                    video.currentTime = Math.min((video.duration || 999999), video.currentTime + 10);
+                    showHud('⏩ 快进 10 秒');
+                } else {
+                    if (video.paused) {
+                        video.play();
+                        showHud('▶ 继续播放');
+                    } else {
+                        video.pause();
+                        showHud('⏸ 已暂停');
+                    }
+                }
+                lastTapTime = 0;
+            } else {
+                lastTapTime = now;
+            }
+        }, { passive: true });
+
+        // 播放器顶部向下滑动退出
+        var playerHeader = playerModal.querySelector('.player-top') || playerModal.querySelector('.modal-header');
+        if (playerHeader) {
+            var pStartY = 0;
+            playerHeader.addEventListener('touchstart', function (e) {
+                if (e.touches.length === 1) pStartY = e.touches[0].clientY;
+            }, { passive: true });
+            playerHeader.addEventListener('touchend', function (e) {
+                if (e.changedTouches.length === 1) {
+                    var pDy = e.changedTouches[0].clientY - pStartY;
+                    if (pDy > 70) {
+                        var closeBtn = document.getElementById('closePlayer');
+                        if (closeBtn) closeBtn.click();
+                    }
+                }
+            }, { passive: true });
+        }
     }
 
     if (document.readyState === 'loading') {

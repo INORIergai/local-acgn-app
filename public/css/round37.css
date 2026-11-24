@@ -33,7 +33,7 @@
     border-radius: 50%;
     background: var(--text-muted);
     opacity: 0.55;
-    transition: background .2s, opacity .2s, box-shadow .2s;
+    transition: background var(--mv2-d2, .2s) var(--mv2-snap, ease), opacity var(--mv2-d2, .2s) var(--mv2-snap, ease), box-shadow var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .scan-dot.ok .scan-dot-core { background: #22c55e; opacity: 1; }
 .scan-dot.warn .scan-dot-core { background: #f59e0b; opacity: 1; }
@@ -68,7 +68,7 @@
     opacity: 0;
     visibility: hidden;
     transform: translateY(-4px);
-    transition: opacity .15s ease, transform .15s ease, visibility .15s;
+    transition: opacity var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease), visibility var(--mv2-d1, .15s) var(--mv2-snap, ease);
     pointer-events: none;
 }
 /* 桌面 hover 展开；手机（无 hover）走 .open 点击展开 */

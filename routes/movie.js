@@ -96,7 +96,8 @@ const {
     getMoviesByRelease,
     getUnwatchedMovies,
     getFavoriteMovies,
-    searchMovies,
+    getMovieSearchKeys,
+    clearScrapeFailure,
     getMovieById,
     updatePlayRecord,
     addWatchHistory,
@@ -118,6 +119,7 @@ const {
     getAllPlaybackProgress
 } = require('../utils/db');
 const { withFtsHeal } = require('../utils/db');
+const { fuzzyFilter } = require('../utils/fuzzy-search');
 
 /* ===== round41 #4：搜索结果排序 =====
  * sort=name|addedTime|releaseDate|score|hotScore|playCount|relevance
@@ -140,6 +142,62 @@ function applySearchSort(arr, sort, order) {
     return asc ? out : out.reverse();
 }
 
+/* ===== round127：模糊搜索 =====
+ * 用户原话：「搜索时输入的内容一定要连标点符号也要输入，不能进行模糊搜索」。
+ * 旧实现是 `title LIKE '%q%'`（utils/db.js 的 searchMovies）——标点必须一字不差照抄。
+ * 现在先按 id/文本列投影做归一化匹配（标点、空格、全半角全部无关），再把命中的 id 取回完整行，
+ * 所以输出结构与旧版完全一致，前端零改动。空查询保持旧行为（返回全量，供纯筛选用）。 */
+function fuzzySearchList(q) {
+    const needle = String(q || '').trim();
+    if (!needle) return getAllMovies.all();
+    const hits = fuzzyFilter(getMovieSearchKeys.all(), needle);
+    if (!hits.length) return [];
+    return hits.map(r => getMovieById.get(r.id)).filter(Boolean);
+}
+
+// HEVC 等设备不支持编码的实时转码降级：
+// 手机端 AVPlayer 遇到 HEVC(H.265) 源会报 VID_DEC_ERR（本机解码器不支持），
+// 客户端捕获后追加 transcode=1 重试，服务端用 ffmpeg 实时转成 H.264 fMP4 流。
+// 注意：转码流不支持 Range/拖动进度条（顺序播放），起播有数秒转码预热。
+function startTranscode(filePath, req, res) {
+    const { spawn } = require('child_process');
+    const args = [
+        // 注意：不能加 -re。转码速度远超实时（~12x），-re 会让 ffmpeg 把
+        // 编码结果无限堆积在内存缓冲（实测 1.6GB），播放器却迟迟等不到数据。
+        // 去掉 -re 后由 TCP 反压自然限速，播放器读多快转多快。
+        '-i', filePath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+        '-vf', 'scale=min(1920\\,iw):-2',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+        '-f', 'mp4',
+        'pipe:1'
+    ];
+    let child;
+    try {
+        child = spawn('ffmpeg', args, { windowsHide: true });
+    } catch (e) {
+        return res.status(500).json({ code: -1, msg: '主机缺少 ffmpeg，无法转码：' + e.message });
+    }
+    let started = false;
+    child.on('error', (e) => {
+        if (!started && !res.headersSent) {
+            res.status(500).json({ code: -1, msg: '主机缺少 ffmpeg，无法转码：' + e.message });
+        }
+    });
+    child.stderr.on('data', () => { /* 丢弃 ffmpeg 进度日志 */ });
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'none' });
+    started = true;
+    child.stdout.pipe(res);
+    req.on('close', () => {
+        try { child.kill('SIGKILL'); } catch (e) { /* 忽略 */ }
+    });
+    child.on('exit', () => {
+        if (!res.writableEnded) res.end();
+    });
+}
+
 // 视频文件流（支持 Range 请求）
 router.get('/stream', (req, res) => {
     try {
@@ -153,18 +211,55 @@ router.get('/stream', (req, res) => {
             return res.status(403).json({ code: -1, msg: '路径不在允许的媒体目录内' });
         }
 
+        if (String(req.query.transcode) === '1') {
+            return startTranscode(filePath, req, res);
+        }
+
         const stat = fs.statSync(filePath);
         const fileSize = stat.size;
         const range = req.headers.range;
 
         if (range) {
             // Range 请求，支持断点续传和拖动进度条
-            const parts = range.replace(/bytes=/, '').split('-');
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            // 必须支持三种形式：bytes=A-B、bytes=A-、bytes=-N（后缀）。
+            // 移动端 AVPlayer 读 MP4 尾部 moov atom 时常发 bytes=-N，
+            // 旧实现 parseInt('') = NaN 会直接 500，导致播一段后
+            // demux 报 IO Error（DEM_PARSE_ERR）。
+            const m = /^bytes=(\d*)-(\d*)$/.exec(String(range).replace(/\s+/g, ''));
+            if (!m || (m[1] === '' && m[2] === '')) {
+                res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+                return res.end();
+            }
+            let start;
+            let end;
+            if (m[1] === '') {
+                const suffix = parseInt(m[2], 10);
+                start = Number.isFinite(suffix) ? Math.max(0, fileSize - suffix) : 0;
+                end = fileSize - 1;
+            } else {
+                start = parseInt(m[1], 10);
+                end = m[2] === '' ? fileSize - 1 : parseInt(m[2], 10);
+            }
+            if (!Number.isFinite(start) || start < 0) start = 0;
+            if (!Number.isFinite(end) || end > fileSize - 1) end = fileSize - 1;
+            if (start > end) {
+                res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+                return res.end();
+            }
             const chunkSize = (end - start) + 1;
+            console.log(`[stream] ${req.headers.range || '(none)'} -> 206 ${start}-${end}/${fileSize}`);
 
             const file = fs.createReadStream(filePath, { start, end });
+            file.on('error', (err) => {
+                console.log(`[stream] read error: ${err.message}`);
+                if (!res.headersSent) {
+                    res.writeHead(500);
+                }
+                res.destroy();
+            });
+            res.on('close', () => {
+                console.log(`[stream] conn closed ${start}-${end} (writableFinished=${res.writableFinished})`);
+            });
             const head = {
                 'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                 'Accept-Ranges': 'bytes',
@@ -286,15 +381,15 @@ router.post('/:id/upload-poster', async (req, res) => {
             const videoDir = path.dirname(movie.filePath);
             const videoExt = path.extname(movie.fileName);
             const baseName = movie.fileName.replace(videoExt, '');
-            
+
             // 保存为 poster.jpg
             const localPoster1 = path.join(videoDir, 'poster.jpg');
             fs.writeFileSync(localPoster1, buffer);
-            
+
             // 保存为 folder.jpg
             const localPoster2 = path.join(videoDir, 'folder.jpg');
             fs.writeFileSync(localPoster2, buffer);
-            
+
             // 保存为与视频同名的 jpg
             const localPoster3 = path.join(videoDir, `${baseName}.jpg`);
             fs.writeFileSync(localPoster3, buffer);
@@ -309,17 +404,47 @@ router.post('/:id/upload-poster', async (req, res) => {
         // round37：回收这部片上一张缓存封面（别人还在引用的不会被删）
         try { retirePoster([movie.posterPath, movie.localPosterPath], posterFileName); } catch (e) { }
 
-        res.json({ 
-            code: 0, 
+        res.json({
+            code: 0,
             msg: '封面上传成功',
             data: {
                 posterPath: posterFileName,
-                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`
+                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`,
+                avatarQueue: (function () {
+                    // round141：换海报时搭车补女优头像（不阻塞响应）
+                    try { return require('../utils/actress-avatar-queue').queueForMovie(movie.id, { source: 'poster' }); }
+                    catch (e) { return 0; }
+                })()
             }
         });
     } catch (err) {
         console.error('[上传封面失败]', err);
         res.json({ code: -1, msg: '上传封面失败：' + err.message });
+    }
+});
+
+// 按绝对路径读取作品目录里的封面（漫画/小说的 `xxx-poster.jpg` 存在作品旁边，不在 cache）
+// ★ 为什么需要它：/poster/:hash 只在 cache/posters 里找，磁盘路径的封面必然 404。
+//   安全阀：不是「任意文件读取」——路径必须真的被某条 movies 记录引用过才放行。
+router.get('/poster-file', (req, res) => {
+    try {
+        const p = String(req.query.path || '');
+        if (!p || p.length > 400) return res.status(400).end();
+        if (!/^[A-Za-z]:[\\/]/.test(p)) return res.status(400).end();
+        if (p.includes('..')) return res.status(400).end();
+        if (!/\.(jpe?g|png|webp|gif|avif|bmp)$/i.test(p)) return res.status(400).end();
+        const norm = p.replace(/\\/g, '/');
+        // ★ 这里的 db 是原生 better-sqlite3 句柄：utils/db 导出的是模块对象，句柄在 .db 上
+        const sqlite = require('../utils/db').db;
+        const hit = sqlite.prepare(
+            `SELECT 1 FROM movies WHERE REPLACE(localPosterPath, '\\', '/') = ?
+                OR REPLACE(posterPath, '\\', '/') = ? LIMIT 1`
+        ).get(norm, norm);
+        if (!hit) return res.status(403).end();
+        if (!fs.existsSync(p)) return res.status(404).end();
+        res.sendFile(p);
+    } catch (e) {
+        res.status(500).end();
     }
 });
 
@@ -607,12 +732,17 @@ router.post('/:id/upload-poster-url', async (req, res) => {
 
         console.log(`[URL上传封面] 成功: ${posterFileName}`);
 
-        res.json({ 
-            code: 0, 
+        res.json({
+            code: 0,
             msg: '封面下载并保存成功',
             data: {
                 posterPath: posterFileName,
-                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`
+                posterUrl: `/api/movie/poster/${posterFileName}?t=${timestamp}`,
+                avatarQueue: (function () {
+                    // round141：换海报（搜图/贴 URL）时搭车补女优头像
+                    try { return require('../utils/actress-avatar-queue').queueForMovie(movie.id, { source: 'poster' }); }
+                    catch (e) { return 0; }
+                })()
             }
         });
     } catch (err) {
@@ -735,8 +865,7 @@ router.get('/search', (req, res) => {
         const type = req.query.type || 'all';
         const year = String(req.query.year || '').trim();       // round36 P0-3：年份筛选
         const season = String(req.query.season || '').trim();   // round36 P0-3：季度筛选(1冬2春3夏4秋)
-        const kw = `%${q}%`;
-        let data = searchMovies.all({ kw });
+        let data = fuzzySearchList(q);                          // round127：标点/空格无关的模糊匹配
 
         // 按类型筛选
         if (type && type !== 'all') {
@@ -744,6 +873,15 @@ router.get('/search', (req, res) => {
             data = data.filter(m => {
                 const mType = (m.type || 'jav').toLowerCase();
                 return mType === typeLower;
+            });
+        }
+
+        // r126：搜索结果隐私过滤 —— 顶栏 🔒 总开关处于「隐藏」时前端带 privacy=exclude，
+        // 剔除 AV/里番（口径与 /api/movies 的 privacy=exclude 完全一致）
+        if (String(req.query.privacy || '').toLowerCase() === 'exclude') {
+            data = data.filter(m => {
+                const mType = (m.type || 'jav').toLowerCase();
+                return mType !== 'jav' && mType !== 'anime';
             });
         }
 
@@ -760,7 +898,7 @@ router.get('/search', (req, res) => {
                 return Number.isFinite(mm) && mm >= lo && mm <= hi;
             });
         }
-        
+
         // round41 #4：排序（默认名称 A→Z）
         const sortKey = req.query.sort || 'name';
         data = applySearchSort(data, sortKey === 'relevance' ? 'name' : sortKey, req.query.order);
@@ -806,6 +944,11 @@ router.post('/progress/:id', (req, res) => {
         if (dur > 0 && pos / dur >= 0.95) {
             clearPlaybackProgress.run(req.params.id);
             db.prepare('UPDATE movies SET watched = 1 WHERE id = ?').run(req.params.id);
+            // 第一档①：看完自动增量上报 Bangumi（异步、静默，不影响进度响应）
+            setImmediate(() => {
+                try { require('../utils/auto-sync-bangumi').onMovieCompleted(parseInt(req.params.id)); }
+                catch (e) { /* 自动同步失败绝不影响播放进度 */ }
+            });
             return res.json({ code: 0, data: { completed: true } });
         }
         setPlaybackProgress.run({
@@ -989,9 +1132,11 @@ router.get('/fts-search', (req, res) => {
                 LIMIT 30
             `).all(safe);
         } catch (e) {
-            // FTS 不可用时回退 LIKE
-            const kw = `%${q}%`;
-            rows = searchMovies.all({ kw }).slice(0, 30);
+            // FTS 不可用时回退模糊匹配（round127：与 /search 同一套口径，标点无关）
+            rows = fuzzyFilter(getMovieSearchKeys.all(), q)
+                .slice(0, 30)
+                .map(r => getMovieById.get(r.id))
+                .filter(Boolean);
         }
         if (type && type !== 'all') {
             const typeLower = String(type).toLowerCase();
@@ -1378,7 +1523,14 @@ router.post('/note/:id', (req, res) => {
 });
 
 // 更新元数据（标题、简介等）
-router.post('/update/:id', (req, res) => {
+// ========== round132：编辑不再只活在数据库里 ==========
+// 用户报的 bug：详情 → 编辑 → 刮削并填入 → 保存，界面标题变了，磁盘文件名没变，
+// 也没有任何提示；下一次扫描还会把标题按文件名推回去（复现脚本 _r132-repro.js）。
+// 这里的原则是「应用内改了什么，原文件就必须跟着变」：
+//   ① 写库 → ② 记下用户手改过的字段（manualFields，扫描时让路）→ ③ 落盘同步（改名 + 写 NFO）。
+const { syncOneMovie } = require('../utils/disk-sync');
+
+router.post('/update/:id', async (req, res) => {
     try {
         const { title, originalTitle, overview, releaseDate, producer, serial, director } = req.body;
         const movie = getMovieById.get(req.params.id);
@@ -1438,7 +1590,54 @@ router.post('/update/:id', (req, res) => {
             })(), '编辑标签');
         }
 
-        res.json({ code: 0, msg: '更新成功' });
+        // ★ round132：标记「用户手改过的字段」
+        // 只认请求里显式出现且**值真的变了**的键（清空也算一次改动）；
+        // 没改动的字段不加锁，避免「打开编辑随手保存」把整条记录锁死。
+        const EDITABLE = ['title', 'originalTitle', 'overview', 'releaseDate', 'producer', 'serial', 'director'];
+        const touched = EDITABLE.filter(k => {
+            if (!Object.prototype.hasOwnProperty.call(req.body || {}, k)) return false;
+            const a = String(req.body[k] == null ? '' : req.body[k]).trim();
+            const b = String(movie[k] == null ? '' : movie[k]).trim();
+            return a !== b;
+        });
+        if (touched.length) {
+            const prev = String(movie.manualFields || '').split(',').map(s => s.trim()).filter(Boolean);
+            const merged = [...new Set([...prev, ...touched])].join(',');
+            try {
+                db.prepare('UPDATE movies SET manualFields = ? WHERE id = ?').run(merged, req.params.id);
+            } catch (e) { /* 列尚未迁移成功也不阻塞保存 */ }
+        }
+
+        // ★ round132 第三步：落盘同步（改名 + 写 NFO）
+        // body.syncToDisk === false 时前端可以选择只改库（例如 NAS 掉线时先存字段）。
+        // 默认跟随 config.editSync.syncToDisk（默认开）——这是用户明确要求的行为。
+        let disk = null;
+        const wantSync = (req.body && req.body.syncToDisk === false)
+            ? false
+            : (req.body && req.body.syncToDisk === true) ? true : undefined;
+        if (wantSync !== false) {
+            try {
+                disk = await syncOneMovie(req.params.id, wantSync === true ? { renameFile: true, writeNfo: true } : {});
+            } catch (e) {
+                disk = { ok: false, error: e.message, skipped: [] };
+            }
+        } else {
+            disk = { ok: true, renamed: false, skipped: ['本次选择不改动磁盘文件'] };
+        }
+
+        /* ★ round141：女优头像「搭车」——编辑保存时把这部片子女优里**还没有头像**的
+           顺手排进后台队列（串行 700ms，只补缺，不覆盖已有头像）。
+           用户反馈「女优标签里有些没头像，只有去演员库点 ⟳ 才补得上」。
+           这里不 await：保存必须立刻返回，头像在后台慢慢抓，抓到了发一条 toast。 */
+        let avatarQueue = 0;
+        try {
+            const { queueForMovie } = require('../utils/actress-avatar-queue');
+            avatarQueue = queueForMovie(req.params.id, { source: 'edit' });
+        } catch (e) {
+            console.warn('[女优头像] 编辑搭车入队失败:', e.message);
+        }
+
+        res.json({ code: 0, msg: '更新成功', data: { disk, avatarQueue } });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }
@@ -1461,7 +1660,8 @@ router.post('/rescrape/:id', async (req, res) => {
         //            ② 必须传 type，否则动漫/影视记录会被写回 jav
         const { processSingleFile } = require('../utils/scanner');
         const mergeMode = (req.body && req.body.mode === 'overwrite') ? 'overwrite' : 'merge';
-        processSingleFile(movie.filePath, movie.type || 'jav', { forceWeb: true, mergeMode }).catch(e => {
+        // round132：显式 overwrite（用户就是要新刮结果覆盖手改值）时放行 manualFields 保护
+        processSingleFile(movie.filePath, movie.type || 'jav', { forceWeb: true, mergeMode, ignoreManual: mergeMode === 'overwrite' }).catch(e => {
             console.log(`重新刮削失败 [${movie.fileName}]:`, e.message);
         });
     } catch (e) {
@@ -1528,7 +1728,7 @@ router.get('/:id/search-posters', async (req, res) => {
         // 根据文件路径判断资源类型（优先于数据库中的type字段）
         const detectedType = detectTypeByPath(movie.filePath);
         const finalType = movie.type || detectedType;
-        
+
         console.log(`[搜索海报] 影片: ${movie.fileName}, 路径: ${movie.filePath}, 数据库type: ${movie.type}, 路径检测type: ${detectedType}, 最终使用: ${finalType}`);
 
         let realFileName = movie.fileName;
@@ -1996,7 +2196,7 @@ router.post('/batch-poster/start', async (req, res) => {
                 // 根据文件路径判断资源类型，确保使用正确的刮削源
                 const detectedType = detectTypeByPath(movie.filePath);
                 const finalType = movie.type || detectedType;
-                
+
                 // 搜索海报
                 const posters = await searchAllPosters(movie.avid, movie.cleanName, movie.fileName, finalType, movie.filePath);
 
@@ -2064,7 +2264,10 @@ router.post('/batch-poster/start', async (req, res) => {
 // 海报代理访问（hash 参数只允许安全字符，防止 ../ 目录穿越）
 router.get('/poster/:hash', (req, res) => {
     const hash = req.params.hash;
-    if (!/^[\w.-]+$/.test(hash)) {
+    /* ★ 旧正则 /^[\w.-]+$/ 不认中文：漫画的缓存文件名带「阿南小姐…第10话」这类中文，
+     *   一律被 400 拒掉（实测 25 次请求全是 400，浏览器只显示碎图）。
+     *   改成「只禁目录穿越」——这里本来就只取 basename，不需要字符白名单。 */
+    if (!hash || hash.length > 200 || hash.includes('/') || hash.includes('\\') || hash.includes('..')) {
         return res.status(400).end();
     }
     const posterPath = path.join(__dirname, '../cache/posters', hash);
@@ -2143,6 +2346,13 @@ router.delete('/:id', (req, res) => {
 
         // 删除数据库记录
         deleteMovieByPath.run(filePath);
+
+        /* round127：删片必须连带清掉它的刮削失败记录。
+         * 用户原话：「刮削失败的功能页，就算是已经删除的内容也还是会在这里面展示，点击刷新也没有用」。
+         * 真因：scrape_failures 是独立的表，只按 filePath 记，删片时没有任何人清理它，
+         * 而失败清单查询用的是 LEFT JOIN movies → 影片没了，记录照样被列出来。
+         * 刷新只是重新查同一张表，所以「怎么刷都在」。 */
+        try { clearScrapeFailure.run(filePath); } catch (e) { /* 清理失败不该挡住删片 */ }
 
         res.json({ code: 0, msg: '删除成功' });
     } catch (e) {

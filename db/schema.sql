@@ -161,6 +161,33 @@ CREATE TABLE IF NOT EXISTS playback_progress (
   FOREIGN KEY(movieId) REFERENCES movies(id) ON DELETE CASCADE
 );
 
+-- ============ 在线观看历史（站点解析播放，区别于本地影片 watch_history） ============
+CREATE TABLE IF NOT EXISTS online_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sourceId TEXT NOT NULL,
+  url TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  episode TEXT DEFAULT '',
+  sourceName TEXT DEFAULT '',
+  workUrl TEXT DEFAULT '',
+  episodes TEXT DEFAULT '[]',
+  episodeIndex INTEGER DEFAULT 0,
+  kind TEXT DEFAULT '',
+  position REAL DEFAULT 0,
+  duration REAL DEFAULT 0,
+  completed INTEGER DEFAULT 0,
+  watchedAt INTEGER DEFAULT 0,
+  updatedAt INTEGER DEFAULT 0,
+  UNIQUE(sourceId, url)
+);
+CREATE INDEX IF NOT EXISTS idx_online_history_updated ON online_history(updatedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_online_history_work ON online_history(sourceId, workUrl);
+-- 清空时间戳：拒绝清空前发出、清空后才到达的旧写入，避免“清空后记录复活”。
+CREATE TABLE IF NOT EXISTS online_history_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- ============ 新增：刮削失败记录（供一键重刮） ============
 CREATE TABLE IF NOT EXISTS scrape_failures (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,3 +250,83 @@ CREATE TABLE IF NOT EXISTS ai_memories (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(sessionId, id);
 CREATE INDEX IF NOT EXISTS idx_ai_summaries_session ON ai_summaries(sessionId, level);
+
+-- ========== round173 · 追番数据地基（series / seasons / episodes / follows / episode_progress） ==========
+-- 设计铁律：不 ALTER movies 加列（FTS5 外部内容表历史事故）；关联走 episodes.movieId。
+CREATE TABLE IF NOT EXISTS series (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  title         TEXT NOT NULL,
+  originalTitle TEXT DEFAULT '',
+  provider      TEXT DEFAULT '',
+  providerId    TEXT DEFAULT '',
+  type          TEXT DEFAULT 'cartoon',
+  overview      TEXT DEFAULT '',
+  posterPath    TEXT DEFAULT '',
+  airDate       TEXT DEFAULT '',
+  status        TEXT DEFAULT 'ongoing',
+  episodeCount  INTEGER DEFAULT 0,
+  createdAt     INTEGER DEFAULT 0,
+  updatedAt     INTEGER DEFAULT 0,
+  UNIQUE(provider, providerId)
+);
+CREATE TABLE IF NOT EXISTS seasons (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  seriesId   INTEGER NOT NULL,
+  seasonNo   INTEGER NOT NULL DEFAULT 1,
+  title      TEXT DEFAULT '',
+  posterPath TEXT DEFAULT '',
+  FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+  UNIQUE(seriesId, seasonNo)
+);
+CREATE TABLE IF NOT EXISTS episodes (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  seriesId  INTEGER NOT NULL,
+  seasonId  INTEGER NOT NULL DEFAULT 1,
+  episodeNo INTEGER NOT NULL,
+  title     TEXT DEFAULT '',
+  airDate   TEXT DEFAULT '',
+  duration  REAL DEFAULT 0,
+  movieId   INTEGER,
+  sourceId  TEXT DEFAULT '',
+  sourceUrl TEXT DEFAULT '',
+  sourceName TEXT DEFAULT '',
+  bangumiEpisodeId INTEGER,
+  createdAt INTEGER DEFAULT 0,
+  FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE,
+  UNIQUE(seriesId, seasonId, episodeNo)
+);
+-- round185 B3：与本地 episode 行解耦的 Bangumi 进度账本（换源/重建后按集号接回进度）
+CREATE TABLE IF NOT EXISTS bangumi_progress (
+  bangumiEpisodeId INTEGER PRIMARY KEY,
+  seriesId   INTEGER,
+  episodeNo  INTEGER,
+  position   REAL DEFAULT 0,
+  duration   REAL DEFAULT 0,
+  watched    INTEGER DEFAULT 0,
+  updatedAt  INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS follows (
+  seriesId  INTEGER PRIMARY KEY,
+  status    TEXT DEFAULT 'watching',
+  favorite  INTEGER DEFAULT 0,
+  addedAt   INTEGER DEFAULT 0,
+  updatedAt INTEGER DEFAULT 0,
+  FOREIGN KEY(seriesId) REFERENCES series(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS episode_progress (
+  episodeId INTEGER PRIMARY KEY,
+  position  REAL DEFAULT 0,
+  duration  REAL DEFAULT 0,
+  watched   INTEGER DEFAULT 0,
+  skipOp    REAL DEFAULT 0,
+  skipEd    REAL DEFAULT 0,
+  updatedAt INTEGER DEFAULT 0,
+  FOREIGN KEY(episodeId) REFERENCES episodes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_series_provider ON series(provider, providerId);
+CREATE INDEX IF NOT EXISTS idx_series_type ON series(type, airDate DESC);
+CREATE INDEX IF NOT EXISTS idx_seasons_series ON seasons(seriesId);
+CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(seriesId, seasonId, episodeNo);
+CREATE INDEX IF NOT EXISTS idx_episodes_movie ON episodes(movieId) WHERE movieId IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_follows_status ON follows(status, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS idx_episode_progress_watched ON episode_progress(watched, updatedAt DESC);

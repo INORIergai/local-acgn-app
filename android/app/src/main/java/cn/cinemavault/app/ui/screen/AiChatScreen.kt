@@ -42,6 +42,11 @@ fun AiChatScreen(modifier: Modifier = Modifier, vm: AiViewModel = androidx.lifec
     val scope = rememberCoroutineScope()
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
 
+    // 系统返回先关闭会话抽屉，再交给顶级 tab 返回栈处理。
+    androidx.activity.compose.BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+
     // 语音识别：系统 SpeechRecognizer（无服务端 ASR，本地识别成文字）
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -138,7 +143,7 @@ fun AiChatScreen(modifier: Modifier = Modifier, vm: AiViewModel = androidx.lifec
                 )
             }
         ) { innerPadding ->
-            Column(modifier.fillMaxSize().padding(innerPadding)) {
+            Column(modifier.fillMaxSize().padding(innerPadding).imePadding()) {
                 // 消息列表
                 LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                     reverseLayout = false) {

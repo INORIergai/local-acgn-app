@@ -39,8 +39,8 @@ html[data-detail-mode="drawer"] #detailModal .modal-content.detail-modal {
     border-right: 0;
     transform: translateX(40px);
     opacity: 0;
-    transition: transform .34s var(--av-ease-pop, cubic-bezier(.32, .72, 0, 1)),
-                opacity .24s ease;
+    transition: transform var(--mv2-d2, .34s) var(--av-ease-pop, cubic-bezier(.32, .72, 0, 1)),
+                opacity var(--mv2-d2, .24s) var(--mv2-snap, ease);
 }
 html[data-detail-mode="drawer"] #detailModal.show .modal-content.detail-modal {
     transform: translateX(0);
@@ -67,7 +67,7 @@ html[data-detail-mode="modal"] #detailModal .modal-content.detail-modal {
     border: 1px solid var(--border);
     transform: translateY(18px) scale(.985);
     opacity: 0;
-    transition: transform .3s cubic-bezier(.22, .61, .36, 1), opacity .22s ease;
+    transition: transform var(--mv2-d2, .3s) cubic-bezier(.22, .61, .36, 1), opacity var(--mv2-d2, .22s) var(--mv2-snap, ease);
 }
 html[data-detail-mode="modal"] #detailModal.show .modal-content.detail-modal {
     transform: translateY(0) scale(1);
@@ -100,7 +100,7 @@ html[data-detail-mode="modal"] #detailModal .detail-poster { max-height: 40vh; }
     border-radius: 12px;
     background: var(--bg-elevated);
     cursor: pointer;
-    transition: border-color .18s ease, background .18s ease, transform .2s var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
+    transition: border-color var(--mv2-d1, .18s) var(--mv2-snap, ease), background var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d2, .2s) var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
 }
 .detail-mode-card:hover { transform: translateY(-2px); border-color: var(--primary); }
 .detail-mode-card.active { border-color: var(--primary); background: var(--primary-soft); }
@@ -140,7 +140,7 @@ html[data-detail-mode="modal"] #detailModal .detail-poster { max-height: 40vh; }
     font-weight: 700;
     opacity: 0;
     transform: scale(.6);
-    transition: opacity .18s ease, transform .22s var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
+    transition: opacity var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d2, .22s) var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
 }
 .detail-mode-card.active .detail-mode-check { opacity: 1; transform: scale(1); }
 
@@ -156,6 +156,6 @@ html[data-detail-mode="modal"] #detailModal .detail-poster { max-height: 40vh; }
     html[data-detail-mode="drawer"] #detailModal .modal-content.detail-modal,
     html[data-detail-mode="modal"] #detailModal .modal-content.detail-modal,
     .detail-mode-card,
-    .detail-mode-check { transition-duration: .01ms; }
+    .detail-mode-check { transition-duration: .01ms var(--mv2-snap, ease); }
     .detail-mode-card:hover { transform: none; }
 }

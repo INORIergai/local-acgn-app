@@ -174,7 +174,7 @@
     color: #fff;
     font-size: 18px;
     cursor: pointer;
-    transition: opacity 0.15s, transform 0.1s;
+    transition: opacity var(--mv2-d1, 0.15s) var(--mv2-snap, ease), transform var(--mv2-dpress, 0.1s) var(--mv2-snap, ease);
 }
 .home-chat-input .btn-send:hover { opacity: 0.9; }
 .home-chat-input .btn-send:active { transform: scale(0.96); }
@@ -211,7 +211,7 @@
     border-radius: 999px;
     font-size: 12px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .home-rank-tab:hover { color: var(--text); border-color: var(--border-strong, var(--border)); }
 .home-rank-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
@@ -232,7 +232,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius, 12px);
     cursor: pointer;
-    transition: transform 0.12s, border-color 0.12s;
+    transition: transform var(--mv2-d1, 0.12s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.12s) var(--mv2-snap, ease);
     text-decoration: none;
     color: var(--text);
 }
@@ -349,7 +349,7 @@
     overflow: hidden;
     text-decoration: none;
     color: var(--text);
-    transition: transform 0.15s, border-color 0.15s;
+    transition: transform var(--mv2-d1, 0.15s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
     display: flex;
     flex-direction: column;
 }

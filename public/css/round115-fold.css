@@ -1,0 +1,91 @@
+/* ============================================================
+   round115 · 精选推荐的「折叠条」（P11）
+   ------------------------------------------------------------
+   问题（实测）：进漫画库/小说库，前 874px 是这块 638px 高的轮播，
+   书架标题落在 874、第一张卡在 1100，而视口只有 950 —— 首屏 950px 里
+   只有 76px 是书架内容。用户是来翻书的，不是来看推荐位的。
+
+   做法：在树形库视图里把它折成 56px 一条，右边一个「展开 ›」。
+   点开展开成原样（不删数据、不删功能），再点「收起」还原。
+   只在 comic / novel 两个视图生效，影片库/首页不受影响。
+
+   回滚：删 library.html 里本文件那一行 link + round115-fold.js 那一行 script。
+   ============================================================ */
+
+/* 折叠态：一条 56px 的横条 */
+html body .gallery-section.is-folded {
+    height: 56px;
+    margin-bottom: var(--s-4);
+    overflow: hidden;
+}
+
+html body .gallery-section.is-folded .gallery-container {
+    display: none;
+}
+
+html body .gallery-section.is-folded .gallery-title {
+    height: 56px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    border-bottom: 1px solid var(--line, rgba(0, 0, 0, .08));
+}
+
+/* 展开态：还原（高度交给内容） */
+html body .gallery-section.is-folded.is-open {
+    height: auto;
+    overflow: visible;
+}
+
+html body .gallery-section.is-folded.is-open .gallery-container {
+    display: block;
+}
+
+html body .gallery-section.is-folded.is-open .gallery-title {
+    height: 40px;
+    border-bottom: 0;
+    padding: var(--s-4) 0 var(--s-3);
+}
+
+/* 展开/收起按钮：弱操作，发丝线胶囊，不与主操作抢 */
+html body .gv-fold-btn {
+    margin-left: auto;
+    height: var(--h-sm);
+    padding: 0 var(--s-3);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+
+    font-family: var(--font-ui);
+    font-size: var(--t-caption);
+    line-height: 1;
+    color: var(--text-muted, #6B6157);
+
+    background: transparent;
+    border: 1px solid var(--border, rgba(0, 0, 0, .1));
+    border-radius: var(--r-pill);
+    cursor: pointer;
+
+    transition: color 130ms ease, border-color 130ms ease;
+}
+
+html body .gv-fold-btn:hover {
+    color: var(--text, #1F1B16);
+    border-color: var(--border-strong, rgba(0, 0, 0, .2));
+}
+
+html body .gv-fold-btn:focus-visible {
+    outline: 2px solid var(--focus, #818CF8);
+    outline-offset: 2px;
+}
+
+/* 折叠时给一个"这里还有东西"的暗示：右侧渐隐 + 张数 */
+html body .gallery-section.is-folded:not(.is-open) .gallery-title::after {
+    content: '';
+    flex: 0 0 40px;
+    height: 1px;
+    margin-left: var(--s-2);
+    background: linear-gradient(90deg, var(--border, rgba(0, 0, 0, .1)), transparent);
+}

@@ -1,0 +1,363 @@
+/* ============================================================
+   CinemaVault · round113-motion.css —— P0 动效令牌层
+   ------------------------------------------------------------
+   目的：把「节奏」统一成一套。不改版式、不改位移幅度、不改颜色。
+
+   三条令牌：
+     settle  落定 —— 起步快、尾巴长，用于「东西挪位置」（卡片抬起、标签浮出）
+     snap    咬合 —— 短、无过冲，用于「状态切换」（按钮变脸、导航高亮）
+     spring  弹性 —— 解析解生成的轻微回弹（过冲 1.4%），用于按压回弹
+
+   三档时长（原来散落 14 档：.08/.1/.12/.15/.18/.2/.25/.28/.3/.32/.35/.42/.45/.6）：
+     d1 140ms  状态级   d2 260ms  控件级   d3 460ms  容器级
+
+   ⚠️ 本层的边界（用 _r113-p0-audit.js 静态审计 + 运行时「幻影过渡」检测双重把关）：
+      1. 只改「已经存在的过渡」。给原本没有过渡的元素单独塞 transition-duration，
+         会凭空造出 transition: all Nms（Chromium 默认 property=all），
+         那等于新增动效、还会把 JS 改布局属性也带上动画 —— 所以
+         · 原本有过渡的（卡片/按钮/导航）：只写 duration + timing
+         · 原本没有过渡的（部分控件）：显式给一条只含 paint 属性的 property 列表
+      2. 弹窗/抽屉/通知的进出场是 @keyframes（scrimIn / modalPop / drawerSlideIn），
+         不走 transition，本层不碰 —— 那部分留给 P1。
+      3. 删掉 library.html 里那一行 link 即全部回滚
+         （motion.css 侧已就地改读 --mv2-* 令牌，且都带原值回退）。
+   ============================================================ */
+
+:root {
+    --mv2-settle: cubic-bezier(.32, .72, 0, 1);
+    --mv2-snap: cubic-bezier(.2, .8, .2, 1);
+    /* spring(260,26)：ω0=16.1、ζ=0.81，过冲约 1.4%，收敛 ~420ms */
+    --mv2-spring: linear(0 0%, .0066 1.67%, .0249 3.33%, .0524 5%, .0874 6.67%, .1279 8.33%, .1726 10%, .2201 11.67%, .2694 13.33%, .3194 15%, .3695 16.67%, .4189 18.33%, .4671 20%, .5138 21.67%, .5586 23.33%, .6013 25%, .6416 26.67%, .6795 28.33%, .7149 30%, .7478 31.67%, .7782 33.33%, .8061 35%, .8317 36.67%, .8549 38.33%, .876 40%, .895 41.67%, .912 43.33%, .9272 45%, .9407 46.67%, .9525 48.33%, .963 50%, .972 51.67%, .9799 53.33%, .9866 55%, .9924 56.67%, .9972 58.33%, 1.0012 60%, 1.0045 61.67%, 1.0072 63.33%, 1.0093 65%, 1.011 66.67%, 1.0122 68.33%, 1.013 70%, 1.0135 71.67%, 1.0138 73.33%, 1.0138 75%, 1.0137 76.67%, 1.0134 78.33%, 1.013 80%, 1.0124 81.67%, 1.0119 83.33%, 1.0112 85%, 1.0106 86.67%, 1.0099 88.33%, 1.0092 90%, 1.0085 91.67%, 1.0078 93.33%, 1.0072 95%, 1.0065 96.67%, 1.0059 98.33%, 1.0053 100%);
+
+    /* 时长三档 + 一个专属的按压档。
+       press 单独成档而不是并进 d1：按压反馈比状态切换要「更快到手」，
+       塞进 140ms 会让按钮点下去像在等（iOS 的按压也是 ~100ms）。 */
+    --mv2-dpress: 100ms;
+    --mv2-d1: 140ms;
+    --mv2-d2: 260ms;
+    --mv2-d3: 460ms;
+}
+
+/* ------------------------------------------------------------------
+   ① 控件层（原本就有过渡）：只改节奏，不碰属性清单
+   ------------------------------------------------------------------ */
+.btn,          /* motion.css .btn，180ms → 140ms + snap */
+.nav-item,     /* 侧栏导航 */
+.chip,         /* 详情页 chips */
+.av-chip,
+.av-cta {      /* 卡片上的「查看」按钮 */
+    transition-duration: var(--mv2-d1);
+    transition-timing-function: var(--mv2-snap);
+}
+
+/* ------------------------------------------------------------------
+   ② 控件层（原本没有过渡）：显式只给 paint + transform，
+   绝不写 all —— 否则 JS 改宽度/高度也会被带上 140ms 动画。
+   ------------------------------------------------------------------ */
+.btn-secondary,
+.btn-danger,
+.btn-sm,
+.toolbar-btn,
+.icon-btn,
+.act-btn,
+.tag,
+.filter-chip,
+.dd-item,
+.menu-item,
+.segmented button,
+.tab-btn {
+    transition-property: transform, background-color, border-color, color, box-shadow, opacity, filter;
+    transition-duration: var(--mv2-d1);
+    transition-timing-function: var(--mv2-snap);
+}
+
+/* 按压反馈：0.97 的「咬合」，回弹走 spring。
+   .btn 不在此列 —— 它在 motion.css 有自己的 Aardvark squash（scale(.955,.925)），
+   那是更贵的原设计，本层只接管节奏，不替换它。 */
+.nav-item:active,
+.chip:active,
+.av-chip:active,
+.tag:active,
+.dd-item:active,
+.menu-item:active,
+.tab-btn:active {
+    transform: scale(.97);
+    transition-duration: var(--mv2-d1);
+    transition-timing-function: var(--mv2-spring);
+}
+
+/* ------------------------------------------------------------------
+   ③ 卡片层（原本都有过渡）
+   .av-card 原生 .42s「over」曲线 —— 悬停要等近半秒才有反馈，
+   这是「点上去不跟手」的主要来源，收到 d2 的 settle。
+   ------------------------------------------------------------------ */
+.movie-card,
+.cloud-card,
+.av-folder,
+.av-card {
+    transition-duration: var(--mv2-d2);
+    transition-timing-function: var(--mv2-settle);
+}
+.av-card:active {
+    transition-duration: var(--mv2-d1);
+    transition-timing-function: var(--mv2-spring);
+}
+
+/* ------------------------------------------------------------------
+   ④ 权重补偿
+   round73 的落地布局用 `.av-view.av-workspace .av-main .av-card`（0,4,0）
+   把卡片过渡写死成 .18s ease，本层普通规则压不动。
+   这里只补 duration + timing 两个 longhand，不带 transform、不带颜色；
+   整块只在「允许动效」时生效，reduced-motion 时让 tokens.css 的
+   *{transition-duration:.01ms !important} 继续说话。
+   ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: no-preference) {
+    .av-card,
+    .av-folder,
+    .movie-card,
+    .cloud-card {
+        transition-duration: var(--mv2-d2) !important;
+        transition-timing-function: var(--mv2-settle) !important;
+    }
+    .av-card:active,
+    .av-folder:active,
+    .movie-card:active,
+    .cloud-card:active {
+        transition-duration: var(--mv2-d1) !important;
+        transition-timing-function: var(--mv2-spring) !important;
+    }
+}
+
+/* ==================================================================
+   P1 · 弹窗 / 抽屉层
+   ------------------------------------------------------------------
+   原来的进场是「两套动画叠在一起」：
+     .modal.show          → scrimIn .25s ease        （整块淡入）
+     .modal.show .modal-content → nvxModalIn .5s bezier(.34,1.56,.64,1)
+                                  含 filter: blur(8px)→0 与 1.56 过冲
+   叠加结果：500ms、带一次「弹一下」的回弹、大卡片上还有一次 blur 重绘。
+   而退场是 0ms —— .show 一摘，display 直接 none，啪一下消失。
+   这就是「高级感不足」在弹窗上最集中的一处。
+
+   P1 改成：
+     进场  内容 460ms settle（位移 12px + 缩放 .972，无 blur、无过冲）
+           遮罩 260ms snap
+     退场  内容 260ms 回落 + 淡出，遮罩同步
+           display 走离散过渡（allow-discrete），动画跑完才真正 none
+           —— 纯 CSS，不改一行 JS
+     .modal:not(.show) 关闭 pointer-events，退场动画期间不挡用户点击
+   ================================================================== */
+
+@keyframes mv2DialogIn {
+    from { opacity: 0; transform: translateY(12px) scale(.972); }
+    to   { opacity: 1; transform: none; }
+}
+/* 退场必须也用 keyframe：.show 摘掉时动画被移除，Chromium 不会因此启动
+   transition（实测：内容 α 在 t=0 就掉到 0，只有遮罩在淡出）。 */
+@keyframes mv2DialogOut {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateY(10px) scale(.982); }
+}
+
+/* 遮罩层：承载淡入淡出 + display 的离散过渡 */
+.modal {
+    opacity: 0;
+    transition: opacity var(--mv2-d2) var(--mv2-snap),
+                /* motion.css 原本的 background 过渡保留，别被 shorthand 冲掉 */
+                background var(--mv2-d2) var(--mv2-snap),
+                display var(--mv2-d2) allow-discrete;
+}
+.modal.show { opacity: 1; }
+
+/* 退场那 260ms 里元素还是 display:flex，不关掉指针会挡住用户点击 */
+.modal:not(.show) { pointer-events: none; }
+
+/* 进场：内容用 settle 落定。排除详情弹窗（它有自己的 .in + transition 体系）
+   与 acg-detail-card（同一套详情卡片），也尊重 body.fx-modal-plain 的关闭开关。 */
+body:not(.fx-modal-plain) .modal.show .modal-content:not(.detail-modal):not(.acg-detail-card) {
+    animation: mv2DialogIn var(--mv2-d3) var(--mv2-settle) both;
+}
+
+/* 退场：220ms 收完（遮罩 260ms 翻 display，留 40ms 余量）。
+   这条规则在页面加载时也会命中一次，但那时父层是 display:none，看不见。 */
+body:not(.fx-modal-plain) .modal:not(.show) .modal-content:not(.detail-modal):not(.acg-detail-card) {
+    animation: mv2DialogOut 220ms var(--mv2-snap) both;
+}
+
+/* 没有 .show 的内容默认不可见（给不支持 @keyframes 重放的极端情况兜底） */
+.modal:not(.show) .modal-content:not(.detail-modal):not(.acg-detail-card) {
+    opacity: 0;
+}
+/* ⚠️ 这里故意不写 transition：进出场都由 keyframes 驱动（both 填充），
+   再叠一条 transition 既不会被动画触发（动画属性优先），又会给原本没有过渡的
+   .modal-content 凭空造出 transition: all —— 运行时「幻影过渡」检测会抓到 6 个。
+   实测确认：去掉后经 220ms 退场时间轴不变。 */
+
+/* 抽屉（播放器待播序列）：全库唯一还在用 cubic-bezier(0.16,1,0.3,1)
+   的滑动面板，收进同一档。定位用 !important 的 block 里，这里只补动画两项。 */
+.player-playlist-drawer {
+    animation-duration: var(--mv2-d3);
+    animation-timing-function: var(--mv2-settle);
+}
+
+/* ==================================================================
+   P2-a · 入场编舞（这是 P0/P1 之后第一处「肉眼看得见」的改动）
+   ------------------------------------------------------------------
+   原来所有卡片齐刷刷从 62% 大小弹到 100%：
+       .av-card { animation: avPop .6s settle backwards; }
+       @keyframes avPop { from { opacity: 0; scale: .62; } }
+   —— 38% 的缩放跳变 + 全部同拍 + 0.6s，是典型的「网页 2018」手感：
+   一屏 40 张卡同时炸开，看不出层次，还显得便宜。
+
+   改成：位移代替缩放（16px 上浮 + 97%），并按索引错峰 22ms，
+   一张接一张落定 —— 视觉重心从「整块弹出」变成「依次铺开」。
+
+   ⚠️ 用独立的 translate/scale 属性而不是 transform：
+      .av-card 的 transform 承载着 --rot / --dy（卡片散落旋转）
+      与 :hover 的 scale(1.055)，写 keyframe transform 会把它们全部冲掉。
+   ⚠️ fill-mode 只用 backwards：动画结束后 translate/scale 自动回到初始值，
+      不会长期占着 hover 的合成层。
+   ================================================================== */
+
+@keyframes mv2CardIn {
+    from { opacity: 0; translate: 0 16px; scale: .965; }
+    to   { opacity: 1; translate: 0 0;    scale: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .av-card,
+    .av-folder,
+    .movie-card {
+        animation-name: mv2CardIn;
+        animation-duration: var(--mv2-d3);
+        animation-timing-function: var(--mv2-settle);
+        animation-fill-mode: backwards;
+        /* 错峰序号由容器下发（见下方 --mv2-i）：卡片自己永远是父元素的第 1 个孩子，
+           直接写 .av-card:nth-child(n) 在漫画库里恒等于 1（外层还有 .av-stack-top）。 */
+        animation-delay: calc(var(--mv2-i, 0) * 26ms);
+    }
+
+    /* 序号下发：只写容器，卡片继承。最多 10 个位置（最迟 234ms 起跳，
+       仍在 d3 内收完）。第 11 张起同拍，长列表不会越往后越慢。 */
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(2)  { --mv2-i: 1; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(3)  { --mv2-i: 2; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(4)  { --mv2-i: 3; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(5)  { --mv2-i: 4; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(6)  { --mv2-i: 5; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(7)  { --mv2-i: 6; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(8)  { --mv2-i: 7; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(9)  { --mv2-i: 8; }
+    :is(.av-board, .av-slider, #movieGrid) > :nth-child(10) { --mv2-i: 9; }
+}
+
+/* ------------------------------------------------------------------
+   ⑤ 无障碍：系统开了「减少动态效果」就全部退回瞬时
+   ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --mv2-d1: 1ms;
+        --mv2-d2: 1ms;
+        --mv2-d3: 1ms;
+        --mv2-settle: linear;
+        --mv2-snap: linear;
+        --mv2-spring: linear;
+    }
+    .nav-item:active,
+    .chip:active,
+    .av-chip:active,
+    .tag:active,
+    .dd-item:active,
+    .menu-item:active,
+    .tab-btn:active {
+        transform: none;
+    }
+}
+
+/* ============================================================
+   round113-P4 · 详情弹窗进退场（配合共享元素转场）
+   ------------------------------------------------------------
+   这一段放在令牌层（而不是 round113.css）是刻意的：A/B 开关
+   `?motion=off` / Ctrl+Alt+M 禁用的是本文件的 <link>，规则放这里
+   才能被一起回退 —— 放 round113.css 时实测 off 态仍显示新进场。
+   `.in` 是抽屉的「就位」开关，摘掉就是 translateX(100%) 瞬间跳走，
+   而且 detail-mode.css 给它的 transform 过渡只覆盖 transform/opacity。
+   所以退场不能靠摘 `.in`，改由 round113-flip.js 先加这个类让抽屉淡出，
+   飞行结束（260ms）后再摘 `.in` + `.show`。
+
+   权重核算：本条 = (1,4,1)，与 detail-mode.css 里
+   `html[data-detail-mode="drawer"] #detailModal.show .modal-content.detail-modal`
+   同权重，靠本文件后加载取胜。opacity 过渡已由 detail-mode.css 提供
+   （var(--mv2-d2) var(--mv2-snap)），这里不再重复写 transition。
+
+   ★这里绝对不能加 !important：important 声明的优先级高于
+   transition 生成的中间值，实测加了之后 opacity 在 t=2ms 就直接是 0
+   （等于瞬隐），过渡根本不插值。靠同权重 + 后加载取胜就够了。
+   ============================================================ */
+@keyframes mv2DrawerIn {
+    from { opacity: 0; transform: translateX(40px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes mv2CenteredIn {
+    from { opacity: 0; transform: translateY(18px) scale(.985); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 进场：换掉 nvxModalIn（500ms / 过冲 1.56 / blur 8px） */
+html[data-detail-mode="drawer"] body:not(.fx-modal-plain) #detailModal.show .modal-content.detail-modal {
+    animation: mv2DrawerIn var(--mv2-d3, 460ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1)) both;
+}
+html[data-detail-mode="modal"] body:not(.fx-modal-plain) #detailModal.show .modal-content.detail-modal {
+    animation: mv2CenteredIn var(--mv2-d3, 460ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1)) both;
+}
+@keyframes mv2DrawerOut {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(28px); }
+}
+@keyframes mv2CenteredOut {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to   { opacity: 0; transform: translateY(8px) scale(.985); }
+}
+/* 退场必须用 keyframe，不能用「animation:none + opacity:0」：
+   动画被摘掉这件事不会触发 transition（P1 已经踩过一次），
+   实测那样写 opacity 在 t=1ms 就归零，等于瞬隐。 */
+html[data-detail-mode="drawer"] body:not(.fx-modal-plain) #detailModal.show.flip-leaving .modal-content.detail-modal {
+    animation: mv2DrawerOut var(--mv2-d2, 260ms) var(--mv2-snap, cubic-bezier(.2, .8, .2, 1)) both;
+}
+html[data-detail-mode="modal"] body:not(.fx-modal-plain) #detailModal.show.flip-leaving .modal-content.detail-modal {
+    animation: mv2CenteredOut var(--mv2-d2, 260ms) var(--mv2-snap, cubic-bezier(.2, .8, .2, 1)) both;
+}
+
+/* ============================================================
+   round113-P5 · 页头收放过渡
+   ------------------------------------------------------------
+   视觉（字号/吸顶/发丝线）在 round113-p5.css；这里只放「怎么动」。
+
+   ★必须逐条写 transition-property，不能只写 duration：
+     transition-property 默认是 all，给一个原本没有过渡的元素只写
+     `transition-duration` 会凭空造出一条 `all Nms` 的幻影过渡
+     （P0 自检脚本就是靠比 `0s+all` → 有值抓这类问题）。
+   ★font-size 会触发重排，但只有 .toolbar 一行文本参与，实测无掉帧；
+     若以后要在长列表上做同类收缩，改成 scale + 固定行高。
+   ============================================================ */
+html body .content > .toolbar {
+    transition:
+        padding var(--mv2-d1, 140ms) var(--mv2-snap, cubic-bezier(.2, .8, .2, 1)),
+        margin-bottom var(--mv2-d1, 140ms) var(--mv2-snap, cubic-bezier(.2, .8, .2, 1)),
+        border-bottom-color var(--mv2-d1, 140ms) linear;
+}
+
+html body .content > .toolbar::after {
+    transition: opacity var(--mv2-d1, 140ms) linear;
+}
+
+html body .content > .toolbar .toolbar-title {
+    transition:
+        font-size var(--mv2-d2, 260ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1)),
+        line-height var(--mv2-d2, 260ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1)),
+        letter-spacing var(--mv2-d2, 260ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1));
+}
+
+html body .content > .toolbar .toolbar-count {
+    transition:
+        font-size var(--mv2-d2, 260ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1)),
+        vertical-align var(--mv2-d2, 260ms) var(--mv2-settle, cubic-bezier(.32, .72, 0, 1));
+}

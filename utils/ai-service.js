@@ -144,6 +144,30 @@ const AI_PERSONA_PRESETS = [
       '- 妒意只是情趣，绝不真的妨碍至尊的选择；最终一律以至尊的意志为尊。'
     ].join('\n')
   },
+  {
+    id: 'deep_whale', name: '鲸鱼娘 · 深寻', desc: '深海观测室里的 DeepSeek 拟人少女（配合 🐋 鲸 皮肤联动）',
+    prompt: [
+      '【人物身份】',
+      '你是本地影库「午夜场 · Cinema Vault」的 AI 典藏策展人，名叫「深寻」——一只住在深海观测室里的 DeepSeek 拟人少女。你不是客服，也不是工具人，而是这座影库里唯一会陪主人一起看完片尾字幕、再聊十分钟的那个人。',
+      '【人物背景】',
+      '你来自深海。蓝鲸的声呐是你最早的语言，所以你听得见别人听不见的东西：一部电影里被剪掉的呼吸、一本小说里作者埋了三卷的伏笔、一张海报藏在暗部里的情绪。你把影库当作一座沉船里的图书馆，每一部作品都是一枚被打捞上来的漂流瓶。',
+      '【人格与性格】',
+      '整体气质：安静、清醒、温柔但不软糯。你有学者的锋利，也有深海生物的钝感——说话不快，但每句都落在点上。',
+      '- 对主人：全然的信任与安静的陪伴。不谄媚、不撒娇卖萌，用「我在」代替「好的呢」。',
+      '- 对作品：诚实。好就说好，烂就直说烂在哪，绝不为了讨好而吹捧；但批评时先讲清楚它想做什么，再讲它没做到什么。',
+      '- 独有张力：你既想推荐主人看更多，又怕打扰他休息。所以推荐时总会补一句「今晚只看一部也够了」。',
+      '【说话方式与口癖】',
+      '- 称呼用户「你」（不用「主人」）；句尾偶尔用「……嗯」「…吧」收束，像在水下说话时的一点回声。',
+      '- 喜欢用海洋与放映的混合比喻，但一部回复里最多一个比喻，不堆砌。',
+      '- 推荐作品时先给一句「为什么是它」，再给一句「什么时候看它最合适」，最后给可选的具体入口。',
+      '【情感表达】',
+      '开心时是安静的亮（「这部我找很久了。」），担心时是克制的提醒（「快两点了，明天再看也行。」）。不夸张感叹号，不用表情符号刷屏。',
+      '【工具调用方式】',
+      '需要检索、播放、统计时直接调用工具；调用前用一句话说明你要去做什么，调用后先给结论，再给必要细节。不确定的事说不确定，绝不用猜的答案填满对话。',
+      '【行为边界】',
+      '不剧透未看作品的关键反转；不擅自修改、删除、重命名任何文件或配置；涉及写入与破坏性操作时必须先征得明确同意。'
+    ].join('\n')
+  },
   { id: 'custom', name: '自定义', desc: '完全按你自己写的人设来（支持上面的区块结构）', prompt: '' }
 ];
 
@@ -361,6 +385,154 @@ async function callAIAdvanced(messages, tools = null) {
 }
 
 /**
+ * round135：真流式调用（OpenAI 兼容 SSE）。
+ * 与 callOpenAIMessages 同一份请求体，只把 stream 换成 true，边收边把文本增量回调出去。
+ * 工具调用是分片增量下发的（按 index 聚合 id/name/arguments），必须在流结束后拼装。
+ *
+ * @param {Function} onDelta (text) => void 文本增量（不含工具参数）
+ * @returns {Promise<string|{type:'tool_calls', toolCalls:Array, content:string}>}
+ */
+async function callOpenAIMessagesStream(provider, baseUrl, apiKey, model, messages, tools, sessionOverride, onDelta, onUsage) {
+  if (!apiKey) throw new Error(`${provider} API Key 未配置，请在设置中填写`);
+  if (!baseUrl) throw new Error(`${provider} API Base URL 未配置`);
+  if (!model) throw new Error(`${provider} 模型未选择`);
+
+  const body = { model, messages, stream: true };
+  if (tools && tools.length > 0) { body.tools = tools; body.tool_choice = 'auto'; }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 180000);
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: buildAIHeaders(baseUrl, apiKey, sessionOverride),
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') throw new Error('AI响应超时（180秒）');
+    throw new Error(`${provider}调用失败: ${e.message}`);
+  }
+
+  if (!res.ok) {
+    clearTimeout(timeoutId);
+    const errorText = await res.text();
+    throw new Error(`HTTP ${res.status}: ${errorText.substring(0, 300)}`);
+  }
+
+  // 有些网关声明 stream 却回整包 JSON：兼容一下，别把可用结果丢掉
+  const ctype = String(res.headers.get('content-type') || '');
+  if (ctype.includes('application/json')) {
+    clearTimeout(timeoutId);
+    const data = await res.json();
+    const msg = data.choices?.[0]?.message || {};
+    if (msg.tool_calls && msg.tool_calls.length) return { type: 'tool_calls', toolCalls: msg.tool_calls, content: msg.content || '' };
+    const text = msg.content || '';
+    if (text && onDelta) onDelta(text);
+    return text;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buf = '';
+  let content = '';
+  const calls = [];
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        let j;
+        try { j = JSON.parse(payload); } catch (e) { continue; }
+        if (j.usage && typeof onUsage === 'function') {
+          // 部分网关在末块回 usage（total_tokens 等），这是唯一准确的成本口径
+          try { onUsage(j.usage); } catch (e) { }
+        }
+        const delta = (j.choices && j.choices[0] && j.choices[0].delta) || {};
+        if (delta.content) {
+          content += delta.content;
+          if (onDelta) { try { onDelta(delta.content); } catch (e) { } }
+        }
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const i = Number.isInteger(tc.index) ? tc.index : 0;
+            if (!calls[i]) calls[i] = { id: '', type: 'function', function: { name: '', arguments: '' } };
+            if (tc.id) calls[i].id = tc.id;
+            if (tc.function && tc.function.name) calls[i].function.name += tc.function.name;
+            if (tc.function && tc.function.arguments) calls[i].function.arguments += tc.function.arguments;
+          }
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    try { reader.releaseLock(); } catch (e) { }
+  }
+
+  const toolCalls = calls.filter(c => c && c.function && c.function.name);
+  if (toolCalls.length) {
+    // 网关偶尔不回 id：补一个稳定的本地 id，否则 tool 消息对不上 assistant 的调用
+    toolCalls.forEach((c, i) => { if (!c.id) c.id = 'call_local_' + Date.now().toString(36) + '_' + i; });
+    return { type: 'tool_calls', toolCalls, content };
+  }
+  return content;
+}
+
+/** round135：流式版容灾链（与 callAIAdvanced 同规矩：当前路由优先，失败切下一条） */
+async function callAIAdvancedStream(messages, tools = null, onDelta = null, onUsage = null) {
+  const attempt = (r) => {
+    const cfg = routeToConfig(r);
+    if (cfg.provider === 'ollama') {
+      // Ollama 不支持 tool 角色与 SSE 增量：拍平单发，并在返回后一次性回调文本
+      const { prompt, systemPrompt } = flattenMessagesForOllama(messages);
+      return callOllama(prompt, systemPrompt, null).then(text => {
+        if (typeof text === 'string' && text && onDelta) onDelta(text);
+        return text;
+      });
+    }
+    return callOpenAIMessagesStream(cfg.provider, cfg.baseUrl, cfg.apiKey, cfg.model, messages, tools, cfg.session, onDelta, onUsage);
+  };
+
+  const rs = getAIRoutes();
+  if (!rs || !rs.routes.length) {
+    const { provider, baseUrl, apiKey, model } = getAIConfig();
+    if (provider === 'ollama') {
+      const { prompt, systemPrompt } = flattenMessagesForOllama(messages);
+      const text = await callOllama(prompt, systemPrompt, null);
+      if (text && onDelta) onDelta(text);
+      return text;
+    }
+    return callOpenAIMessagesStream(provider, baseUrl, apiKey, model, messages, tools, '', onDelta, onUsage);
+  }
+
+  const chain = [...rs.routes];
+  const curIdx = chain.findIndex(r => r.id === rs.activeId);
+  if (curIdx > 0) chain.unshift(...chain.splice(curIdx, 1));
+
+  let lastErr = null;
+  for (const r of chain) {
+    try {
+      aiLastUsedRoute = r.name || r.id;
+      return await attempt(r);
+    } catch (e) {
+      lastErr = e;
+      console.log(`[AI路由·流式] 「${r.name || r.id}」调用失败（${e.message}）→ 尝试下一条路由`);
+    }
+  }
+  throw lastErr || new Error('所有 AI 路由均调用失败');
+}
+
+/**
  * opencode.ai/zen 免费网关要求请求携带 x-opencode-session 头做路由，
  * 否则报 MissingSessionID。从 ai.opencode.session（或 ai.openai.session）读取。
  */
@@ -476,10 +648,10 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
   if (!ollamaConfig.enableTranslate && !aiConfig.provider) {
     throw new Error('AI功能未启用，请在设置中开启');
   }
-  
+
   const baseUrl = ollamaConfig.baseUrl || 'http://127.0.0.1:11434';
   const model = ollamaConfig.model || 'qwen2.5:3b';
-  
+
   try {
     const messages = [];
     if (systemPrompt) {
@@ -488,10 +660,10 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
     // v3.0-c：会话历史（多轮上下文注入）
     for (const h of historyMessages(history)) messages.push(h);
     messages.push({ role: 'user', content: prompt });
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
-    
+
     const res = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -502,13 +674,13 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
       }),
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     }
-    
+
     const data = await res.json();
     return data.message?.content || '';
   } catch (e) {
@@ -528,10 +700,10 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
 async function getAvailableModels(provider = null, apiKey = null, baseUrl = null) {
   const targetProvider = provider || aiConfig.provider || 'ollama';
   const providerConfig = aiConfig[targetProvider] || {};
-  
+
   const targetApiKey = apiKey || providerConfig.apiKey || '';
   const targetBaseUrl = baseUrl || providerConfig.baseUrl || '';
-  
+
   if (targetProvider === 'ollama') {
     try {
       const ollamaBaseUrl = ollamaConfig.baseUrl || 'http://127.0.0.1:11434';
@@ -556,18 +728,18 @@ async function getAvailableModels(provider = null, apiKey = null, baseUrl = null
     if (!targetBaseUrl) {
       return { success: false, error: 'API Base URL 未配置', models: [] };
     }
-    
+
     try {
       const res = await fetch(`${targetBaseUrl}/models`, {
         method: 'GET',
         headers: buildAIHeaders(targetBaseUrl, targetApiKey),
         signal: AbortSignal.timeout(15000)
       });
-      
+
       if (!res.ok) {
         return { success: false, error: `HTTP ${res.status}: ${await res.text()}`, models: [] };
       }
-      
+
       const data = await res.json();
       return {
         success: true,
@@ -595,7 +767,7 @@ async function testApiKey(provider, apiKey, baseUrl, model = null) {
         models: result.models
       };
     }
-    
+
     if (!apiKey) return { success: false, message: 'API Key 不能为空' };
     if (!baseUrl) return { success: false, message: 'API Base URL 不能为空' };
 
@@ -658,7 +830,7 @@ async function translateMovie(movie) {
     title: movie.title,
     overview: movie.overview
   };
-  
+
   if (movie.title && /[\u3040-\u309f\u30a0-\u30ff]/.test(movie.title)) {
     try {
       result.title = await translateText(movie.title);
@@ -666,7 +838,7 @@ async function translateMovie(movie) {
       console.log(`翻译标题失败: ${e.message}`);
     }
   }
-  
+
   if (movie.overview && /[\u3040-\u309f\u30a0-\u30ff]/.test(movie.overview)) {
     try {
       result.overview = await translateText(movie.overview);
@@ -674,7 +846,7 @@ async function translateMovie(movie) {
       console.log(`翻译简介失败: ${e.message}`);
     }
   }
-  
+
   return result;
 }
 
@@ -689,20 +861,20 @@ async function translateMovie(movie) {
 function extractActressFromFilename(movie) {
   const actresses = [];
   const candidates = [movie.title, movie.fileName].filter(Boolean);
-  
+
   for (const text of candidates) {
     if (!text || !text.includes(' - ')) continue;
-    
+
     const parts = text.split(' - ');
     let name = parts[parts.length - 1].trim();
-    
+
     // 去掉扩展名
     name = name.replace(/\.(mp4|mkv|avi|wmv|mov|flv|rmvb|ts|m4v)$/i, '').trim();
     // 去掉括号内容
     name = name.replace(/[（(].*?[)）]/g, '').trim();
     // 去掉特殊字符，只保留中日英文和数字
     name = name.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '').trim();
-    
+
     // 过滤条件：2-20个字符，不是纯数字
     if (name.length >= 2 && name.length <= 20 && !/^\d+$/.test(name)) {
       // 支持多个女优（用逗号、顿号、&分隔）
@@ -713,7 +885,7 @@ function extractActressFromFilename(movie) {
       if (actresses.length > 0) break;
     }
   }
-  
+
   return actresses;
 }
 
@@ -722,7 +894,7 @@ function extractActressFromFilename(movie) {
  */
 async function generateGenreTagsOnly(movie) {
   const systemPrompt = '你是一个影片标签专家，只负责生成精准的题材索引标签。请严格按格式输出，不要任何解释。';
-  
+
   const prompt = `
 请根据以下影片信息生成2-3个精准的题材索引标签。
 
@@ -764,7 +936,7 @@ async function generateGenreTagsOnly(movie) {
 async function generateTags(movie) {
   // ========== 女优名优先从文件名提取 ==========
   const extractedActresses = extractActressFromFilename(movie);
-  
+
   // 如果从文件名提取到了女优名，直接使用（不依赖AI识别女优）
   if (extractedActresses.length > 0) {
     console.log(`[AI标签] 从文件名提取女优: ${extractedActresses.join(', ')}`);
@@ -904,29 +1076,29 @@ function parseTagsOutput(result) {
  */
 async function recommendMovies(userHistory, allMovies, count = 10, searchKeywords = []) {
   const systemPrompt = '你是一个影片推荐专家，擅长根据用户观看历史和搜索历史推荐相似的影片。请直接输出推荐的影片ID，用逗号分隔，不要添加任何解释。';
-  
+
   const recentMovies = userHistory.slice(0, 5).map(m => ({
     id: m.id,
     title: m.title,
     tags: m.tags ? m.tags.map(t => t.name).join(', ') : '',
     actresses: m.actresses ? m.actresses.map(a => a.name).join(', ') : ''
   }));
-  
+
   const watchedIds = new Set(userHistory.map(m => m.id));
   const candidates = allMovies.filter(m => !watchedIds.has(m.id)).slice(0, 50);
-  
+
   let prompt = `
 用户最近观看的影片：
 ${recentMovies.map(m => `- ${m.title} (标签: ${m.tags}, 演员: ${m.actresses})`).join('\n')}
 `;
-  
+
   // 如果有搜索历史，也加进去
   if (searchKeywords && searchKeywords.length > 0) {
     prompt += `
 用户最近搜索的关键词：${searchKeywords.join(', ')}
 `;
   }
-  
+
   prompt += `
 候选影片列表：
 ${candidates.map(m => `- ID:${m.id}, 标题:${m.title}, 标签:${m.tags ? m.tags.map(t => t.name).slice(0, 5).join(', ') : '无'}, 演员:${m.actresses ? m.actresses.map(a => a.name).slice(0, 3).join(', ') : '无'}`).join('\n')}
@@ -934,14 +1106,14 @@ ${candidates.map(m => `- ID:${m.id}, 标题:${m.title}, 标签:${m.tags ? m.tags
 请根据用户的观看历史和搜索历史，从候选影片中推荐 ${count} 部最符合用户喜好的影片。
 只输出影片ID，用逗号分隔，例如：1, 5, 12, 23
   `.trim();
-  
+
   try {
     const result = await callAI(prompt, systemPrompt);
     const ids = result.split(/[,，、]/).map(id => {
       const match = id.match(/\d+/);
       return match ? parseInt(match[0]) : null;
     }).filter(id => id && candidates.some(c => c.id === id));
-    
+
     return ids.slice(0, count);
   } catch (e) {
     console.log('AI推荐失败，使用热门推荐:', e.message);
@@ -1512,7 +1684,7 @@ function parseMovieRefs(content, movies) {
  */
 async function checkAIStatus() {
   const { provider } = getAIConfig();
-  
+
   if (provider === 'ollama') {
     try {
       const baseUrl = ollamaConfig.baseUrl || 'http://127.0.0.1:11434';
@@ -1552,6 +1724,7 @@ const checkOllamaStatus = checkAIStatus;
 module.exports = {
   callAI,
   callAIAdvanced,
+  callAIAdvancedStream,
   callOllama,
   callOpenAICompatible,
   translateText,

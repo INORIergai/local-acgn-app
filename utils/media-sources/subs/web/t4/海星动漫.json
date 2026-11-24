@@ -1,9 +1,10 @@
 {
+  "id": "haixing-dongman",
   "factoryId": "web-selector",
   "version": 2,
   "arguments": {
     "name": "海星动漫",
-    "description": "直连",
+    "description": "",
     "iconUrl": "https://www.haixingdmx.com/hdst/hx_pic/favicon.ico",
     "searchConfig": {
       "searchUrl": "https://www.haixingdmx.com/s_all?ex=1&kw={keyword}",

@@ -77,7 +77,7 @@ async function searchFc2ByAvid(avid) {
     // 找符合番号的链接
     let detailPath = null;
     const links = $search(`a[href*="id${fc2Number}"]`);
-    
+
     if (links.length === 0) {
       console.log(`[FC2] 未找到番号: ${avid}`);
       return null;

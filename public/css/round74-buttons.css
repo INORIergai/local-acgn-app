@@ -36,7 +36,7 @@
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
-    transition: filter .15s ease, transform .1s ease, box-shadow .15s ease;
+    transition: filter var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-dpress, .1s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .btn-pill:hover:not(:disabled) { filter: brightness(1.08); }
 .btn-pill:active:not(:disabled) { transform: translateY(1px); }

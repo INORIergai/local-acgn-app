@@ -541,10 +541,12 @@ router.get('/list', async (req, res) => {
           if (tn) title = (tn.innerText || '').trim();
         }
         if (!title) {
-          const tn = box.querySelector('.dm-card__title, .card-title, .thumbnail-text, h3, h4');
+          const tn = box.querySelector('.dm-card__title, .card-title, .thumbnail-text, .video-title, .title, h3, h4, h6');
           if (tn) title = (tn.innerText || '').trim();
         }
         if (!title) title = text;
+        // jable 这类站的卡片没有 title 属性，innerText 会带上时长前缀和尾部统计数字
+        title = title.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*/, '').replace(/\s+/g, ' ').trim();
         if (title.length < 4) return;
         const key = norm(title);
         if (key && seenTitle.has(key)) return;        // 同一部片常有多个链接，按标题去重

@@ -1,0 +1,109 @@
+/* ============================================================
+   round113-P6 · 书架卡片的信息层（2026-10-21）
+   ------------------------------------------------------------
+   这一轮不是加花活，是修一个「几千本书一直没有书名」的真 bug。
+
+   起因：round73 把标题从「压在封面中央」改成「封面下方 + flex 纵向布局」，
+        却漏了 `aspect-ratio: auto`。基类 `.av-card` 是
+        `aspect-ratio: 2/2.9` + `overflow: hidden` ⇒ 高度被锁死在 284px，
+        而内容（封面 284 + 标题区 82）是 366px，多出的 82px 整段被裁在卡外。
+        实测（_r113-p6-probe2.js）`.av-cap` 的起点正好等于卡底：
+          普通卡片   卡底 933.8 / cap 起点 932.8 → 可见 1px
+          摞卡顶卡   卡底 604.6 / cap 起点 604.6 → 可见 0px
+        也就是说漫画库 2351 本、小说库 4895 本，**每一张卡都没有书名、
+        卷号、体积、阅读进度**。高度锁定已在 round73.css 里解除（见那里的长注释）。
+
+   本文件收尾三件小事：
+   ① 摞卡外面那行 `.av-stack-name` 会与卡内标题重复同一行字 ⇒ 收起，
+      `.av-stack-under` / `.av-stack-hit` 原本给这行预留的 26px 一并还给卡片。
+   ② `.av-sub span` 的「#000 药丸」是漏网之鱼：round73 只重置了 `.av-sub`
+      容器，里面 `span` 还是黑底白字（av-board.css:358 的黑药丸 +
+      round26 给 `.has-art` 的半透明版），在日场纸色的卡片上是一块突兀的
+      黑方块 ⇒ 一并改成普通文字，与 `b`（卷号）同一灰度。
+   ③ 标题区等高：`.av-title` 的 `min-height: 2.7em` 保留 —— 单行标题也占住
+      两行的位置，整排卡片底边齐平；否则标题一长一短会让网格参差。
+
+   回滚：删掉 library.html 里 round113-p6.css 这一行即可。
+   ============================================================ */
+
+/* ---------- ① 摞卡：卡内已经有标题，外面那行是重复的 ----------
+   摞卡的信息价值在卡内：标题（第一本）+ 卷号 + 体积 + 阅读进度，
+   其中 `avp-flag` / `card-progress` 只在卡内，系列名却在卡外重复一遍。
+   数量由右上角 `.av-stack-badge`（「8 本」）承担，不丢信息。 */
+html body .av-view.av-workspace .av-main .av-stack .av-stack-name {
+    display: none;
+}
+
+/* 给那行留的 26px 还回去：叠纸与点击热区都覆盖到卡片底部
+   （热门区原本停在 `0 0 26px`，隐藏系列名后下方 26px 会点不动）。 */
+html body .av-view.av-workspace .av-main .av-stack .av-stack-under {
+    height: calc(100% - 8px);
+}
+html body .av-view.av-workspace .av-main .av-stack .av-stack-hit {
+    inset: 0 0 8px 0;
+}
+
+/* ---------- ② 体积文字：去掉漏网的黑药丸 ----------
+   round73 的原话是「把 .av-sub 从写死黑底药丸改成普通文字行 ——
+   那个 #000 底在浅色卡上不可读」，但它只写了容器，没写里面那个 span。
+   权重 (0,6,1) > `.av-card.has-art .av-sub span` 的 (0,3,1)。 */
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-sub span {
+    display: inline;
+    align-self: auto;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--text-muted, #777);
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+}
+/* 卷号与体积同一行：round73 写了 `align-items: center; gap: 6px`（row 的写法），
+   但没写 `flex-direction` —— 基类 `.av-card .av-sub` 是 column（av-board.css:342），
+   于是「卷01」和「112 MB」被拆成上下两行，体积还因为 align-items 居中而漂在中间。
+   这里补回 row，两者并排，用 gap 隔开。 */
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-sub {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+}
+
+/* 空卷号不要占位：av-board.js 对没有卷号/话号的条目仍会输出一个空 `<b></b>`，
+   在 flex row + gap: 8px 下会白白把体积文字右推 8px。
+   （实测 title 文本里已带「卷01」的条目，`<b>` 就是空的。） */
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-sub b:empty {
+    display: none;
+}
+
+/* ---------- ③ 标题区：给两行留位，整排底边齐平 ----------
+   `.av-title` 的 min-height 用 em，跟着字号走；
+   行高 1.35 × 2 行 = 2.7em，与 round73 一致，这里只把 line-clamp 明确写死，
+   避免个别卡片因为标题过长被撑成三行后把整行拉高。
+
+   ★`text-wrap: balance` 是必须的：标题数据里常自带卷号（「別對前女友抱有幻想啊笨蛋 卷01」
+   是 title 本身，不是 `.av-sub` 的 b）。CJK 逐字可断，默认换行会把「卷01」拆成
+   「卷」在行尾、「01」在下一行 —— 实测就是这个形状。均衡换行会把两行长度拉开重排。
+   超长标题补 `text-overflow: ellipsis`（`-webkit-box` 下要四条同时写才出省略号）。 */
+html body .av-view.av-workspace .av-main .av-card > .av-cap .av-title {
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
+    min-height: 2.7em;
+    text-wrap: balance;
+    text-overflow: ellipsis;
+    overflow-wrap: break-word;
+}
+
+/* ---------- ④ 深色皮肤下的标题区底色 ----------
+   `.av-card` 的 `background: var(--cv, #ffdbfd)`（糖果色）在标题区是可见的，
+   浅色皮肤下被 `--bg-elevated` 盖住看不出问题；暗色皮肤里 --bg-elevated
+   是深色，但糖果色卡在没有封面时仍会透出来。这里统一到底色，避免
+   「有无封面」两排卡片底色不一致。 */
+html body .av-view.av-workspace .av-main .av-card > .av-cap {
+    background: transparent;
+}

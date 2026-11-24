@@ -1,6 +1,15 @@
 /**
  * 小说扫描器
  * 扫描本地小说文件，支持 txt、epub、pdf、mobi 等格式
+ *
+ * ★★ round112 重构：两阶段扫描（先入库，后补图）
+ *   旧实现串行 `await processSingleNovelFile()`，每个文件都同步等 zlibrary 刮削
+ *   （浏览器通道，源挂了单文件 ~4.5s，4095 个文件 = 5 小时以上；而启动扫描链
+ *    排在漫画后面，漫画不结束小说永远轮不到 —— 实机库里 novel 一直是 0 条）。
+ *
+ *   现在：Phase A 本地索引（并发 8，一个请求都不发）→ 立刻可见；
+ *        Phase B 后台补封面（EPUB 内封面 / PDF 首页），不阻塞扫描状态与目录监控。
+ *        网络元数据只在单文件路径做，并且过熔断（utils/scrape-guard.js）。
  */
 
 const fs = require('fs');
@@ -17,8 +26,10 @@ const {
   recordScrapeFailure,
   clearScrapeFailure
 } = require('./db');
-const { parseNfo, findLocalCover, generateNfo } = require('./nfo_utils');
+const { parseNfo, generateNfo } = require('./nfo_utils');
 const { resetInlineBudget, inlineContentCover } = require('./cover-fallback');
+const { poolMap } = require('./pool');
+const guard = require('./scrape-guard');
 const config = require('./config');
 const { extractSeriesKey } = require('./series-group');
 
@@ -28,6 +39,7 @@ const NOVEL_EXTENSIONS = ['.txt', '.epub', '.pdf', '.mobi', '.azw3', '.docx', '.
 // 扫描状态
 let novelScanStatus = {
   running: false,
+  phase: 'idle',      // round112：idle | index | enrich | done
   total: 0,
   current: 0,
   currentFile: '',
@@ -39,6 +51,14 @@ let novelScanStatus = {
   }
 };
 
+function indexConcurrency() {
+  const n = Number(config.scan && config.scan.indexConcurrency);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 32) : 8;
+}
+
+/** 站点标签（与 comic-scanner 同一套判定，见 utils/title-clean.js） */
+const { prettyTitle, cleanStoredTitles } = require('./title-clean');
+
 /**
  * 递归获取目录下所有小说文件
  */
@@ -46,7 +66,8 @@ function getNovelFiles(dir) {
   const results = [];
   if (!fs.existsSync(dir)) return results;
 
-  const items = fs.readdirSync(dir, { withFileTypes: true });
+  let items;
+  try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return results; }
   for (const item of items) {
     const fullPath = path.join(dir, item.name);
     if (item.isDirectory()) {
@@ -58,188 +79,74 @@ function getNovelFiles(dir) {
       }
     }
   }
-  
+
   return results;
 }
 
-/**
- * 快速增量扫描
- */
-async function startNovelQuickScan() {
-  if (novelScanStatus.running) return;
-  novelScanStatus = {
-    running: true,
-    total: 0,
-    current: 0,
-    currentFile: '',
-    stats: { localHit: 0, webScraped: 0, failed: 0, skipped: 0, coverFallback: 0 }
-  };
-  // 每轮扫描重置「内容页兜底」预算（EPUB 取内封面约 10ms，小说很少，默认给足 40）
-  // config.autoContentCoverLimit：正数=本轮上限，0=关闭，-1=不限
-  const _lim = config.autoContentCoverLimit;
-  const coverBudget = resetInlineBudget(_lim === -1 ? Infinity : (Number(_lim) >= 0 ? Number(_lim) : 40));
-  console.log(`[小说扫描] 本轮内容页兜底预算: ${coverBudget === Infinity ? '不限' : coverBudget} 张`);
-
+/** 同目录同名图片 / cover.jpg 当封面 */
+function findNovelCover(filePath) {
   try {
-    const novelFolders = config.novelFolders || [];
-    if (novelFolders.length === 0) {
-      console.log('[小说扫描] 未配置小说目录');
-      return;
+    const dir = path.dirname(filePath);
+    const ext = path.extname(filePath);
+    const stem = path.basename(filePath, ext);
+    for (const coverExt of ['.jpg', '.jpeg', '.png', '.webp']) {
+      const p = path.join(dir, stem + coverExt);
+      if (fs.existsSync(p)) return p;
     }
+    for (const name of ['cover.jpg', 'folder.jpg', 'poster.jpg']) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) return p;
+    }
+  } catch (e) { /* 忽略 */ }
+  return null;
+}
 
-    // 收集所有小说文件
-    const allFiles = [];
-    for (const folder of novelFolders) {
-      allFiles.push(...getNovelFiles(folder));
-    }
-    
-    // 获取数据库中已有的小说
-    const allMovies = getAllMovies.all();
-    const existingNovels = allMovies.filter(m => m.type === 'novel');
-    const existingPaths = new Set(existingNovels.map(m => m.filePath));
-    
-    // 找出新增的和删除的
-    const newFiles = allFiles.filter(f => !existingPaths.has(f));
-    const deletedPaths = Array.from(existingPaths).filter(p => !allFiles.includes(p));
-    
-    novelScanStatus.total = newFiles.length;
-    console.log(`[小说扫描] 共 ${allFiles.length} 个文件，新增 ${newFiles.length} 个`);
-    
-    // 处理新增文件
-    for (let i = 0; i < newFiles.length; i++) {
-      novelScanStatus.current = i + 1;
-      novelScanStatus.currentFile = path.basename(newFiles[i]);
-      
-      try {
-        await processSingleNovelFile(newFiles[i]);
-      } catch (e) {
-        console.log(`处理失败: ${newFiles[i]}`, e.message);
-      }
-    }
-    
-    // 删除失效记录
-    for (const lostPath of deletedPaths) {
-      try {
-        deleteMovieByPath.run(lostPath);
-      } catch (e) {}
-    }
-    
-    console.log(`[小说扫描] 完成！新增 ${newFiles.length} 个`);
-
-  } finally {
-    novelScanStatus.running = false;
+function cacheLocalCover(filePath, localCover) {
+  try {
+    const hash = crypto.createHash('md5').update(filePath).digest('hex');
+    const coverExt = path.extname(localCover);
+    const dir = path.join(__dirname, '../cache/posters');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const cachePath = path.join(dir, hash + coverExt);
+    if (!fs.existsSync(cachePath)) fs.copyFileSync(localCover, cachePath);
+    return { posterPath: hash + coverExt, localPosterPath: localCover };
+  } catch (e) {
+    return { posterPath: '', localPosterPath: '' };
   }
 }
 
 /**
- * 处理单个小说文件
+ * Phase A：本地入库（不联网）
  */
-async function processSingleNovelFile(filePath) {
+async function indexNovel(filePath) {
   const fileName = path.basename(filePath);
   const ext = path.extname(fileName);
   const cleanName = fileName.replace(ext, '');
-  
-  console.log(`[小说] 处理: ${fileName}`);
-  
+
   try {
     const fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
-    
-    // 查找本地封面（同目录下的同名图片）
-    let localCover = null;
-    try {
-      const dir = path.dirname(filePath);
-      const stem = path.basename(fileName, ext);
-      const coverExts = ['.jpg', '.jpeg', '.png', '.webp'];
-      for (const coverExt of coverExts) {
-        const coverPath = path.join(dir, stem + coverExt);
-        if (fs.existsSync(coverPath)) {
-          localCover = coverPath;
-          break;
-        }
-      }
-      // 也检查 cover.jpg / folder.jpg
-      if (!localCover) {
-        for (const name of ['cover.jpg', 'folder.jpg', 'poster.jpg']) {
-          const coverPath = path.join(dir, name);
-          if (fs.existsSync(coverPath)) {
-            localCover = coverPath;
-            break;
-          }
-        }
-      }
-    } catch (e) {}
-    
-    // 处理封面
-    let posterPath = '';
-    if (localCover) {
-      try {
-        const hash = crypto.createHash('md5').update(filePath).digest('hex');
-        const coverExt = path.extname(localCover);
-        const cachePath = path.join(__dirname, '../cache/posters', hash + coverExt);
-        
-        if (!fs.existsSync(cachePath)) {
-          fs.copyFileSync(localCover, cachePath);
-        }
-        posterPath = hash + coverExt;
-      } catch (e) {}
-    }
-    
-    // 尝试读取 NFO
+    const localCover = findNovelCover(filePath);
+    const prev = getMovieByPath.get(filePath) || null;
+
     let nfoData = null;
     try {
-      const dir = path.dirname(filePath);
-      const stem = path.basename(fileName, ext);
-      const nfoPath = path.join(dir, stem + '.nfo');
-      if (fs.existsSync(nfoPath)) {
-        nfoData = parseNfo(nfoPath);
-      }
-    } catch (e) {}
-    
-    // 网络刮削（如果本地数据不全）——小说库走 zlibrary
-    let webData = null;
-    // 失败清单判定基准：本地封面是否本就存在、是否真的发起过网络刮削
-    const hadLocalCover = !!localCover;
-    const webScrapeAttempted = !nfoData || !nfoData.title || !localCover;
-    if (!nfoData || !nfoData.title || !localCover) {
-      try {
-        const ZLibraryCrawler = require('./crawler/zlibrary');
-        const crawler = new ZLibraryCrawler(config.sources?.zlibrary || {});
-        webData = await crawler.searchByFileName(fileName);
-        
-        // zlibrary 封面下载到影片同目录 + 缓存
-        if (webData && webData.cover && !localCover) {
-          try {
-            const hash = crypto.createHash('md5').update(filePath).digest('hex');
-            const cachePath = path.join(__dirname, '../cache/posters', `${hash}.jpg`);
-            const videoDir = path.dirname(filePath);
-            const baseName = path.basename(filePath, ext);
-            const localCoverPath = path.join(videoDir, `${baseName}-poster.jpg`);
-            
-            const { downloadPoster } = require('./poster-fetcher');
-            await downloadPoster(webData.cover, localCoverPath);
-            if (fs.existsSync(localCoverPath)) {
-              fs.copyFileSync(localCoverPath, cachePath);
-            }
-            posterPath = `${hash}.jpg`;
-            localCover = localCoverPath;
-          } catch (e) {
-            console.log(`  小说封面下载失败: ${e.message}`);
-          }
-        }
-      } catch (e) {
-        console.log(`  网络刮削失败: ${e.message}`);
-      }
-    }
-    
-    const title = nfoData?.title || webData?.title || cleanName;
-    const originalTitle = nfoData?.originalTitle || webData?.originalTitle || '';
-    const overview = nfoData?.plot || webData?.description || '';
-    const releaseDate = nfoData?.premiered || webData?.releaseDate || '';
-    const genres = nfoData?.genres?.join(', ') || webData?.genres?.join(', ') || '';
-    
-    // 写入数据库
-    // 修复：补齐 upsertMovie 全部命名参数，避免 RangeError: Missing named parameter
-    const result = upsertMovie.run({
+      const nfoPath = path.join(path.dirname(filePath), path.basename(fileName, ext) + '.nfo');
+      if (fs.existsSync(nfoPath)) nfoData = parseNfo(nfoPath);
+    } catch (e) { /* NFO 坏了就当没有 */ }
+
+    const prevTitle = prev && String(prev.title || '').trim();
+    let title;
+    if (nfoData && nfoData.title) title = prettyTitle(nfoData.title);
+    else if (prevTitle && prevTitle !== cleanName) title = prevTitle;
+    else title = prettyTitle(cleanName);
+
+    const overview = (nfoData && nfoData.plot) || (prev && prev.overview) || '';
+    const releaseDate = (nfoData && nfoData.premiered) || (prev && prev.releaseDate) || '';
+    const genres = (nfoData && nfoData.genres && nfoData.genres.join(', ')) || (prev && prev.genres) || '';
+
+    const cov = localCover ? cacheLocalCover(filePath, localCover) : { posterPath: '', localPosterPath: '' };
+
+    upsertMovie.run({
       filePath,
       fileName,
       type: 'novel',
@@ -251,94 +158,308 @@ async function processSingleNovelFile(filePath) {
       height: 0,
       tmdbId: null,
       title,
-      originalTitle,
+      originalTitle: (nfoData && nfoData.originalTitle) || (prev && prev.originalTitle) || '',
       overview,
       releaseDate,
-      posterPath,
-      localPosterPath: localCover || '',
+      posterPath: prev ? (cov.posterPath || null) : cov.posterPath,
+      localPosterPath: prev ? (cov.localPosterPath || null) : cov.localPosterPath,
       country: '',
       genres,
-      producer: '',
+      producer: (prev && prev.producer) || '',
       publisher: '',
-      serial: extractSeriesKey(cleanName || fileName) || '',
+      serial: extractSeriesKey(title || cleanName) || '',
       director: '',
       score: 0,
-      source: nfoData ? 'local-nfo' : 'local',
+      source: nfoData ? 'local-nfo' : ((prev && prev.source) || 'local'),
       lastScanTime: Date.now(),
       addedTime: Date.now()
     });
-    
-    // 更新标签关联
-    try {
-      const movieRec = getMovieByPath.get(filePath);
-      if (movieRec && nfoData?.genres?.length > 0) {
-        updateMovieRelations(movieRec.id, { tags: nfoData.genres, actresses: [] });
-        recalcHotScore(movieRec.id);
-      }
-    } catch (e) {}
 
-    // ★ round26续：网络刮削失败 → 自动用「内容页」当封面（EPUB 取内封面图）
-    //   此前这里在刮削失败时只打一行「网络刮削失败」就过去了，库里就留下永久白框。
-    if (!posterPath) {
+    // ★ 按路径反查 id（UPSERT 命中旧行时 lastInsertRowid 不可靠）
+    const row = getMovieByPath.get(filePath);
+    try {
+      if (row && nfoData && nfoData.genres && nfoData.genres.length) {
+        updateMovieRelations(row.id, { tags: nfoData.genres, actresses: [] });
+        recalcHotScore(row.id);
+      }
+    } catch (e) { /* 忽略 */ }
+
+    /* round143：小说同样接入入库自愈（此前这条流水线只服务 jav/anime）。
+     * 小说没有网络刮削源 ⇒ ingest-ensure 按类型只做「本地校验 + 零成本打标 + 海报体检」，
+     * 不联网、不烧 AI 预算，也不会污染 jav 的连续失败熔断。
+     * 触发：新入库，或从未体检过（posterHealth 为空）—— 存量 4095 本在下次扫描各补一次
+     * 体检标记后就不再重复排队。 */
+    try {
+      if (row && (!prev || !prev.posterHealth)) {
+        require('./ingest-ensure').enqueue(row.id, 'scan');
+      }
+    } catch (e) { /* 自愈入队失败不影响入库 */ }
+
+    const exportCfg = config.export || {};
+    if (exportCfg.enableNfoExport && !nfoData) {
       try {
-        const r = await inlineContentCover(db, filePath, s => console.log('    ' + s));
-        if (r && r.ok && r.posterPath) {
-          novelScanStatus.stats.coverFallback = (novelScanStatus.stats.coverFallback || 0) + 1;
-          console.log(`  ✅ 内容页兜底封面已生成（${r.strategy}）`);
-        } else if (r && r.skipped) {
-          console.log(`  ⏭️ 内容页兜底跳过：${r.skipped}`);
-        } else if (r && r.error) {
-          console.log(`  ⚠️ 内容页兜底失败：${r.error}`);
+        const dir = path.dirname(filePath);
+        const stem = path.basename(fileName, ext);
+        const nfoPath = path.join(dir, stem + '.nfo');
+        if (!fs.existsSync(nfoPath) || exportCfg.overwriteExisting) {
+          generateNfo({
+            title,
+            originalTitle: '',
+            num: '',
+            overview,
+            releaseDate,
+            genres: [],
+            actors: [],
+            thumb: cov.posterPath
+          }, nfoPath);
         }
       } catch (e) {
-        console.log(`  ⚠️ 内容页兜底异常：${e.message}`);
+        console.log(`[导出NFO失败] ${fileName}:`, e.message);
       }
     }
 
-    // ★ 刮削失败清单补全：此前只有视频管线写 scrape_failures，
-    //   小说刮削失败在失败清单里永远看不到（只会在海报健康页露头）。
-    try {
-      const movieId = result?.lastInsertRowid || getMovieByPath.get(filePath)?.id || null;
-      if (!webScrapeAttempted || (webData && webData.cover) || hadLocalCover) {
-        clearScrapeFailure.run(filePath);
-      } else if (posterPath) {
-        recordScrapeFailure.run({
-          filePath,
-          movieId,
-          type: 'novel',
-          reason: '网络刮削未命中，当前为内容页兜底封面',
-          failedAt: Date.now()
-        });
-      } else {
-        recordScrapeFailure.run({
-          filePath,
-          movieId,
-          type: 'novel',
-          reason: '网络刮削未命中且内容页兜底失败',
-          failedAt: Date.now()
-        });
-      }
-    } catch (e) { /* 失败记录不影响扫描主流程 */ }
-
     novelScanStatus.stats.localHit++;
-    console.log(`  ✓ 完成: ${title}`);
-    
+    return { ok: true, id: row ? row.id : null, title, hasPoster: !!cov.posterPath };
   } catch (e) {
     novelScanStatus.stats.failed++;
-    console.log(`  ✗ 处理失败: ${e.message}`);
+    console.log(`  ✗ 入库失败: ${fileName} → ${e.message}`);
+    return { ok: false, error: e.message };
   }
 }
 
+let _zlib = null;
+function zlib() {
+  if (!_zlib) {
+    const ZLibraryCrawler = require('./crawler/zlibrary');
+    _zlib = new ZLibraryCrawler(config.sources?.zlibrary || {});
+  }
+  return _zlib;
+}
+
 /**
- * 获取扫描状态
+ * Phase B：给一条已入库的小说补元数据 / 封面
  */
+async function enrichNovel(filePath, opts) {
+  const o = opts || {};
+  const wantNetwork = o.network === true;
+  const wantCover = o.contentCover !== false;
+
+  const rec = getMovieByPath.get(filePath);
+  if (!rec) return { ok: false, reason: 'no-row' };
+
+  const fileName = rec.fileName || path.basename(filePath);
+  const ext = path.extname(fileName);
+  let webData = null;
+  let webAttempted = false;
+  let posterPath = rec.posterPath || '';
+
+  if (wantNetwork && guard.canTry('zlibrary')) {
+    webAttempted = true;
+    try {
+      const crawler = zlib();
+      webData = await crawler.searchByFileName(fileName);
+      if (webData) guard.ok('zlibrary');
+      else if (crawler.networkFailed) guard.fail('zlibrary', crawler.lastError || '镜像全部不可达');
+      else guard.ok('zlibrary');       // 源通着，只是没匹配到
+    } catch (e) {
+      guard.fail('zlibrary', e);
+      console.log(`  网络刮削失败: ${e.message}`);
+    }
+  }
+
+  if (webData) {
+    novelScanStatus.stats.webScraped++;
+    const title = webData.title || rec.title;
+    try {
+      db.prepare(`UPDATE movies SET title=@title, originalTitle=@originalTitle,
+                  overview=@overview, producer=@producer, releaseDate=@releaseDate,
+                  source=@source, serial=@serial WHERE id=@id`).run({
+        title,
+        originalTitle: rec.originalTitle || webData.originalTitle || '',
+        overview: rec.overview || webData.description || '',
+        producer: rec.producer || webData.author || '',
+        releaseDate: rec.releaseDate || webData.releaseDate || '',
+        source: 'zlibrary',
+        serial: rec.serial || extractSeriesKey(title) || '',
+        id: rec.id
+      });
+    } catch (e) { /* 忽略 */ }
+
+    if (!posterPath && webData.cover) {
+      try {
+        const hash = crypto.createHash('md5').update(filePath).digest('hex');
+        const cachePath = path.join(__dirname, '../cache/posters', `${hash}.jpg`);
+        const videoDir = path.dirname(filePath);
+        const baseName = path.basename(filePath, ext);
+        const localCoverPath = path.join(videoDir, `${baseName}-poster.jpg`);
+        const { downloadPoster } = require('./poster-fetcher');
+        await downloadPoster(webData.cover, localCoverPath);
+        if (fs.existsSync(localCoverPath)) fs.copyFileSync(localCoverPath, cachePath);
+        posterPath = `${hash}.jpg`;
+        db.prepare('UPDATE movies SET posterPath = ?, localPosterPath = ? WHERE id = ?')
+          .run(posterPath, `cache/posters/${hash}.jpg`, rec.id);
+      } catch (e) {
+        console.log(`  小说封面下载失败: ${e.message}`);
+      }
+    }
+  }
+
+  if (wantCover && !posterPath) {
+    try {
+      const r = await inlineContentCover(db, filePath, s => console.log('    ' + s));
+      if (r && r.ok && r.posterPath) {
+        novelScanStatus.stats.coverFallback = (novelScanStatus.stats.coverFallback || 0) + 1;
+        posterPath = r.posterPath;
+        console.log(`  ✅ 内容页兜底封面已生成（${r.strategy}）`);
+      } else if (r && r.skipped) {
+        console.log(`  ⏭️ 内容页兜底跳过：${r.skipped}`);
+      } else if (r && r.error) {
+        console.log(`  ⚠️ 内容页兜底失败：${r.error}`);
+      }
+    } catch (e) {
+      console.log(`  ⚠️ 内容页兜底异常：${e.message}`);
+    }
+  }
+
+  try {
+    if (!webAttempted || (webData && webData.cover) || rec.localPosterPath) {
+      clearScrapeFailure.run(filePath);
+    } else if (posterPath) {
+      recordScrapeFailure.run({
+        filePath,
+        movieId: rec.id || null,
+        type: 'novel',
+        reason: '网络刮削未命中，当前为内容页兜底封面',
+        failedAt: Date.now()
+      });
+    } else {
+      recordScrapeFailure.run({
+        filePath,
+        movieId: rec.id || null,
+        type: 'novel',
+        reason: '网络刮削未命中且内容页兜底失败',
+        failedAt: Date.now()
+      });
+    }
+  } catch (e) { /* 忽略 */ }
+
+  return { ok: true, web: !!webData, poster: !!posterPath };
+}
+
+/**
+ * 处理单个小说文件（目录监控 / 手动单文件走这条）
+ */
+async function processSingleNovelFile(filePath, opts) {
+  const o = opts || {};
+  console.log(`[小说] 处理: ${path.basename(filePath)}`);
+  const r = await indexNovel(filePath);
+  if (!r.ok) return r;
+  await enrichNovel(filePath, {
+    network: o.network !== false,
+    contentCover: o.contentCover !== false
+  });
+  console.log(`  ✓ 完成: ${r.title}`);
+  return r;
+}
+
+/**
+ * 快速增量扫描：Phase A 本地索引（并发）→ Phase B 后台补封面
+ */
+async function startNovelQuickScan() {
+  if (novelScanStatus.running) return;
+  novelScanStatus = {
+    running: true,
+    phase: 'index',
+    total: 0,
+    current: 0,
+    currentFile: '',
+    startedAt: Date.now(),
+    stats: { localHit: 0, webScraped: 0, failed: 0, skipped: 0, coverFallback: 0 }
+  };
+  const _lim = config.autoContentCoverLimit;
+  const coverBudget = resetInlineBudget(_lim === -1 ? Infinity : (Number(_lim) >= 0 ? Number(_lim) : 40));
+  console.log(`[小说扫描] 本轮内容页兜底预算: ${coverBudget === Infinity ? '不限' : coverBudget} 张`);
+
+  try {
+    const novelFolders = config.novelFolders || [];
+    if (novelFolders.length === 0) {
+      console.log('[小说扫描] 未配置小说目录');
+      return;
+    }
+
+    const allFiles = [];
+    for (const folder of novelFolders) {
+      allFiles.push(...getNovelFiles(folder));
+    }
+
+    const allMovies = getAllMovies.all();
+    const existingNovels = allMovies.filter(m => m.type === 'novel');
+    const existingPaths = new Set(existingNovels.map(m => m.filePath));
+
+    const allFileSet = new Set(allFiles);
+    const newFiles = allFiles.filter(f => !existingPaths.has(f));
+    const deletedPaths = Array.from(existingPaths).filter(p => !allFileSet.has(p));
+
+    novelScanStatus.total = newFiles.length;
+    console.log(`[小说扫描] 共 ${allFiles.length} 个文件，新增 ${newFiles.length} 个，并发 ${indexConcurrency()} 路入库`);
+
+    const t0 = Date.now();
+    let done = 0;
+    if (newFiles.length) {
+      await poolMap(newFiles, indexConcurrency(), (f) => indexNovel(f), (f) => {
+        done++;
+        novelScanStatus.current = done;
+        novelScanStatus.currentFile = path.basename(f);
+        if (done % 100 === 0 || done === newFiles.length) {
+          const sec = (Date.now() - t0) / 1000;
+          const rate = sec > 0 ? (done / sec).toFixed(1) : '0';
+          console.log(`[小说扫描] 入库进度 ${done}/${newFiles.length}（${rate} 个/秒）`);
+        }
+      });
+    }
+    const indexSec = ((Date.now() - t0) / 1000).toFixed(1);
+    console.log(`[小说扫描] 入库完成：新增 ${newFiles.length} 个，耗时 ${indexSec}s`);
+
+    try { cleanStoredTitles(db, ['novel'], s => console.log('[小说扫描] ' + s)); } catch (e) { /* 不阻塞 */ }
+
+    if (deletedPaths.length) {
+      for (const lostPath of deletedPaths) {
+        try { deleteMovieByPath.run(lostPath); } catch (e) { /* 忽略 */ }
+      }
+      novelScanStatus.stats.removed = deletedPaths.length;
+      console.log(`[小说扫描] 清理失效记录 ${deletedPaths.length} 条`);
+    }
+
+    novelScanStatus.phase = 'done';
+    novelScanStatus.running = false;
+
+    // 即使本轮 0 新增也调：补封面任务会自己查「还缺多少」，没缺的立刻返回（可续跑）
+    try {
+      require('./enrich-covers').startEnrich({ types: ['novel'], reason: '小说扫描' });
+    } catch (e) {
+      console.log('[小说扫描] 补封面任务启动失败（不影响入库）:', e.message);
+    }
+    console.log(`[小说扫描] 结束（入库 ${newFiles.length} 个，${indexSec}s）`);
+
+  } catch (e) {
+    novelScanStatus.stats.failed++;
+    console.log('[小说扫描] 异常:', e.message);
+  } finally {
+    novelScanStatus.running = false;
+    if (novelScanStatus.phase !== 'done') novelScanStatus.phase = 'done';
+  }
+}
+
 function getNovelScanStatus() {
-  return novelScanStatus;
+  return { ...novelScanStatus };
 }
 
 module.exports = {
   startNovelQuickScan,
   getNovelScanStatus,
   processSingleNovelFile,
-  getNovelFiles
+  indexNovel,
+  enrichNovel,
+  getNovelFiles,
+  prettyTitle
 };

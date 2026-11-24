@@ -12,9 +12,27 @@
     type: 'all',
     minScore: 0,
     watchStatus: 'all', // all | unwatched | watched | favorite
+    cardLayout: localStorage.getItem('cvBookLayoutMode') || 'auto', // auto | portrait | placard | stage
     currentView: 'movies',
     activeCount: 0
   };
+
+  /* round127 · bug2：成人/隐私视图的完整名单。
+     以前只认 movies-adult / jav / anime 三个，导致
+     recent-adult / hot-adult / random-adult / guess-adult / unwatched-adult
+     被当成公开视图渲染「影视/动漫/漫画/小说」胶囊，并允许用这些类型切片，
+     切完就会把小说漫画渲进隐私板块。 */
+  var ADULT_VIEWS = ['movies-adult', 'jav', 'anime',
+    'recent-adult', 'hot-adult', 'random-adult', 'guess-adult', 'unwatched-adult'];
+
+  function isAdultViewName(view) {
+    return ADULT_VIEWS.indexOf(String(view || '')) >= 0;
+  }
+
+  /* round127 · bug2：只有 jav/anime 才是隐私内容，其余一律不算。 */
+  function isAdultItem(m) {
+    return ['jav', 'anime'].indexOf(String((m && m.type) || 'jav').toLowerCase()) >= 0;
+  }
 
   function initFacetFilter() {
     var host = document.getElementById('facetFilterBar');
@@ -47,7 +65,7 @@
     if (!host) return;
 
     // 隐私与成人视图判断
-    var isAdultView = ['movies-adult', 'jav', 'anime'].includes(state.currentView);
+    var isAdultView = isAdultViewName(state.currentView);
     var isAdultHidden = typeof window.isAdultNavHidden === 'function' ? window.isAdultNavHidden() : false;
 
     var isFiltered = state.type !== 'all' || state.minScore > 0 || state.watchStatus !== 'all';
@@ -92,8 +110,17 @@
           <button class="f-pill ${state.watchStatus === 'all' ? 'active' : ''}" data-val="all">全部</button>
           <button class="f-pill ${state.watchStatus === 'unwatched' ? 'active' : ''}" data-val="unwatched">未看</button>
           <button class="f-pill ${state.watchStatus === 'watched' ? 'active' : ''}" data-val="watched">已看</button>
-          <button class="f-pill ${state.watchStatus === 'favorite' ? 'active' : ''}" data-val="favorite">⭐ 收藏</button>
+          <button class="f-pill ${state.watchStatus === 'favorite' ? 'active' : ''}" data-val="favorite">收藏</button>
         </div>
+
+        ${!isAdultView ? `
+        <div class="facet-group" data-dim="layout" title="切换书籍与综合卡片的美化展示版式">
+          <span class="facet-label">版式</span>
+          <button class="f-pill ${(state.cardLayout === 'auto' || state.cardLayout === 'portrait') ? 'active' : ''}" data-val="portrait" title="竖版封面网格，适合漫画与小说">竖版</button>
+          <button class="f-pill ${state.cardLayout === 'placard' ? 'active' : ''}" data-val="placard" title="左侧封面、右侧书籍信息的横向展签">展签</button>
+          <button class="f-pill ${state.cardLayout === 'stage' ? 'active' : ''}" data-val="stage" title="宽幅封面网格，适合影片">宽幅</button>
+        </div>
+        ` : ''}
 
         ${isFiltered ? `
           <button type="button" class="facet-reset-btn" id="facetResetBtn" title="清空全部筛选条件">
@@ -164,6 +191,14 @@
           if (dim === 'type') state.type = val;
           if (dim === 'score') state.minScore = parseFloat(val);
           if (dim === 'watch') state.watchStatus = val;
+          if (dim === 'layout') {
+            state.cardLayout = val;
+            try { localStorage.setItem('cvBookLayoutMode', val); } catch (e) {}
+            if (typeof window.cvApplyBookLayoutMode === 'function') {
+              window.cvApplyBookLayoutMode(val);
+            }
+            return;
+          }
 
           updateResetBtnVisibility();
           applyFilter();
@@ -179,9 +214,35 @@
 
   function applyFilter() {
     var rawList = window._rawViewMovies || window.currentMovies;
+
+    /* round127 · bug2 修复（核心）：快照归属校验。
+       _rawViewMovies 是全局单槽，任何视图调用 renderMovies() 都会覆盖它。
+       以前这里无脑拿快照去过滤/还原，于是在「隐私内容→全部内容」里点切片，
+       或点「✕ 清除切片」还原时，会把小说库/漫画库残留的列表渲进来。
+       现在快照记了视图名（app.js renderMovies 里写 _rawViewMoviesView），
+       视图对不上就退回 currentMovies，再对不上就干脆不动，等正常加载。 */
+    var rawView = window._rawViewMoviesView || '';
+    if (rawView && rawView !== state.currentView) {
+      rawList = window.currentMovies;
+      rawView = state.currentView;
+    }
     if (!rawList || !Array.isArray(rawList)) return;
 
+    var adultView = isAdultViewName(state.currentView);
+
+    /* 成人视图只允许 all / jav / anime 三种切片，脏状态一律归零 */
+    if (adultView && ['all', 'jav', 'anime'].indexOf(state.type) < 0) {
+      state.type = 'all';
+    }
+
     var isFiltered = state.type !== 'all' || state.minScore > 0 || state.watchStatus !== 'all';
+
+    /* 成人视图即使「无筛选」也要做类型兜底，防止快照里混着非成人条目 */
+    if (adultView) {
+      rawList = rawList.filter(isAdultItem);
+      window._rawViewMovies = rawList;
+      window._rawViewMoviesView = state.currentView;
+    }
 
     if (!isFiltered) {
       // 还原全量列表

@@ -1,5 +1,6 @@
 package cn.cinemavault.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -13,6 +14,7 @@ import coil.ImageLoader
 import coil.compose.LocalImageLoader
 import cn.cinemavault.app.data.api.ApiClient
 import cn.cinemavault.app.data.prefs.ThemeStore
+import cn.cinemavault.app.ui.scan.DeepLinkBus
 import cn.cinemavault.app.ui.theme.CinemaVaultTheme
 import cn.cinemavault.app.ui.screen.CinemaVaultApp
 
@@ -28,6 +30,8 @@ class NativeActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         FullScreenController.bind(window)
+        // 系统相机/浏览器扫到 cinemavault://pair 深链时，直接把配对信息交给连接流程
+        handleDeepLink(intent)
         // 图片加载走带 lml_session Cookie 的 OkHttp（海报/漫画页需鉴权）
         imageLoader = ImageLoader.Builder(this)
             .okHttpClient { ApiClient.client }
@@ -42,6 +46,19 @@ class NativeActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        val data = intent?.data?.toString() ?: return
+        if (data.startsWith("cinemavault://", ignoreCase = true)) {
+            DeepLinkBus.offer(data)
         }
     }
 

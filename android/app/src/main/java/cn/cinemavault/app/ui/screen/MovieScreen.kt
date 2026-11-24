@@ -71,15 +71,17 @@ fun MovieScreen(modifier: Modifier = Modifier, vm: MovieViewModel = androidx.lif
                 Text("这里还没有内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            // 双列大卡片海报墙（移动端拇指友好）
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+            // 根据当前窗口而非设备型号决定列数，横屏/折叠屏也能连续浏览。
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                columns = GridCells.Fixed(collectionColumns(maxWidth)),
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(vm.movies) { m -> PosterCard(m) { detail = m } }
+                }
             }
         }
     }

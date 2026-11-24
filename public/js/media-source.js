@@ -21,6 +21,13 @@ window.MediaSource = (function () {
         { key: 'sources', name: '🧩 源管理' },
         { key: 'history', name: '🕘 观看历史' }
     ];
+    /* 2026-11：成人入口隐藏时，「私密流」tab 不出现（AV / 里番字样也不展示） */
+    function adultHidden() {
+        return (typeof window.isAdultNavHidden === 'function') && window.isAdultNavHidden();
+    }
+    function visibleTabs() {
+        return adultHidden() ? TABS.filter(function (t) { return t.key !== 'stream'; }) : TABS;
+    }
     const LS_DISABLED = 'cv:msDisabled';
     const LS_HISTORY = 'cv:msHistory';
     const LS_HISTORY_PENDING = 'cv:msHistoryPending';
@@ -311,7 +318,7 @@ window.MediaSource = (function () {
             view.innerHTML = `
                 <div class="panel-section ms-full" id="msRoot">
                     <div class="ms-subtabs" id="msTabs">
-                        ${TABS.map((t) => `<button class="ms-tab" data-ms-tab="${t.key}">${t.name}</button>`).join('')}
+                        ${visibleTabs().map((t) => `<button class="ms-tab" data-ms-tab="${t.key}">${t.name}</button>`).join('')}
                     </div>
                     <div class="ms-body" id="msBody"></div>
                 </div>`;
@@ -338,6 +345,10 @@ window.MediaSource = (function () {
 
     /** 一级入口：由 switchView('ms') 调起 */
     function show(tab, opts) {
+        if (adultHidden() && ((opts && opts.board) || (tab || curTab) === 'stream')) {
+            tab = 'discover';
+            if (opts) { opts = Object.assign({}, opts); delete opts.board; }
+        }
         if (opts && opts.board) streamBoard = opts.board;
         if (opts && opts.board) curTab = 'stream';
         if (opts && opts.kind) readKind = opts.kind;

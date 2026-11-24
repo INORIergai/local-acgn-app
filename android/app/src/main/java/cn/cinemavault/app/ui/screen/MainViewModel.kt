@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cn.cinemavault.app.data.api.ApiClient
+import cn.cinemavault.app.data.api.QrPayload
 import cn.cinemavault.app.data.api.ServerConfig
 import cn.cinemavault.app.data.model.CalendarItem
 import cn.cinemavault.app.data.model.Movie
@@ -51,6 +53,47 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             authRepo.connect(server)
             check()
+        }
+    }
+
+    /**
+     * 扫码连接：
+     *  - 纯地址二维码 → 设置地址后走原流程（需要密码就显示登录页）；
+     *  - 带配对码深链 → 先换 lml_session，再检测状态，直接进首页。
+     * 配对码过期/被用过时保留地址并回退到登录页，不让用户重扫。
+     */
+    fun connectFromQr(raw: String, onResult: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            loading = true
+            val payload = QrPayload.parse(raw)
+            if (payload == null) {
+                message = "无法识别的二维码，请扫描电脑连接页上的码"
+                loading = false
+                onResult(message)
+                return@launch
+            }
+            authRepo.connect(payload.baseUrl)
+            if (payload.pairCode != null) {
+                try {
+                    val root = ApiClient.post(
+                        "/api/app/pair",
+                        org.json.JSONObject().put("pairCode", payload.pairCode)
+                    )
+                    if (root.optInt("code", -1) != 0) {
+                        message = root.optString("msg", "配对码已失效，已切换为密码登录")
+                    }
+                } catch (e: Exception) {
+                    // 网络/服务器异常不阻断连接：地址已保存，登录页仍可用
+                    message = "配对失败：${e.message}"
+                }
+            }
+            state = authRepo.check()
+            if (state is AuthState.Ready) {
+                message = null
+                loadHome()
+            }
+            loading = false
+            onResult(message)
         }
     }
 

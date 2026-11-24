@@ -51,8 +51,9 @@ fun ShelfScreen(
                 Text("书架空空如也", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                columns = GridCells.Fixed(collectionColumns(maxWidth)),
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -60,6 +61,7 @@ fun ShelfScreen(
             ) {
                 items(vm.books) { book ->
                     BookCard(book, vm.progress[book.id] ?: 0) { onOpenBook(book) }
+                }
                 }
             }
         }

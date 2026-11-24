@@ -205,7 +205,7 @@ html[data-v4skin="ambient"] .ai-agent-steps {
     font-size: 12.5px;
     line-height: 1.55;
     padding: 2.5px 0;
-    animation: aiStepIn 0.3s ease both;
+    animation: aiStepIn 0.3s var(--mv2-settle, ease) both;
 }
 @keyframes aiStepIn {
     from { opacity: 0; transform: translateY(4px); }

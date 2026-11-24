@@ -212,7 +212,7 @@ a:focus-visible,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0.01ms var(--mv2-snap, ease) !important;
     scroll-behavior: auto !important;
   }
   /* 保留不依赖位移的状态变化，仅去掉位移/缩放/视差 */

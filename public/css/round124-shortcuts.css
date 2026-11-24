@@ -1,0 +1,43 @@
+/* ============================================================
+   round124 · 快捷键面板在「纸」皮肤下几乎看不见（既有 bug）
+   ------------------------------------------------------------
+   实测（1600×950，纸皮肤）：
+     #shortcutsModal .modal-content  background: rgba(20,20,26,.88)   ← 内联写死的深色玻璃
+     .sc-group                       background: color(srgb .98 .97 .946 / .86)  ← 近白
+     .sc-item span                   color: rgb(243,236,221)                    ← 暖白
+   ⇒ **浅字压浅底，对比度约 1.05:1**，整页说明等于看不见。
+   夜里（matinee）分组底色本来就被算成深色，所以只有纸皮肤坏 —— 典型的"只在一套皮肤下错"。
+
+   根因：这个面板的卡片是内联写死的深色玻璃，但分组的底色走的是
+   `--bg-elevated`（白天 = 纸白），文字色却跟着深色面板走。两套作用域混在一起。
+
+   修法：让分组、键帽、正文都跟随"深色面板"这一套，不再混用皮肤变量。
+   回滚 = 删 library.html 里本文件那一行 link。
+   ============================================================ */
+
+/* 分组：半透明白（叠在深色玻璃上），而不是纸白 */
+html body #shortcutsModal .sc-group {
+    background: rgba(255, 255, 255, .055) !important;
+    border-color: rgba(255, 255, 255, .10) !important;
+}
+
+/* 正文与说明：统一暖白，两级明度 */
+html body #shortcutsModal .sc-item > span {
+    color: rgba(243, 236, 221, .82) !important;
+}
+html body #shortcutsModal .sc-item > span em {
+    color: rgba(243, 236, 221, .64) !important;
+}
+
+/* 分组小标题：原来用 --primary（纸皮肤是深金 #8A5A12），压在深玻璃上偏暗 */
+html body #shortcutsModal .sc-group > div:first-child,
+html body #shortcutsModal .sc-group > div:first-child span {
+    color: #E8B96F !important;
+}
+
+/* 键帽：原来是透明底 + 白字（落在白色分组上等于看不见）。给一层浅底 */
+html body #shortcutsModal .sc-keys kbd {
+    background: rgba(255, 255, 255, .10) !important;
+    border: 1px solid rgba(255, 255, 255, .16) !important;
+    color: #FFFCF4 !important;
+}

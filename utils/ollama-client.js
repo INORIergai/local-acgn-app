@@ -45,11 +45,11 @@ async function chat(prompt, history = [], model = defaultModel) {
                 stream: false
             })
         });
-        
+
         if (!res.ok) {
             throw new Error(`HTTP ${res.status}: ${await res.text()}`);
         }
-        
+
         const data = await res.json();
         return data.message?.content || '';
     } catch (e) {
@@ -72,11 +72,11 @@ async function generate(prompt, model = defaultModel) {
                 stream: false
             })
         });
-        
+
         if (!res.ok) {
             throw new Error(`HTTP ${res.status}: ${await res.text()}`);
         }
-        
+
         const data = await res.json();
         return data.response || '';
     } catch (e) {
@@ -116,11 +116,11 @@ async function generateTags(title, overview = '') {
     return result.split(/[,，、\n]/).map(t => t.trim()).filter(t => t);
 }
 
-module.exports = { 
-    chat, 
+module.exports = {
+    chat,
     generate,
     translate,
-    recommendMovies, 
+    recommendMovies,
     generateTags,
     checkHealth,
     baseUrl,

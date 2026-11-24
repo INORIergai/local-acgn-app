@@ -30,7 +30,7 @@
     flex-direction: column;
     justify-content: center;
     min-height: calc(100vh - 200px);
-    animation: magicFadeIn 0.4s ease both;
+    animation: magicFadeIn 0.4s var(--mv2-settle, ease) both;
 }
 
 @keyframes magicFadeIn {
@@ -75,7 +75,7 @@
     position: absolute;
     inset: 0;
     transform-style: preserve-3d;
-    transition: transform 0.22s ease-out;
+    transition: transform var(--mv2-d2, 0.22s) ease-out;
 }
 
 .magic-card {
@@ -94,11 +94,11 @@
     transform-origin: 50% 55%;
     will-change: transform, opacity;
     backface-visibility: hidden;
-    transition: transform 0.6s cubic-bezier(0.19, 1, 0.22, 1),
-                opacity 0.45s ease,
-                filter 0.45s ease,
-                border-color 0.3s ease,
-                box-shadow 0.4s ease;
+    transition: transform var(--mv2-d3, 0.6s) cubic-bezier(0.19, 1, 0.22, 1),
+                opacity var(--mv2-d3, 0.45s) var(--mv2-snap, ease),
+                filter var(--mv2-d3, 0.45s) var(--mv2-snap, ease),
+                border-color var(--mv2-d2, 0.3s) var(--mv2-snap, ease),
+                box-shadow var(--mv2-d3, 0.4s) var(--mv2-snap, ease);
 }
 
 /* 中心卡：沿用页面「选中」的琥珀描边语义 */
@@ -110,7 +110,7 @@
 }
 
 .magic-deck.dragging .magic-card {
-    transition-duration: 0.18s;
+    transition-duration: var(--mv2-d1, 0.18s) var(--mv2-snap, ease);
 }
 
 .magic-card img.mc-poster {
@@ -136,7 +136,7 @@
         rgba(10, 8, 6, 0.5) 52%,
         transparent 100%);
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--mv2-d2, 0.3s) var(--mv2-snap, ease);
     pointer-events: none;
 }
 
@@ -192,7 +192,7 @@
     box-shadow: 0 8px 22px -8px rgba(0, 0, 0, 0.7);
     opacity: 0;
     transform: scale(0.7);
-    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+    transition: opacity var(--mv2-d2, 0.3s) var(--mv2-snap, ease), transform var(--mv2-d2, 0.3s) cubic-bezier(0.2, 1.4, 0.4, 1);
     pointer-events: none;
 }
 
@@ -246,8 +246,8 @@
     background: transparent;
     color: var(--text);
     cursor: pointer;
-    transition: background 0.18s ease, border-color 0.18s ease,
-                color 0.18s ease, transform 0.16s ease;
+    transition: background var(--mv2-d1, 0.18s) var(--mv2-snap, ease), border-color var(--mv2-d1, 0.18s) var(--mv2-snap, ease),
+                color var(--mv2-d1, 0.18s) var(--mv2-snap, ease), transform var(--mv2-d1, 0.16s) var(--mv2-snap, ease);
 }
 
 .magic-btn:hover:not(:disabled) {
@@ -335,5 +335,5 @@
 @media (prefers-reduced-motion: reduce) {
     .magic-view.show,
     .magic-card.pulse { animation: none; }
-    .magic-card { transition-duration: 0.2s; }
+    .magic-card { transition-duration: var(--mv2-d2, 0.2s) var(--mv2-snap, ease); }
 }

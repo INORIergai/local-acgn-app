@@ -1,0 +1,158 @@
+/* ============================================================
+   round119 · 详情表头两栏 —— ★round126 起只对「竖长海报」生效
+   ------------------------------------------------------------
+   来历：2026-09-21 用户就要求过一次「海报整幅居中、信息在下」
+   （见 polish.css `.detail-head` 注释里那段话）。round119 又把表头改成
+   左海报 + 右信息两栏，全类型一刀切。
+   2026-10-24 用户带截图指出：视频类（电影 / 动漫）的弹窗比例不对，
+   要求「视频类全部改回之前的样式」。
+
+   根因不是"两栏不好看"，而是**海报比例不同**：
+     · 电影 / 动漫海报多是横版（16:9 / 横幅拼图）——塞进 196px 竖栏后
+       高度只有 110~130px，标题却被挤成两行，首屏重心整个歪掉；
+     · 小说 / 漫画是竖长海报（2:3 / 3:4）——196px 栏宽换 294px 高，
+       左右分栏比上下堆叠省 300px 高度，反而是对的。
+
+   所以本文件从「全类型两栏」收窄成「只对 comic / novel 生效」：
+     · 视频类（jav / anime / movie…）不再命中任何一条 ⇒ 完全回到
+       polish.css 的原始排版：海报整幅居中、contain 不裁切、
+       max-height 32vh、信息竖排在下面。
+     · 小说 / 漫画继续两栏，列宽与限高按竖长比例重算。
+
+   分流标记：app.js 的 showMovieDetail 往 #detailModal 写
+   `data-dtype="jav|anime|comic|novel..."`（只有这两类命中本文件）。
+
+   回滚 = 删 library.html 里本文件那一行 link ⇒ 所有类型都回「海报居中」。
+   ============================================================ */
+
+/* ------------------------------------------------------------------
+   1. 表头：海报左列 + 信息右列（仅 comic / novel）
+   ------------------------------------------------------------------ */
+html body #detailModal[data-dtype="comic"] .detail-head,
+html body #detailModal[data-dtype="novel"] .detail-head {
+    display: grid !important;
+    grid-template-columns: 188px minmax(0, 1fr) !important;
+    column-gap: 22px !important;
+    row-gap: 0 !important;
+    align-items: start !important;
+    padding: 24px 24px 18px !important;
+    text-align: left !important;
+}
+
+html body #detailModal[data-dtype="comic"] .detail-poster-wrap,
+html body #detailModal[data-dtype="novel"] .detail-poster-wrap {
+    grid-column: 1 !important;
+    height: auto !important;
+    text-align: left !important;
+}
+html body #detailModal[data-dtype="comic"] .detail-head-main,
+html body #detailModal[data-dtype="novel"] .detail-head-main {
+    grid-column: 2 !important;
+    align-items: flex-start !important;
+    text-align: left !important;
+}
+
+/* ------------------------------------------------------------------
+   2. 海报：竖长比例（2:3 ≈ 188×282，3:4 ≈ 188×251）
+   ------------------------------------------------------------------
+   宽度锁死、高度 auto —— 竖长图自然撑高，不裁切也不拉伸；
+   限高 300px 只防极端长图（网络封面有时是 1:2），超出时 contain 留白，
+   仍然是"整幅可见"，不会变成裁切。 */
+html body #detailModal[data-dtype="comic"] .detail-poster,
+html body #detailModal[data-dtype="novel"] .detail-poster {
+    width: 188px !important;
+    max-width: 188px !important;
+    height: auto !important;
+    max-height: 300px !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+}
+
+/* ------------------------------------------------------------------
+   3. 标题 / 元信息 / 主按钮：跟随左轴（原来全是 center）
+   ------------------------------------------------------------------ */
+html body #detailModal[data-dtype="comic"] .detail-title,
+html body #detailModal[data-dtype="novel"] .detail-title {
+    text-align: left !important;
+    -webkit-line-clamp: 3;
+}
+html body #detailModal[data-dtype="comic"] .detail-head-meta,
+html body #detailModal[data-dtype="novel"] .detail-head-meta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    margin-top: 10px !important;
+}
+html body #detailModal[data-dtype="comic"] .detail-primary-actions,
+html body #detailModal[data-dtype="novel"] .detail-primary-actions {
+    justify-content: flex-start !important;
+    margin-top: 14px !important;
+}
+
+/* 标签（连载话数 / 作者）同样是居中 —— 跟着左轴走 */
+html body #detailModal[data-dtype="comic"] .detail-avid,
+html body #detailModal[data-dtype="novel"] .detail-avid {
+    align-self: flex-start !important;
+}
+
+/* ------------------------------------------------------------------
+   4. 下方分区的呼吸：发丝分隔线两侧各留 12，比原来的 16/16 紧一档
+   ------------------------------------------------------------------ */
+html body #detailModal[data-dtype="comic"] .detail-scroll,
+html body #detailModal[data-dtype="novel"] .detail-scroll {
+    padding-top: 14px !important;
+}
+html body #detailModal[data-dtype="comic"] .detail-section + .detail-section,
+html body #detailModal[data-dtype="novel"] .detail-section + .detail-section {
+    margin-top: 14px !important;
+}
+
+/* ------------------------------------------------------------------
+   5. 评分区 / 翻页行跟着左轴走
+   ------------------------------------------------------------------
+   `.detail-rating` 是 `justify-content: center`（style.css），
+   于是「我的评分」标题在左、五颗星在页面正中 —— 一条左轴被撞断了。
+   翻页行（上一本 / 1 / 4895 / 下一本）同理。 */
+html body #detailModal[data-dtype="comic"] .detail-rating,
+html body #detailModal[data-dtype="novel"] .detail-rating {
+    justify-content: flex-start !important;
+    margin-top: 10px !important;
+}
+html body #detailModal[data-dtype="comic"] .detail-book-nav,
+html body #detailModal[data-dtype="novel"] .detail-book-nav {
+    justify-content: flex-start !important;
+}
+
+/* ------------------------------------------------------------------
+   6. 窄屏：单栏回退
+   ------------------------------------------------------------------
+   720px 以下抽屉接近全屏，188px 的海报列会把正文挤成一条缝，
+   这时回到「海报居中在上、文字在下」，但保持左对齐的阅读轴。 */
+@media (max-width: 720px) {
+    html body #detailModal[data-dtype="comic"] .detail-head,
+    html body #detailModal[data-dtype="novel"] .detail-head {
+        grid-template-columns: minmax(0, 1fr) !important;
+        row-gap: 14px !important;
+        padding: 16px 16px 14px !important;
+    }
+    html body #detailModal[data-dtype="comic"] .detail-poster-wrap,
+    html body #detailModal[data-dtype="novel"] .detail-poster-wrap {
+        grid-column: 1 !important;
+        text-align: center !important;
+    }
+    html body #detailModal[data-dtype="comic"] .detail-head-main,
+    html body #detailModal[data-dtype="novel"] .detail-head-main {
+        grid-column: 1 !important;
+    }
+    html body #detailModal[data-dtype="comic"] .detail-poster,
+    html body #detailModal[data-dtype="novel"] .detail-poster {
+        width: auto !important;
+        max-width: 52% !important;
+        max-height: 34vh !important;
+    }
+    html body #detailModal[data-dtype="comic"] .detail-title,
+    html body #detailModal[data-dtype="novel"] .detail-title {
+        text-align: left !important;
+    }
+}

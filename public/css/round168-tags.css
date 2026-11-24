@@ -1,0 +1,535 @@
+/* ============================================================
+   round168-tags.css —— 标签库视图重做（五库 / 大卡 / 思维空间 / 合并）
+
+   纪律：
+   · 只用 tokens-v5 的字阶/圆角/间距，颜色只取语义变量（--text/--bg-elevated/--border/--primary）
+     ⇒ 纸(classic)/夜(matinee) 两套皮肤自动适配，不写死任何浅色或深色值
+   · #tagCloud 是 grid 容器（round25 有 !important），本视图根必须 grid-column:1/-1
+   · 卡片是 <button>，所以不写 .tg-card:hover 的 translateY 大位移（241 个节点重绘成本高）
+   ============================================================ */
+
+#tagCloud .tg-wrap {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--s-4, 16px);
+    align-content: start;
+}
+
+/* ---------- 五库 tab ---------- */
+.tg-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1, 4px);
+    padding: var(--s-1, 4px);
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill, 999px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .06));
+    width: fit-content;
+    max-width: 100%;
+}
+.tg-tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--t-caption, 12.5px);
+    padding: 7px 14px;
+    border-radius: var(--r-pill, 999px);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background .18s ease, color .18s ease;
+}
+.tg-tab:hover { color: var(--text); background: var(--primary-soft); }
+.tg-tab.is-on {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 700;
+}
+.tg-tab.is-locked { opacity: .55; }
+.tg-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tg-tab-ic { font-size: 13px; line-height: 1; }
+
+/* ---------- 工具条 ---------- */
+.tg-tool {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2, 8px);
+}
+.tg-search-wrap { position: relative; flex: 1 1 240px; min-width: 200px; }
+.tg-search {
+    width: 100%;
+    height: 34px;
+    padding: 0 30px 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1, 6px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .06));
+    color: var(--text);
+    font: inherit;
+    font-size: var(--t-body, 14px);
+}
+.tg-search:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.tg-clear {
+    position: absolute; right: 4px; top: 4px;
+    width: 26px; height: 26px;
+    border: 0; border-radius: 50%;
+    background: transparent; color: var(--text-muted);
+    font-size: 16px; line-height: 1; cursor: pointer;
+}
+.tg-clear:hover { background: var(--primary-soft); color: var(--text); }
+.tg-sort {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1, 6px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .06));
+    color: var(--text);
+    font: inherit;
+    font-size: var(--t-caption, 12.5px);
+}
+.tg-seg {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill, 999px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .06));
+}
+.tg-seg-btn {
+    appearance: none; border: 0; background: transparent;
+    color: var(--text-muted); font: inherit;
+    font-size: var(--t-caption, 12.5px);
+    padding: 5px 12px; border-radius: var(--r-pill, 999px); cursor: pointer;
+}
+.tg-seg-btn:hover { color: var(--text); }
+.tg-seg-btn.is-on { background: var(--primary); color: #fff; font-weight: 700; }
+.tg-seg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.tg-btn {
+    appearance: none;
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1, 6px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .06));
+    color: var(--text);
+    font: inherit;
+    font-size: var(--t-caption, 12.5px);
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color .16s ease, background .16s ease;
+}
+.tg-btn:hover:not(:disabled) { border-color: var(--primary); background: var(--primary-soft); }
+.tg-btn:disabled { opacity: .45; cursor: default; }
+.tg-btn.is-primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
+.tg-btn.is-primary:hover:not(:disabled) { filter: brightness(1.06); }
+.tg-btn.is-on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.tg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ---------- 主体 ---------- */
+.tg-body { display: grid; grid-template-columns: 1fr; gap: var(--s-3, 12px); min-height: 320px; }
+.tg-section-h {
+    display: flex; align-items: baseline; gap: var(--s-2, 8px);
+    font-size: var(--t-title, 17px);
+    font-weight: 700;
+    color: var(--text);
+    margin-top: var(--s-2, 8px);
+}
+.tg-dim { color: var(--text-muted); font-size: var(--t-caption, 12.5px); font-weight: 400; }
+
+/* ---------- 卡片网格 ---------- */
+.tg-grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    gap: var(--s-2, 8px);
+}
+@media (min-width: 1400px) {
+    .tg-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}
+.tg-card { min-width: 0; }
+.tg-card-btn {
+    position: relative;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "name count" "alias alias" "wall wall";
+    align-items: center;
+    gap: 4px var(--s-2, 8px);
+    min-height: 46px;
+    padding: 11px 12px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1, 6px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .06));
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: border-color .16s ease, background .16s ease;
+}
+.tg-card-btn:hover { border-color: var(--tb, var(--primary)); background: color-mix(in srgb, var(--tb, #999) 10%, var(--bg-elevated, transparent)); }
+.tg-card-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tg-card.is-picked .tg-card-btn { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.tg-bar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--tb, var(--primary)); opacity: .85;
+}
+.tg-name {
+    grid-area: name;
+    font-size: var(--t-body, 14px);
+    font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; /* ★ 必须配 min-width:0，见下 */
+    min-width: 0;
+}
+.tg-count {
+    grid-area: count;
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--t-micro, 11.5px);
+    padding: 1px 7px;
+    border-radius: var(--r-pill, 999px);
+    background: color-mix(in srgb, var(--tb, #999) 26%, transparent);
+    color: var(--text);
+}
+.tg-alias {
+    grid-area: alias;
+    font-size: var(--t-micro, 11.5px);
+    color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 1px;
+}
+/* 老切片器（全部/AV/里番/影视/动漫）已被五库 tab 取代，强制下线 */
+#tagSlicer { display: none !important; }
+/* 大卡：6 张海报常显（只 Top 24 会填，长尾靠 hover/focus 再填） */
+.tg-wall {
+    grid-area: wall;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 3px;
+    margin-top: 6px;
+    min-height: 0;
+}
+.tg-wall:empty { display: none; }
+.tg-wall img {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+    border-radius: 3px;
+    background: var(--bg, rgba(127, 127, 127, .12));
+    /* ★ 长尾卡片只在 hover/focus 时才填，避免一次拉 241 组海报 */
+}
+.tg-card:not(.is-top) .tg-wall { max-height: 0; overflow: hidden; margin: 0; opacity: 0; transition: max-height .22s ease, opacity .18s ease; }
+.tg-card:not(.is-top) .tg-card-btn:hover .tg-wall,
+.tg-card:not(.is-top) .tg-card-btn:focus-visible .tg-wall {
+    max-height: 150px; opacity: 1; margin-top: 6px;
+}
+
+/* ---------- 长尾折叠 ---------- */
+.tg-groups { display: grid; grid-template-columns: 1fr; gap: var(--s-2, 8px); }
+.tg-group { border-top: 1px solid var(--border); padding-top: var(--s-2, 8px); }
+.tg-group-h {
+    display: flex; align-items: center; gap: var(--s-2, 8px);
+    width: 100%;
+    padding: 6px 4px;
+    border: 0; background: transparent;
+    color: var(--text); font: inherit;
+    font-size: var(--t-caption, 12.5px);
+    cursor: pointer;
+    border-radius: var(--r-1, 6px);
+}
+.tg-group-h:hover { background: var(--primary-soft); }
+.tg-group-h:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tg-group-k { font-weight: 800; min-width: 20px; text-align: left; }
+.tg-group-n { color: var(--text-muted); font-family: var(--font-mono); }
+.tg-caret { margin-left: auto; color: var(--text-muted); transition: transform .18s ease; }
+.tg-group-h[aria-expanded="true"] .tg-caret { transform: rotate(180deg); }
+.tg-group-list { margin-top: var(--s-2, 8px); }
+
+/* ---------- 多选浮条 ---------- */
+.tg-selbar {
+    position: sticky; bottom: 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2, 8px);
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-2, 10px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .08));
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .35);
+    z-index: 6;
+}
+.tg-sel-n { font-size: var(--t-caption, 12.5px); color: var(--text); }
+.tg-sel-n b { font-family: var(--font-mono); }
+
+/* ---------- 详情 ---------- */
+.tg-detail, .tg-merge {
+    display: grid; grid-template-columns: 1fr; gap: var(--s-3, 12px);
+    padding: var(--s-4, 16px);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2, 10px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .05));
+}
+.tg-d-head { display: flex; align-items: center; gap: var(--s-3, 12px); flex-wrap: wrap; }
+.tg-d-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tg-d-name { font-size: var(--t-head, 22px); font-weight: 800; line-height: 1.15; }
+.tg-d-count { font-size: var(--t-caption, 12.5px); color: var(--text-muted); font-family: var(--font-mono); }
+.tg-back { flex: none; }
+.tg-d-alias { font-size: var(--t-caption, 12.5px); color: var(--text-muted); }
+.tg-d-alias code {
+    font-family: var(--font-mono);
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text);
+}
+.tg-d-wall {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: var(--s-2, 8px);
+}
+.tg-d-wall img {
+    width: 100%; aspect-ratio: 3 / 4; object-fit: cover;
+    border-radius: var(--r-1, 6px);
+    background: var(--bg, rgba(127, 127, 127, .12));
+}
+.tg-d-sec-h {
+    font-size: var(--t-caption, 12.5px); font-weight: 700; color: var(--text);
+    display: flex; gap: var(--s-2, 8px); align-items: baseline;
+    margin-top: var(--s-2, 8px);
+}
+.tg-d-years { display: flex; align-items: flex-end; gap: 3px; height: 84px; }
+.tg-d-year { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; min-width: 0; height: 100%; gap: 3px; }
+.tg-d-year i {
+    display: block; width: 100%; height: var(--h, 20%);
+    background: color-mix(in srgb, var(--primary) 70%, transparent);
+    border-radius: 2px 2px 0 0;
+    min-height: 4px;
+}
+.tg-d-year b { font-size: 9.5px; color: var(--text-muted); font-family: var(--font-mono); font-weight: 400; }
+.tg-d-rel { display: flex; flex-wrap: wrap; gap: 6px; }
+.tg-rel {
+    appearance: none; border: 1px solid var(--border); background: transparent;
+    color: var(--text); font: inherit; font-size: var(--t-caption, 12.5px);
+    padding: 4px 10px; border-radius: var(--r-pill, 999px); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.tg-rel:hover { border-color: var(--primary); background: var(--primary-soft); }
+.tg-rel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tg-rel i { font-family: var(--font-mono); font-style: normal; color: var(--text-muted); font-size: var(--t-micro, 11.5px); }
+
+/* ---------- 思维空间 ---------- */
+.tg-space { display: grid; grid-template-columns: 1fr; gap: var(--s-2, 8px); }
+.tg-space-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3, 12px); flex-wrap: wrap; }
+.tg-space-head b { font-size: var(--t-title, 17px); }
+.tg-space-legend { display: inline-flex; align-items: center; gap: 10px; }
+.lg { display: inline-block; width: 18px; height: 2px; background: var(--text-muted); opacity: .5; }
+.lg-name { background: var(--primary); opacity: 1; }
+.tg-space-main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--s-3, 12px); }
+@media (max-width: 860px) { .tg-space-main { grid-template-columns: 1fr; } }
+.tg-space-svg {
+    width: 100%; height: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--r-2, 10px);
+    background: color-mix(in srgb, var(--text) 3%, transparent);
+    touch-action: manipulation;
+}
+.tg-edge { stroke: var(--text); stroke-opacity: .12; stroke-width: calc(.6px + var(--w, .5) * 1.6px); }
+.tg-edge.is-name { stroke: var(--primary); stroke-opacity: .38; stroke-dasharray: 4 4; }
+.tg-node { cursor: pointer; }
+.tg-node circle {
+    fill: color-mix(in srgb, var(--primary) 55%, transparent);
+    stroke: var(--bg-elevated, transparent);
+    stroke-width: 1.5;
+    transition: fill .16s ease;
+}
+.tg-node text {
+    fill: var(--text-muted);
+    font-size: 10px;
+    font-family: inherit;
+    text-anchor: middle;
+    pointer-events: none;
+}
+.tg-node:hover circle, .tg-node.is-on circle { fill: var(--primary); }
+.tg-node:hover text, .tg-node.is-on text { fill: var(--text); }
+.tg-node:focus-visible { outline: none; }
+.tg-node:focus-visible circle { stroke: var(--primary); stroke-width: 3; }
+.tg-space-side {
+    border: 1px solid var(--border);
+    border-radius: var(--r-2, 10px);
+    padding: var(--s-3, 12px);
+    background: var(--bg-elevated, rgba(127, 127, 127, .05));
+    display: grid; align-content: start; gap: var(--s-2, 8px);
+    max-height: 560px; overflow: auto;
+}
+.tg-side-hint { color: var(--text-muted); font-size: var(--t-caption, 12.5px); }
+.tg-side-name { font-size: var(--t-title, 17px); font-weight: 800; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.tg-side-sec { font-size: var(--t-micro, 11.5px); font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+.tg-side-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------- 合并面板 ---------- */
+.tg-merge-hint { padding: 6px 0; }
+.tg-merge-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tg-merge-row {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-2, 8px);
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1, 6px);
+    background: color-mix(in srgb, var(--text) 2%, transparent);
+}
+@media (max-width: 900px) {
+    .tg-merge-row { grid-template-columns: auto auto 1fr; }
+    .tg-mr-why { grid-column: 1 / -1; }
+}
+.tg-mr-pick input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+.tg-badge {
+    font-size: var(--t-micro, 11.5px);
+    padding: 2px 8px;
+    border-radius: var(--r-pill, 999px);
+    white-space: nowrap;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+.tg-badge.high { background: color-mix(in srgb, var(--primary) 18%, transparent); border-color: var(--primary); color: var(--text); }
+.tg-badge.mid { background: color-mix(in srgb, #f0a43c 14%, transparent); }
+.tg-badge.low { opacity: .75; }
+.tg-mr-pair { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.tg-mr-pair b { font-weight: 600; font-size: var(--t-body, 14px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.tg-mr-pair b.keep { color: var(--primary); font-weight: 800; }
+.tg-mr-pair b i { font-family: var(--font-mono); font-style: normal; color: var(--text-muted); font-size: var(--t-micro, 11.5px); margin-left: 3px; }
+.tg-mr-arrow { color: var(--text-muted); }
+.tg-mr-why { font-size: var(--t-caption, 12.5px); overflow: hidden; text-overflow: ellipsis; }
+.tg-merge-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-3, 12px); padding-top: var(--s-2, 8px); border-top: 1px solid var(--border); }
+
+/* ---------- 空态 / 载入 ---------- */
+.tg-empty {
+    display: grid; place-items: center; gap: 8px;
+    padding: 48px 16px;
+    color: var(--text-muted);
+    font-size: var(--t-body, 14px);
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-2, 10px);
+}
+.tg-empty.is-err { color: var(--text); border-color: color-mix(in srgb, #d9534f 45%, var(--border)); }
+.tg-empty-ic { font-size: 34px; line-height: 1; }
+.tg-empty-t { font-size: var(--t-title, 17px); font-weight: 700; color: var(--text); }
+.tg-empty-s { font-size: var(--t-caption, 12.5px); max-width: 42ch; }
+.tg-spin {
+    width: 16px; height: 16px; display: inline-block;
+    border: 2px solid var(--border); border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: tgSpin .8s linear infinite;
+}
+@keyframes tgSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .tg-spin { animation: none; border-top-color: var(--border); }
+}
+
+/* ---------- 结果页返回条 ---------- */
+.tg-backbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: var(--s-3, 12px);
+    padding: 8px 4px 12px;
+}
+.tg-backbar-t { color: var(--text-muted); font-size: var(--t-caption, 12.5px); }
+/* ============================================================
+   round168b · 类目视图 / 重命名对话框 / 思维空间交互
+   ============================================================ */
+
+/* ---------- 类目视图 ---------- */
+.tg-tax-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--s-3, 12px); flex-wrap: wrap;
+    padding: 8px 2px;
+    border-bottom: 1px solid var(--border);
+}
+.tg-cat { display: grid; grid-template-columns: 1fr; gap: var(--s-2, 8px); padding-top: var(--s-2, 8px); }
+.tg-cat-h {
+    display: flex; align-items: baseline; gap: var(--s-2, 8px);
+    font-size: var(--t-title, 17px);
+}
+.tg-cat-h b { font-weight: 800; }
+.tg-cat-ic { font-size: 15px; line-height: 1; }
+
+/* ---------- 重命名对话框 ---------- */
+.tg-dlg-mask {
+    position: fixed; inset: 0; z-index: 900;
+    background: rgba(0, 0, 0, .48);
+    display: grid; place-items: center;
+    padding: 24px;
+    backdrop-filter: blur(2px);
+}
+.tg-dlg {
+    width: min(460px, 92vw);
+    display: grid; gap: var(--s-3, 12px);
+    padding: var(--s-4, 16px);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2, 10px);
+    background: var(--bg-elevated, #1c1915);
+    color: var(--text);
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .55);
+}
+.tg-dlg-t { font-size: var(--t-title, 17px); font-weight: 800; }
+.tg-dlg-in {
+    height: 38px; padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-1, 6px);
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    color: var(--text); font: inherit; font-size: var(--t-body, 14px);
+}
+.tg-dlg-in:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.tg-dlg-hint { font-size: var(--t-caption, 12.5px); line-height: 1.5; }
+.tg-dlg-msg {
+    font-size: var(--t-caption, 12.5px);
+    padding: 8px 10px;
+    border-radius: var(--r-1, 6px);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+    line-height: 1.6;
+}
+.tg-dlg-msg.is-err { border-color: color-mix(in srgb, #d9534f 55%, var(--border)); }
+.tg-dlg-msg .tg-btn { margin-top: 8px; height: 30px; }
+.tg-dlg-acts { display: flex; justify-content: flex-end; gap: var(--s-2, 8px); }
+
+/* ---------- 思维空间交互 ---------- */
+.tg-space-svg { touch-action: none; cursor: grab; }
+.tg-space-svg:active { cursor: grabbing; }
+.tg-node { cursor: grab; }
+.tg-node:active { cursor: grabbing; }
+.tg-node.is-near circle { fill: color-mix(in srgb, var(--primary) 78%, transparent); }
+.tg-node.is-near text { fill: var(--text); }
+.tg-node.is-dim { opacity: .22; }
+.tg-node.is-dim circle { fill: color-mix(in srgb, var(--text) 25%, transparent); }
+.tg-edge.is-hot { stroke: var(--primary); stroke-opacity: .85; }
+.tg-edge.is-fade { stroke-opacity: .05; }
+.tg-space-reset { height: 26px; padding: 0 10px; font-size: var(--t-micro, 11.5px); }
+
+/* ============================================================
+   round172 · 思维空间可读性（用户反馈：看不出「神经元」）
+   ============================================================ */
+/* 文字压在圆点和连线上时必须有一层底色描边，否则 48 个名字糊成一团 */
+.tg-node text {
+    fill: var(--text);
+    paint-order: stroke fill;
+    stroke: var(--bg, #fff);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+/* 大节点（权重高）的字更实，小节点的字淡一点，形成层次 */
+.tg-node[data-cat] text { font-weight: 500; }
+.tg-node:hover text, .tg-node.is-on text { font-weight: 700; }
+
+/* 缩放/拖拽时整体过渡保持丝滑，但不干预动画帧 */
+#tgStage { will-change: transform; }
+
+/* 封面加载失败：不显示浏览器碎图，留一块中性底 */
+.tg-wall img { background: color-mix(in srgb, var(--text) 8%, transparent); }

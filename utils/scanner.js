@@ -29,6 +29,29 @@ const { extractActressAvatarsFromMoviePage, avatarFileName, AVATAR_DIR } = requi
 const { downloadImage } = require('./crawler/base');
 const config = require('./config');
 
+/* round131：入库后置自愈流水线（①补全 ②海报 ③校验 ④打标）
+   —— 懒加载 + 全包 try：这条链路任何异常都不许影响入库本身。
+   同时注入"扫描忙闲"闸：批量扫描期间先攒队列，扫完再跑，避免两条网络链路互抢。 */
+let ingestEnsure = null;
+function ensure() {
+  if (!ingestEnsure) {
+    try { ingestEnsure = require('./ingest-ensure'); } catch (e) { ingestEnsure = false; }
+  }
+  return ingestEnsure || null;
+}
+(function wireBusyChecker() {
+  const m = ensure();
+  if (!m || !m.setBusyChecker) return;
+  m.setBusyChecker(() => {
+    try {
+      if (scanStatus.running) return true;
+      if (typeof animeScanStatus !== 'undefined' && animeScanStatus && animeScanStatus.running) return true;
+      if (typeof libScanStatus !== 'undefined' && libScanStatus && libScanStatus.running) return true;
+    } catch (e) { }
+    return false;
+  });
+})();
+
 // 扫描状态
 let scanStatus = {
   running: false,
@@ -279,7 +302,10 @@ async function processSingleFile(filePath, type = 'jav', opts = {}) {
   // 【round48】「真标题」判定补上残缺检测（titleLooksBroken）：
   //        「正統派】」这类不成对括号残片不是纯番号，此前被当真标题，
   //        NFO 兜底导出它之后重刮永远输给 NFO，标题就此锁死。
-  const nfoTitleReal = !!(nfoData && nfoData.title) && !titleIsCodeOnly(nfoData.title) && !titleLooksBroken(nfoData.title);
+  // ★ round132：显式「重新挖掘 · 覆盖」(ignoreManual) 时，NFO 标题也不再算数。
+  //   否则 ①编辑写回 NFO 之后，②即使用户明确要求覆盖，NFO 里的手改标题仍会赢回来，
+  //   「覆盖」按钮等于失效（T4 实测）。这里只降级标题的优先级，NFO 里的其他字段照旧使用。
+  const nfoTitleReal = !opts.ignoreManual && !!(nfoData && nfoData.title) && !titleIsCodeOnly(nfoData.title) && !titleLooksBroken(nfoData.title);
   const netTitleReal = !!(movieInfo && movieInfo.title) && !titleIsCodeOnly(movieInfo.title) && !titleLooksBroken(movieInfo.title);
   // round47：merge 模式可能回填已有值，final 系列改 let
   let finalTitle = nfoTitleReal ? nfoData.title
@@ -333,6 +359,30 @@ async function processSingleFile(filePath, type = 'jav', opts = {}) {
       const exActs = getMovieActresses.all(existingMovie.id).map(a => a.name).filter(Boolean);
       if (exActs.length) finalActresses = [...new Set([...exActs, ...finalActresses])];
     } catch (e) { /* 关联表读取失败就按新刮数据处理 */ }
+  }
+
+  // ★ round132：用户手改过的字段，扫描一律让路。
+  // 起因（用户报的 bug）：编辑弹窗保存只写 SQLite，而这里 overwrite 模式的标题只按
+  // 「NFO → 网络 → 文件名清洗」推导，从不看库里已有值 ⇒ 全量扫描/自动扫描一次，
+  // 手改标题就被文件名冲掉（_r132-repro.js 实测：新标题 → 扫描后变回 TEST 999）。
+  // 规则：
+  //   ① manualFields 里有的字段 → 保留库内值（空值不算，允许被补空）；
+  //   ② 唯一例外：显式「重新挖掘 / overwrite」时用户就是想覆盖，ignoreManual 放行；
+  //   ③ 新入库（没有 existingMovie）不受影响。
+  const manualFields = new Set(
+    String(existingMovie && existingMovie.manualFields || '')
+      .split(',').map(s => s.trim()).filter(Boolean)
+  );
+  if (existingMovie && manualFields.size && !opts.ignoreManual) {
+    const keepManual = (field, oldVal, newVal) =>
+      (manualFields.has(field) && oldVal && String(oldVal).trim()) ? String(oldVal) : newVal;
+    if (!nfoTitleReal) finalTitle = keepManual('title', existingMovie.title, finalTitle);
+    finalOriginalTitle = keepManual('originalTitle', existingMovie.originalTitle, finalOriginalTitle);
+    finalOverview = keepManual('overview', existingMovie.overview, finalOverview);
+    finalReleaseDate = keepManual('releaseDate', existingMovie.releaseDate, finalReleaseDate);
+    finalProducer = keepManual('producer', existingMovie.producer, finalProducer);
+    finalSerial = keepManual('serial', existingMovie.serial, finalSerial);
+    finalDirector = keepManual('director', existingMovie.director, finalDirector);
   }
 
   // 【round48】残缺名救援（任何模式生效）：兜底后仍是残片（目录树残片文件名如「正統派】」），
@@ -551,6 +601,15 @@ async function processSingleFile(filePath, type = 'jav', opts = {}) {
     } catch (e) {
       console.log(`[自动重命名失败] ${fileName}:`, e.message);
     }
+  }
+
+  // round131：丢给入库自愈流水线（异步，不阻塞本次入库返回）。
+  // 用户不需要再手动点"补全/换海报/打标"——四步在后台自己跑完。
+  try {
+    const m = ensure();
+    if (m && m.enqueue) m.enqueue(movieId, isRescrape ? 'rescrape' : 'scan');
+  } catch (e) {
+    console.log('[入库自愈] 入队失败（不影响入库）:', e.message);
   }
 
   return record;
@@ -964,20 +1023,20 @@ async function processSingleAnimeFile(filePath) {
       try {
         const hash = crypto.createHash('md5').update(filePath).digest('hex');
         const cachePath = path.join(__dirname, '../cache/posters', `${hash}.jpg`);
-        
+
         // 保存到视频同目录（方便下次扫描直接找到，不用重复刮削）
         const videoDir = path.dirname(filePath);
         const baseName = path.basename(filePath, path.extname(filePath));
         const localCoverPath = path.join(videoDir, `${baseName}-poster.jpg`);
-        
+
         // 下载到本地视频目录
         await downloadPoster(webData.cover, localCoverPath);
-        
+
         // 同时复制一份到缓存目录用于显示
         if (fs.existsSync(localCoverPath)) {
           fs.copyFileSync(localCoverPath, cachePath);
         }
-        
+
         posterPath = `${hash}.jpg`;
         localPosterPath = cachePath;
         console.log(`  ✓ 封面已保存到视频目录: ${baseName}-poster.jpg`);
@@ -1039,6 +1098,12 @@ async function processSingleAnimeFile(filePath) {
     // 10. 计算热度
     try {
       recalcHotScore(movieId);
+    } catch (e) { }
+
+    // round131：动漫/其它类型同样走入库自愈（补全 / 换海报 / 打标）
+    try {
+      const m = ensure();
+      if (m && m.enqueue) m.enqueue(movieId, 'scan');
     } catch (e) { }
 
     animeScanStatus.stats.localHit++;

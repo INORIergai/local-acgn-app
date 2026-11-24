@@ -33,7 +33,23 @@
     cursor: pointer;
 }
 .detail-tag .dt-name { pointer-events: auto; }
+/* round109：窄 chips（2 字标签库里 84 个）里 15px 的 × 删除钮吃掉大半可点宽度，
+   中心点极易落在 × 上（stopPropagation + confirm 确认框），筛选入口点不着。
+   给 .dt-name 右侧外扩一块透明命中区（覆盖 6px 间隙 + × 的整个 15px 宽度），
+   × 用 position:relative + z-index 抬到最上层，自己那 15px 仍然完整可点。 */
+.detail-tag .dt-name { position: relative; }
+.detail-tag .dt-name::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: -21px;   /* 6px 间隙 + 15px × 宽度：chips 上除 × 自身外全部算筛选命中 */
+    top: -7px;
+    bottom: -7px;
+    z-index: 1;
+}
 .detail-tag .dt-x {
+    position: relative;
+    z-index: 2;
     display: inline-grid;
     place-items: center;
     width: 15px;
@@ -43,7 +59,7 @@
     line-height: 1;
     color: var(--text-muted);
     background: rgba(0, 0, 0, .06);
-    transition: background .15s ease, color .15s ease, transform .15s ease;
+    transition: background var(--mv2-d1, .15s) var(--mv2-snap, ease), color var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .detail-tag .dt-x:hover {
     background: #e05555;
@@ -67,7 +83,7 @@
     opacity: 0;
     transform: translateY(6px) scale(.96);
     pointer-events: none;
-    transition: opacity .2s ease, transform .25s cubic-bezier(.32, .72, 0, 1);
+    transition: opacity var(--mv2-d2, .2s) var(--mv2-snap, ease), transform var(--mv2-d2, .25s) cubic-bezier(.32, .72, 0, 1);
     max-width: min(420px, 90vw);
 }
 .tag-slicer-pop.show { opacity: 1; transform: none; }
@@ -127,7 +143,7 @@
     border-radius: 10px;
     background: var(--bg-elevated);
     cursor: pointer;
-    transition: border-color .15s ease, background .15s ease, transform .18s cubic-bezier(.32, .72, 0, 1);
+    transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .18s) cubic-bezier(.32, .72, 0, 1);
 }
 .plp-item:hover {
     border-color: var(--primary);
@@ -174,7 +190,7 @@ html[data-banner-bg] .av-hero .av-sub { color: #fff; text-shadow: 0 2px 14px rgb
         padding-left: 8px;
         padding-right: 8px;
         overflow: hidden;
-        transition: width .3s cubic-bezier(.32, .72, 0, 1), box-shadow .3s ease;
+        transition: width var(--mv2-d2, .3s) cubic-bezier(.32, .72, 0, 1), box-shadow var(--mv2-d2, .3s) var(--mv2-snap, ease);
     }
     html[data-sidebar-collapse] .sidebar:hover,
     html[data-sidebar-collapse] .sidebar:focus-within {
@@ -185,7 +201,7 @@ html[data-banner-bg] .av-hero .av-sub { color: #fff; text-shadow: 0 2px 14px rgb
     }
     html[data-sidebar-collapse] .sidebar .nav-item,
     html[data-sidebar-collapse] .sidebar .sidebar-section h3 { white-space: nowrap; overflow: hidden; }
-    html[data-sidebar-collapse] .sidebar .sidebar-section h3 { opacity: 0; transition: opacity .2s ease; }
+    html[data-sidebar-collapse] .sidebar .sidebar-section h3 { opacity: 0; transition: opacity var(--mv2-d2, .2s) var(--mv2-snap, ease); }
     html[data-sidebar-collapse] .sidebar:hover .sidebar-section h3 { opacity: 1; }
 }
 

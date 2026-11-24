@@ -205,7 +205,7 @@ html[data-v4skin="aurora"] .movie-card-compact .movie-poster-wrap::after {
     pointer-events: none;
     background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .22) 46%, transparent 62%);
     transform: translateX(-130%);
-    transition: transform .62s ease;
+    transition: transform var(--mv2-d3, .62s) var(--mv2-snap, ease);
     z-index: 3;
 }
 html[data-v4skin="aurora"] .movie-card:hover .movie-poster-wrap::after,
@@ -368,7 +368,7 @@ html[data-v4skin="ambient"] .btn-primary {
     color: #111;
     border: 0;
     font-weight: 600;
-    transition: transform .3s var(--am-soft), box-shadow .3s var(--am-soft);
+    transition: transform var(--mv2-d2, .3s) var(--am-soft), box-shadow var(--mv2-d2, .3s) var(--am-soft);
 }
 html[data-v4skin="ambient"] .btn:not(.btn-secondary):not(.btn-danger):hover,
 html[data-v4skin="ambient"] .btn-primary:hover {
@@ -391,7 +391,7 @@ html[data-v4skin="ambient"] .nav-item {
     color: var(--text-muted);
     border-left: 2px solid transparent;
     border-radius: 12px;
-    transition: background .25s var(--am-ease), color .25s var(--am-ease);
+    transition: background var(--mv2-d2, .25s) var(--am-ease), color var(--mv2-d2, .25s) var(--am-ease);
 }
 html[data-v4skin="ambient"] .nav-item:hover {
     background: var(--bg-elevated);
@@ -421,7 +421,7 @@ html[data-v4skin="ambient"] .movie-card-compact {
     border: 1px solid var(--border);
     border-radius: 18px;
     overflow: visible;
-    transition: transform .35s var(--am-soft), border-color .3s var(--am-ease), box-shadow .35s var(--am-ease);
+    transition: transform var(--mv2-d2, .35s) var(--am-soft), border-color var(--mv2-d2, .3s) var(--am-ease), box-shadow var(--mv2-d2, .35s) var(--am-ease);
 }
 html[data-v4skin="ambient"] .movie-card:hover,
 html[data-v4skin="ambient"] .movie-card-compact:hover {
@@ -441,7 +441,7 @@ html[data-v4skin="ambient"] .am-glow {
     background: radial-gradient(closest-side, var(--glow, rgba(110, 139, 255, .35)), transparent 78%);
     opacity: 0;
     transform: scale(.86);
-    transition: opacity .45s var(--am-ease), transform .45s var(--am-ease);
+    transition: opacity var(--mv2-d3, .45s) var(--am-ease), transform var(--mv2-d3, .45s) var(--am-ease);
 }
 html[data-v4skin="ambient"] .movie-card:hover > .am-glow,
 html[data-v4skin="ambient"] .movie-card-compact:hover > .am-glow {
@@ -784,7 +784,7 @@ html[data-v4skin="ambient"] .av-hero {
     background: transparent;
     cursor: pointer;
     padding: 0;
-    transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), background .18s ease;
+    transition: transform var(--mv2-d2, .22s) cubic-bezier(.34, 1.56, .64, 1), background var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .v4-skin-btn:hover { transform: scale(1.12); }
 .v4-skin-btn .v4-dot {
@@ -821,7 +821,7 @@ html[data-v4skin="ambient"] .av-hero {
     color: #fff;
     opacity: 0;
     pointer-events: none;
-    transition: opacity .16s ease, transform .16s ease;
+    transition: opacity var(--mv2-d1, .16s) var(--mv2-snap, ease), transform var(--mv2-d1, .16s) var(--mv2-snap, ease);
     z-index: 20;
 }
 .v4-skin-btn:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }

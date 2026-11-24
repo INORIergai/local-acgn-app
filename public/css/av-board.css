@@ -109,7 +109,7 @@
     color: #000;
     background: var(--c, var(--av-butter));
     cursor: pointer;
-    transition: transform .2s var(--av-ease-out), box-shadow .2s ease;
+    transition: transform var(--mv2-d2, .2s) var(--av-ease-out), box-shadow var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .av-chip:hover { transform: scale(1.06); }
 .av-chip:active { transform: scale(.955, .925); }
@@ -124,6 +124,17 @@
 .av-chip:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 2px; }
 
 /* ---------- 散落展台（小说 / 猜你喜欢） ---------- */
+/* round141：展台副标题原来是 app 里写死的行内色 rgba(0,0,0,.55)，
+   在夜皮肤（data-v4skin="matinee"）深底上几乎看不见 —— 收成类，双皮肤各给一色。 */
+.av-guess-hint {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, .55);
+    margin: 6px 0 0;
+}
+html[data-v4skin="matinee"] body .av-guess-hint { color: rgba(255, 255, 255, .58); }
+
 .av-board {
     display: flex;
     flex-wrap: wrap;
@@ -194,7 +205,7 @@
     z-index: 6;
     pointer-events: none;
     opacity: 0;
-    transition: opacity .22s ease;
+    transition: opacity var(--mv2-d2, .22s) var(--mv2-snap, ease);
 }
 .av-slider-wrap::before {
     left: 0;
@@ -227,7 +238,7 @@
     cursor: pointer;
     opacity: .88;
     box-shadow: 0 6px 20px -6px rgba(0, 0, 0, .5);
-    transition: transform .2s var(--av-ease-out), opacity .2s ease, background .2s ease;
+    transition: transform var(--mv2-d2, .2s) var(--av-ease-out), opacity var(--mv2-d2, .2s) var(--mv2-snap, ease), background var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .av-slide-nav.prev { left: 12px; }
 .av-slide-nav.next { right: 12px; }
@@ -294,7 +305,7 @@
     background: var(--cv, #ffdbfd);
     transform: rotate(var(--rot, 0deg)) translateY(var(--dy, 0px));
     box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 10px 26px -14px rgba(0,0,0,.18);
-    transition: transform .42s var(--av-ease-over), box-shadow .3s ease;
+    transition: transform var(--mv2-d3, .42s) var(--av-ease-over), box-shadow var(--mv2-d2, .3s) var(--mv2-snap, ease);
     animation: avPop .6s var(--av-ease-pop) backwards;
     /* 卡片散落旋转后常驻 will-change 会把每张卡都提为独立合成层，
        长列表（上百张）会吃掉大量显存并让滚动手感变沉 —— 只在悬停时才提层 */
@@ -306,7 +317,7 @@
     z-index: 6;
     box-shadow: 0 30px 56px -18px rgba(0,0,0,.32);
 }
-.av-card:active { transform: scale(.955, .925); transition-duration: .15s; }
+.av-card:active { transform: scale(.955, .925); transition-duration: var(--mv2-d1, .15s) var(--mv2-snap, ease); }
 .av-card:focus-visible { outline: 3px solid var(--av-pink); outline-offset: 3px; }
 
 .av-card .av-num {
@@ -398,9 +409,9 @@
     opacity: 0;
     translate: 0 10px;
     pointer-events: none;
-    transition: opacity .18s ease, translate .22s var(--av-ease-out);
+    transition: opacity var(--mv2-d1, .18s) var(--mv2-snap, ease), translate var(--mv2-d2, .22s) var(--av-ease-out);
 }
-.av-card .av-cta .arr { transition: translate .22s var(--av-ease-out); }
+.av-card .av-cta .arr { transition: translate var(--mv2-d2, .22s) var(--av-ease-out); }
 .av-card:hover .av-cta { opacity: 1; translate: 0 0; pointer-events: auto; }
 .av-card .av-cta:hover .arr { translate: 3px 0; }
 
@@ -417,7 +428,7 @@
     justify-content: flex-end;
     gap: 4px;
     box-shadow: 0 1px 3px rgba(0,0,0,.08);
-    transition: transform .25s var(--av-ease-over), box-shadow .25s ease;
+    transition: transform var(--mv2-d2, .25s) var(--av-ease-over), box-shadow var(--mv2-d2, .25s) var(--mv2-snap, ease);
     animation: avPop .5s var(--av-ease-pop) backwards;
 }
 .av-folder:hover { transform: translateY(-5px) rotate(-.8deg); box-shadow: 0 16px 30px -14px rgba(0,0,0,.25); }
@@ -468,7 +479,7 @@
     font-size: 13.5px;
     font-weight: 800;
     cursor: pointer;
-    transition: scale .15s cubic-bezier(.4,0,.2,1), translate .2s var(--av-ease-out);
+    transition: scale var(--mv2-d1, .15s) cubic-bezier(.4,0,.2,1), translate var(--mv2-d2, .2s) var(--av-ease-out);
 }
 .av-cta-btn:hover { translate: 0 -2px; }
 .av-cta-btn:active { scale: .955 .925; }
@@ -485,7 +496,7 @@
     color: #fff;
     border: 0;
     font-size: 17px;
-    transition: scale .15s cubic-bezier(.4,0,.2,1);
+    transition: scale var(--mv2-d1, .15s) cubic-bezier(.4,0,.2,1);
 }
 .av-circ.gray { background: #e9e4da; color: #000; }
 .av-circ:hover { scale: 1.08; }
@@ -506,7 +517,7 @@
     aspect-ratio: auto;
     border-radius: 0;
     /* 悬停时的抬升保持得住，同时给耳朵尾巴留出转场时间 */
-    transition: transform .32s var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
+    transition: transform var(--mv2-d2, .32s) var(--av-ease-over, cubic-bezier(.34, 1.56, .64, 1));
 }
 .av-card.wide .av-cover {
     position: relative;
@@ -515,7 +526,7 @@
     overflow: hidden;
     background: #efe9de;
     box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 12px 28px -14px rgba(0,0,0,.22);
-    transition: box-shadow .3s ease;
+    transition: box-shadow var(--mv2-d2, .3s) var(--mv2-snap, ease);
 }
 .av-card.wide:hover .av-cover { box-shadow: 0 30px 56px -18px rgba(0,0,0,.34); }
 .av-card.wide .av-cover img {
@@ -570,7 +581,7 @@
     display: block;
     transform: scale(0);         /* 默认塌缩（参考站 computed = matrix(0,0,0,0,0,0)） */
     transform-origin: 50% 100%;  /* 从根部生长 */
-    transition: transform .25s cubic-bezier(.32, .72, 0, 1);
+    transition: transform var(--mv2-d2, .25s) cubic-bezier(.32, .72, 0, 1);
     will-change: transform;
 }
 /* 左耳：矮胖，向右叠在右耳上，形成耳根转折 */
@@ -597,7 +608,7 @@
     margin-left: 26px;           /* 偏右一点，像兔子侧身的尾巴 */
     transform: scale(0);
     transform-origin: 50% 0%;
-    transition: transform .25s cubic-bezier(.32, .72, 0, 1) .04s; /* 略晚于耳朵，形成先后次序 */
+    transition: transform var(--mv2-d2, .25s) cubic-bezier(.32, .72, 0, 1) .04s; /* 略晚于耳朵，形成先后次序 */
     pointer-events: none;
     z-index: 2;
     filter: drop-shadow(0 6px 14px rgba(0,0,0,.18));
@@ -612,7 +623,7 @@
 
 /* 左右耳错开一点点生长时间，看起来更"活"（参考站只给了 0.25s 统一过渡，
    这里加 40ms 差值，属于克制范围内的增强） */
-.av-card.wide:hover .av-ear-right { transition-delay: .04s; }
+.av-card.wide:hover .av-ear-right { transition-delay: .04s var(--mv2-snap, ease); }
 
 /* 键盘聚焦时也给个可见提示 */
 .av-card.wide:focus-visible { outline: 3px solid var(--av-pink, #ff008c); outline-offset: 6px; }
@@ -721,7 +732,7 @@
     color: var(--text);
     font-size: 13px;
     outline: none;
-    transition: border-color .18s ease, box-shadow .18s ease;
+    transition: border-color var(--mv2-d1, .18s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .tag-filter-input:focus {
     border-color: var(--primary);
@@ -753,12 +764,12 @@
 
 /* ----- 动效统一优化（GPU-only，尊重 reduced-motion） ----- */
 .movie-card {
-    transition: transform .22s var(--av-ease-over), box-shadow .22s ease, border-color .18s ease;
+    transition: transform var(--mv2-d2, .22s) var(--av-ease-over), box-shadow var(--mv2-d2, .22s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .gallery-arrow, .nav-item, .btn, .toggle-btn, .chip {
-    transition: transform .18s var(--av-ease-out), background .18s ease,
-                color .18s ease, border-color .18s ease, box-shadow .18s ease,
-                opacity .18s ease;
+    transition: transform var(--mv2-d1, .18s) var(--av-ease-out), background var(--mv2-d1, .18s) var(--mv2-snap, ease),
+                color var(--mv2-d1, .18s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .18s) var(--mv2-snap, ease),
+                opacity var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 
 /* ----- 响应式 ----- */
@@ -808,7 +819,7 @@
 
 /* ---- 划过：标题轻微上浮 + 渐变色（保留一点灵气，与水纹不冲突） ---- */
 .av-hero h2 {
-    transition: transform .45s cubic-bezier(.32, .72, 0, 1), letter-spacing .45s ease;
+    transition: transform var(--mv2-d3, .45s) cubic-bezier(.32, .72, 0, 1), letter-spacing var(--mv2-d3, .45s) var(--mv2-snap, ease);
 }
 .av-hero:hover h2 {
     transform: translateY(-2px);
@@ -820,16 +831,16 @@
 }
 
 /* ---- 划过：筛选药丸浮起 ---- */
-.av-hero .av-chiprow { transition: transform .4s cubic-bezier(.32, .72, 0, 1); }
+.av-hero .av-chiprow { transition: transform var(--mv2-d3, .4s) cubic-bezier(.32, .72, 0, 1); }
 .av-hero:hover .av-chiprow { transform: translateY(-3px); }
-.av-hero .av-chip { transition: transform .2s var(--av-ease-out), box-shadow .25s ease; }
+.av-hero .av-chip { transition: transform var(--mv2-d2, .2s) var(--av-ease-out), box-shadow var(--mv2-d2, .25s) var(--mv2-snap, ease); }
 .av-hero:hover .av-chip { box-shadow: 0 6px 18px -8px rgba(0, 0, 0, .38); }
 
 /* ----- 减少动态效果 ----- */
 @media (prefers-reduced-motion: reduce) {
-    .av-card, .av-folder { animation: none !important; transition-duration: .01ms !important; }
+    .av-card, .av-folder { animation: none !important; transition-duration: .01ms var(--mv2-snap, ease) !important; }
     .av-card:hover { transform: rotate(var(--rot, 0deg)) translateY(var(--dy, 0px)) !important; }
-    .av-card .av-cta { transition: opacity .01ms; }
+    .av-card .av-cta { transition: opacity .01ms var(--mv2-snap, ease); }
     /* 耳朵/尾巴不再"生长"，改为直接显示（保留形态，去掉动效） */
     .av-card.wide .av-ear,
     .av-card.wide .av-tail { transition: none; }

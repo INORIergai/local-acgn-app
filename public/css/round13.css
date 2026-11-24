@@ -43,7 +43,7 @@
     width: 200px;
     cursor: pointer;
     text-align: center;
-    transition: transform .3s cubic-bezier(.32, .72, 0, 1);
+    transition: transform var(--mv2-d2, .3s) cubic-bezier(.32, .72, 0, 1);
 }
 .hp-step:hover { transform: translateY(-6px); }
 .hp-1 { width: 236px; z-index: 1; }
@@ -114,7 +114,7 @@
     padding: 7px 10px;
     border-radius: var(--radius);
     cursor: pointer;
-    transition: background .15s ease, transform .15s ease;
+    transition: background var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .hr-row:hover { background: var(--primary-soft); transform: translateX(4px); }
 .hr-rank {
@@ -195,7 +195,7 @@
     width: 118px;
     scroll-snap-align: start;
     cursor: pointer;
-    transition: transform .25s cubic-bezier(.32, .72, 0, 1);
+    transition: transform var(--mv2-d2, .25s) cubic-bezier(.32, .72, 0, 1);
 }
 .tl-card:hover { transform: translateY(-4px); }
 .tl-poster {
@@ -294,7 +294,7 @@
         0 0 0 1px rgba(0, 0, 0, .6),
         0 18px 36px -12px rgba(0, 0, 0, .75),
         0 0 34px -6px rgba(255, 214, 130, .28);
-    transition: transform .35s cubic-bezier(.32, .72, 0, 1), box-shadow .35s ease;
+    transition: transform var(--mv2-d2, .35s) cubic-bezier(.32, .72, 0, 1), box-shadow var(--mv2-d2, .35s) var(--mv2-snap, ease);
 }
 .exhibit:hover .exhibit-frame {
     transform: scale(1.09) translateY(-6px);
@@ -346,7 +346,7 @@
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     cursor: pointer;
-    transition: transform .28s cubic-bezier(.32, .72, 0, 1), box-shadow .28s ease, border-color .2s ease;
+    transition: transform var(--mv2-d2, .28s) cubic-bezier(.32, .72, 0, 1), box-shadow var(--mv2-d2, .28s) var(--mv2-snap, ease), border-color var(--mv2-d2, .2s) var(--mv2-snap, ease);
     animation: tbIn .45s cubic-bezier(.22, .68, 0, 1) both;
 }
 @keyframes tbIn {
@@ -396,7 +396,7 @@
     max-height: 0;
     opacity: 0;
     overflow: hidden;
-    transition: max-height .35s cubic-bezier(.32, .72, 0, 1), opacity .3s ease, padding .35s ease;
+    transition: max-height var(--mv2-d2, .35s) cubic-bezier(.32, .72, 0, 1), opacity var(--mv2-d2, .3s) var(--mv2-snap, ease), padding var(--mv2-d2, .35s) var(--mv2-snap, ease);
 }
 .tag-block:hover .tb-preview {
     max-height: 84px;
@@ -429,7 +429,7 @@
     opacity: 0;
     transform: translateY(10px) scale(.94);
     pointer-events: none;
-    transition: opacity .25s ease, transform .3s cubic-bezier(.32, .72, 0, 1);
+    transition: opacity var(--mv2-d2, .25s) var(--mv2-snap, ease), transform var(--mv2-d2, .3s) cubic-bezier(.32, .72, 0, 1);
     z-index: 5;
 }
 .actress-card:hover .actress-preview {
@@ -464,14 +464,14 @@
     animation: anDraw 1.4s cubic-bezier(.4, 0, .2, 1) .1s forwards;
 }
 @keyframes anDraw { to { stroke-dashoffset: 0; } }
-.an-area-fill { opacity: 0; animation: anFade .9s ease .7s forwards; }
+.an-area-fill { opacity: 0; animation: anFade .9s var(--mv2-settle, ease) .7s forwards; }
 @keyframes anFade { to { opacity: 1; } }
-.an-dot-c { fill: #f49978; stroke: #fff; stroke-width: 1.5; transition: r .18s ease; }
+.an-dot-c { fill: #f49978; stroke: #fff; stroke-width: 1.5; transition: r var(--mv2-d1, .18s) var(--mv2-snap, ease); }
 .an-dot:hover .an-dot-c { r: 5.5; }
 .an-m { font-size: 9.5px; fill: var(--text-muted); text-anchor: middle; font-family: var(--font-mono); }
 
 .an-bubbles { width: 100%; height: auto; display: block; }
-.an-bub { cursor: default; transform-box: fill-box; transform-origin: center; transition: transform .25s cubic-bezier(.32, .72, 0, 1); }
+.an-bub { cursor: default; transform-box: fill-box; transform-origin: center; transition: transform var(--mv2-d2, .25s) cubic-bezier(.32, .72, 0, 1); }
 .an-bub:hover { transform: scale(1.12); }
 .an-bub-v { font-size: 13px; font-weight: 800; fill: rgba(0, 0, 0, .72); text-anchor: middle; font-family: var(--font-display); }
 .an-bub-n { font-size: 10px; fill: rgba(0, 0, 0, .55); text-anchor: middle; }
@@ -516,7 +516,7 @@
     position: sticky;
     top: 76px;
     align-self: flex-start;
-    transition: width .3s cubic-bezier(.32, .72, 0, 1), transform .3s cubic-bezier(.32, .72, 0, 1), box-shadow .3s ease;
+    transition: width var(--mv2-d2, .3s) cubic-bezier(.32, .72, 0, 1), transform var(--mv2-d2, .3s) cubic-bezier(.32, .72, 0, 1), box-shadow var(--mv2-d2, .3s) var(--mv2-snap, ease);
 }
 /* 悬停浮起 + 拉出（图标 → 图标+文字） */
 .settings-nav:hover,
@@ -533,7 +533,7 @@
     padding: 9px 10px;
 }
 .settings-nav-item span {
-    transition: opacity .22s ease .06s;
+    transition: opacity var(--mv2-d2, .22s) ease .06s;
 }
 .settings-nav:not(:hover) .settings-nav-item span:last-child {
     opacity: 0;
@@ -583,7 +583,7 @@
     padding: 5px 7px;
     border-radius: 8px;
     cursor: pointer;
-    transition: background .14s ease;
+    transition: background var(--mv2-d1, .14s) var(--mv2-snap, ease);
 }
 .avt-row:hover { background: var(--primary-soft); }
 .avt-row.cur { background: var(--primary-soft); font-weight: 700; }
@@ -593,7 +593,7 @@
     width: 14px;
     font-size: 10px;
     color: var(--text-muted);
-    transition: transform .2s ease;
+    transition: transform var(--mv2-d2, .2s) var(--mv2-snap, ease);
     transform-origin: center;
 }
 .avt-node.open > .avt-row .avt-arrow { transform: rotate(90deg); }

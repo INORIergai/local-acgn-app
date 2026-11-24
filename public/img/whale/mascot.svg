@@ -1,0 +1,158 @@
+<svg viewBox="46 96 428 428" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="hairG" x1=".2" y1="0" x2=".8" y2="1">
+    <stop offset="0" stop-color="#3A6394"></stop><stop offset=".5" stop-color="#22456E"></stop><stop offset="1" stop-color="#152C4A"></stop>
+  </linearGradient>
+  <linearGradient id="dressG" x1=".3" y1="0" x2=".7" y2="1">
+    <stop offset="0" stop-color="#4A7CAE"></stop><stop offset=".55" stop-color="#35618F"></stop><stop offset="1" stop-color="#24476E"></stop>
+  </linearGradient>
+  <linearGradient id="tailG" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#4E86BF"></stop><stop offset="1" stop-color="#2A5686"></stop>
+  </linearGradient>
+  <clipPath id="headC"><ellipse cx="260" cy="248" rx="104" ry="98"></ellipse></clipPath>
+  <filter id="b4"><feGaussianBlur stdDeviation="4"></feGaussianBlur></filter>
+  <radialGradient id="pearlG" cx="50%" cy="40%" r="62%">
+    <stop offset="0" stop-color="#DCEBF9" stop-opacity=".96"></stop>
+    <stop offset=".62" stop-color="#BFD9EF" stop-opacity=".92"></stop>
+    <stop offset="1" stop-color="#9CBFDD" stop-opacity=".88"></stop>
+  </radialGradient>
+</defs>
+
+<!-- pearl backing disc: separates the mascot from dark UI -->
+<ellipse cx="260" cy="262" rx="208" ry="208" fill="url(#pearlG)"></ellipse>
+<ellipse cx="260" cy="262" rx="208" ry="208" fill="none" stroke="#C9A868" stroke-opacity=".34" stroke-width="1.8"></ellipse>
+
+<!-- ═══ tail (behind body) ═══ -->
+<g>
+  <path d="M340 400 C384 392 420 366 434 330 C444 306 442 282 434 264
+           L414 272 C420 290 420 310 410 328 C394 356 366 376 338 382 Z" fill="url(#tailG)"></path>
+  <path d="M434 264 C450 242 474 228 490 233 C483 254 462 272 432 283 Z" fill="#3E76AC"></path>
+  <path d="M414 272 C400 250 378 236 366 242 C376 260 396 276 416 285 Z" fill="#2C5A8C"></path>
+  <path d="M338 384 C372 374 400 352 416 324" stroke="#9CCBEF" stroke-opacity=".35" stroke-width="1.8" fill="none" stroke-linecap="round"></path>
+</g>
+
+<!-- ═══ body / dress ═══ -->
+<path d="M260 336
+         C300 336 330 352 342 378
+         C354 404 350 434 342 462
+         C336 486 336 508 340 528
+         C310 546 258 550 222 534
+         C200 524 194 504 198 482
+         C204 452 210 428 208 404
+         C206 374 220 350 240 340
+         C246 337 253 336 260 336 Z" fill="url(#dressG)"></path>
+
+<!-- dress hem: fluke split -->
+<path d="M222 534 C258 550 310 546 340 528 C346 552 340 574 320 588
+         C300 602 268 602 250 588 C232 574 226 552 222 534 Z" fill="#2E5680"></path>
+
+<!-- arms (small, tucked) -->
+<path d="M212 392 C198 412 194 436 200 456 C204 468 212 472 218 468
+         C212 450 212 428 218 410 Z" fill="#38658F"></path>
+<path d="M334 392 C348 412 352 436 346 456 C342 468 334 472 328 468
+         C334 450 334 428 328 410 Z" fill="#38658F"></path>
+
+<!-- collar -->
+<path d="M240 340 C246 358 274 358 280 340 C270 347 250 347 240 340 Z" fill="#0F1F38"></path>
+<!-- ribbon at collar -->
+<g transform="translate(260 352)">
+  <path d="M-14 -6 L-2 0 L-14 6 Z" fill="#C9A868" opacity=".9"></path>
+  <path d="M14 -6 L2 0 L14 6 Z" fill="#C9A868" opacity=".9"></path>
+  <circle cx="0" cy="0" r="3.4" fill="#D9BE84"></circle>
+</g>
+
+<!-- hem dots -->
+<g fill="#8FC2EC" opacity=".3">
+  <circle cx="238" cy="520" r="1.6"></circle><circle cx="268" cy="526" r="1.6"></circle><circle cx="298" cy="520" r="1.6"></circle>
+</g>
+
+<!-- ═══ hair back ═══ -->
+<path d="M260 150
+         C324 150 352 192 348 248
+         C345 288 356 322 366 360
+         C376 400 370 442 344 466
+         C318 490 274 496 250 482
+         C222 466 216 436 224 404
+         C234 366 246 336 244 296
+         C242 218 214 150 260 150 Z" fill="url(#hairG)"></path>
+
+<!-- ═══ head ═══ -->
+<ellipse cx="260" cy="248" rx="104" ry="98" fill="#F6EFE3"></ellipse>
+<!-- head shading -->
+<g clip-path="url(#headC)">
+  <ellipse cx="352" cy="256" rx="26" ry="74" fill="#E3D5C1" opacity=".22"></ellipse>
+  <ellipse cx="260" cy="300" rx="86" ry="18" fill="#EADDCA" opacity=".26"></ellipse>
+</g>
+
+<!-- ═══ fringe ═══ -->
+<path d="M156 244
+         C154 184 202 148 260 148
+         C318 148 366 184 364 240
+         C358 226 348 220 340 222
+         C326 206 306 200 288 204
+         C296 220 294 238 286 252
+         C274 226 254 214 234 216
+         C242 232 240 248 232 262
+         C220 248 206 242 192 244
+         C198 258 196 268 190 276
+         C172 266 160 258 156 244 Z" fill="#1B3454"></path>
+<!-- fringe sheen -->
+<path d="M196 194 C224 174 300 170 334 198" stroke="#3D6294" stroke-opacity=".45" stroke-width="2.2" fill="none" stroke-linecap="round"></path>
+
+<!-- ═══ facE: large chibi eyes ═══ -->
+<g>
+  <!-- eye sockets -->
+  <ellipse cx="216" cy="256" rx="21" ry="24" fill="#12213A"></ellipse>
+  <ellipse cx="304" cy="256" rx="21" ry="24" fill="#12213A"></ellipse>
+  <!-- iris -->
+  <ellipse cx="216" cy="258" rx="15" ry="18" fill="#2E6FA8"></ellipse>
+  <ellipse cx="304" cy="258" rx="15" ry="18" fill="#2E6FA8"></ellipse>
+  <ellipse cx="216" cy="262" rx="10" ry="12" fill="#0F2A45"></ellipse>
+  <ellipse cx="304" cy="262" rx="10" ry="12" fill="#0F2A45"></ellipse>
+  <!-- highlight -->
+  <circle cx="209" cy="248" r="5.4" fill="#F2FAFF" opacity=".92"></circle>
+  <circle cx="297" cy="248" r="5.4" fill="#F2FAFF" opacity=".92"></circle>
+  <circle cx="223" cy="268" r="2.6" fill="#BFE0FF" opacity=".55"></circle>
+  <circle cx="311" cy="268" r="2.6" fill="#BFE0FF" opacity=".55"></circle>
+  <!-- upper lash -->
+  <path d="M195 240 C204 228 228 228 237 240" stroke="#0D1A2C" stroke-width="4" fill="none" stroke-linecap="round"></path>
+  <path d="M283 240 C292 228 316 228 325 240" stroke="#0D1A2C" stroke-width="4" fill="none" stroke-linecap="round"></path>
+  <!-- lower lash hint -->
+  <path d="M198 272 C206 280 226 280 234 272" stroke="#0D1A2C" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".5"></path>
+  <path d="M286 272 C294 280 314 280 322 272" stroke="#0D1A2C" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".5"></path>
+  <!-- brows -->
+  <path d="M198 218 C208 212 226 212 234 216" stroke="#16283F" stroke-width="2.2" fill="none" stroke-linecap="round" opacity=".55"></path>
+  <path d="M286 216 C294 212 312 212 322 218" stroke="#16283F" stroke-width="2.2" fill="none" stroke-linecap="round" opacity=".55"></path>
+  <!-- blush -->
+  <ellipse cx="188" cy="284" rx="15" ry="8" fill="#D08E8E" opacity=".26"></ellipse>
+  <ellipse cx="332" cy="284" rx="15" ry="8" fill="#D08E8E" opacity=".26"></ellipse>
+  <!-- mouth: small smile -->
+  <path d="M252 300 C257 306 263 306 268 300" stroke="#8A5A4A" stroke-width="2" fill="none" stroke-linecap="round"></path>
+  <!-- nose -->
+  <path d="M259 284 L261 288" stroke="#C9B49C" stroke-width="1.4" stroke-linecap="round"></path>
+</g>
+
+<!-- ═══ whale-mask hairpin (signature) ═══ -->
+<g transform="translate(322 206) rotate(8)">
+  <path d="M0 0 C14 -7 30 -5 39 4 C30 13 14 15 0 7 Z" fill="#142B49" stroke="#C9A868" stroke-width="1.4"></path>
+  <path d="M39 4 C44 -1 49 -2 53 1 C49 6 44 8 39 6 Z" fill="#6FA8DC"></path>
+  <circle cx="9" cy="4" r="1.7" fill="#BFE0FF"></circle>
+</g>
+
+<!-- ═══ rim light ═══ -->
+<path d="M172 190 C186 164 218 150 258 150" stroke="#EAF4FF" stroke-opacity=".40" stroke-width="2" fill="none" stroke-linecap="round"></path>
+<path d="M156 250 C156 292 164 330 180 360" stroke="#A9D2F5" stroke-opacity=".22" stroke-width="1.8" fill="none" stroke-linecap="round"></path>
+
+<!-- ═══ bubbles ═══ -->
+<g fill="none" stroke="#A9D2F5" stroke-opacity=".22">
+  <circle cx="126" cy="200" r="6"></circle><circle cx="108" cy="246" r="3.4"></circle>
+  <circle cx="140" cy="158" r="2.6"></circle>
+  <circle cx="410" cy="170" r="5"></circle><circle cx="428" cy="212" r="3"></circle>
+</g>
+<g fill="#BFE0FF">
+  <circle cx="150" cy="330" r="1.4" opacity=".4"></circle>
+  <circle cx="386" cy="330" r="1.3" opacity=".38"></circle>
+  <circle cx="96" cy="360" r="1.1" opacity=".3"></circle>
+</g>
+
+</svg>

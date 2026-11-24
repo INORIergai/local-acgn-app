@@ -566,7 +566,7 @@
      3. 暴露 nvxLongReset()，切换页面时立即彻底销毁 */
   var LONG_TASKS = [
     { re: /\/api\/movie\/rescrape|\/api\/movie\/scrape-preview|\/api\/scanner\/rescrape-failed/, label: '正在刮削元数据' },
-    { re: /\/api\/scanner\/watch-now/, label: '正在跳转播放' },
+    { re: /\/api\/scanner\/watch-now/, label: '正在检查新增' },
     { re: /\/api\/novel\/(scan|convert)|\/api\/comic\/scan/, label: '正在扫描媒体库' }
   ];
   var nvxLong = { n: 0, el: null, t: null, watchdog: null };

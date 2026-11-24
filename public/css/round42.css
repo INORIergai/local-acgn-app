@@ -23,7 +23,7 @@ body .fav-custom-bar select {
     background-repeat: no-repeat;
     background-position: right 11px center;
     cursor: pointer;
-    transition: border-color .15s ease, box-shadow .15s ease;
+    transition: border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 body select:hover,
 body .select-input:hover,
@@ -197,7 +197,7 @@ body.dark .fav-custom-bar select {
     padding: 7px 14px;
     border-radius: 999px;
     cursor: pointer;
-    transition: background .15s ease, color .15s ease, border-color .15s ease;
+    transition: background var(--mv2-d1, .15s) var(--mv2-snap, ease), color var(--mv2-d1, .15s) var(--mv2-snap, ease), border-color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .acg-cat-tab:hover { color: var(--text); background: color-mix(in srgb, var(--primary) 8%, transparent); }
 .acg-cat-tab.active {
@@ -223,7 +223,7 @@ body.dark .fav-custom-bar select {
     font-size: 13px;
     padding: 8px 16px;
     cursor: pointer;
-    transition: background .15s ease, color .15s ease;
+    transition: background var(--mv2-d1, .15s) var(--mv2-snap, ease), color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .acg-period-tab + .acg-period-tab { border-left: 1px solid var(--border); }
 .acg-period-tab:hover { color: var(--text); background: color-mix(in srgb, var(--primary) 8%, transparent); }
@@ -256,7 +256,7 @@ body.dark .fav-custom-bar select {
     border-radius: 7px;
     color: inherit;
     opacity: .85;
-    transition: opacity .15s ease, background .15s ease;
+    transition: opacity var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .sidebar-section > h3 .sb-fold:hover { opacity: 1; background: rgba(127, 127, 127, .18); }
 .sidebar-section > h3 .sb-fold-ico {
@@ -265,7 +265,7 @@ body.dark .fav-custom-bar select {
     font-weight: 700;
     line-height: 1;
     color: var(--text-muted);
-    transition: transform .22s cubic-bezier(.4, 0, .2, 1);
+    transition: transform var(--mv2-d2, .22s) cubic-bezier(.4, 0, .2, 1);
 }
 .sidebar-section.sb-collapsed .sb-fold-ico { transform: rotate(-90deg); }
 .sidebar-section > h3 .sb-sec-name { flex: 1 1 auto; min-width: 0; }
@@ -304,6 +304,22 @@ body.dark .fav-custom-bar select {
 .nav-item.adult-item-off { display: none !important; }
 /* r44：隐私内容独立组——总开关隐藏时整组消失（JS 还会处理「六项全勾掉」的情况） */
 body.adult-hidden .sidebar-section[data-privacy-group] { display: none !important; }
+
+/* round127 · bug1：顶栏 🔒 解锁后，隐私内容功能栏要「被看见」。
+   解锁瞬间滚到可视区并做一次高亮呼吸，避免用户以为没生效、还要进设置手动开。 */
+.sidebar-section[data-privacy-group].privacy-flash {
+    animation: privacyGroupFlash 1.6s cubic-bezier(.22, .61, .36, 1) 1;
+    border-radius: 10px;
+}
+@keyframes privacyGroupFlash {
+    0%   { background: transparent; box-shadow: inset 0 0 0 0 rgba(240, 96, 96, 0); }
+    18%  { background: rgba(240, 96, 96, 0.14); box-shadow: inset 0 0 0 2px rgba(240, 96, 96, 0.55); }
+    55%  { background: rgba(240, 96, 96, 0.08); box-shadow: inset 0 0 0 2px rgba(240, 96, 96, 0.28); }
+    100% { background: transparent; box-shadow: inset 0 0 0 0 rgba(240, 96, 96, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-section[data-privacy-group].privacy-flash { animation: none; }
+}
 .adult-nav-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -342,13 +358,13 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     font-size: 13px;
     line-height: 1;
     cursor: pointer;
-    transition: color .15s ease, border-color .15s ease, transform .32s cubic-bezier(.4, 0, .2, 1);
+    transition: color var(--mv2-d1, .15s) var(--mv2-snap, ease), border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d2, .32s) cubic-bezier(.4, 0, .2, 1);
 }
 .sb-collapse-btn:hover { color: var(--text); border-color: var(--border-strong, var(--border)); }
 /* r59：收起/展开动效 —— 宽度缓动 + 文字淡出淡入 + 收起钮旋转指向弹出方向 */
-.sidebar { transition: width .32s cubic-bezier(.4, 0, .2, 1); }
+.sidebar { transition: width var(--mv2-d2, .32s) cubic-bezier(.4, 0, .2, 1); }
 .sidebar .sb-sec-name,
-.sidebar .nav-item .count { transition: opacity .22s ease; }
+.sidebar .nav-item .count { transition: opacity var(--mv2-d2, .22s) var(--mv2-snap, ease); }
 /* 收起态：52px 细栏；条目 span 裁剪只露 emoji，计数隐藏，hover 靠 title */
 .sidebar.rail { width: 52px; padding-left: 6px; padding-right: 6px; overflow: hidden; }
 .sidebar.rail .sb-collapse-btn { transform: rotate(180deg); }
@@ -392,7 +408,7 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     font-size: 12.5px;
     text-align: center;
     cursor: pointer;
-    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    transition: color var(--mv2-d1, .15s) var(--mv2-snap, ease), border-color var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .sb-add-group:hover { color: var(--text); border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, transparent); }
 
@@ -514,7 +530,7 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     position: relative;
     background: var(--bg-elevated, var(--bg));
     border: 1px solid var(--border); border-radius: 10px;
-    overflow: hidden; cursor: pointer; transition: transform .15s, border-color .15s;
+    overflow: hidden; cursor: pointer; transition: transform var(--mv2-d1, .15s) var(--mv2-snap, ease), border-color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .hub-card:hover { transform: translateY(-3px); border-color: var(--primary); }
 .hub-card img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block; background: var(--bg); }
@@ -561,7 +577,7 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     align-items: center;
     justify-content: center;
     opacity: .65;
-    transition: opacity .15s ease, background .15s ease;
+    transition: opacity var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .watch-tab-add:hover { opacity: 1; background: rgba(127, 127, 127, .15); }
 
@@ -591,7 +607,7 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     line-height: 1;
     color: inherit;
     opacity: 0;
-    transition: opacity .15s ease, background .15s ease, transform .15s ease;
+    transition: opacity var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .rank-item:hover .rank-go,
 .rank-item:focus-within .rank-go { opacity: .7; }
@@ -613,7 +629,7 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     overflow: hidden;
     text-overflow: ellipsis;
     opacity: .8;
-    transition: opacity .15s ease, background .15s ease;
+    transition: opacity var(--mv2-d1, .15s) var(--mv2-snap, ease), background var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .acg-card:hover .acg-card-go { opacity: 1; }
 .acg-card-go:hover { background: rgba(127, 127, 127, .16); }
@@ -646,7 +662,7 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity .15s ease, transform .15s ease;
+    transition: opacity var(--mv2-d1, .15s) var(--mv2-snap, ease), transform var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .hub-card { position: relative; }
 .hub-card:hover .hub-fav,
@@ -654,5 +670,5 @@ body.adult-hidden .sidebar-section[data-privacy-group] { display: none !importan
 .hub-fav:hover { transform: scale(1.12); background: rgba(0, 0, 0, .75); }
 @media (hover: none) { .hub-fav { opacity: .85; } }
 
-.fav-card { transition: transform .15s ease, box-shadow .15s ease; }
+.fav-card { transition: transform var(--mv2-d1, .15s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .15s) var(--mv2-snap, ease); }
 .fav-card:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0, 0, 0, .18); }

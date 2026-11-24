@@ -41,9 +41,44 @@ router.get('/progress-map', (req, res) => {
 // 最近阅读（功能页「继续阅读」入口）
 router.get('/resume', (req, res) => {
   try {
-    const k = kindOf(req.query.type) || 'novel';
+    const k = kindOf(req.query.type) || req.query.type || 'novel';
     res.json({ code: 0, data: mp.getResume(k) });
   } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/* ===== 2026-11：阅读书摘 / 划线 =====
+   GET    /api/media/notes?kind=novel|comic&movieId=&limit=&offset=
+   POST   /api/media/notes { movieId, kind, chapter, chapterTitle, quote, note, source }
+   DELETE /api/media/notes/:id
+   GET    /api/media/notes/stats?kind=
+*/
+const readingNotes = require('../utils/reading-notes');
+
+router.get('/notes', (req, res) => {
+  try {
+    const data = readingNotes.listNotes({
+      kind: req.query.kind,
+      movieId: req.query.movieId,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json({ code: 0, data });
+  } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.get('/notes/stats', (req, res) => {
+  try { res.json({ code: 0, data: readingNotes.notesStats(req.query.kind) }); }
+  catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/notes', (req, res) => {
+  try { res.json({ code: 0, data: readingNotes.addNote(req.body || {}) }); }
+  catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.delete('/notes/:id', (req, res) => {
+  try { res.json(Object.assign({ code: 0 }, readingNotes.deleteNote(req.params.id))); }
+  catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
 // 状态计数（筛选 chips 上的数字）

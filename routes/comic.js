@@ -131,7 +131,7 @@ function getAllReadingStats(type) {
  */
 function getComicImages(filePath) {
     const ext = path.extname(filePath).toLowerCase();
-    
+
     if (ext === '.zip' || ext === '.cbz') {
         return getZipImages(filePath);
     } else if (ext === '.epub') {
@@ -143,7 +143,7 @@ function getComicImages(filePath) {
         // 文件夹模式，直接读取图片
         return getDirectoryImages(filePath);
     }
-    
+
     return [];
 }
 
@@ -156,7 +156,7 @@ function getZipImages(filePath) {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(filePath);
         const entries = zip.getEntries();
-        
+
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
         const images = entries
             .filter(entry => {
@@ -165,7 +165,7 @@ function getZipImages(filePath) {
             })
             .map(entry => entry.entryName)
             .sort(naturalCompare);
-        
+
         return images;
     } catch (e) {
         console.log('读取zip失败:', e.message);
@@ -183,13 +183,13 @@ function getEpubImages(filePath) {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(filePath);
         const entries = zip.getEntries();
-        
+
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
         const imageEntries = entries.filter(entry => {
             const ext = path.extname(entry.entryName).toLowerCase();
             return imageExtensions.includes(ext) && !entry.isDirectory;
         });
-        
+
         // 尝试从OPF文件获取阅读顺序
         const opfEntry = entries.find(e => e.entryName.endsWith('.opf'));
         if (opfEntry) {
@@ -237,12 +237,12 @@ function getEpubImages(filePath) {
                 console.log('解析OPF失败，使用默认排序:', e.message);
             }
         }
-        
+
         // 按HTML文件顺序提取图片
-        const htmlEntries = entries.filter(e => 
+        const htmlEntries = entries.filter(e =>
             (e.entryName.endsWith('.html') || e.entryName.endsWith('.xhtml')) && !e.isDirectory
         ).sort((a, b) => naturalCompare(a.entryName, b.entryName));
-        
+
         if (htmlEntries.length > 0) {
             const orderedImages = [];
             for (const htmlEntry of htmlEntries) {
@@ -264,7 +264,7 @@ function getEpubImages(filePath) {
                 return orderedImages;
             }
         }
-        
+
         // 最后兜底：按自然排序（数字部分按数值比较）
         return imageEntries
             .map(entry => entry.entryName)
@@ -294,8 +294,9 @@ function getDirectoryImages(dirPath) {
                 const ext = path.extname(file).toLowerCase();
                 return imageExtensions.includes(ext);
             })
-            .sort();
-        
+            // 自然排序：2.jpg 必须排在 10.jpg 前面（普通 .sort() 会按字典序排反）
+            .sort(naturalCompare);
+
         return images.map(name => path.join(dirPath, name));
     } catch (e) {
         console.log('读取文件夹失败:', e.message);
@@ -308,7 +309,7 @@ function getDirectoryImages(dirPath) {
  */
 function extractImageFromArchive(filePath, imageName) {
     const ext = path.extname(filePath).toLowerCase();
-    
+
     if (ext === '.zip' || ext === '.cbz' || ext === '.epub') {
         try {
             const AdmZip = require('adm-zip');
@@ -321,7 +322,7 @@ function extractImageFromArchive(filePath, imageName) {
             console.log('提取图片失败:', e.message);
         }
     }
-    
+
     return null;
 }
 
@@ -373,11 +374,11 @@ router.get('/:id/info', (req, res) => {
     try {
         const comic = getMovieById.get(req.params.id);
         if (!comic) return res.json({ code: -1, msg: '漫画不存在' });
-        
+
         const isPdf = path.extname(comic.filePath).toLowerCase() === '.pdf';
         const images = isPdf ? [] : getComicImages(comic.filePath);
         const progress = getProgressRow(comic.id, 'comic');
-        
+
         res.json({
             code: 0,
             data: {
@@ -460,35 +461,38 @@ router.get('/:id/page/:pageIndex', (req, res) => {
     try {
         const comic = getMovieById.get(req.params.id);
         if (!comic) return res.status(404).send('漫画不存在');
-        
+
         const pageIndex = parseInt(req.params.pageIndex);
         const images = getComicImages(comic.filePath);
-        
+
         if (pageIndex < 0 || pageIndex >= images.length) {
             return res.status(404).send('页码超出范围');
         }
-        
+
         const imageName = images[pageIndex];
         const ext = path.extname(imageName).toLowerCase();
-        
+
         // 如果是文件夹模式，直接读取文件
         if (fs.statSync(comic.filePath).isDirectory()) {
             const imagePath = imageName;
             if (fs.existsSync(imagePath)) {
                 const contentType = getContentType(ext);
                 res.setHeader('Content-Type', contentType);
+                // 同一本书同一页内容稳定；给 Coil/浏览器一天缓存，翻回前一页不再走网络
+                res.setHeader('Cache-Control', 'private, max-age=86400');
                 return fs.createReadStream(imagePath).pipe(res);
             }
         }
-        
+
         // 从压缩文件中提取
         const imageData = extractImageFromArchive(comic.filePath, imageName);
         if (imageData) {
             const contentType = getContentType(ext);
             res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'private, max-age=86400');
             return res.send(imageData);
         }
-        
+
         res.status(404).send('图片不存在');
     } catch (e) {
         res.status(500).send('读取失败: ' + e.message);
@@ -516,7 +520,7 @@ router.post('/:id/start-reading', (req, res) => {
             startTime: Date.now(),
             totalTime: readingSessions[comicId]?.totalTime || 0
         };
-        
+
         res.json({ code: 0, msg: '计时开始' });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
@@ -528,15 +532,15 @@ router.post('/:id/stop-reading', (req, res) => {
     try {
         const comicId = req.params.id;
         const session = readingSessions[comicId];
-        
+
         if (session && session.startTime) {
             const duration = Date.now() - session.startTime;
             session.totalTime += duration;
             session.startTime = null;
-            
+
             // 持久化到数据库
             persistReadingDuration(parseInt(comicId), duration);
-            
+
             res.json({
                 code: 0,
                 data: {
@@ -559,7 +563,7 @@ router.get('/:id/stats', (req, res) => {
         const session = readingSessions[comicId];
         const progress = getProgressRow(comicId, 'comic');
         const persisted = getMovieReadingStats(parseInt(comicId));
-        
+
         res.json({
             code: 0,
             data: {
@@ -588,7 +592,7 @@ router.get('/stats/all', (req, res) => {
                 lastRead: getProgressRow(comicId, 'comic').lastRead
             };
         }
-        
+
         res.json({ code: 0, data: allStats });
     } catch (e) {
         res.json({ code: -1, msg: e.message });

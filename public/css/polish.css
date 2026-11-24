@@ -84,7 +84,7 @@
     will-change: transform, opacity;
     transition:
         transform .82s cubic-bezier(.22, .68, 0, 1),
-        opacity   .62s ease;
+        opacity   .62s var(--mv2-snap, ease);
 }
 .gallery-slide.is-active {
     opacity: 1;
@@ -220,41 +220,40 @@
 .detail-head-meta.dm-blocks {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 10px;
-    margin-top: 16px;
+    gap: 8px;
+    margin-top: 14px;
     justify-content: center;
-    padding: 4px 2px 2px;
-    perspective: 600px;
+    padding: 4px 0;
 }
 .dm-block {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 3px;
-    min-width: 76px;
+    min-width: 82px;
     max-width: 240px;
-    padding: 9px 14px 10px;
-    border-radius: 10px;
+    padding: 8px 12px;
+    border-radius: var(--r-1, 6px);
     background: var(--bg-elevated, #FAF8F1);
     border: 1px solid var(--border);
-    box-shadow: 0 6px 16px -10px rgba(0, 0, 0, .45);
-    /* 每个方块轻微随机歪斜：落下来堆着而不是摆齐 */
-    transform: rotate(var(--dm-rot, 0deg)) translateY(var(--dm-dy, 0px));
-    animation: dmDrop .52s cubic-bezier(.22, 1.4, .36, 1) both;
-    animation-delay: calc(var(--di, 0) * 45ms);
-    transition: transform .22s var(--pl-ease-pop), box-shadow .22s ease;
+    box-shadow: none;
+    transform: none;
+    animation: dmDrop var(--mv2-d2, .26s) var(--mv2-settle, cubic-bezier(.16, 1, .3, 1)) both;
+    animation-delay: calc(var(--di, 0) * 28ms);
+    transition: border-color var(--mv2-d1, .14s) var(--mv2-snap, ease),
+                background var(--mv2-d1, .14s) var(--mv2-snap, ease);
 }
-/* 顶部糖果色条：同色系呼应 Aardvark 调色板 */
+/* 左侧极细档案标尺线替代原顶部糖果色条 */
 .dm-block::before {
     content: '';
     position: absolute;
-    left: 12px;
-    right: 12px;
-    top: 0;
-    height: 3px;
-    border-radius: 0 0 3px 3px;
-    background: var(--dc, var(--pl-amber));
-    opacity: .9;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--primary);
+    opacity: .65;
 }
 .dm-block-k {
     font-size: 10.5px;
@@ -265,33 +264,23 @@
 }
 .dm-block-v {
     font-size: 13px;
-    font-weight: 800;
+    font-weight: 700;
+    font-family: var(--font-mono);
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* 宽字段（厂商/发行商/系列）占更宽，制造大小块堆积的错落感 */
 .dm-block.wide { flex: 1 1 170px; }
-.dm-block.wide .dm-block-v { white-space: normal; }
+.dm-block.wide .dm-block-v { white-space: normal; font-family: inherit; }
 
-/* 交替歪斜 + 上下错位：nth-child 而不是随机数，保证每次打开一致（否则每次都在抖）。
-   五种姿态循环，错位幅度比初版更大 —— 要看出「堆」而不是「排」。 */
-.dm-block:nth-child(5n + 1) { --dm-rot: -1.6deg; --dm-dy: 3px; }
-.dm-block:nth-child(5n + 2) { --dm-rot: 1.2deg;  --dm-dy: -5px; }
-.dm-block:nth-child(5n + 3) { --dm-rot: -.7deg;  --dm-dy: 1px; }
-.dm-block:nth-child(5n + 4) { --dm-rot: 1.8deg;  --dm-dy: -3px; }
-.dm-block:nth-child(5n + 5) { --dm-rot: -1deg;   --dm-dy: 5px; }
-/* 悬停时被"拾起"：摆正 + 抬高 */
 .dm-block:hover {
-    transform: rotate(0deg) translateY(-3px) scale(1.04);
-    box-shadow: 0 12px 24px -10px rgba(0, 0, 0, .5);
-    z-index: 2;
+    border-color: var(--primary);
+    background: var(--card-bg-hover, var(--bg-elevated));
 }
 @keyframes dmDrop {
-    0%   { opacity: 0; transform: rotate(var(--dm-rot, 0deg)) translateY(-26px) scale(.9); }
-    60%  { opacity: 1; }
-    100% { opacity: 1; transform: rotate(var(--dm-rot, 0deg)) translateY(var(--dm-dy, 0px)) scale(1); }
+    0%   { opacity: 0; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
 }
 
 /* 主操作：常驻头部，一眼看到 */
@@ -333,40 +322,88 @@
     white-space: pre-wrap;
 }
 .detail-actress {
+    position: relative;
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 8px 12px;
-    transition: transform .2s var(--pl-ease-over), border-color .2s;
+    transition: transform var(--mv2-d2, .2s) var(--pl-ease-over), border-color var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .detail-actress:hover { transform: translateY(-2px); border-color: var(--pl-amber); }
+.detail-actress-quick-edit {
+    display: none;
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    width: 22px;
+    height: 22px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    font-size: 11px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 2;
+    transition: transform .15s ease, background .15s ease;
+}
+.detail-actress:hover .detail-actress-quick-edit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.detail-actress-quick-edit:hover {
+    transform: scale(1.15);
+    background: var(--primary);
+    color: #fff;
+}
 .detail-tag {
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 4px 12px;
     font-size: 12px;
-    transition: background .15s, border-color .15s;
+    transition: background var(--mv2-d1, .15s) var(--mv2-snap, ease), border-color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .detail-tag:hover { border-color: var(--danger); }
 
-/* 相似推荐：横向滑动条，节省竖向空间 */
+/* 相似推荐：换行网格（round141）
+   ------------------------------------------------------------------
+   原来这里是「横向滑动条」：.similar-grid 是 flex + overflow-x:auto，
+   .similar-card 是 flex:0 0 132px。看起来没问题，实则被 style.css
+   的 .similar-title{ white-space:nowrap } 整垮：
+     · flex 子项默认 min-width:auto ⇒ 自动最小尺寸 = 内容 min-content；
+     · 标题不换行 ⇒ min-content = 整条日文标题的宽度（实测单卡被撑到
+       414~893px，12 张卡把 scrollWidth 顶到 7298px）；
+     · 容器只有 ~690px ⇒ 用户一眼只看到 1~2 张，还以为「其他海报没出来」。
+   现在改成换行网格：卡片宽度由列宽决定（min-width:0 掐断内容撑宽），
+   12 张全部排进 3~4 行，一眼看全；标题单行省略号。 */
 .similar-grid {
-    display: flex;
-    gap: 12px;
-    overflow-x: auto;
-    padding-bottom: 8px;
-    scroll-snap-type: x proximity;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 14px 10px;
+    padding-bottom: 4px;
 }
-.similar-card { flex: 0 0 132px; scroll-snap-align: start; }
+.similar-card,
+.similar-card > img {
+    min-width: 0;               /* ★ 关键：不写这条，标题一长就把卡撑爆 */
+    max-width: 100%;
+}
 .similar-card img {
-    width: 132px;
-    aspect-ratio: 16 / 10;
+    width: 100%;
+    aspect-ratio: 3 / 4;        /* 海报多为竖版，16/10 会把脸裁掉 */
     object-fit: cover;
     border-radius: 10px;
-    transition: transform .3s var(--pl-ease-over);
+    transition: transform var(--mv2-d2, .3s) var(--pl-ease-over);
 }
 .similar-card:hover img { transform: scale(1.05); }
-.similar-title { font-size: 11.5px; margin-top: 6px; }
+.similar-title {
+    font-size: 11.5px;
+    margin-top: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* 工具按钮行：网格化，去掉一排挤不下的 dbtn
    2026-09-22：按钮整体放大（40→56px）、字号 16→24px，并补齐悬停/按下动效。
@@ -400,7 +437,7 @@
     font-size: 22px;
     line-height: 1;
     cursor: pointer;
-    transition: transform .18s var(--pl-ease-over), background .18s, border-color .18s, box-shadow .2s;
+    transition: transform var(--mv2-d1, .18s) var(--pl-ease-over), background var(--mv2-d1, .18s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease), box-shadow var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .detail-actions .dbtn-label {
     font-size: 11px;
@@ -523,7 +560,7 @@
 .player-progress { flex: 1; }
 .player-progress-fill { background: linear-gradient(90deg, var(--pl-amber), var(--pl-pink)); }
 
-/* ============ 5. 播放器 OSD（键盘快进 / 长按倍速的屏幕反馈）============ */
+/* ============ 5. 播放器 OSD（键盘快进 / 长按渐进快进的屏幕反馈）============ */
 .player-stage { position: relative; }
 .player-osd {
     position: absolute;
@@ -542,7 +579,7 @@
     letter-spacing: .06em;
     pointer-events: none;
     opacity: 0;
-    transition: opacity .18s ease, transform .22s var(--pl-ease-pop);
+    transition: opacity var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d2, .22s) var(--pl-ease-pop);
     white-space: nowrap;
 }
 .player-osd.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -595,7 +632,7 @@
     cursor: pointer;
     opacity: 0;
     transform: scale(.8);
-    transition: opacity .18s ease, transform .18s var(--pl-ease-pop);
+    transition: opacity var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d1, .18s) var(--pl-ease-pop);
 }
 .actress-card:hover .actress-avatar-scrape { opacity: 1; transform: scale(1); }
 .actress-avatar-scrape:hover { background: var(--pl-amber); color: #fff; border-color: transparent; }
@@ -639,7 +676,7 @@
    所以给到 600；关闭按钮放在右上角且自身 z-index 最高，避免历史踩过的
    「关闭按钮被覆盖层挡住」问题。 */
 .detail-poster-wrap { position: relative; }
-.detail-poster.is-zoomable { cursor: zoom-in; transition: transform .28s var(--pl-ease-pop), box-shadow .28s; }
+.detail-poster.is-zoomable { cursor: zoom-in; transition: transform var(--mv2-d2, .28s) var(--pl-ease-pop), box-shadow var(--mv2-d2, .28s) var(--mv2-snap, ease); }
 .detail-poster.is-zoomable:hover { transform: scale(1.02); box-shadow: 0 22px 46px -18px rgba(0,0,0,.62); }
 /* 悬停时右上角浮出放大提示 */
 .detail-poster-wrap .poster-zoom-hint {
@@ -658,7 +695,7 @@
     backdrop-filter: blur(6px);
     opacity: 0;
     transform: translateY(-4px);
-    transition: opacity .22s var(--pl-ease-out), transform .22s var(--pl-ease-out);
+    transition: opacity var(--mv2-d2, .22s) var(--pl-ease-out), transform var(--mv2-d2, .22s) var(--pl-ease-out);
     pointer-events: none;
     z-index: 2;
 }
@@ -675,7 +712,7 @@
     background: rgba(12, 10, 8, .9);
     backdrop-filter: blur(14px);
     opacity: 0;
-    transition: opacity .26s var(--pl-ease-out);
+    transition: opacity var(--mv2-d2, .26s) var(--pl-ease-out);
 }
 #posterLightbox.show { display: flex; }
 #posterLightbox.in { opacity: 1; }
@@ -686,7 +723,7 @@
     box-shadow: 0 34px 90px -30px rgba(0,0,0,.95);
     transform: scale(.9);
     opacity: .6;
-    transition: transform .34s var(--pl-ease-pop), opacity .3s;
+    transition: transform var(--mv2-d2, .34s) var(--pl-ease-pop), opacity var(--mv2-d2, .3s) var(--mv2-snap, ease);
     object-fit: contain;
 }
 #posterLightbox.in .plb-img { transform: scale(1); opacity: 1; }
@@ -707,7 +744,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform .2s var(--pl-ease-over), background .2s, border-color .2s;
+    transition: transform var(--mv2-d2, .2s) var(--pl-ease-over), background var(--mv2-d2, .2s) var(--mv2-snap, ease), border-color var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 #posterLightbox .plb-close:hover { transform: rotate(90deg) scale(1.08); background: var(--pl-pink); border-color: var(--pl-pink); }
 #posterLightbox .plb-caption {
@@ -736,7 +773,7 @@
     overflow: hidden;
     will-change: transform;
 }
-.detail-actions .dbtn > * { transition: transform .2s var(--pl-ease-over); }
+.detail-actions .dbtn > * { transition: transform var(--mv2-d2, .2s) var(--pl-ease-over); }
 .detail-actions .dbtn:hover::after,
 .detail-actions .dbtn:focus-visible::after {
     content: '';
@@ -811,7 +848,7 @@
     gap: 6px !important;
     cursor: pointer !important;
     user-select: none;
-    transition: all .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    transition: all var(--mv2-d2, .2s) cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 .persona-chip.btn-secondary {
     background: var(--bg-elevated) !important;
@@ -858,7 +895,7 @@
     background: var(--bg-elevated);
     border-left: 3px solid var(--primary);
     border-radius: 0 8px 8px 0;
-    transition: all .2s ease;
+    transition: all var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .persona-desc-hint strong {
     color: var(--text);
@@ -872,7 +909,7 @@
     margin: 0 auto !important;
     padding: 24px 28px 48px !important;
     box-sizing: border-box !important;
-    animation: annualViewIn .4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: annualViewIn .4s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 @keyframes annualViewIn {
     from { opacity: 0; transform: translateY(16px); }
@@ -891,8 +928,8 @@
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 14px;
-    transition: transform .22s var(--pl-ease-over), border-color .2s, box-shadow .22s;
-    animation: annualPopIn .5s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--i, 0) * 60ms) backwards;
+    transition: transform var(--mv2-d2, .22s) var(--pl-ease-over), border-color var(--mv2-d2, .2s) var(--mv2-snap, ease), box-shadow var(--mv2-d2, .22s) var(--mv2-snap, ease);
+    animation: annualPopIn .5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) calc(var(--i, 0) * 60ms) backwards;
 }
 .annual-card:hover {
     transform: translateY(-3px) scale(1.02);
@@ -936,7 +973,7 @@
     display: flex;
     flex-direction: column;
     min-height: 320px;
-    animation: annualBlockIn .55s cubic-bezier(0.16, 1, 0.3, 1) calc(150ms + var(--i, 0) * 80ms) backwards;
+    animation: annualBlockIn .55s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) calc(150ms + var(--i, 0) * 80ms) backwards;
 }
 @keyframes annualBlockIn {
     from { opacity: 0; transform: translateY(16px); }
@@ -975,7 +1012,7 @@
 }
 .an-area-fill {
     opacity: 0;
-    animation: anFadeFill 1s ease .3s forwards;
+    animation: anFadeFill 1s var(--mv2-settle, ease) .3s forwards;
 }
 @keyframes anFadeFill {
     to { opacity: 1; }
@@ -984,8 +1021,8 @@
     fill: var(--primary, #fbb663);
     stroke: var(--bg, #1a1a20);
     stroke-width: 2;
-    transition: r .2s ease, transform .2s ease;
-    animation: anDotPop .4s cubic-bezier(0.34, 1.56, 0.64, 1) calc(400ms + var(--i, 0) * 50ms) backwards;
+    transition: r var(--mv2-d2, .2s) var(--mv2-snap, ease), transform var(--mv2-d2, .2s) var(--mv2-snap, ease);
+    animation: anDotPop .4s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) calc(400ms + var(--i, 0) * 50ms) backwards;
 }
 .an-dot:hover .an-dot-c {
     r: 6.5;
@@ -1006,8 +1043,8 @@
 .rank-movie-item {
     padding: 8px 10px !important;
     border-radius: 10px !important;
-    transition: background .18s ease, transform .18s ease !important;
-    animation: rankItemIn .45s cubic-bezier(0.16, 1, 0.3, 1) calc(200ms + var(--i, 0) * 45ms) backwards;
+    transition: background var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d1, .18s) var(--mv2-snap, ease) !important;
+    animation: rankItemIn .45s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) calc(200ms + var(--i, 0) * 45ms) backwards;
 }
 .rank-movie-item:hover {
     background: var(--primary-soft) !important;
@@ -1031,7 +1068,7 @@
     border-radius: 6px !important;
     object-fit: cover;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-    transition: transform .2s ease, box-shadow .2s ease;
+    transition: transform var(--mv2-d2, .2s) var(--mv2-snap, ease), box-shadow var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .rank-movie-item:hover .annual-rank-poster {
     transform: scale(1.08) translateY(-2px);
@@ -1052,8 +1089,8 @@
     padding: 9px 12px !important;
     margin-bottom: 6px !important;
     border-radius: 8px !important;
-    transition: transform .18s ease, background .18s ease !important;
-    animation: rankItemIn .45s cubic-bezier(0.16, 1, 0.3, 1) calc(200ms + var(--i, 0) * 45ms) backwards;
+    transition: transform var(--mv2-d1, .18s) var(--mv2-snap, ease), background var(--mv2-d1, .18s) var(--mv2-snap, ease) !important;
+    animation: rankItemIn .45s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) calc(200ms + var(--i, 0) * 45ms) backwards;
 }
 .annual-block .an-rank:hover {
     background: var(--bg-hover, rgba(255, 255, 255, 0.04)) !important;
@@ -1077,8 +1114,8 @@
 }
 .an-bub {
     cursor: pointer;
-    transition: filter .2s ease, transform .25s cubic-bezier(0.34, 1.56, 0.64, 1);
-    animation: bubPop .5s cubic-bezier(0.34, 1.56, 0.64, 1) calc(200ms + var(--i, 0) * 50ms) backwards;
+    transition: filter var(--mv2-d2, .2s) var(--mv2-snap, ease), transform var(--mv2-d2, .25s) cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: bubPop .5s var(--mv2-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) calc(200ms + var(--i, 0) * 50ms) backwards;
 }
 .an-bub:hover {
     filter: brightness(1.15) drop-shadow(0 6px 14px rgba(245, 158, 11, 0.45));
@@ -1174,7 +1211,7 @@
     padding: 9px 16px;
     border-radius: 999px;
     cursor: pointer;
-    transition: transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s ease, background .18s ease;
+    transition: transform var(--mv2-d1, .18s) cubic-bezier(.32,.72,0,1), box-shadow var(--mv2-d1, .18s) var(--mv2-snap, ease), background var(--mv2-d1, .18s) var(--mv2-snap, ease);
     box-shadow: 0 2px 10px rgba(249,162,32,.28);
 }
 .nr-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(249,162,32,.38); }
@@ -1241,7 +1278,7 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: transform .16s cubic-bezier(.32,.72,0,1), border-color .16s ease, background .16s ease, box-shadow .16s ease;
+    transition: transform var(--mv2-d1, .16s) cubic-bezier(.32,.72,0,1), border-color var(--mv2-d1, .16s) var(--mv2-snap, ease), background var(--mv2-d1, .16s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .16s) var(--mv2-snap, ease);
     white-space: nowrap;
 }
 .nr-chip:hover {
@@ -1301,7 +1338,7 @@
     padding: 7px 15px;
     border-radius: 999px;
     cursor: pointer;
-    transition: all .16s ease;
+    transition: all var(--mv2-d1, .16s) var(--mv2-snap, ease);
 }
 .nr-tab:hover { border-color: var(--pl-amber, #F9A220); color: var(--pl-amber, #F9A220); }
 .nr-tab.active {
@@ -1359,7 +1396,7 @@
     background: var(--bg-elevated, #FAF8F1);
     border: 1px solid rgba(0,0,0,.07);
     overflow: hidden;
-    transition: transform .18s cubic-bezier(.32,.72,0,1), box-shadow .18s ease, border-color .18s ease;
+    transition: transform var(--mv2-d1, .18s) cubic-bezier(.32,.72,0,1), box-shadow var(--mv2-d1, .18s) var(--mv2-snap, ease), border-color var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .nr-card:hover {
     transform: translateY(-3px);
@@ -1382,7 +1419,7 @@
     background: #ece7db;
     cursor: pointer;
 }
-.nr-card-cover img { width: 100%; height: 100%; object-fit: cover; object-position: center 22%; display: block; transition: transform .45s cubic-bezier(.22,.61,.36,1); }
+.nr-card-cover img { width: 100%; height: 100%; object-fit: cover; object-position: center 22%; display: block; transition: transform var(--mv2-d3, .45s) cubic-bezier(.22,.61,.36,1); }
 .nr-card:hover .nr-card-cover img { transform: scale(1.07); }
 .nr-card-cover-fallback {
     width: 100%;
@@ -1488,7 +1525,7 @@
     padding: 4px 11px;
     border-radius: 999px;
     cursor: pointer;
-    transition: all .15s ease;
+    transition: all var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .nr-act:hover { border-color: var(--pl-amber, #F9A220); color: var(--pl-amber, #F9A220); }
 .nr-act.ghost { background: transparent; color: var(--text-muted, #8b8377); }
@@ -1539,7 +1576,7 @@
     inset: 0 !important;
     z-index: 520 !important;
     overflow: hidden;
-    transition: opacity .32s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    transition: opacity var(--mv2-d2, .32s) cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 #detailModal.has-ambilight::before {
     content: '';
@@ -1562,7 +1599,8 @@
     background: color-mix(in srgb, var(--card-bg, #1a1a20) 88%, transparent) !important;
     backdrop-filter: blur(24px) saturate(160%) !important;
     -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
-    transition: transform .32s cubic-bezier(0.16, 1, 0.3, 1), opacity .28s ease !important;
+    transition: transform var(--mv2-d3, .32s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)),
+                opacity var(--mv2-d2, .28s) var(--mv2-snap, ease) !important;
 }
 
 /* r65: 消除收回时差 —— 移除 .in 时外框与海报完全同步平滑淡出收回 */
@@ -1628,7 +1666,7 @@ html[data-detail-mode="modal"] #detailModal:not(.in) .modal-content.detail-modal
     border: 1px solid var(--border);
     border-radius: 14px;
     box-sizing: border-box;
-    transition: border-color .2s ease, box-shadow .2s ease;
+    transition: border-color var(--mv2-d2, .2s) var(--mv2-snap, ease), box-shadow var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .facet-filter-bar:hover {
     border-color: rgba(245, 158, 11, 0.35);
@@ -1672,7 +1710,7 @@ html[data-v4skin="aurora"] .facet-group {
     border-radius: 999px;
     cursor: pointer;
     line-height: 1.3;
-    transition: all .16s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all var(--mv2-d1, .16s) cubic-bezier(0.16, 1, 0.3, 1);
 }
 .f-pill:hover {
     color: var(--text);
@@ -1695,7 +1733,7 @@ html[data-v4skin="aurora"] .facet-group {
     border-radius: 999px;
     cursor: pointer;
     margin-left: auto;
-    transition: all .16s ease;
+    transition: all var(--mv2-d1, .16s) var(--mv2-snap, ease);
 }
 .facet-reset-btn:hover {
     background: #ef4444;
@@ -1719,8 +1757,8 @@ html[data-v4skin="aurora"] .facet-group {
     }
 }
 .tl-strip .tl-card {
-    animation: tlCardPullOut 0.42s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--tl-i, 0) * 36ms) both;
-    transition: transform .25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .25s ease, filter .2s ease, opacity .2s ease;
+    animation: tlCardPullOut 0.42s var(--mv2-snap, cubic-bezier(0.16, 1, 0.3, 1)) calc(var(--tl-i, 0) * 36ms) both;
+    transition: transform var(--mv2-d2, .25s) cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--mv2-d2, .25s) var(--mv2-snap, ease), filter var(--mv2-d2, .2s) var(--mv2-snap, ease), opacity var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .tl-strip .tl-card:hover {
     transform: translateY(-8px) scale(1.04);
@@ -1759,7 +1797,7 @@ html[data-v4skin="aurora"] .facet-group {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: drawerSlideIn .25s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: drawerSlideIn var(--mv2-d3, .25s) var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 @keyframes drawerSlideIn {
     from { transform: translateX(100%); }
@@ -1792,7 +1830,7 @@ html[data-v4skin="aurora"] .facet-group {
     cursor: pointer;
     font-size: 12px;
     color: var(--text-muted);
-    transition: background .15s ease, color .15s ease;
+    transition: background var(--mv2-d1, .15s) var(--mv2-snap, ease), color var(--mv2-d1, .15s) var(--mv2-snap, ease);
 }
 .ppd-item:hover {
     background: rgba(255, 255, 255, 0.08);
@@ -1868,7 +1906,7 @@ html[data-v4skin="aurora"] .facet-group {
     -webkit-backdrop-filter: blur(28px);
     opacity: 0;
     transform: translateX(10px);
-    transition: opacity .18s ease, transform .18s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity var(--mv2-d1, .18s) var(--mv2-snap, ease), transform var(--mv2-d1, .18s) cubic-bezier(0.16, 1, 0.3, 1);
 }
 .ppd-portal-card.show {
     opacity: 1;
@@ -1936,15 +1974,15 @@ html[data-v4skin="aurora"] .facet-group {
     will-change: transform, box-shadow;
     backface-visibility: hidden;
     transform-origin: center bottom;
-    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease, filter 0.25s ease !important;
+    transition: transform var(--mv2-d2, 0.28s) cubic-bezier(0.16, 1, 0.3, 1), box-shadow var(--mv2-d2, 0.28s) var(--mv2-snap, ease), filter var(--mv2-d2, 0.25s) var(--mv2-snap, ease) !important;
 }
 
 /* 移动与滑动中的自然选中与波浪聚焦（Dock-style Smooth Focus） */
 .tl-strip.is-waving .tl-card {
-    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out !important;
+    transition: transform var(--mv2-d1, 0.12s) ease-out, box-shadow var(--mv2-d1, 0.12s) ease-out !important;
 }
 .tl-strip.is-settling .tl-card {
-    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.32s ease !important;
+    transition: transform var(--mv2-d2, 0.32s) cubic-bezier(0.16, 1, 0.3, 1), box-shadow var(--mv2-d2, 0.32s) var(--mv2-snap, ease) !important;
 }
 
 .tl-strip .tl-card.is-wave-lifted {
@@ -1974,7 +2012,7 @@ html[data-v4skin="aurora"] .facet-group {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     touch-action: none;
-    transition: background 0.2s ease, border-color 0.2s ease;
+    transition: background var(--mv2-d2, 0.2s) var(--mv2-snap, ease), border-color var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
 }
 .tl-slider-track:hover {
     background: rgba(255, 255, 255, 0.12);
@@ -2007,7 +2045,7 @@ html[data-v4skin="aurora"] .facet-group {
     justify-content: center;
     z-index: 5;
     touch-action: none;
-    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease, box-shadow 0.15s ease;
+    transition: transform var(--mv2-d1, 0.15s) cubic-bezier(0.16, 1, 0.3, 1), background var(--mv2-d1, 0.15s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, 0.15s) var(--mv2-snap, ease);
 }
 .tl-slider-thumb::after {
     content: '';
@@ -2062,7 +2100,7 @@ html[data-v4skin="aurora"] .facet-group {
     gap: 4px;
     padding: 2px 6px;
     border-radius: 6px;
-    transition: background 0.2s ease;
+    transition: background var(--mv2-d2, 0.2s) var(--mv2-snap, ease);
 }
 .ai-skill-refresh-btn:hover {
     background: rgba(255, 255, 255, 0.08);
@@ -2083,7 +2121,7 @@ html[data-v4skin="aurora"] .facet-group {
     font-size: 12px;
     color: var(--text);
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all var(--mv2-d2, 0.2s) cubic-bezier(0.16, 1, 0.3, 1);
     user-select: none;
 }
 .ai-skill-chip:hover {
@@ -2105,7 +2143,7 @@ html[data-v4skin="aurora"] .facet-group {
     display: flex;
     align-items: center;
     gap: 5px;
-    animation: aiSkillHintIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: aiSkillHintIn 0.4s var(--mv2-settle, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 @keyframes aiSkillHintIn {
     from { opacity: 0; transform: translateY(4px); }

@@ -19,6 +19,10 @@ class ZLibraryCrawler {
     this.baseUrl = (config.baseUrl || 'https://1lib.sk').replace(/\/+$/, '');
     this.request = new Request(config);
     this.loggedIn = false;
+    // round112：扫描器需要区分「源挂了 / 被墙」与「真的没这本书」，
+    // 否则只能对每个文件都重撞一次（每个 ~4.5s × 数千文件 = 永远扫不完）
+    this.lastError = '';
+    this.networkFailed = false;
   }
 
   /**
@@ -102,6 +106,7 @@ class ZLibraryCrawler {
    */
   async _searchByBrowser(keyword) {
     const userBrowser = require('./user-browser');
+    let lastErr = '';
     for (const domain of [this.baseUrl, ...MIRRORS.filter(m => m !== this.baseUrl)]) {
       const base = domain.replace(/\/+$/, '');
       const url = `${base}/s/?q=${encodeURIComponent(keyword)}`;
@@ -110,17 +115,26 @@ class ZLibraryCrawler {
         const { html, finalUrl } = await userBrowser.fetchPage(url, { cfWaitMs: 30000 });
         if (finalUrl.includes('chromewebdata') || userBrowser.isCloudflareChallenge(html)) {
           console.log(`[Z-Library] ${base} 被拦截，尝试下一镜像`);
+          lastErr = 'Cloudflare 拦截';
           continue;
         }
         const results = this._parseSearchHtml(html, base);
         if (results.length > 0) {
           this.baseUrl = base;
+          this.networkFailed = false;
+          this.lastError = '';
           console.log(`[Z-Library] 浏览器搜索成功，共 ${results.length} 条 (${base})`);
           return results;
         }
       } catch (e) {
         console.log(`[Z-Library] 浏览器搜索失败 ${base}: ${e.message.split('\n')[0]}`);
+        lastErr = e.message.split('\n')[0] || String(e);
       }
+    }
+    // 三个镜像全部走了异常/拦截 → 判定「源级故障」，供扫描器熔断（round112）
+    if (lastErr) {
+      this.networkFailed = true;
+      this.lastError = lastErr;
     }
     return [];
   }

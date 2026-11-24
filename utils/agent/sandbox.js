@@ -212,7 +212,10 @@ async function executeSandboxedTool(toolDef, args, context = {}) {
       privilege,
       toolName,
       costMs: cost,
-      data: sanitized
+      data: sanitized,
+      /* round140：未截断的原始返回值。data 是给模型看的（超长会截断），
+       * rawData 是给界面画卡片用的（截断会让搜索结果掉一半），绝不回填给模型。 */
+      rawData: rawResult
     };
   } catch (err) {
     const cost = Date.now() - startedAt;

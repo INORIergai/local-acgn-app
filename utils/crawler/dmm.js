@@ -5,6 +5,28 @@ const config = require('../config');
 
 const API_URL = "https://api.video.dmm.co.jp/graphql";
 
+/**
+ * round143：把刮削源返回的富文本简介转成纯文本。
+ * DMM 的 description 里有 `<b>`、`<br>`、`&nbsp;` 这类标记，而库里 overview 是
+ * 直接渲染的纯文本字段 —— 不洗一遍，详情页就会出现「…初実写化！<b」这种裸标签。
+ */
+function plainText(s) {
+  return String(s || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCharCode(Number(d)); } catch (e) { return ''; } })
+    .replace(/[ \t\u3000]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n').map(l => l.trim()).join('\n')
+    .trim();
+}
+
 // 缓存文件路径
 const CACHE_DIR = path.join(__dirname, '../../cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'dmm_content_ids.json');
@@ -250,7 +272,14 @@ async function fetchById(req, contentId) {
       .map(u => u.replace(/(?<!jp)-(\d+)\.jpg$/, 'jp-$1.jpg'));
 
     // 简介
-    const overview = item.description || '';
+    // ★ round143：DMM 的 description 是**带标签的富文本**（实测 HUNTC-603 原文含
+    // `<b>`、`&nbsp;`、`<br>`），直接入库会让详情页出现裸标签
+    // （38392 实测简介尾巴挂着 "<b"。）。这里统一转纯文本。
+    const overview = plainText(item.description || '')
+      // DMM 正文末尾固定挂一行版权声明（『制作・著作 株式会社ケイ・エム・プロデュース』），
+      // 对读者零信息量，进库只会把简介撑长。
+      .replace(/【?『?制作[・･]著作[^\n]*$/g, '')
+      .trim();
 
     // 评分（单独请求）
     let score = 0;
@@ -348,4 +377,4 @@ async function searchDmmByAvid(avid) {
   }
 }
 
-module.exports = { searchDmmByAvid };
+module.exports = { searchDmmByAvid, plainText };

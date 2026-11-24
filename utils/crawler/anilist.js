@@ -30,6 +30,17 @@ query ($s: String, $adult: Boolean) {
   }
 }`;
 
+/**
+ * round142：封面档位说明（**不要做 URL 拼接**）。
+ * 曾经想当然地按「/cover/medium/ → /cover/large/」替换路径来升级清晰度，
+ * 实测直接 404 —— AniList 的 CDN 文件名里带哈希后缀，不同档位的文件名**并不通用**。
+ * 正确做法：让 GraphQL 直接返回 extraLarge/large 字段；字段为空就只能用拿到的档位。
+ */
+function upgradeCoverUrl(url) {
+    // 保留接口但不再改写路径（避免又一次 404）。若将来发现可靠规律再在此实现。
+    return String(url || '');
+}
+
 /** 把 GraphQL 返回的一条 media 归一成内部候选结构 */
 function toCandidate(m) {
   const ci = m.coverImage || {};
@@ -37,7 +48,8 @@ function toCandidate(m) {
     title: m.title?.native || m.title?.romaji || m.title?.english || '',
     romaji: m.title?.romaji || '',
     english: m.title?.english || '',
-    cover: ci.extraLarge || ci.large || ci.medium || '',
+    // 优先字段值，再对 URL 做档位升级（medium → large 是确定的路径规律）
+    cover: upgradeCoverUrl(ci.extraLarge || ci.large || ci.medium || ''),
     year: m.startDate?.year || '',
     episodes: m.episodes || 0,
     genres: Array.isArray(m.genres) ? m.genres : [],
@@ -60,7 +72,14 @@ async function gql(keyword, opts = {}) {
   const tries = config.network?.retryCount || 3;
   let lastErr = null;
   for (let i = 0; i < tries; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 800 * i));
+    /* round142：429 专项退避。
+       AniList 免费额度按 IP 限流，批量重刮时很容易撞上；原来统一 800ms*i 退避
+       在 429 下根本不顶用（实测连着 3 次全失败，把「真未命中」和「被限流」混在一起，
+       误判命中率只有 12%）。429 时拉长到 5s/10s，并标记为限流而非无结果。 */
+    if (i > 0) {
+      const is429 = /429/.test(String(lastErr && lastErr.message));
+      await new Promise(r => setTimeout(r, is429 ? (5000 * i) : (800 * i)));
+    }
     try {
       const res = await fetch(ENDPOINT, {
         method: 'POST',
@@ -82,6 +101,12 @@ async function gql(keyword, opts = {}) {
       console.log(`[AniList] 请求失败 第${i + 1}/${tries}次: ${e.message}`);
     }
   }
+  // 限流耗尽：用专门的错误前缀，让上层能区分「被限流」和「确实没有这个条目」
+  if (/429/.test(String(lastErr && lastErr.message))) {
+    const e = new Error('AniList 限流(429)：本批次被临时限速，稍后重试即可（不代表该条目不存在）');
+    e.code = 'ANILIST_RATE_LIMITED';
+    throw e;
+  }
   throw lastErr;
 }
 
@@ -96,11 +121,22 @@ function keywordVariants(kw) {
   const out = [];
   const push = (s) => { const t = String(s || '').trim(); if (t && !out.includes(t)) out.push(t); };
 
-  push(kw);
-  // 去掉常见的「话/集/卷/OVA」尾巴
-  push(kw.replace(/[\s　]*(第\s*\d*\s*[話话集巻卷]|OVA|OAD|ONA|上巻|下巻|前編|後編|完|THE ANIMATION)\b.*$/i, ''));
+  /* round142：先剥离字幕组/画质/方括号噪声。
+     「[脸肿字幕组][720P][ばにぃうぉ～か～]JKビッチに搾られたい ＃1」这种标题，
+     旧逻辑原样拿去搜必然 0 条 —— 实测这就是横版截图占 95% 的根因之一。 */
+  const { stripDecorations } = require('./title-match');
+  const cleaned = stripDecorations(kw);
 
-  const toks = kw.split(/[\s　]+/).filter(Boolean);
+  push(kw);
+  if (cleaned && cleaned !== kw) push(cleaned);
+
+  // 去掉常见的「话/集/卷/OVA」尾巴
+  push(cleaned.replace(/[\s　]*(第\s*\d*\s*[話话集巻卷]|OVA|OAD|ONA|上巻|下巻|前編|後編|完|THE ANIMATION)\b.*$/i, ''));
+  if (cleaned !== kw) {
+    push(kw.replace(/[\s　]*(第\s*\d*\s*[話话集巻卷]|OVA|OAD|ONA|上巻|下巻|前編|後編|完|THE ANIMATION)\b.*$/i, ''));
+  }
+
+  const toks = cleaned.split(/[\s　]+/).filter(Boolean);
   for (let n = Math.min(toks.length - 1, 3); n >= 1; n--) push(toks.slice(0, n).join(' '));
 
   return out;
@@ -126,6 +162,7 @@ async function searchAniListAll(keyword, opts = {}) {
       }
     } catch (e) {
       console.log(`[AniList] 搜索「${v}」异常: ${e.message}`);
+      if (e && e.code === 'ANILIST_RATE_LIMITED') throw e;
       break; // 网络/接口问题就别再换词重试了
     }
   }

@@ -28,7 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const AdmZip = require('adm-zip');
+const { listImageEntries, listZipEntries, readZipEntry } = require('./zip-entry');
 
 const ROOT = path.join(__dirname, '..');
 const POSTER_DIR = path.join(ROOT, 'cache', 'posters');
@@ -115,18 +115,40 @@ const RENDER_HTML = '<!doctype html><meta charset="utf-8">' +
  * @param {{maxWidth?:number, quality?:number, page?:number}} opts
  *        page 从 1 开始；超出范围会自动夹到 [1, numPages]。
  *        （round25：选封面时要给出「前 4 页」候选，所以必须支持指定页。）
+ *
+ * ★ round112：PDF 本体改为**分段喂给 pdf.js**（支持 HTTP Range），不再整本读进内存。
+ *   旧实现 `fs.readFileSync(pdfPath)` 一次性把整本塞给 Chromium：
+ *     · 库里 531 本缺封面 PDF 有 119 本超过 120MB（最大 561MB）→ 只能整本拒绝；
+ *     · 常态下每渲染一张也要几百 MB 外部内存，两路并发直接 OOM（见 enrich-covers 注释）。
+ *   现在按请求头 `Range` 只读它要的那一段（pdf.js 默认 rangeChunkSize=64KB，
+ *   只为首页取 xref/对象），单本内存从「整本」降到「几十 KB ~ 几 MB」。
+ *   若浏览器没发 Range（pdf.js 在探测阶段可能先发一次整包 GET），才退回整读，
+ *   并且仅在体积 <= PDF_FULL_READ_MAX 时才允许，避免又回到 OOM 老路。
  */
+const PDF_FULL_READ_MAX = 150 * 1024 * 1024;
+
 async function renderPdfFirstPage(pdfPath, { maxWidth = 900, quality = 0.86, page: pageNo = 1 } = {}) {
     if (!fs.existsSync(pdfPath)) throw new Error('文件不存在: ' + pdfPath);
-    const size = fs.statSync(pdfPath).size;
-    if (size > 250 * 1024 * 1024) throw new Error('PDF 过大（' + Math.round(size / 1048576) + 'MB），跳过');
+    const st0 = fs.statSync(pdfPath);
+    const size = st0.size;
+    // 2GB 以上属于「扫描件合订本」，首页渲染也没意义（渲染出来全是空白页）
+    if (size > 2048 * 1024 * 1024) throw new Error('PDF 过大（' + Math.round(size / 1073741824) + 'GB），跳过');
 
     const browser = await getBrowser();
     touchIdle();
 
     const ctx = await browser.newContext({ viewport: { width: 1000, height: 1400 } });
     const page = await ctx.newPage();
+    let fd = null;
     try {
+        fd = fs.openSync(pdfPath, 'r');
+        const fdRef = fd;
+        const readSlice = (start, len) => {
+            const buf = Buffer.allocUnsafe(len);
+            const n = fs.readSync(fdRef, buf, 0, len, start);
+            return n === len ? buf : buf.subarray(0, n);
+        };
+
         // 全部请求打在虚拟源上，自己喂：HTML / pdf.js / PDF 本体
         await page.route(COVER_HOST + '/**', (route) => {
             const u = new URL(route.request().url());
@@ -136,9 +158,46 @@ async function renderPdfFirstPage(pdfPath, { maxWidth = 900, quality = 0.86, pag
                     return route.fulfill({ contentType: 'text/html; charset=utf-8', body: RENDER_HTML });
                 }
                 if (name === 'target.pdf') {
+                    const range = route.request().headers()['range'];
+                    if (process.env.CV_COVER_DEBUG) {
+                        console.log('[pdf-range] req range=' + JSON.stringify(range || null) + ' size=' + size);
+                    }
+                    const m = range && /bytes=(\d*)-(\d*)/.exec(range);
+                    if (m) {
+                        let start = m[1] === '' ? 0 : parseInt(m[1], 10);
+                        let end = m[2] === '' ? size - 1 : parseInt(m[2], 10);
+                        if (!Number.isFinite(start) || start < 0) start = 0;
+                        if (!Number.isFinite(end) || end >= size) end = size - 1;
+                        if (start > end) {
+                            return route.fulfill({ status: 416, headers: { 'Content-Range': 'bytes */' + size }, body: '' });
+                        }
+                        return route.fulfill({
+                            status: 206,
+                            headers: {
+                                'Content-Type': 'application/pdf',
+                                'Accept-Ranges': 'bytes',
+                                'Content-Range': `bytes ${start}-${end}/${size}`,
+                                'Content-Length': String(end - start + 1)
+                            },
+                            body: readSlice(start, end - start + 1)
+                        });
+                    }
+                    // 无 Range 的那一次：pdf.js 的探测请求（PDFFetchStreamReader 构造函数里固定发不带
+                    // Range 的 GET，靠响应头 Accept-Ranges + Content-Length 判断是否支持分段）。
+                    // ⚠️ Content-Length 必须报**完整长度**：pdf.js 有 `if (length <= 2*rangeChunkSize)
+                    //    return`（视为小文件不值当分段），报 64KB 会被判成「不支持 Range」，
+                    //    然后它把这段 64KB 当成整本 PDF → InvalidPDFException。
+                    // 它拿到响应头就会 cancel 这条流（disableStream 分支），所以正文只喂头部一段，
+                    // 既让探测通过，又不把整本读进内存。
+                    const headLen = Math.min(size, 65536);
                     return route.fulfill({
-                        contentType: 'application/pdf',
-                        body: fs.readFileSync(pdfPath),
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/pdf',
+                            'Accept-Ranges': 'bytes',
+                            'Content-Length': String(size)
+                        },
+                        body: readSlice(0, headLen)
                     });
                 }
                 if (/^pdf(\.worker)?(\.min)?\.mjs$/.test(name)) {
@@ -159,7 +218,16 @@ async function renderPdfFirstPage(pdfPath, { maxWidth = 900, quality = 0.86, pag
             const pdfjs = await import('/pdf.min.mjs');
             pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
             // ⚠️ pdf.js v4+ 不再接受裸 URL 字符串（会抛 "expected either data, range, or url"）
-            const doc = await pdfjs.getDocument({ url: '/target.pdf' }).promise;
+            // ★ round112：**必须显式给 rangeChunkSize**，否则 pdf.js 内部把 disableRange 置真
+            //   （见 pdf.mjs: `if (!rangeChunkSize && !disableRange) disableRange = true`），
+            //   于是整本 PDF 一次性 GET 下来 —— 大文件既慢又吃内存，正是我们要避免的。
+            //   给了之后它只按 64KB 分段取首页要用的对象（xref / page1 / 字体）。
+            const doc = await pdfjs.getDocument({
+                url: '/target.pdf',
+                rangeChunkSize: 65536,
+                disableAutoFetch: true,     // 只取首页范围内的分块，不预取后半本
+                disableStream: true      // 关掉流式：pdf.js 拿到头就 cancel，全面改走 Range 分段
+            }).promise;
             // 页号夹到合法范围（1-based）
             const want = Math.min(Math.max(1, opts.page || 1), doc.numPages);
             const target = await doc.getPage(want);
@@ -183,6 +251,7 @@ async function renderPdfFirstPage(pdfPath, { maxWidth = 900, quality = 0.86, pag
         return buf;
     } finally {
         await ctx.close().catch(() => { });
+        if (fd !== null) { try { fs.closeSync(fd); } catch (e) { /* 忽略 */ } }
     }
 }
 
@@ -190,34 +259,39 @@ async function renderPdfFirstPage(pdfPath, { maxWidth = 900, quality = 0.86, pag
 
 const IMG_RE = /\.(jpe?g|png|gif|webp|bmp)$/i;
 
+/* ★ round112 换引擎（原 AdmZip）：
+ *   旧实现 `new AdmZip(p)` 会把整包读成 Buffer，再对候选图逐个 `getData()` 同步解压；
+ *   一本 320MB 的合集 epub 就要 10~15 秒，且全程占着主线程 ⇒ 后端接口跟着超时。
+ *   新实现只读中央目录（自带解压后大小，不解压即可排序）+ 只解压命中的那一条，
+ *   实测同一批文件从 15459ms → 数十毫秒。见 utils/zip-entry.js 顶部注释。 */
 function extractEpubCover(epubPath) {
     if (!fs.existsSync(epubPath)) throw new Error('文件不存在: ' + epubPath);
-    const zip = new AdmZip(epubPath);
-    const entries = zip.getEntries();
-    const imgs = entries.filter(e => IMG_RE.test(e.entryName) && !e.isDirectory);
+    const imgs = listImageEntries(epubPath);
     if (!imgs.length) throw new Error('epub 内没有图片');
 
-    const sizeOf = e => { try { return e.header.size || e.getData().length; } catch (x) { return 0; } };
-    const pick = e => {
-        const d = e.getData();
-        if (d.length < 8192) return null;   // 太小的多半是图标/分隔线
+    // 太小的多半是图标/分隔线；读不出来就换下一个候选，不再因为一张坏图整本失败
+    const readImg = (e, minBytes) => {
+        let d;
+        try { d = readZipEntry(epubPath, e); } catch (x) { return null; }
+        if (!d || d.length < (minBytes || 8192)) return null;
         return d;
     };
 
-    // ① 文件名里带 cover 的图（最常见）
-    for (const e of imgs) {
-        if (/cover|封面/i.test(e.entryName)) {
-            const d = pick(e);
-            if (d) return d;
-        }
-    }
+    // ① 文件名里带 cover 的图（最常见）——同一批里取最大的，避免命中缩略图；
+    //    但要排掉封底/书脊（back/spine/封底），否则「取最大」会把封底当封面
+    const byName = imgs
+        .filter(e => /cover|封面/i.test(e.name) && !/back|spine|封底|书脊/i.test(e.name))
+        .sort((a, b) => b.size - a.size);
+    for (const e of byName) { const d = readImg(e); if (d) return d; }
 
     // ② opf 的 cover meta → manifest href
-    const opf = entries.find(e => /\.opf$/i.test(e.entryName));
+    const entries = listZipEntries(epubPath);
+    const opf = entries.find(e => /\.opf$/i.test(e.name));
     if (opf) {
-        const xml = opf.getData().toString('utf8');
-        const base = path.posix.dirname(opf.entryName);
-        const meta = /<meta[^>]*name=["']cover["'][^>]*content=["']([^"']+)["']/i.exec(xml);
+        let xml = '';
+        try { xml = readZipEntry(epubPath, opf, { maxBytes: 8 * 1024 * 1024 }).toString('utf8'); } catch (x) { xml = ''; }
+        const base = path.posix.dirname(opf.name);
+        const meta = xml && /<meta[^>]*name=["']cover["'][^>]*content=["']([^"']+)["']/i.exec(xml);
         if (meta) {
             const id = meta[1];
             const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -227,22 +301,37 @@ function extractEpubCover(epubPath) {
             if (href) {
                 const want = decodeURIComponent(href).split('#')[0];
                 const full = path.posix.normalize(path.posix.join(base, want));
-                const hit = imgs.find(e => e.entryName === full) ||
-                    imgs.find(e => e.entryName === want) ||
-                    imgs.find(e => path.posix.basename(e.entryName) === path.posix.basename(want));
-                if (hit) { const d = pick(hit); if (d) return d; }
+                const hit = imgs.find(e => e.name === full) ||
+                    imgs.find(e => e.name === want) ||
+                    imgs.find(e => path.posix.basename(e.name) === path.posix.basename(want));
+                if (hit) { const d = readImg(hit); if (d) return d; }
             }
         }
     }
 
-    // ③ 兜底：最大的那张图（实测本库 1.epub 命中 OEBPS/Images/00.jpg，602KB）
-    const sorted = imgs.slice().sort((a, b) => sizeOf(b) - sizeOf(a));
-    for (const e of sorted) {
-        const d = pick(e);
-        if (d) return d;
+    // ③ 兜底：最大的那张图（中央目录里就有 size，排序零成本，不解压）
+    const sorted = imgs.slice().sort((a, b) => b.size - a.size);
+    for (const e of sorted) { const d = readImg(e); if (d) return d; }
+    // ④ 实在都不够大，就取第一张（放宽容差：宁可有封面也不留白框）
+    return readZipEntry(epubPath, imgs[0]);
+}
+
+/* ---------------- ZIP / CBZ 首图（round112） ----------------
+ * cbz 就是一个装图片的 zip，扫描时它和 pdf/epub 一样是「一个文件一部漫画」，
+ * 旧实现直接抛「压缩包漫画暂未支持内容截图」→ 库里的 cbz 永远是白框。
+ * 这里按文件名排序取第一张够大的图（跳过 __MACOSX / 图标 / 广告条）。 */
+function extractZipFirstImage(zipPath) {
+    if (!fs.existsSync(zipPath)) throw new Error('文件不存在: ' + zipPath);
+    const imgs = listImageEntries(zipPath)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
+    if (!imgs.length) throw new Error('压缩包内没有图片');
+    for (const e of imgs) {
+        try {
+            const d = readZipEntry(zipPath, e);
+            if (d && d.length >= 8192) return d;
+        } catch (x) { /* 单张读不出来（比如超出体积上限）就下一张 */ }
     }
-    // ④ 实在都不够大，就取第一张
-    return imgs[0].getData();
+    return readZipEntry(zipPath, imgs[0]);
 }
 
 /* ---------------- 统一入口 ---------------- */
@@ -271,6 +360,12 @@ async function buildContentCover(movie, opts = {}) {
 
     if (ext === '.pdf') return { buffer: await renderPdfFirstPage(p), from: 'pdf-page1' };
     if (ext === '.epub') return { buffer: extractEpubCover(p), from: 'epub-cover' };
+    if (ext === '.zip' || ext === '.cbz') return { buffer: extractZipFirstImage(p), from: 'zip-page1' };
+    // round112：mobi/azw3 的封面就是 PDB 记录里一段未压缩图片，见 utils/mobi-cover.js
+    if (ext === '.mobi' || ext === '.azw3') {
+        const { extractMobiCover } = require('./mobi-cover');
+        return { buffer: extractMobiCover(p), from: 'mobi-cover' };
+    }
 
     if (VIDEO_EXT.includes(ext)) {
         const { captureVideoThumb } = require('./metadata');
@@ -312,8 +407,8 @@ async function buildContentCover(movie, opts = {}) {
         throw new Error('视频抽帧未产出文件');
     }
 
-    if (ext === '.zip' || ext === '.cbz' || ext === '.cbr' || ext === '.rar') {
-        throw new Error('压缩包漫画暂未支持内容截图');
+    if (ext === '.cbr' || ext === '.rar') {
+        throw new Error('RAR 压缩包漫画暂未支持内容截图（CBZ/ZIP 已支持）');
     }
     throw new Error('不支持的文件类型: ' + ext);
 }
@@ -512,6 +607,7 @@ module.exports = {
     saveCover,
     renderPdfFirstPage,
     extractEpubCover,
+    extractZipFirstImage,
     buildContentCover,
     trySearchCover,
     autoCover,

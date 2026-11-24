@@ -87,6 +87,10 @@
     /* ★ 整块内容区可下拉：封面 → 标题 → 在线播放 → 工具区 → 相似推荐，一路滑到底 */
     #detailModal .detail-body {
         height: 100% !important;
+        min-height: 0 !important;   /* round109：polish r65 的 min-height:min-content 会
+                                      无视 height:100%!important 把本元素撑到内容全高，
+                                       手机高内容详情底部被 .modal-content 的 overflow:hidden
+                                       裁死、内部又滚不动——min-height 对 height 是单向阀 */
         overflow-y: auto !important;
         overflow-x: hidden;
         -webkit-overflow-scrolling: touch;

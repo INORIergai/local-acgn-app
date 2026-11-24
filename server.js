@@ -515,6 +515,9 @@ app.use('/api/player', require('./routes/player'));   // round173g：播放器�
 app.use('/api/bt', require('./routes/bt-search'));   // round173h：阶段4 BT 搜索 + 夸克离线任务（须在反代前）
 app.use('/api/jellyfin', require('./routes/jellyfin'));   // v6.5.0：Jellyfin 只读接入评估（须在反代前）
 app.use('/api/series', require('./routes/series'));   // round173：追番数据层（series/season/episode/follows/progress）
+app.use('/api/wiki', require('./routes/wiki'));       // v4：萌娘百科资料页（搜索/正文清洗/镜像降级）
+app.use('/api/gamekee', require('./routes/gamekee')); // v4：GameKee 资料页（/v1 JSON + 正文清洗）
+app.use('/api/galgame', require('./routes/galgame')); // v4：GALGAME 资料库（Kungal/InariGal）
 app.use('/api/maintenance', require('./routes/maintenance'));   // round37：封面缓存盘点/清理/回收站
 app.use('/api/connect', require('./routes/connect'));   // 移动端扫码连接（connect.html 二维码页）
 

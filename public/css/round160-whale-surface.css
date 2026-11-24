@@ -1,0 +1,207 @@
+/* ============================================================================
+   round160 · 鲸鱼娘「深海仪表」表面层
+   ----------------------------------------------------------------------------
+   round153 只换了色与光，用户看到的是「同一张脸换了蓝底」。
+   这一层只改形状语言：胶囊导航、玻璃海沟面板、蓝色主按钮、金色结构线、
+   声呐式分区标题。仍是同一套布局尺寸，不新增数据与交互。
+   ============================================================================ */
+
+html[data-v4skin="whale"] .navbar {
+    background:
+        linear-gradient(180deg, rgba(10, 24, 43, .92), rgba(6, 15, 29, .86)) !important;
+    border-bottom: 1px solid rgba(127, 182, 232, .16) !important;
+    box-shadow: 0 22px 48px -34px rgba(0, 0, 0, .95), inset 0 -1px 0 rgba(211, 176, 116, .12) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+}
+
+html[data-v4skin="whale"] .sidebar {
+    background:
+        radial-gradient(80% 40% at 0% 0%, rgba(127, 182, 232, .08), transparent 70%),
+        linear-gradient(180deg, rgba(7, 18, 33, .88), rgba(5, 12, 24, .94)) !important;
+    border-right: 1px solid rgba(127, 182, 232, .13) !important;
+}
+html[data-v4skin="whale"] .sidebar-section { margin-bottom: 16px; }
+html[data-v4skin="whale"] .sidebar-section > h3 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 6px 7px;
+    font-family: var(--font-mono, monospace) !important;
+    font-size: 9.5px !important;
+    font-weight: 600 !important;
+    letter-spacing: .18em !important;
+    text-transform: uppercase;
+    color: #6F8FB2 !important;
+}
+html[data-v4skin="whale"] .sidebar-section > h3::before {
+    content: "";
+    width: 12px;
+    height: 1px;
+    background: linear-gradient(90deg, #D3B074, transparent);
+}
+html[data-v4skin="whale"] .nav-item {
+    margin: 2px 7px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+html[data-v4skin="whale"] .nav-item:hover {
+    border-color: rgba(127, 182, 232, .18);
+    background: rgba(127, 182, 232, .07);
+}
+html[data-v4skin="whale"] .nav-item.active {
+    border-color: rgba(127, 182, 232, .28);
+    background: linear-gradient(90deg, rgba(127, 182, 232, .20), rgba(127, 182, 232, .045) 72%) !important;
+    box-shadow: inset 3px 0 0 #7FB6E8, 0 0 22px rgba(127, 182, 232, .10);
+}
+html[data-v4skin="whale"] .nav-item.active .count {
+    color: #D3B074 !important;
+}
+
+/* 主按钮 = 生物光蓝；金只留结构线 */
+html[data-v4skin="whale"] .btn-primary,
+html[data-v4skin="whale"] .btn.primary,
+html[data-v4skin="whale"] .btn-accent {
+    border-color: rgba(169, 210, 245, .65) !important;
+    background: linear-gradient(180deg, #9CCBF2, #6FA8DC) !important;
+    color: #04101C !important;
+    box-shadow: 0 0 22px -6px rgba(127, 182, 232, .65), inset 0 1px 0 rgba(255, 255, 255, .45) !important;
+}
+html[data-v4skin="whale"] .btn-secondary,
+html[data-v4skin="whale"] .btn.ghost {
+    border-color: rgba(127, 182, 232, .28) !important;
+    background: rgba(16, 31, 53, .58) !important;
+    color: #CFE1F5 !important;
+}
+
+/* 分区标题 = 声呐刻度 */
+html[data-v4skin="whale"] .home-rank-title,
+html[data-v4skin="whale"] .hcs-title,
+html[data-v4skin="whale"] .section-title {
+    letter-spacing: .04em;
+}
+html[data-v4skin="whale"] .home-rank-head,
+html[data-v4skin="whale"] .hcs-meta {
+    border-bottom-color: rgba(211, 176, 116, .22) !important;
+}
+
+/* 影片卡：玻璃海沟，不再只是暗色纸卡 */
+html[data-v4skin="whale"] .movie-card,
+html[data-v4skin="whale"] .movie-card-compact {
+    border-radius: 14px !important;
+    background: linear-gradient(180deg, rgba(24, 46, 74, .72), rgba(10, 22, 40, .9)) !important;
+    border: 1px solid rgba(127, 182, 232, .14) !important;
+    box-shadow: 0 18px 36px -28px rgba(0, 0, 0, .9) !important;
+    transition: transform .18s var(--whale-ease, ease), border-color .18s ease, box-shadow .18s ease;
+}
+html[data-v4skin="whale"] .movie-card:hover,
+html[data-v4skin="whale"] .movie-card-compact:hover {
+    transform: translateY(-3px);
+    border-color: rgba(127, 182, 232, .36) !important;
+    box-shadow: 0 24px 48px -26px rgba(0, 0, 0, .95), 0 0 26px -8px rgba(127, 182, 232, .28) !important;
+}
+
+/* 今夜主映：金色四角 + 水下投影 */
+html[data-v4skin="whale"] .hcs-shell {
+    position: relative;
+}
+html[data-v4skin="whale"] .hcs-shell::after {
+    content: "";
+    position: absolute;
+    inset: 10px;
+    border: 1px solid rgba(211, 176, 116, .18);
+    border-radius: 11px;
+    pointer-events: none;
+    -webkit-mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    padding: 1px;
+}
+html[data-v4skin="whale"] .hcs-pulse-card {
+    border-radius: 13px;
+    background: linear-gradient(180deg, rgba(19, 36, 60, .82), rgba(8, 18, 33, .94)) !important;
+    border: 1px solid rgba(127, 182, 232, .16);
+}
+
+/* 首页 AI 卡：鲸腹玻璃 + 右侧声呐环 */
+html[data-v4skin="whale"] .home-chat-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 18px 18px 46px 18px !important;
+    border-color: rgba(127, 182, 232, .22) !important;
+    background:
+        radial-gradient(80% 60% at 100% 0%, rgba(127, 182, 232, .10), transparent 62%),
+        linear-gradient(180deg, rgba(16, 31, 53, .92), rgba(8, 18, 33, .96)) !important;
+    box-shadow: 0 30px 60px -34px rgba(0, 0, 0, .95), inset 0 1px 0 rgba(255, 255, 255, .05) !important;
+}
+html[data-v4skin="whale"] .home-chat-card::after {
+    content: "";
+    position: absolute;
+    right: -76px;
+    bottom: -86px;
+    width: 240px;
+    height: 240px;
+    border: 1px solid rgba(127, 182, 232, .22);
+    border-radius: 50%;
+    box-shadow: 0 0 0 26px rgba(127, 182, 232, .05), 0 0 0 54px rgba(127, 182, 232, .03);
+    pointer-events: none;
+}
+html[data-v4skin="whale"] .home-chat-head {
+    border-bottom-color: rgba(127, 182, 232, .16) !important;
+    background: rgba(127, 182, 232, .045) !important;
+}
+html[data-v4skin="whale"] .home-chat-input {
+    border-top-color: rgba(211, 176, 116, .16) !important;
+}
+html[data-v4skin="whale"] .home-quick-prompts .hqp-pill {
+    border-radius: 999px !important;
+    border-color: rgba(127, 182, 232, .22) !important;
+    background: rgba(127, 182, 232, .07) !important;
+}
+html[data-v4skin="whale"] .home-quick-prompts .hqp-pill:hover {
+    border-color: rgba(211, 176, 116, .45) !important;
+    background: rgba(127, 182, 232, .13) !important;
+}
+
+/* 热度榜：左轨声呐刻度 */
+html[data-v4skin="whale"] .home-rank-list {
+    border-left: 1px solid rgba(211, 176, 116, .18);
+    padding-left: 12px;
+}
+html[data-v4skin="whale"] .home-rank {
+    border: 1px solid rgba(127, 182, 232, .15);
+    border-radius: 16px;
+    padding: 16px 16px 8px;
+    background: linear-gradient(180deg, rgba(16, 31, 53, .5), rgba(8, 18, 33, .72));
+}
+html[data-v4skin="whale"] .home-rank-title::before {
+    content: "◈";
+    margin-right: 7px;
+    color: #D3B074;
+    font-size: .9em;
+}
+html[data-v4skin="whale"] .home-rank-row-label {
+    letter-spacing: .12em;
+    color: #6F8FB2;
+}
+html[data-v4skin="whale"] .rank-item,
+html[data-v4skin="whale"] .home-rank-row {
+    border-color: rgba(127, 182, 232, .12) !important;
+}
+
+/* 设置 / 弹窗 / 抽屉：深海玻璃 */
+html[data-v4skin="whale"] .modal-content,
+html[data-v4skin="whale"] .dialog,
+html[data-v4skin="whale"] .panel-section {
+    border-color: rgba(127, 182, 232, .16);
+}
+html[data-v4skin="whale"] .panel-section {
+    background: linear-gradient(180deg, rgba(16, 31, 53, .54), rgba(8, 18, 33, .68));
+    border-radius: 14px;
+}
+
+@media (max-width: 860px) {
+    html[data-v4skin="whale"] .nav-item { margin: 1px 4px; }
+    html[data-v4skin="whale"] .movie-card { border-radius: 12px !important; }
+}

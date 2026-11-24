@@ -188,18 +188,29 @@ html[data-v4skin="ambient"] .av-card:has(.avp-done) .card-progress {
 }
 
 /* ---------- 卡片：标题移出封面，改为纵向布局 ---------- */
-.av-view.av-workspace .av-main .av-board > .av-card,
-.av-view.av-workspace .av-main .av-slider > .av-card {
+.av-view.av-workspace .av-main :is(.av-board, .av-slider, .av-stack-top) > .av-card {
     width: auto;
     min-width: 0;
     display: flex;
     flex-direction: column;
+    /* ★round113-P6：这一条一直是漏的，后果比看起来严重。
+       基类 `.av-card` 是 `aspect-ratio: 2/2.9` + `overflow: hidden`，
+       高度被锁死在「宽度 × 1.45」= 284px；而纵向布局的内容是
+       封面 284 + 标题区 82 = 366px，多出来的 82px 整段被裁 ⇒
+       **漫画库/小说库里每一张卡片都没有书名、卷号、体积、阅读进度**。
+       实测（_r113-p6-probe2.js）：普通卡 `.av-cap` 起点 y=932.8、卡底 933.8，
+       可见高度 1px；摞卡顶卡可见 0px（`.av-cap` 起点正好等于卡底）。
+       `.av-art` 自己有 `aspect-ratio: 2/2.9`，封面比例不受影响，
+       所以这里解除的是「整张卡」的高度锁定，让高度由「封面 + 标题」决定。
+       同时把选择器扩到 `.av-stack-top`：摞卡里的卡片外面多包了一层，
+       原来的 `.av-board > .av-card` 子选择器打不中它（round113.css 里记过这个坑）。 */
+    aspect-ratio: auto;
     background: var(--bg-elevated, #fff);
     border: 1px solid var(--border, rgba(0, 0, 0, .1));
     border-radius: 10px;
     overflow: hidden;
     box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
-    transition: transform .18s ease, box-shadow .18s ease;
+    transition: transform var(--mv2-d1, .18s) var(--mv2-snap, ease), box-shadow var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 /* 密集网格里靠 1px 边框分隔，阴影只做很轻的一层 */
 .av-view.av-workspace .av-main .av-card:hover {

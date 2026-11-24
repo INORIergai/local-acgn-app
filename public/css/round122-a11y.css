@@ -1,0 +1,43 @@
+/* ============================================================
+   round122 · 键盘可达性与焦点样式（P13 计划里一直没做的一项）
+   ------------------------------------------------------------
+   实测发现两件事：
+     1. **影片库的卡片根本 Tab 不到**：`.movie-card` 的 tabindex 是 null，
+        `card.focus()` 之后 `document.activeElement` 还是别的元素。
+        小说/漫画库的卡（av-board 渲染的）有 tabindex="0"，影片库这条没有 ——
+        所以用键盘的人在这个视图里**一张片都选不中、也打不开**。
+     2. 焦点环颜色不统一：多数是 rgb(154,106,21)（旧金），`
+        .v4-skin-btn` 是纯黑 rgb(0,0,0)。同一个应用两种焦点色。
+
+   这里把两条都收掉：卡片补 tabindex/role，焦点环统一到 --ink-accent。
+   回滚 = 删 library.html 里本文件那一行 link。
+   ============================================================ */
+
+/* ------------------------------------------------------------------
+   1. 焦点环：一处定义，全站统一
+   ------------------------------------------------------------------
+   为什么用 :is()：项目里有 25 处零散的 :focus-visible 写法、27 处 outline:none，
+   逐个改容易漏；这里用一条高权重的规则把「可见焦点」统一成同一种表现，
+   原来的 outline:none 只影响"默认焦点"，不冲突。
+   ⚠️ 只对 :focus-visible 生效 —— 鼠标点击不会出现这个环，避免"点哪都有一圈框"。 */
+html body :is(button, a[href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ink-accent, #8A5A12) !important;
+    outline-offset: 2px !important;
+}
+html body .movie-card:focus-visible {
+    outline: 2px solid var(--ink-accent, #8A5A12) !important;
+    outline-offset: 3px !important;
+    /* 卡片没有边框，光有 outline 在大网格里不容易定位 → 再加一层薄影 */
+    box-shadow: var(--e-1, 0 8px 24px -14px rgba(20, 17, 14, .3)) !important;
+}
+html body .av-card:focus-visible {
+    outline: 2px solid var(--ink-accent, #8A5A12) !important;
+    outline-offset: 3px !important;
+}
+/* 夜间：金换成更亮的琥珀（#8A5A12 在深底上几乎看不见） */
+html[data-v4skin="matinee"] body :is(button, a[href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline-color: #D99A43 !important;
+}
+
+/* 键盘用户：给跳转的第一个焦点一个可读的落点（不是视觉焦点，只是不塌陷） */
+html body .movie-card { outline-offset: 3px; }

@@ -346,16 +346,27 @@ function setGoal(scope, patch) {
 function getResume(kind) {
     const k = normKind(kind);
     try {
-        const row = db.prepare(`SELECT p.movieId AS id, p.chapter, p.page, p.total, p.percent, p.updatedAt,
-                                       m.title, m.coverPath, m.type
+        /* 2026-11：原 SQL 查 movies.coverPath —— 该列在 schema/迁移/现有库里都不存在，
+           异常被下面的 catch 吞掉，导致 /api/media/resume 永远返回 null（续读入口形同虚设）。
+           漫画/小说封面实际存在 posterPath（缓存文件名）与 localPosterPath（原图绝对路径）。 */
+        const row = k === 'all'
+            ? db.prepare(`SELECT p.movieId AS id, p.kind, p.chapter, p.page, p.total, p.percent, p.updatedAt,
+                                       m.title, m.posterPath, m.localPosterPath, m.type
+                                FROM media_progress p JOIN movies m ON m.id = p.movieId
+                                WHERE p.state <> 'done'
+                                ORDER BY p.updatedAt DESC LIMIT 1`).get()
+            : db.prepare(`SELECT p.movieId AS id, p.kind, p.chapter, p.page, p.total, p.percent, p.updatedAt,
+                                       m.title, m.posterPath, m.localPosterPath, m.type
                                 FROM media_progress p JOIN movies m ON m.id = p.movieId
                                 WHERE p.kind = ? AND p.state <> 'done'
                                 ORDER BY p.updatedAt DESC LIMIT 1`).get(k);
         if (!row) return null;
         return {
             id: row.id,
+            type: row.type || row.kind,
             title: row.title || '',
-            coverPath: row.coverPath || '',
+            posterPath: row.posterPath || '',
+            localPosterPath: row.localPosterPath || '',
             chapter: Number(row.chapter) || 0,
             page: Number(row.page) || 0,
             total: Number(row.total) || 0,

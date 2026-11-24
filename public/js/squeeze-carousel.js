@@ -164,8 +164,15 @@
      dragK  = 拖拽灵敏度（拖过容器宽 * dragK ⇒ 转过一整圈相位）
      ★★ ampY 为什么只有 0.13：环的「后排」靠纵向偏移从前排后面露出来，
         偏移越大露得越多；但容器高只有 card 高的 ~1.5 倍，
-        ampY 再大前排卡的下沿就会被 overflow:hidden 切掉（实测 0.17 会切 5px）。 */
-  var HALO = { kW: 0.20, ampX: 0.40, ampY: 0.13, rotY: 14, dragK: 0.55 };
+        ampY 再大前排卡的下沿就会被 overflow:hidden 切掉（实测 0.17 会切 5px）。
+     ★★★ round128：kW 0.20 → 0.27（用户原话「box 大小不变，这里的海报大小变大」）。
+        容器尺寸一个字没动，只把卡宽占比从 20% 提到 27%；
+        实测容器 1158×508、舞台高 484、封面中位比例 0.74 ⇒ 卡从 231×312 长到 306×414（+32%）。
+        ★ ampY 同时 0.13 → 0.045：卡变大后，原来「上下各浮动 13% 舞台高」会把近端主卡
+          的上下沿顶出 overflow:hidden（实测切 29px）。压扁椭圆振幅换来完整的卡面 ——
+          用户要的是「海报更大」，不是「海报更大但被切掉一条」。
+          压到 0.045 后卡高上限 431px，卡宽由 kW 兜住（312px），上下各留 ~25px 不越界。 */
+  var HALO = { kW: 0.27, ampX: 0.40, ampY: 0.045, rotY: 14, dragK: 0.55 };
 
   var EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';   // easeOutExpo
   var DUR = 620;                                  // ms，与 CSS --sq-dur 一致
@@ -246,6 +253,62 @@
     var measured = 0;              // round81：探测到的中位海报比例（0 = 还没测到）
     var haloDrag = 0;              // round81：C 版拖拽累积的环相位（弧度）
     var drag = null;               // round81：C 版拖拽会话
+    var bgEl = null;               // round128：毛玻璃背景层
+    var bgImgs = [];               //   两张图交替淡入，避免切换时闪一下白底
+    var bgFront = 0;
+    var bgSrc = '';
+
+    /* ---------- round128：毛玻璃背景 ----------
+       用户原话：「现在的精选推荐下面的 box 背景是纯白的，我要你在我点击任意一张
+                 精选推荐里的海报的情况下，后面的背景自动变成这张海报的毛玻璃图」。
+       做法：在容器最底层铺一层 .sq-bg，里面两张 <img> 交替淡入 ——
+       换图时新图先加载完再翻 opacity，永远不会出现「先白一下再糊上来」。
+       ★ 跟着**当前主卡**走：点箭头 / 拖环 / 自动播放 / 点海报，全都最终落到 go()，
+         所以只要在 go() 里调一次 setBackdrop 就够了，不需要各处撒钩子。
+       ★ 只读 movie.poster（调用方已过滤成有封面的条目），拿不到就保持上一张。 */
+    function buildBackdrop() {
+      destroyBackdrop();
+      var bg = document.createElement('div');
+      bg.className = 'sq-bg';
+      bg.setAttribute('aria-hidden', 'true');
+      for (var k = 0; k < 2; k++) {
+        var im = document.createElement('img');
+        im.className = 'sq-bg-img';
+        im.alt = '';
+        im.draggable = false;
+        im.decoding = 'async';
+        bg.appendChild(im);
+        bgImgs.push(im);
+      }
+      container.insertBefore(bg, container.querySelector('.gallery-track'));
+      bgEl = bg;
+      bgSrc = '';
+      setBackdrop(index);
+    }
+
+    function destroyBackdrop() {
+      if (bgEl && bgEl.parentNode) bgEl.parentNode.removeChild(bgEl);
+      bgEl = null;
+      bgImgs = [];
+      bgFront = 0;
+      bgSrc = '';
+    }
+
+    function setBackdrop(i) {
+      if (!bgEl || !bgImgs.length) return;
+      var m = movies[i];
+      var src = m && m.poster;
+      if (!src || src === bgSrc) return;
+      bgSrc = src;
+      var incoming = bgImgs[1 - bgFront];
+      var outgoing = bgImgs[bgFront];
+      incoming.onload = function () {
+        incoming.classList.add('is-front');
+        if (outgoing) outgoing.classList.remove('is-front');
+        bgFront = 1 - bgFront;
+      };
+      incoming.src = src;
+    }
 
     // ---------- 建 DOM ----------
     // ⚠️ 只重建 .gallery-track，绝不清空 container：
@@ -270,6 +333,7 @@
       track.appendChild(strip);
       // 插到箭头之前（appendChild 会落在最后，正好在齿孔之下）
       container.insertBefore(track, container.firstChild);
+      buildBackdrop();     // round128：毛玻璃背景必须压在 track 之下（CSS 里 z-index 0 vs 1）
 
       cards = movies.map(function (m, i) {
         var card = document.createElement('div');
@@ -297,6 +361,8 @@
 
       bind();
       built = true;
+      retryBudget = 90;
+      watchSize();      // round128：折叠条展开时靠它把布局补回来
       measure();        // round81：能同步测到就测（图片已在缓存里时）
       apply();
     }
@@ -345,18 +411,24 @@
     /* ★ B/C：卡片是固定尺寸的 3D 层，尺寸必须按「容器 + 实测海报比例」算一次。
        kW = 单卡宽度占容器宽的比例；高度由海报比例推，再按容器高兜底夹一次。
        ⚠️ 为什么不交给 CSS：卡宽还要参与 B 的步距、C 的椭圆振幅，
-          这些是 JS 算的，尺寸必须同源，否则「改了 kW 步距不变」会错位。 */
-    function cardBox(kW) {
-      var cw0 = container.clientWidth;
-      var ch0 = container.clientHeight;
-      var w = cw0 || 0, h = ch0 || 0;
+          这些是 JS 算的，尺寸必须同源，否则「改了 kW 步距不变」会错位。
+       ★★ round128 两个修正：
+         ① 高度基准改用 .sq-strip（stage）的实测高，而不是 container.clientHeight ——
+            后者含上下各 12px 的内边距（胶片齿孔让位），拿它当舞台高会把卡算大 24px；
+         ② 新增 reserveY：C 版卡片会随 cos θ 上下浮动 ±h*ampY，
+            卡高必须先把这段余量让出来，否则近端主卡的上下沿会被 overflow:hidden 切掉
+            （round128 放大卡面后实测切掉 29px，就是这条判据抓出来的）。 */
+    function cardBox(kW, reserveY) {
+      var w = container.clientWidth;
+      var h = (strip && strip.clientHeight) || container.clientHeight;
       if (!w && !h) return null;                 // 还没布局，等下一次 measure/apply
       if (!w) w = h * 2.4;
       if (!h) h = w / 2.4;
       var ar = (measured && isFinite(measured) && measured > 0) ? measured : 0.7;
-      var cw = Math.min(w * kW, h * 0.86 * ar);
+      var maxCh = h - 2 * h * (reserveY || 0) - 8;    // 上下浮动余量 + 4px 呼吸位
+      var cw = Math.min(w * kW, maxCh * ar);
       var ch = cw / ar;
-      if (ch > h * 0.92) { ch = h * 0.92; cw = ch * ar; }
+      if (ch > maxCh) { ch = maxCh; cw = ch * ar; }
       return { w: Math.max(24, Math.round(cw)), h: Math.max(24, Math.round(ch)) };
     }
 
@@ -602,11 +674,13 @@
        ⇒ 翻页是**整环转动一格**，不是「主卡原地换图」，所以每张卡都有位移可看。
        ✓ 全是 transform / opacity ⇒ 只走合成层，不触发重排。 */
     function applyHalo() {
-      var box = cardBox(HALO.kW);
+      var box = cardBox(HALO.kW, HALO.ampY);
       if (!box) { retryApply(); return; }
       var len = movies.length;
+      /* ★ round128：舞台高必须与 cardBox 用同一把尺（.sq-strip），
+         否则「卡按 A 算、位置按 B 算」，卡一大就上下出界。 */
       var w = container.clientWidth || 0;
-      var h = container.clientHeight || 0;
+      var h = (strip && strip.clientHeight) || container.clientHeight || 0;
       if (!w && !h) { retryApply(); return; }
       if (!w) w = h * 2.4;
       if (!h) h = w / 2.4;
@@ -648,13 +722,33 @@
     }
 
     /* 还没布局完（clientWidth/Height 为 0）时，下一帧再试一次。
-       ⚠️ 少了这一步，B/C 在首帧会全部落到 24×24 的兜底尺寸，一闪而过很丑。 */
+       ⚠️ 少了这一步，B/C 在首帧会全部落到 24×24 的兜底尺寸，一闪而过很丑。
+       ★★ round128：加了**预算**。原来是无条件自我续帧 —— 只要容器是隐藏的
+         （影片库/漫画库/小说库里精选推荐默认折叠成 56px 条，容器 display:none），
+         clientWidth 永远为 0 ⇒ retryApply 永远续帧，60fps 空转一整个会话。
+         那不只是白烧 CPU：它和「点一下轮播就感觉整页在重刷新」是同一类体感问题
+         （页面持续掉帧）。现在预算耗尽就停，等 ResizeObserver 在容器真正出现尺寸时
+         把预算充回来再继续。 */
     var rafPending = false;
+    var retryBudget = 90;
+    var ro = null;
     function retryApply() {
       if (rafPending) return;
+      if (retryBudget <= 0) return;
       rafPending = true;
       var raf = global.requestAnimationFrame || function (f) { return setTimeout(f, 32); };
-      raf(function () { rafPending = false; apply(); });
+      raf(function () { rafPending = false; retryBudget--; apply(); });
+    }
+
+    /** 容器从「不可见/折叠」变回有尺寸时（展开 ›、切视图回来、窗口变宽）自动重排 */
+    function watchSize() {
+      if (ro || !global.ResizeObserver) return;
+      ro = new global.ResizeObserver(function () {
+        if (!container.clientWidth && !container.clientHeight) return;
+        retryBudget = 90;
+        apply();
+      });
+      try { ro.observe(container); } catch (e) { ro = null; }
     }
 
     // ---------- 索引推进 ----------
@@ -662,6 +756,7 @@
       var len = movies.length;
       if (!len) return;
       index = ((next % len) + len) % len;
+      setBackdrop(index);      // round128：背景跟着当前主卡的封面走
       apply();
       if (!silent && onChange) onChange(index);
     }
@@ -688,14 +783,22 @@
       cards.forEach(function (card) {
         card.addEventListener('mouseenter', onEnter);
         card.addEventListener('mouseleave', onLeave);
-        card.addEventListener('click', function () {
+        card.addEventListener('click', function (e) {
+          /* ★ round128：卡片同理 —— 它只是 <div>，点击不该有任何默认行为。
+             万一被包进 <a href="...">（以后改结构很容易发生），不拦就会导航，
+             表现正是用户报的「点下一张海报 → 整个页面重刷新」。 */
+          if (e) { e.preventDefault(); e.stopPropagation(); }
           if (suppressClickUntil > Date.now()) return;      // ★ C 版刚拖过：不吃这次点击
           var i = parseInt(card.dataset.index, 10);
           // 点残条 = 往回退一张
           if (card.dataset.sqR === '-1') { prev(); return; }
           if (card.dataset.sqR === '0') { onOpen(movies[i], i); return; }
-          // 点次卡/尾巴 = 直接跳过去
-          if (!isNaN(i)) { go(i); onOpen(movies[i], i); }
+          /* ★ round128：点「旁边那张」只把它转到最前面，**不再顺手弹详情**。
+             旧行为是 go(i) + onOpen(...) 同时发生 —— 用户点一下侧卡，环转过去的同时
+             整个屏幕被详情弹窗（含 ambilight 背景）盖住，体感和「整页被重刷新」没区别。
+             现在的语义只有一条：点哪张，哪张转到正面；想打开详情，就点正面那张。
+             （这也与 3D 牌堆 / 光环转环的「转盘」直觉一致。） */
+          if (!isNaN(i)) { go(i); }
         });
       });
       bindDrag();
@@ -785,6 +888,8 @@
       container.classList.remove('is-sq-dragging');
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
+      destroyBackdrop();      // round128：自己建的背景层一起收走
+      if (ro) { try { ro.disconnect(); } catch (e) { } ro = null; }
       // 只摘自己建的 track，箭头/圆点留给下一次 build 复用
       if (built) {
         var old = container.querySelector('.gallery-track');

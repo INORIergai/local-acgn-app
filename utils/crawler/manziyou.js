@@ -21,9 +21,9 @@ class ManziyouCrawler {
     try {
       const url = `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}`;
       const $ = await this.request.getHtml(url);
-      
+
       const results = [];
-      
+
       // 解析搜索结果列表
       $('.comic-item, .book-item, .item, .list-item').each((i, el) => {
         const $el = $(el);
@@ -31,7 +31,7 @@ class ManziyouCrawler {
         const cover = $el.find('img').attr('src') || '';
         const href = $el.find('a').first().attr('href') || '';
         const url = href.startsWith('http') ? href : this.baseUrl + href;
-        
+
         if (title) {
           results.push({
             title,
@@ -41,7 +41,7 @@ class ManziyouCrawler {
           });
         }
       });
-      
+
       return results;
     } catch (e) {
       console.log('[漫自由] 搜索失败:', e.message);
@@ -57,11 +57,11 @@ class ManziyouCrawler {
   async getDetail(url) {
     try {
       const $ = await this.request.getHtml(url);
-      
+
       const title = $('.comic-title, .book-title, h1, .title').first().text().trim();
       const cover = $('.comic-cover img, .book-cover img, .cover img').first().attr('src') || '';
       const description = $('.comic-desc, .book-desc, .description, .intro').first().text().trim();
-      
+
       // 提取信息
       const info = {};
       $('.info-item, .meta-item, .comic-info li, .detail-info li').each((i, el) => {
@@ -73,7 +73,7 @@ class ManziyouCrawler {
           info[key] = value;
         }
       });
-      
+
       // 提取章节/卷列表
       const chapters = [];
       $('.chapter-list a, .volume-list a, .episodes a, .book-list a').each((i, el) => {
@@ -81,12 +81,12 @@ class ManziyouCrawler {
         const name = $el.text().trim();
         const href = $el.attr('href') || '';
         const chapterUrl = href.startsWith('http') ? href : this.baseUrl + href;
-        
+
         if (name) {
           chapters.push({ name, url: chapterUrl });
         }
       });
-      
+
       return {
         title,
         cover,
@@ -113,10 +113,10 @@ class ManziyouCrawler {
     name = name.replace(/\(.*?\)/g, '');
     name = name.replace(/(epub|mobi|pdf|zip|rar|kindle)/gi, '');
     name = name.trim();
-    
+
     const results = await this.search(name);
     if (results.length === 0) return null;
-    
+
     return await this.getDetail(results[0].url);
   }
 }

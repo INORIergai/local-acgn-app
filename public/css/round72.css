@@ -15,7 +15,7 @@
     font-size: 12px;
     color: var(--text-primary);
     display: none;
-    animation: taskCapIn .22s ease-out;
+    animation: taskCapIn .22s var(--mv2-settle, ease-out);
 }
 
 .task-capsule.show { display: block; }
@@ -75,7 +75,7 @@
     font-weight: 500;
 }
 .task-cap-pct { opacity: .7; font-variant-numeric: tabular-nums; }
-.task-cap-caret { opacity: .55; font-size: 10px; transition: transform .18s ease; }
+.task-cap-caret { opacity: .55; font-size: 10px; transition: transform var(--mv2-d1, .18s) var(--mv2-snap, ease); }
 .task-capsule.open .task-cap-caret { transform: rotate(180deg); }
 
 /* 收起态的细进度条，贴在胶囊底部 */
@@ -91,7 +91,7 @@
     width: 0;
     background: var(--primary, #6366f1);
     border-radius: 2px;
-    transition: width .3s ease;
+    transition: width var(--mv2-d2, .3s) var(--mv2-snap, ease);
 }
 
 /* ---------- 展开态：任务列表 ---------- */
@@ -152,7 +152,7 @@
     height: 100%;
     width: 0;
     background: var(--primary, #6366f1);
-    transition: width .3s ease;
+    transition: width var(--mv2-d2, .3s) var(--mv2-snap, ease);
 }
 .task-cap-item-detail {
     margin-top: 4px;

@@ -187,11 +187,14 @@ async function resolveByBrowser(pageUrl, opts = {}) {
 
     // 1) 能直接打开播放器页就别开播放页（播放页有广告跳转）
     let target = pageUrl;
-    try {
-        const r = await engine.grab(pageUrl, { timeout: 12000 });
-        const pp = await playerPageFrom(r.text, pageUrl);
-        if (pp) target = pp;
-    } catch (e) { /* 拿不到就直接用原页 */ }
+    // round181：跟进「跳转壳」时不能再套一层 playerPageFrom（壳的 ?url= 会被当加密串拼坏）
+    if (!opts.followShell) {
+        try {
+            const r = await engine.grab(pageUrl, { timeout: 12000 });
+            const pp = await playerPageFrom(r.text, pageUrl);
+            if (pp) target = pp;
+        } catch (e) { /* 拿不到就直接用原页 */ }
+    }
     if (opts.debug) console.log('[browser-resolve] 目标页:', target);
 
     // 2) 直连优先；打不开再带代理重试（本机代理经常是死的，但用户环境可能需要它）
@@ -222,4 +225,52 @@ async function resolveByBrowser(pageUrl, opts = {}) {
     return { url: '', referer: target, ua: UA, via: 'browser', error: lastErr };
 }
 
-module.exports = { resolveByBrowser, playerPageFrom };
+/**
+ * round182 P0-2：浏览器兜底抓剧集列表。
+ * 静态 HTML 解析不到剧集时（详情页由 JS 渲染），开真浏览器跑页面，
+ * 从 DOM 里抓所有「第N集/第N话」链接 —— 对标 Animeko「选择器只解析静态页，
+ * 动态页交给浏览器」的思路。只抓链接，不下载内容。
+ * @returns {Promise<{episodes:[{name,url}], error:string}>}
+ */
+async function resolveEpisodes(pageUrl, opts = {}) {
+    const timeout = opts.timeout || 20000;
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--mute-audio']
+    });
+    try {
+        const ctx = await browser.newContext({
+            userAgent: UA, viewport: { width: 1280, height: 768 }, locale: 'zh-CN', ignoreHTTPSErrors: true
+        });
+        await ctx.route('**/*', (route) => (AD_RE.test(route.request().url()) ? route.abort() : route.continue()));
+        const page = await ctx.newPage();
+        page.on('popup', (p) => p.close().catch(() => { }));
+        try { await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout }); } catch (e) { /* 超时也继续扫 DOM */ }
+        await page.waitForTimeout(2500);   // 等 JS 把剧集列表渲染出来
+        const found = await page.evaluate(() => {
+            const out = [];
+            document.querySelectorAll('a').forEach(a => {
+                const t = (a.textContent || '').trim();
+                const href = a.getAttribute('href') || '';
+                if (/第\s*[\d.]+\s*[话集]/i.test(t) && href) out.push({ name: t, url: href });
+            });
+            return out;
+        });
+        // 绝对 URL 化 + 按集号去重
+        const seen = new Set(), episodes = [];
+        for (const e of found) {
+            let u = e.url;
+            try { u = new URL(u, pageUrl).href; } catch (err) { continue; }
+            if (seen.has(u)) continue;
+            seen.add(u);
+            episodes.push({ name: e.name, url: u });
+        }
+        return { episodes, error: episodes.length ? '' : '浏览器也没抓到剧集链接' };
+    } catch (e) {
+        return { episodes: [], error: e.message || String(e) };
+    } finally {
+        await browser.close().catch(() => { });
+    }
+}
+
+module.exports = { resolveByBrowser, resolveEpisodes, playerPageFrom };

@@ -36,7 +36,37 @@ router.get('/from-calendar', async (req, res) => {
         const force = req.query.force === '1' || req.query.force === 'true';
         const cal = await require('../utils/acg-calendar').getCalendar(force);
         const result = sdb.importFromCalendar(cal && cal.days ? cal.days : []);
-        res.json({ code: 0, data: result, source: cal && cal.source });
+        /* 首页要做「周一~周日」切页，必须保留按天分组（result.items 是拍平后的全周）。
+         * 这里把导入结果按 date 回填到 cal.days，前端一次请求就能拿到分组和 seriesId。 */
+        const days = ((cal && cal.days) || []).map((d) => ({
+            date: d.date || '',
+            label: d.label || d.date || '',
+            items: result.items.filter((it) => it.date === (d.date || '')),
+        }));
+        res.json({ code: 0, data: Object.assign({}, result, { days }), source: cal && cal.source });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/* 海报右上角 Bangumi 评分（缓存命中立刻返回；未命中在 budgetMs 内并发补拉）。
+ * 放在所有 /:id 之前，避免被裸参数路由吞掉。 */
+router.get('/ratings', async (req, res) => {
+    try {
+        const ids = String(req.query.ids || '')
+            .split(',')
+            .map((x) => Number(x))
+            .filter((n) => n > 0)
+            .slice(0, 80);
+        if (!ids.length) return res.json({ code: 0, data: { ratings: {}, pending: [] } });
+        const { db } = require('../utils/db');
+        const rows = db.prepare(
+            `SELECT id, title, originalTitle, provider, providerId FROM series
+             WHERE id IN (${ids.map(() => '?').join(',')})`
+        ).all(...ids);
+        const r = await require('../utils/series-rating').getRatings(rows, {
+            budgetMs: Number(req.query.budgetMs) || 12000,
+            force: req.query.force === '1',
+        });
+        res.json({ code: 0, data: r });
     } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
@@ -283,7 +313,21 @@ router.post('/episode/sources', async (req, res) => {
           const exact = eps.filter((e) => numOf(e) === epNo);
           // 同集号有多条时优先第一线路（channelTier 小）
           exact.sort((a, b) => (a.channelTier || 0) - (b.channelTier || 0));
-          const hit = exact[0];
+          /* 2026-11：Kazumi 语义 —— 源返回的剧集数组顺序就是集号（episodeIndex+1）。
+             很多源的标题是「更新至12集」「01」「HD」这类，numOf 抠不出数字，
+             只认 exact 会导致整源判“未定位到第 N 集”。这里加下标兜底：
+               · 源集数明显大于目标集数（多季合页，> epNo*3+12）时不兜底，避免串季；
+               · 标题能抠出数字且与 epNo 差超过 1 时不兜底（源从第 0 集/预告开始会差 1）。 */
+          let hit = exact[0];
+          if (!hit && eps.length) {
+            const byIndex = eps[epNo - 1];
+            const suspicious = eps.length > epNo * 3 + 12;
+            const n = byIndex ? numOf(byIndex) : NaN;
+            if (byIndex && byIndex.url && !suspicious && (!Number.isFinite(n) || Math.abs(n - epNo) <= 1)) {
+              hit = byIndex;
+            }
+          }
+          row.factory = src.factoryId || '';
           if (hit && hit.url) {
             row.state = 'ready';
             row.episodeName = '第' + epNo + '集';
@@ -302,12 +346,203 @@ router.post('/episode/sources', async (req, res) => {
       }
     };
     await Promise.all([worker(), worker(), worker()]);
-    out.sort((a, b) => (a.state === 'ready' ? 0 : 1) - (b.state === 'ready' ? 0 : 1) || a.tier - b.tier);
+    /* 排序：能播的在前 → 直出 API 源（json-api/next）优先于需要浏览器嗅探的源 →
+       源 tier。用户点第一张卡片就能播，不必等 web-selector 的 30 秒嗅探。 */
+    const readyRank = (r) => (r.state === 'ready' ? 0 : 1);
+    /* 直出 API（json-api）最快；web-selector 要开页面抽 URL；kazumi 规则常要浏览器嗅探，
+       放在最后，避免用户点第一张就等 30 秒。 */
+    const factoryRank = (r) => (r.factory === 'json-api' ? 0 : (r.factory === 'kazumi' ? 2 : 1));
+    out.sort((a, b) => readyRank(a) - readyRank(b) || factoryRank(a) - factoryRank(b) || (a.tier || 0) - (b.tier || 0));
     res.json({ code: 0, data: {
       keyword: kw, episodeNo: epNo, candidates: out,
       states: found.states, scanned: found.scanned,
     } });
   } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/**
+ * Kazumi 式主流程（第 1 步）：按番名并发搜索所有源，返回「每个源最匹配的一条」。
+ * 前端详情页先把这排源摆出来，用户点哪个源，再去取那个源的全集。
+ * 与 /match-online 的区别：这里按「源」去重，只回最像的一条条目，且放宽到 0.45
+ * （手动选源允许用户自己判断；自动挂载仍用 0.55 阈值）。
+ */
+router.post('/sources', async (req, res) => {
+    try {
+        const seriesId = Number(req.body.seriesId) || 0;
+        const s = seriesId ? sdb.getSeriesById(seriesId) : null;
+        const keyword = String(req.body.keyword || (s && s.title) || '').trim();
+        if (!keyword) return res.json({ code: -1, msg: '缺少搜索关键词' });
+        const online = require('../utils/series-online');
+        const engine = require('../utils/media-sources/engine');
+        const found = await online.searchAllWeb(keyword, {
+            timeout: Number(req.body.timeout) || 12000,
+            force: req.body.force === true,
+        });
+        const { titleScore } = online;
+        const seen = new Set();
+        const sources = [];
+        (found.hits || []).forEach((h) => {
+            if (seen.has(h.sourceId)) return;
+            const items = (h.items || []).slice()
+                .sort((a, b) => titleScore(b.name, keyword) - titleScore(a.name, keyword));
+            const best = items[0];
+            if (!best || !best.url) return;
+            const score = titleScore(best.name, keyword);
+            if (score < 0.45) return;
+            seen.add(h.sourceId);
+            const src = engine.getSource(h.sourceId);
+            sources.push({
+                sourceId: h.sourceId,
+                sourceName: h.sourceName,
+                tier: h.tier,
+                factory: (src && src.factoryId) || '',
+                entryName: best.name,
+                detailUrl: best.url,
+                score: Math.round(score * 100) / 100,
+            });
+        });
+        /* 先按标题相似度；同分时直出 API 源排前（不用开浏览器，最快），kazumi 嗅探源排最后 */
+        const factoryRank = (r) => (r.factory === 'json-api' ? 0 : (r.factory === 'kazumi' ? 2 : 1));
+        sources.sort((a, b) => (b.score - a.score)
+            || (factoryRank(a) - factoryRank(b))
+            || ((a.tier || 0) - (b.tier || 0)));
+        res.json({ code: 0, data: {
+            keyword, sources,
+            states: found.states, scanned: found.scanned, skipped: found.skipped,
+            needsVerify: (found.all || []).filter((x) => x.state === 'captcha')
+                .map((x) => ({ sourceId: x.sourceId, sourceName: x.sourceName })),
+        } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/**
+ * Kazumi 式主流程（第 2 步）：取「这个源下这部番的全集」并挂到分集（可选）。
+ * 集号语义对齐 Kazumi：源给的 sort 可信（全有效/唯一/递增）时用它，
+ * 否则用数组顺序（多季合页/预告混排时保证「顺序观看」不跳集）。
+ * 返回 progress（按集号）与 nextEpisode，前端可以直接「从第 N 集开始」。
+ */
+router.post('/source-episodes', async (req, res) => {
+    try {
+        const seriesId = Number(req.body.seriesId) || 0;
+        const seasonNo = Number(req.body.seasonNo) || 1;
+        const sourceId = String(req.body.sourceId || '');
+        const detailUrl = String(req.body.detailUrl || '');
+        const entryName = String(req.body.entryName || '');
+        if (!sourceId || !detailUrl) return res.json({ code: -1, msg: '缺少 sourceId/detailUrl' });
+        const engine = require('../utils/media-sources/engine');
+        const src = engine.getSource(sourceId);
+        if (!src) return res.json({ code: -1, msg: '源不存在：' + sourceId });
+
+        const epRes = await engine.episodesOf(src, detailUrl, { timeout: Number(req.body.timeout) || 15000 });
+        const raw = (epRes.episodes || []).filter((e) => e && e.url);
+        if (!raw.length) {
+            return res.json({ code: 1, msg: epRes.error || '该源没有解析出剧集', data: {
+                sourceId, sourceName: src.name, entryName, detailUrl,
+                episodes: [], progress: {}, nextEpisode: 0, attached: 0,
+                state: epRes.state || 'noResult', error: epRes.error || '剧集解析为空',
+            } });
+        }
+
+        const nums = raw.map((e) => { const n = Number(e.sort); return Number.isFinite(n) && n > 0 ? n : NaN; });
+        const allValid = nums.every((n) => Number.isFinite(n));
+        const unique = new Set(nums).size === nums.length;
+        const increasing = nums.every((n, i) => i === 0 || n > nums[i - 1]);
+        const trustSort = allValid && unique && increasing;
+        const episodes = raw.map((e, i) => ({
+            episodeNo: trustSort ? nums[i] : i + 1,
+            title: String(e.name || '').trim() || ('第' + (i + 1) + '集'),
+            url: e.url,
+            channel: e.channel || '',
+        }));
+
+        let progress = {};
+        let attached = 0;
+        if (seriesId) {
+            /* 挂到 DB 是为了复用 episode 进度/继续观看；已绑本地影片的集不会被覆盖。
+             * 失败（例如季度创建异常）不影响直接播放，只是进度不会记。 */
+            const r = sdb.applyOnlineSource(seriesId, seasonNo, sourceId, src.name, episodes);
+            attached = r.updated || 0;
+            sdb.getEpisodes(seriesId, seasonNo).forEach((le) => {
+                progress[le.episodeNo] = {
+                    id: le.id,
+                    watched: le.watched === 1,
+                    position: Number(le.position) || 0,
+                    duration: Number(le.progressDuration || le.duration) || 0,
+                };
+            });
+        }
+        let nextEpisode = 0;
+        for (const ep of episodes) {
+            const p = progress[ep.episodeNo];
+            if (!p || !p.watched) { nextEpisode = ep.episodeNo; break; }
+        }
+        res.json({ code: 0, data: {
+            sourceId, sourceName: src.name, entryName, detailUrl,
+            episodes, progress, nextEpisode, attached,
+            state: epRes.state || 'success', error: epRes.error || '', via: epRes.via || '',
+        } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/**
+ * 后台分集下载：前端把当前源的全集（集号+集页 URL）一次投进来，
+ * 队列最多 2 并发；普通模式 -c copy，2.4K 增强模式 ffmpeg 重编码。
+ * 解析流地址放在任务真正开始时做，避免一次投 12 集把解析器打爆。
+ */
+router.post('/episodes/download', (req, res) => {
+    try {
+        const dl = require('../utils/anime-downloader');
+        const title = String(req.body.title || '未命名番剧');
+        const sourceId = String(req.body.sourceId || '');
+        const upscale = req.body.upscale === true;
+        const eps = Array.isArray(req.body.episodes) ? req.body.episodes.slice(0, 200) : [];
+        if (!sourceId || !eps.length) return res.json({ code: -1, msg: '缺少 sourceId 或 episodes' });
+        const jobsOut = [];
+        const failed = [];
+        for (const e of eps) {
+            try {
+                jobsOut.push(dl.enqueue({
+                    title,
+                    episodeNo: e.episodeNo,
+                    sourceId,
+                    episodeUrl: e.url,
+                    upscale,
+                }));
+            } catch (err) {
+                failed.push({ episodeNo: e.episodeNo, error: err.message });
+            }
+        }
+        res.json({ code: jobsOut.length ? 0 : -1, data: {
+            queued: jobsOut.length, failed, jobs: jobsOut, upscale,
+        }, msg: jobsOut.length ? '' : '没有可下载的集' });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.get('/downloads', (req, res) => {
+    try {
+        const dl = require('../utils/anime-downloader');
+        res.json({ code: 0, data: { root: dl.ROOT, active: dl.activeCount(), jobs: dl.listJobs() } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/downloads/cancel', (req, res) => {
+    try {
+        const ok = require('../utils/anime-downloader').cancel(String(req.body.id || ''));
+        res.json({ code: ok ? 0 : -1, data: { canceled: ok }, msg: ok ? '' : '任务不存在或已结束' });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/downloads/clear', (req, res) => {
+    try {
+        res.json({ code: 0, data: { cleared: require('../utils/anime-downloader').clearFinished() } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/downloads/reveal', (req, res) => {
+    try {
+        require('../utils/anime-downloader').reveal(String(req.body.id || ''));
+        res.json({ code: 0, data: { ok: true } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
 });
 
 /**

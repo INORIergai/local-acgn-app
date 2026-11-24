@@ -1,0 +1,105 @@
+/* ============================================================
+   CinemaVault · round113.css —— 漫画/小说卡片封面「去灰罩」
+   ------------------------------------------------------------
+   用户反馈：未读的海报封面看着还是发暗，怀疑压了一层遮罩。
+
+   取证（_r113-bright.js：真机 3517 上对同一张卡片截两次图，
+           带遮罩 / 去掉遮罩，再把 PNG 回灌 canvas 算平均亮度）：
+     卡 0  114.6 → 179.0（+56.2%）
+     卡 1  106.6 → 165.9（+55.7%）
+     卡 2   97.5 → 153.4（+57.4%）
+     卡 3  118.5 → 187.0（+57.8%）
+     原图平均亮度 180.5 / 167.8 / 154.9 / 188.7
+   ⇒ 屏幕上看到的封面只有原图 **63% 的亮度**，整体被压掉 36%，
+     观感就是「蒙了一层灰」。跟「未读/已读」状态无关，是**常显**的。
+
+   根因：round26.css:294 的 .av-card.has-art::before
+         background: linear-gradient(180deg,
+             rgba(0,0,0,.66) 0%, rgba(0,0,0,.22) 38%,
+             rgba(0,0,0,.10) 55%, rgba(0,0,0,.72) 100%);
+         这块全幅渐变是给「标题压在封面里」的旧卡片布局做的文字垫底。
+         但封面 <img> 是铺满整张卡的，所以连画面正中的主体也留了 10~22% 的黑，
+         等于每条封面都被均匀压暗。
+
+   处理：
+     ① 全幅渐变换成「只压上下边缘」的轻量渐晕 —— 中间 42%~68% 完全透明，
+        封面主体回到原亮度，标题/卷号所在的两端仍有足够垫底；
+     ② 工作区（漫画库 / 小说库）自 round73 起标题与卷号都排在封面**下方**，
+        封面上不需要任何压暗 ⇒ 直接 background: none；
+     ③ 遮罩变薄后，给仍压在封面上的文字补一点阴影硬度。
+
+   回滚：删掉 library.html 里 round113.css 这一行即可。
+   ============================================================ */
+
+/* ---------- ① 基础层：只做上下渐晕，中间完全透明 ---------- */
+.av-card.has-art::before {
+    background: linear-gradient(180deg,
+        rgba(0, 0, 0, .34) 0%,
+        rgba(0, 0, 0, .12) 22%,
+        rgba(0, 0, 0, 0) 42%,
+        rgba(0, 0, 0, 0) 68%,
+        rgba(0, 0, 0, .16) 86%,
+        rgba(0, 0, 0, .50) 100%);
+}
+
+/* ---------- ② 文字不在封面上的卡片：封面上不压任何东西 ----------
+   两条路径都要覆盖：
+   · .av-board > .av-card        —— 目录叶子层直接排的卡片（标题在封面下方）
+   · .av-stack-top > .av-card    —— 系列摞卡里的顶卡
+   这两类卡片的标题都在**封面下方**，封面上确实没有字，全幅压暗纯属白压。
+   （round113-P6 已修掉「标题被裁到卡外」的 bug，见 round113-p6.css；
+     裁切的根因是 round73 漏了 `aspect-ratio: auto`，不是这里。） */
+.av-view.av-workspace .av-main .av-board > .av-card.has-art::before,
+.av-view.av-workspace .av-main .av-slider > .av-card.has-art::before,
+.av-view.av-workspace .av-main .av-stack-top > .av-card.has-art::before,
+.av-view.av-workspace .av-main .av-stack .av-card.has-art::before {
+    background: none;
+}
+
+/* ---------- ③ 压在封面上的文字补硬度 ----------
+   特异性 (0,2,0) 低于 round73 给工作区写的 (0,6,0)，
+   所以工作区「标题在封面下方、白底黑字」的规则不受影响。 */
+.av-card.has-art .av-title {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .92), 0 2px 10px rgba(0, 0, 0, .55);
+}
+.av-card.has-art .av-sub b,
+.av-card.has-art .av-sub span {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .75);
+}
+
+/* ============================================================
+   round113-P3b · 详情弹窗「墨色跟随封面」
+   ------------------------------------------------------------
+   ink-follow.js 打开详情时抽封面主色 → --ink-rgb / --ink-a。
+   这里渲成弹窗顶部一层同色柔光。
+
+   · 默认 --ink-a: 0 ⇒ 没取到色（封面是黑白/单色）时这一层完全不可见，
+     不会给任何元素加一层意外的灰雾。
+   · 用 background-image 而不是新伪元素：`.detail-modal` 已有
+     `overflow:hidden` + border-radius，背景图自然被裁在圆角里，
+     也不参与层叠（.av-hero 的 z-index 是雷区，能不加层就不加）。
+   · ★选择器必须带 `html[data-v4skin]` 前缀：`theme-v4.css` 给每个皮肤写了
+       html[data-v4skin="aurora"] #detailModal .modal-content.detail-modal
+       { background-image: initial }        ← 权重 (1,3,1)
+     裸写 `#detailModal .modal-content.detail-modal`（1,2,0）会被它清成 none，
+     实测连内联 style 都读回 none。前缀补一个属性选择器补到 (1,4,1)，
+     比皮肤层和 `theme-matinee.css`（本文件之后）都高，不再靠加载顺序赌。
+   ============================================================ */
+html[data-v4skin] #detailModal .modal-content.detail-modal {
+    background-image:
+        /* ① 主光源：从封面背后向外发散，让封面像浮在同色雾气里 */
+        radial-gradient(78% 34% at 50% 4%,
+            rgb(var(--ink-rgb, 255 255 255) / var(--ink-a, 0)) 0%,
+            rgb(var(--ink-rgb, 255 255 255) / calc(var(--ink-a, 0) * .46)) 42%,
+            transparent 78%),
+        /* ② 顶部横向余晖：只留一点点，压住「一块圆斑」的塑料感 */
+        linear-gradient(to bottom,
+            rgb(var(--ink-rgb, 255 255 255) / calc(var(--ink-a, 0) * .30)) 0%,
+            transparent 34%) !important;
+    /* ⚠️ !important 必须写在整条声明末尾（之前误放进 gradient 参数里 ⇒ 整条非法 ⇒
+       computed 读回 none，排查了一轮）。皮肤层有 background-image 的硬重置，
+       这里只能抬 important。
+    /* ⚠️ 这里故意不写 transition：background-image 是离散属性，
+       写一条只会造出 P0 阶段抓过的「幻影过渡」，而且根本不会插值。
+       换片时的观感由弹窗自身的进场动画（460ms settle）兜住。 */
+}

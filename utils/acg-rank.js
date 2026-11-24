@@ -996,18 +996,47 @@ function coverPathFor(url) {
     return path.join(COVER_DIR, h + '.' + ext);
 }
 
+/** 判断响应字节是否真的是图片：源站 567/Cloudflare 错误页也是 200 + 文本，
+ *  不校验会把 HTML 当封面缓存，表现为一张永远裂开的图。 */
+function looksLikeImage(buf) {
+    if (!buf || buf.length < 8) return false;
+    const h = buf.slice(0, 16).toString('latin1').trim().toLowerCase();
+    if (h.startsWith('<!do') || h.startsWith('<html') || h.startsWith('{"') || h.startsWith('[')) return false;
+    if (/^(access denied|error|forbidden|not found)/i.test(h)) return false;
+    return true;
+}
+
 async function getCover(url) {
     if (!url) return null;
     const fp = coverPathFor(url);
     if (fs.existsSync(fp)) {
         const buf = fs.readFileSync(fp);
-        if (buf.length > 0) return { path: fp, bytes: buf };
+        if (buf.length > 0 && looksLikeImage(buf)) return { path: fp, bytes: buf };
+        // 旧缓存可能已被错误页污染：删掉重新抓
+        try { fs.unlinkSync(fp); } catch (e) { /* 忽略 */ }
     }
     // 抓取图片（request 支持 stream 但这里直接拿 text 会错，用 binary 分支）
+    const imgHeaders = { 'User-Agent': UA, 'Accept': 'image/*' };
+    /* GameKee 的 CDN 不带 Referer 会返回 567（HTML 错误页），必须补站点 Referer。
+       只对这个域名加，不影响其它图床（有的图床相反：带 Referer 反而 403）。 */
+    try {
+        if (/(^|\.)gamekee\.com$/i.test(new URL(url).hostname)) {
+            imgHeaders.Referer = 'https://www.gamekee.com/';
+        }
+    } catch (e) { /* URL 已在上面校验过，这里只兜底 */ }
     const r = await request(url, {
-        headers: { 'User-Agent': UA, 'Accept': 'image/*' },
+        headers: imgHeaders,
         timeout: 25000,
     }, true);
+    if (!r || r.status < 200 || r.status >= 300) {
+        try { r && r.stream && r.stream.destroy(); } catch (e) { /* 忽略 */ }
+        throw new Error('封面 HTTP ' + (r && r.status));
+    }
+    const ctype = String((r.headers && (r.headers['content-type'] || r.headers['Content-Type'])) || '');
+    if (ctype && !/^image\//i.test(ctype)) {
+        try { r.stream.destroy(); } catch (e) { /* 忽略 */ }
+        throw new Error('封面响应不是图片（' + ctype + '）');
+    }
     // request(stream=true) 返回 { status, headers, stream }，需要读流
     return await new Promise((resolve, reject) => {
         const chunks = [];
@@ -1015,6 +1044,7 @@ async function getCover(url) {
         r.stream.on('end', () => {
             const buf = Buffer.concat(chunks);
             if (buf.length === 0) return reject(new Error('封面为空'));
+            if (!looksLikeImage(buf)) return reject(new Error('封面响应不是图片'));
             try {
                 fs.mkdirSync(COVER_DIR, { recursive: true });
                 fs.writeFileSync(fp, buf);

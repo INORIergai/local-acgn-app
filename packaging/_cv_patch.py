@@ -1,7 +1,7 @@
 import os, sys, json, argparse
 from _cv_patch_lib import build_manifest, diff_manifest, build_patch
 
-ALLOWED = ['public/', 'routes/', 'utils/', 'server.js', 'package.json']
+ALLOWED = ['public/', 'routes/', 'utils/', 'server.js', 'package.json', 'android-dist/']
 
 def cmd_gen_manifest(args):
     m = build_manifest(args.root, args.version, ALLOWED)

@@ -65,7 +65,7 @@
     border-left: 3px solid #f59e0b;
     padding-left: 8px !important;
     border-radius: 3px;
-    transition: background .18s ease;
+    transition: background var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 
 /* 暗色皮肤下把高亮压暗一点，避免正文被染亮 */

@@ -17,7 +17,7 @@
 .cloud-card .cloud-tile .poster-overlay {
     opacity: 0;
     background: none;
-    transition: opacity .18s ease;
+    transition: opacity var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .cloud-card .cloud-tile:hover .poster-overlay { opacity: 1; }
 .cloud-card .cloud-tile .poster-overlay .play-btn {

@@ -62,7 +62,7 @@
  *    并把 hover 态的 transform 过渡收敛，避免圆形标签反复重绘。
  * ------------------------------------------------------------ */
 /* 真因（round25 实测）：
- *   .an-bub { transform-box: fill-box; transform-origin: center; transition: transform .25s }
+ *   .an-bub { transform-box: fill-box; transform-origin: center; transition: transform .25s var(--mv2-snap, ease)}
  *   + .an-bub:hover { transform: scale(1.12) }
  *   SVG 内 <g> 的 fill-box 在 Safari/Chromium 上配合 transform 过渡时，
  *   每次 hover 命中测试都会重算 fill-box 边界 → 触发新的一轮 transition →
@@ -73,13 +73,13 @@
    悬停反馈采用安全高亮与柔和阴影，不破坏布局盒。 */
 .an-bub {
     cursor: pointer;
-    transition: filter .2s ease;
+    transition: filter var(--mv2-d2, .2s) var(--mv2-snap, ease);
 }
 .an-bub:hover {
     filter: brightness(1.12) drop-shadow(0 4px 10px rgba(245, 158, 11, 0.35));
 }
 .an-bub circle {
-    transition: stroke .18s ease, stroke-width .18s ease;
+    transition: stroke var(--mv2-d1, .18s) var(--mv2-snap, ease), stroke-width var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .an-bub:hover circle {
     stroke: rgba(255, 255, 255, .95);
@@ -151,7 +151,7 @@
     color: var(--text-muted);
     font-size: 12.5px;
     cursor: pointer;
-    transition: border-color .18s ease, color .18s ease;
+    transition: border-color var(--mv2-d1, .18s) var(--mv2-snap, ease), color var(--mv2-d1, .18s) var(--mv2-snap, ease);
 }
 .fav-custom-bar .fc-reset:hover {
     border-color: var(--primary);

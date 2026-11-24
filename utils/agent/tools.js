@@ -44,14 +44,19 @@ const TOOL_DEFINITIONS = [
         );
       }
       const capped = Math.min(Math.max(1, Number(limit) || 8), 20);
+      // round140：把渲染播放卡片要用的字段一次给全（海报 / 番号 / 类型），
+      // 前端不再靠二次请求补图；posterLocal 只有文件名，供 /api/movie/poster 直读。 */
       return movies.slice(0, capped).map(m => ({
         id: m.id,
+        movieId: m.id,
         title: m.title || m.fileName,
         avid: m.avid || '',
         type: m.type || 'jav',
         score: m.score || 0,
         releaseDate: m.releaseDate || '',
-        poster: m.posterPath || ''
+        poster: m.posterPath || '',
+        posterPath: m.posterPath || '',
+        localPosterPath: m.localPosterPath || ''
       }));
     }
   },
@@ -119,9 +124,14 @@ const TOOL_DEFINITIONS = [
       }
       return movies.slice(0, Number(limit) || 6).map(m => ({
         id: m.id,
+        movieId: m.id,
         title: m.title || m.fileName,
         avid: m.avid || '',
-        type: m.type || 'jav'
+        type: m.type || 'jav',
+        /* round140：推荐卡片也要有海报，否则对话框里全是灰色占位块 */
+        poster: m.posterPath || '',
+        posterPath: m.posterPath || '',
+        localPosterPath: m.localPosterPath || ''
       }));
     }
   },
@@ -174,11 +184,19 @@ const TOOL_DEFINITIONS = [
       const mid = Number(args.movie_id);
       const movie = db.getMovieById.get(mid);
       if (!movie) return { error: `影片 ${mid} 不存在` };
+      /* round140：原来只回 title —— 前端拿不到海报就只能干巴巴念一个名字。
+       * 现在把海报/番号/类型一起交出去，界面可以直接画出一张「点一下就播」的卡片。 */
       return {
         uiAction: 'play_movie',
         movieId: mid,
         title: movie.title || movie.fileName,
-        message: `已向界面发送指令，正在为你拉起《${movie.title || movie.fileName}》的播放...`
+        avid: movie.avid || '',
+        type: movie.type || 'jav',
+        poster: movie.posterPath || '',
+        posterPath: movie.posterPath || '',
+        localPosterPath: movie.localPosterPath || '',
+        duration: movie.duration || 0,
+        message: `已向界面发送播放卡片：《${movie.title || movie.fileName}》`
       };
     }
   },
@@ -287,16 +305,32 @@ const TOOL_DEFINITIONS = [
       required: ['movie_id', 'targetName']
     },
     handler: async (args) => {
-      // 真实文件系统重命名逻辑，经由 executeSandboxedTool 的审批后才能走到这里
+      // ★ round132：这里原来只写了一句「用户已批准：文件已被重命名为 xxx」就返回 ok:true，
+      //   代码里根本没有任何 fs.rename —— 典型的「嘴上做了」。现在真的调落盘改名，
+      //   与详情弹窗的「重命名文件」共用同一套口径（磁盘视频 + NFO/同名封面 + 库内路径）。
       const mid = Number(args.movie_id);
       const movie = db.getMovieById.get(mid);
       if (!movie) return { error: `影片 ${mid} 不存在` };
-      // 安全重命名调用
-      return {
-        ok: true,
-        movieId: mid,
-        message: `用户已批准：文件已被重命名为 ${args.targetName}`
-      };
+      // targetName 带扩展名，renameOneMovie 只吃主干（扩展名沿用原文件）
+      const stem = String(args.targetName || '').replace(/\.[A-Za-z0-9]{1,5}$/, '').trim();
+      if (!stem) return { error: '新文件名不能为空' };
+      try {
+        const { renameOneMovie } = require('../rename-service');
+        const r = await renameOneMovie(mid, stem, false);
+        if (!r || r.code !== 0) return { ok: false, movieId: mid, error: (r && r.msg) || '改名失败' };
+        return {
+          ok: true,
+          movieId: mid,
+          verified: true,
+          oldFileName: movie.fileName,
+          newFileName: r.data && r.data.fileName,
+          message: r.msg === '名称未改变'
+            ? '文件名本来就一致，未作改动'
+            : `文件已真实改名为 ${r.data && r.data.fileName}（磁盘 + NFO/同名封面 + 库内路径均已同步）`
+        };
+      } catch (e) {
+        return { ok: false, movieId: mid, error: e.message };
+      }
     }
   },
 
@@ -388,10 +422,15 @@ const TOOL_DEFINITIONS = [
       } catch (e) { rows = []; }
       return rows.map(r => ({
         movieId: r.movieId,
+        id: r.movieId,
         title: r.title || r.fileName,
         avid: r.avid || '',
+        type: r.type || 'jav',
         percent: r.duration > 0 ? Math.round((r.position / r.duration) * 100) + '%' : '已看部分',
-        positionSeconds: Math.round(r.position)
+        positionSeconds: Math.round(r.position),
+        /* round140：续播卡片同样要海报 */
+        poster: r.posterPath || '',
+        posterPath: r.posterPath || ''
       }));
     }
   },
@@ -439,6 +478,422 @@ const TOOL_DEFINITIONS = [
         movieCount: matched.length,
         message: `已为你成功创建主题播单「${name}」，共收录 ${matched.length} 部影片，已为你跳转至收藏夹！✨`
       };
+    }
+  },
+
+  /* ========================================================================
+   * round135 新增：海报闭环（这三个能力原来只活在「LangGraph 抛异常」的降级链里，
+   * 主链根本看不见 —— 用户问「库里缺多少海报」，AI 只能说不知道）
+   * ====================================================================== */
+
+  // 14. 海报体检 (只读)
+  {
+    name: 'find_missing_posters',
+    label: '检查缺失/低质海报',
+    privilege: PRIVILEGE.READ_ONLY,
+    timeoutMs: 30000,
+    description: '扫描海报健康度，返回「缺失 / 待换（视频截图、低清、损坏）」的数量与样本。不修改任何文件',
+    parameters: {
+      type: 'object',
+      properties: {
+        level: {
+          type: 'string',
+          description: '只看哪一类：missing(缺失)、bad(需替换)、suspect(可疑)、all(全部问题)',
+          enum: ['missing', 'bad', 'suspect', 'all']
+        },
+        limit: { type: 'number', description: '样本条数，默认 10，最多 30' }
+      }
+    },
+    handler: async (args) => {
+      const { auditAll } = require('../poster-health');
+      const level = args.level || 'all';
+      const limit = Math.min(30, Math.max(1, Number(args.limit) || 10));
+      const r = await auditAll(db.db, { log: () => { } });
+      const items = (r.items || []).filter(it => {
+        if (level === 'all') return it.level !== 'ok';
+        return it.level === level;
+      });
+      return {
+        total: r.total,
+        ok: r.ok,
+        missing: r.missing,
+        bad: r.bad,
+        suspect: r.suspect,
+        needFix: (r.missing || 0) + (r.bad || 0),
+        samples: items.slice(0, limit).map(it => ({
+          movieId: it.id, title: it.title || '', avid: it.avid || '', level: it.level, reason: it.reason || ''
+        })),
+        notice: '这是只读体检。要真的替换某一条，请调用 repair_poster 并传 movieId'
+      };
+    }
+  },
+
+  // 15. 修复单部海报 (可逆：旧图会归档而不是删除)
+  {
+    name: 'repair_poster',
+    label: '替换单片海报',
+    privilege: PRIVILEGE.MUTATING,
+    timeoutMs: 90000,
+    description: '为指定影片重新搜索并替换海报。只接受通过尺寸/比例校验的候选，宁缺勿错；旧海报归档不删除',
+    parameters: {
+      type: 'object',
+      properties: {
+        movieId: { type: 'number', description: '影片 ID（先用 find_missing_posters 或 search_movies 拿）' },
+        force: { type: 'boolean', description: '即使当前海报判定健康也强制重找，默认 false' }
+      },
+      required: ['movieId']
+    },
+    handler: async (args) => {
+      const id = Number(args.movieId);
+      const movie = db.getMovieById.get(id);
+      if (!movie) return { error: `影片 ${id} 不存在` };
+      const { judgeMovie, repairOne } = require('../poster-health');
+      const before = judgeMovie(movie);
+      if (movie.posterLocked && !args.force) {
+        return { skipped: true, reason: '这部影片的封面被用户锁定过（posterLocked=1），按纪律不动', level: before.level };
+      }
+      const r = await repairOne(db.db, movie, { force: !!args.force, maxCands: 3 });
+      const after = db.getMovieById.get(id) ? judgeMovie(db.getMovieById.get(id)) : before;
+      return {
+        movieId: id,
+        title: movie.title || movie.fileName,
+        before: { level: before.level, reason: before.reason },
+        after: { level: after.level, reason: after.reason },
+        changed: before.level !== after.level || (r && r.strategy === 'replace'),
+        detail: r || {}
+      };
+    }
+  },
+
+  // 16. 重新刮削单部 (可逆：merge 模式不覆盖手改值)
+  {
+    name: 'rescrape_movie',
+    label: '重新刮削单片',
+    privilege: PRIVILEGE.MUTATING,
+    timeoutMs: 90000,
+    description: '重新联网刮削一部作品的元数据（标题/简介/片商/日期/女优/标签）。默认 merge 只补空，不覆盖用户手改值',
+    parameters: {
+      type: 'object',
+      properties: {
+        movieId: { type: 'number', description: '影片 ID' },
+        mode: {
+          type: 'string',
+          description: 'merge(默认，只补空) / overwrite(强制覆盖，会覆盖手改值)',
+          enum: ['merge', 'overwrite']
+        }
+      },
+      required: ['movieId']
+    },
+    handler: async (args) => {
+      const id = Number(args.movieId);
+      const movie = db.getMovieById.get(id);
+      if (!movie) return { error: `影片 ${id} 不存在` };
+      if (!movie.filePath || !require('fs').existsSync(movie.filePath)) {
+        return { error: '源文件不在磁盘上（可能 NAS 掉线），已跳过', fileName: movie.fileName };
+      }
+      const { processSingleFile } = require('../scanner');
+      const mode = args.mode === 'overwrite' ? 'overwrite' : 'merge';
+      const t0 = Date.now();
+      await processSingleFile(movie.filePath, movie.type || 'jav', {
+        forceWeb: true, mergeMode: mode, ignoreManual: mode === 'overwrite'
+      });
+      const after = db.getMovieById.get(id) || {};
+      return {
+        movieId: id,
+        mode,
+        costMs: Date.now() - t0,
+        before: { title: movie.title, overview: (movie.overview || '').slice(0, 40) },
+        after: { title: after.title, overview: (after.overview || '').slice(0, 40) },
+        titleChanged: movie.title !== after.title
+      };
+    }
+  },
+
+  // 17. 任务/队列状态 (只读)
+  {
+    name: 'get_library_jobs',
+    label: '查询扫描与任务状态',
+    privilege: PRIVILEGE.READ_ONLY,
+    description: '查看当前扫描进度、海报/补全/打标自愈队列的状态，判断现在能不能跑批量任务',
+    parameters: { type: 'object', properties: {} },
+    handler: async () => {
+      const scanner = require('../scanner');
+      const ensure = require('../ingest-ensure');
+      let scan = null, ingest = null;
+      try { scan = scanner.getScanStatus(); } catch (e) { }
+      try { ingest = ensure.getStatus(); } catch (e) { }
+      return {
+        scan: scan ? {
+          running: !!scan.running, current: scan.current, total: scan.total,
+          currentFile: scan.currentFile || '', stats: scan.stats || {}
+        } : null,
+        ingest: ingest ? {
+          pending: ingest.pending || 0, done: ingest.done || 0,
+          failed: ingest.failed || 0, filled: ingest.filled || 0,
+          postersFixed: ingest.postersFixed || 0, running: !!ingest.running
+        } : null
+      };
+    }
+  },
+
+  /* ========================================================================
+   * round135 新增：目录读写（全部走沙箱路径牢笼，只允许媒体库目录内）
+   * ====================================================================== */
+
+  // 18. 列目录 (只读)
+  {
+    name: 'list_files',
+    label: '浏览目录',
+    privilege: PRIVILEGE.READ_ONLY,
+    description: '列出一个媒体库目录下的文件/子目录（只允许已配置的媒体库路径内）。用于排查文件是否真的改名/存在',
+    parameters: {
+      type: 'object',
+      properties: {
+        dir: { type: 'string', description: '绝对路径目录（必须在已配置的媒体库目录内）' },
+        limit: { type: 'number', description: '最多返回条数，默认 60' }
+      },
+      required: ['dir']
+    },
+    handler: async (args) => {
+      const { verifyPathJail } = require('./sandbox');
+      const jail = verifyPathJail(args.dir);
+      if (!jail.safe) return { error: jail.reason };
+      const fs = require('fs');
+      const path = require('path');
+      const dir = jail.resolvedPath;
+      if (!fs.existsSync(dir)) return { error: '目录不存在或当前不可访问（NAS 可能掉线）' };
+      const st = fs.statSync(dir);
+      if (!st.isDirectory()) return { error: '目标不是目录' };
+      const limit = Math.min(200, Math.max(1, Number(args.limit) || 60));
+      const entries = fs.readdirSync(dir, { withFileTypes: true }).slice(0, limit).map(e => {
+        let size = 0;
+        try { if (e.isFile()) size = fs.statSync(path.join(dir, e.name)).size; } catch (err) { }
+        return { name: e.name, isDir: e.isDirectory(), size };
+      });
+      return { dir, count: fs.readdirSync(dir).length, shown: entries.length, entries };
+    }
+  },
+
+  // 19. 读文本文件 (只读)
+  {
+    name: 'read_text_file',
+    label: '读取文本文件',
+    privilege: PRIVILEGE.READ_ONLY,
+    description: '读取媒体库目录内的文本类文件内容（.nfo/.txt/.json/.md/.log/.srt 等，最大 200KB），用于核对 NFO 是否被正确改写',
+    parameters: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: '绝对路径（必须指向媒体库目录内的文本文件）' },
+        maxKB: { type: 'number', description: '最多读取多少 KB，默认 64，上限 200' }
+      },
+      required: ['filePath']
+    },
+    handler: async (args) => {
+      const { verifyPathJail } = require('./sandbox');
+      const jail = verifyPathJail(args.filePath);
+      if (!jail.safe) return { error: jail.reason };
+      const fs = require('fs');
+      const path = require('path');
+      const p = jail.resolvedPath;
+      const OK = ['.nfo', '.txt', '.json', '.md', '.log', '.srt', '.ass', '.csv', '.ini', '.conf', '.yml', '.yaml'];
+      const ext = path.extname(p).toLowerCase();
+      if (!OK.includes(ext)) return { error: `只允许读取文本类文件（${OK.join(' ')}），当前是 ${ext || '(无扩展名)'}` };
+      if (!fs.existsSync(p)) return { error: '文件不存在或不可访问' };
+      const maxBytes = Math.min(200, Math.max(1, Number(args.maxKB) || 64)) * 1024;
+      const st = fs.statSync(p);
+      const fd = fs.openSync(p, 'r');
+      const buf = Buffer.alloc(Math.min(maxBytes, st.size));
+      fs.readSync(fd, buf, 0, buf.length, 0);
+      fs.closeSync(fd);
+      return {
+        filePath: p, size: st.size,
+        truncated: st.size > maxBytes,
+        content: buf.toString('utf8')
+      };
+    }
+  },
+
+  // 20. 移动文件 (变更，同盘内)
+  {
+    name: 'move_file',
+    label: '移动/整理文件',
+    privilege: PRIVILEGE.MUTATING,
+    description: '把媒体库目录内的一个文件移动到同盘另一个目录（不覆盖已有文件）。用于按类型整理目录',
+    parameters: {
+      type: 'object',
+      properties: {
+        src: { type: 'string', description: '源文件绝对路径' },
+        dstDir: { type: 'string', description: '目标目录绝对路径（必须已存在，且在媒体库目录内）' }
+      },
+      required: ['src', 'dstDir']
+    },
+    handler: async (args) => {
+      const { verifyPathJail } = require('./sandbox');
+      const fs = require('fs');
+      const path = require('path');
+      const a = verifyPathJail(args.src);
+      const b = verifyPathJail(args.dstDir);
+      if (!a.safe) return { error: '源路径被拦截：' + a.reason };
+      if (!b.safe) return { error: '目标路径被拦截：' + b.reason };
+      if (!fs.existsSync(a.resolvedPath)) return { error: '源文件不存在' };
+      if (!fs.statSync(a.resolvedPath).isFile()) return { error: '源路径不是文件' };
+      if (!fs.existsSync(b.resolvedPath) || !fs.statSync(b.resolvedPath).isDirectory()) return { error: '目标目录不存在' };
+      if (path.parse(a.resolvedPath).root.toLowerCase() !== path.parse(b.resolvedPath).root.toLowerCase()) {
+        return { error: '只允许同盘移动（跨盘请用复制+校验的方案，避免半途失败丢文件）' };
+      }
+      const target = path.join(b.resolvedPath, path.basename(a.resolvedPath));
+      if (fs.existsSync(target)) return { error: '目标目录已有同名文件，未覆盖' };
+      fs.renameSync(a.resolvedPath, target);
+      // 同名 sidecar 一起走，避免 NFO/封面成孤儿
+      const ext = path.extname(a.resolvedPath);
+      const stem = path.basename(a.resolvedPath, ext);
+      const movedSides = [];
+      for (const suffix of ['.nfo', '.jpg', '-poster.jpg']) {
+        const s = path.join(path.dirname(a.resolvedPath), stem + suffix);
+        if (!fs.existsSync(s)) continue;
+        const t = path.join(b.resolvedPath, stem + suffix);
+        try { if (!fs.existsSync(t)) { fs.renameSync(s, t); movedSides.push(suffix); } } catch (e) { }
+      }
+      return { ok: true, from: a.resolvedPath, to: target, sidecars: movedSides, notice: '文件已移动，但库内路径未自动更新；请提示用户执行一次扫描' };
+    }
+  },
+
+  // 21. 移入回收站 (破坏性)
+  {
+    name: 'trash_file',
+    label: '移入回收站',
+    privilege: PRIVILEGE.DESTRUCTIVE,
+    timeoutMs: 20000,
+    warningMessage: '此操作会把文件移出媒体库（移到同盘 .cinemavault-trash 目录），需要你确认',
+    description: '把媒体库目录内的文件移入同盘 .cinemavault-trash/日期 目录（可手动找回），不做永久删除',
+    parameters: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: '要移出的文件绝对路径（必须在媒体库目录内）' }
+      },
+      required: ['filePath']
+    },
+    handler: async (args) => {
+      const { verifyPathJail } = require('./sandbox');
+      const fs = require('fs');
+      const path = require('path');
+      const jail = verifyPathJail(args.filePath);
+      if (!jail.safe) return { error: jail.reason };
+      const src = jail.resolvedPath;
+      if (!fs.existsSync(src)) return { error: '文件不存在' };
+      const st = fs.statSync(src);
+      if (!st.isFile()) return { error: '只支持移出单个文件，目录请勿用此工具' };
+      const root = path.parse(src).root;
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      const trashDir = path.join(root, '.cinemavault-trash', stamp);
+      fs.mkdirSync(trashDir, { recursive: true });
+      let target = path.join(trashDir, path.basename(src));
+      if (fs.existsSync(target)) {
+        const ext = path.extname(src);
+        target = path.join(trashDir, path.basename(src, ext) + '_' + Date.now() + ext);
+      }
+      fs.renameSync(src, target);
+      return {
+        ok: true, from: src, to: target,
+        recoverHint: `如需找回，把文件从 ${trashDir} 移回原目录并重新扫描即可`,
+        notice: '只是移出媒体库，没有永久删除'
+      };
+    }
+  },
+
+  /* ========================================================================
+   * round136：批量作业化
+   * 单工具沙箱 90 秒装不下 1477 张海报（3~20 秒/张），所以批量必须变成
+   * 「先起作业 → 立刻返回 jobId → 用户用 get_job_status 看进度」。
+   * dryRun 默认 true：不显式要求真跑，就只出清单不动任何封面。
+   * ====================================================================== */
+
+  // 22. 批量替换海报 (破坏性：会覆盖封面)
+  {
+    name: 'batch_repair_posters',
+    label: '批量替换海报',
+    privilege: PRIVILEGE.DESTRUCTIVE,
+    timeoutMs: 20000,
+    warningMessage: '这会启动一个后台作业，按清单逐张替换封面（旧图归档，可找回）。默认先试跑，不写盘',
+    description: '批量替换缺失/低质海报。默认 dryRun=true 只生成清单不动封面；dryRun=false 才会真跑。返回 jobId，用 get_job_status 查进度',
+    parameters: {
+      type: 'object',
+      properties: {
+        level: {
+          type: 'string',
+          description: '处理哪一类：missing(只补缺失) / bad(只换低质截图) / all(两者都做)',
+          enum: ['missing', 'bad', 'all']
+        },
+        limit: { type: 'number', description: '本次最多处理多少张，默认 20，上限 500' },
+        dryRun: { type: 'boolean', description: 'true=只出清单不写盘（默认）；false=真的替换' },
+        force: { type: 'boolean', description: '连 posterLocked（用户锁定过的封面）也换，默认 false' }
+      }
+    },
+    handler: async (args) => {
+      const dryRun = args.dryRun !== false;   // 不显式给 false 就按试跑处理
+      const job = require('./jobs').startPosterRepair({
+        level: args.level || 'bad',
+        limit: args.limit || 20,
+        dryRun,
+        force: !!args.force
+      });
+      return {
+        jobId: job.id,
+        dryRun,
+        level: args.level || 'bad',
+        limit: job.meta.limit,
+        message: dryRun
+          ? '已启动「试跑」作业：只统计不动封面。用 get_job_status 看清单，确认后再用 dryRun=false 真跑'
+          : '已启动后台替换作业。用 get_job_status 查进度，cancel_job 可以随时停',
+        notice: '作业在后台串行执行（每条间隔 400ms，避免打爆刮削源）'
+      };
+    }
+  },
+
+  // 23. 查询作业进度 (只读)
+  {
+    name: 'get_job_status',
+    label: '查询作业进度',
+    privilege: PRIVILEGE.READ_ONLY,
+    description: '查询后台作业进度（批量换海报等）。不传 jobId 就返回最近的作业列表',
+    parameters: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'string', description: '作业 ID；不传则列出最近作业' }
+      }
+    },
+    handler: async (args) => {
+      const jobs = require('./jobs');
+      if (!args.jobId) {
+        const list = jobs.list(10).map(j => {
+          const p = jobs.progressOf(j);
+          return { id: p.id, type: p.type, status: p.status, percent: p.percent, ok: p.ok, failed: p.failed, total: p.total };
+        });
+        return { count: list.length, jobs: list };
+      }
+      const j = jobs.get(args.jobId);
+      if (!j) return { error: '没有这个作业（可能应用重启过，内存里的作业已清空；日志仍在 logs/agent-jobs）' };
+      return jobs.progressOf(j);
+    }
+  },
+
+  // 24. 取消作业 (变更)
+  {
+    name: 'cancel_job',
+    label: '取消后台作业',
+    privilege: PRIVILEGE.MUTATING,
+    description: '请求取消一个正在跑的后台作业（当前那一条跑完就停，不会留下半个文件）',
+    parameters: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'string', description: '作业 ID' }
+      },
+      required: ['jobId']
+    },
+    handler: async (args) => {
+      const r = require('./jobs').cancel(args.jobId);
+      return r;
     }
   }
 ];

@@ -36,7 +36,7 @@
 }
 
 #authFields .settings-item {
-    animation: authFieldsIn .18s ease-out;
+    animation: authFieldsIn .18s var(--mv2-settle, ease-out);
 }
 
 @keyframes authFieldsIn {

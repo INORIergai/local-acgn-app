@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>本地影库</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/online-browse.css">
@@ -173,18 +173,29 @@
     <link rel="stylesheet" href="css/source-picker.css">
     <link rel="stylesheet" href="css/episode-sources.css">
     <link rel="stylesheet" href="css/read-resume.css">
+    <!-- 2026-11：漫画/小说库「书架工作台」（必须排在旧 av-board/round73 之后，覆盖树视图） -->
+    <link rel="stylesheet" href="css/read-workspace.css">
+    <link rel="stylesheet" href="css/read-records.css">
     <link rel="stylesheet" href="css/round160-whale-surface.css">
     <link rel="stylesheet" href="css/round161-home-fit.css">
     <link rel="stylesheet" href="css/round162-ink-theme.css">
     <link rel="stylesheet" href="css/round168-tags.css">
     <!-- ★ round173b：追番页样式（语义令牌，双皮肤自适应） -->
     <link rel="stylesheet" href="css/round173b-series.css">
+    <!-- ★ v4：追番首页（Banner/周表/排行/海报墙）+ 源优先详情弹层 -->
+    <link rel="stylesheet" href="css/series-home.css">
+    <!-- ★ v4：次元资料（萌娘百科 / GameKee 原生阅读） -->
+    <link rel="stylesheet" href="css/wiki-hub.css">
+    <!-- ★ v4：GALGAME 资料库（Kungal / InariGal） -->
+    <link rel="stylesheet" href="css/galgame.css">
     <!-- ★ round173e：Bangumi 同步设置面板 -->
     <link rel="stylesheet" href="css/round173e-bangumi.css">
     <!-- ★ round173g：播放器增强（字幕/跳过OPED/缓冲条/PiP） -->
     <link rel="stylesheet" href="css/round173g-player.css">
     <!-- ★ round173：墨皮肤补齐 V6 新模块（必须排在 round168 之后、mobile.css 之前） -->
     <link rel="stylesheet" href="css/round173-ink-v6.css">
+    <!-- ★ round174：爱弥斯皮肤（暖书房 · 玫瑰金；与 AI 人格 aimeis 联动） -->
+    <link rel="stylesheet" href="css/round174-amis-theme.css">
     <!-- ★ 移动端适配层必须真正置于整条样式链最末。
          2026-11 实测：此前它排在 round151~168 之前，导致 V5 首页典藏放映台、
          四皮肤拟人首屏、三态书版、V6 阅读大厅/原生流等 15 个后加载补丁
@@ -193,20 +204,28 @@
     <link rel="stylesheet" href="css/mobile.css">
     <!-- ★ round173：round126~168 这 15 个后加补丁的手机端适配（必须排在 mobile.css 之后） -->
     <link rel="stylesheet" href="css/round173-mobile-v6.css">
+    <link rel="stylesheet" href="css/app-shell.css">
+    <link rel="stylesheet" href="css/workspace.css">
+    <link rel="stylesheet" href="css/palette.css">
 </head>
 
 <body>
     <header class="navbar">
         <div class="nav-left">
-            <button class="m-drawer-btn" id="mDrawerBtn" aria-label="打开导航菜单" aria-expanded="false" aria-controls="mainSidebar"><svg class="ic ic-list" width="16" height="16"><use href="#ic-list"/></svg></button>
-            <h1 class="logo" onclick="window.location.href='/';" style="cursor:pointer;" title="返回首页">午夜场 · Cinema Vault</h1>
+            <button class="m-drawer-btn" id="mDrawerBtn" aria-label="打开导航菜单" aria-expanded="false" aria-controls="mainSidebar"><svg class="ic ic-list" width="18" height="18"><use href="#ic-list"/></svg></button>
+            <button class="brand" id="brandHome" type="button" aria-label="返回首页" onclick="switchView('home')">
+                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M6 9.5h20v15H6zM10 5.5h12v4H10zM10 13.5v7M16 13.5v7M22 13.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6 14h20" stroke="currentColor" stroke-width="1.2"/></svg></span>
+                <span class="brand-type"><strong>午夜场</strong><small>CINEMA VAULT</small></span>
+            </button>
+            <h1 class="logo" hidden>午夜场 · Cinema Vault</h1>
         </div>
         <div class="nav-center">
-            <div class="search-box">
-                <span class="search-icon"><svg class="ic ic-search" width="16" height="16"><use href="#ic-search"/></svg></span>
-                <input type="text" id="searchInput" placeholder="搜索番号、片名、演员、标签…（Ctrl+K 全局搜索）">
-                <!-- round42：排序下拉移到搜索框旁（原侧栏版废弃；全季/年份筛选已取消） -->
-                <select id="searchSortSelect" class="search-sort-select" title="搜索结果的排序方式">
+            <div class="search-box" role="search">
+                <span class="search-icon"><svg class="ic ic-search" width="17" height="17"><use href="#ic-search"/></svg></span>
+                <label class="sr-only" for="searchInput">搜索当前媒体库</label>
+                <input type="search" id="searchInput" autocomplete="off" placeholder="搜索片名、书籍、演员或标签">
+                <kbd class="search-shortcut" aria-hidden="true">Ctrl K</kbd>
+                <select id="searchSortSelect" class="search-sort-select" title="搜索结果的排序方式" aria-label="搜索结果排序">
                     <option value="name:asc">名称 A→Z</option>
                     <option value="name:desc">名称 Z→A</option>
                     <option value="relevance:asc">相关度</option>
@@ -220,55 +239,67 @@
             </div>
         </div>
         <div class="nav-right">
+            <button class="shell-ai-action" id="aiTopBtn" title="打开 AI 策展人" aria-label="打开 AI 策展人"><svg class="ic ic-ai" width="18" height="18"><use href="#ic-ai"/></svg><span>AI 策展人</span></button>
             <div class="notification-container">
-                <button class="theme-toggle" id="notificationBtn" title="通知">
-                    <svg class="ic ic-bell" width="16" height="16"><use href="#ic-bell"/></svg>
+                <button class="icon-button" id="notificationBtn" title="通知中心" aria-label="通知中心" aria-controls="notificationPanel" aria-expanded="false">
+                    <svg class="ic ic-bell" width="18" height="18"><use href="#ic-bell"/></svg>
                     <span class="notification-badge" id="notificationBadge" style="display:none;">0</span>
                 </button>
-                <div class="notification-panel" id="notificationPanel">
-                    <div class="notification-header">
-                        <span>通知中心</span>
-                        <button class="btn btn-sm btn-secondary" onclick="clearAllNotifications()">一键清除</button>
-                        <button class="btn btn-sm btn-secondary" onclick="markAllRead()">全部已读</button>
-                    </div>
-                    <div class="notification-list" id="notificationList">
-                        <div style="text-align:center;padding:30px;color:var(--text-muted);">暂无通知</div>
-                    </div>
-                </div>
             </div>
-            <button class="theme-toggle" id="themeToggle" title="切换主题"><svg class="ic ic-moon" width="16" height="16"><use href="#ic-moon"/></svg></button>
-            <!-- round41 #8：AV/里番导航显隐开关（默认隐藏，首次解锁需确认） -->
-            <button class="theme-toggle" id="adultToggle" title="显示/隐藏成人内容入口（AV库、里番库、演员库等）" onclick="toggleAdultNav()"><svg class="ic ic-lock" width="16" height="16"><use href="#ic-lock"/></svg></button>
-            <!-- 风格切换：纸 / 夜 / 鲸（round153：鲸鱼娘 Deep Whale 特质化角色主题） -->
-            <div class="v4-skin-switch" id="v4SkinSwitch" role="group" aria-label="界面风格">
-                <button class="v4-skin-btn" data-skin="classic" data-short="纸" data-label="纸 · Paper" onclick="setV4Skin('classic')" aria-label="纸风格"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="matinee" data-short="夜" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="whale" data-short="鲸" data-label="🐋 鲸 · Deep Whale" onclick="setV4Skin('whale')" aria-label="鲸鱼娘主题"><span class="v4-dot"></span></button>
-                <button class="v4-skin-btn" data-skin="ink" data-short="墨" data-label="墨 · Ink" onclick="setV4Skin('ink')" aria-label="墨色档案主题"><span class="v4-dot"></span></button>
-            </div>
-            <button class="theme-toggle" id="shortcutHelpBtn" title="全局快捷键指南（按 ? 或 F1 呼出）" onclick="toggleShortcutsModal()"><span style="font-weight:700;font-size:14px;font-family:var(--font-mono);line-height:1;">?</span></button>
-            <button class="theme-toggle" id="aiTopBtn" title="AI助手" aria-label="AI助手"><svg class="ic ic-ai" width="16" height="16"><use href="#ic-ai"/></svg></button>
-            <button class="btn btn-sm btn-secondary" id="watchNowBtn" title="立即检查四个媒体目录有没有新文件（只看新增，比全量扫描快得多）"><svg class="ic ic-refresh" width="14" height="14" style="vertical-align:-2px;margin-right:4px;"><use href="#ic-refresh"/></svg> 检查新增</button>
-            <button class="btn btn-sm btn-secondary" id="watchToggleBtn" title="目录监控开关：应用启动即自动开启；无新增时轮询间隔逐次翻倍，上限 1 小时">监控 开</button>
-            <button class="btn" id="scanBtn">开始扫描</button>
-            <!-- round37 #6：扫描/监控状态收成小圆点+悬浮气泡，不再挤占顶栏搜索框 -->
-            <div class="scan-status-wrap" id="scanStatusWrap">
-                <button class="scan-dot idle" id="scanDot" aria-label="扫描与监控状态"><span class="scan-dot-core"></span></button>
-                <div class="scan-pop" id="scanPop">
-                    <div class="scan-pop-sec" id="scanPopScan"></div>
-                    <div class="scan-pop-sec" id="scanPopWatch"></div>
-                </div>
-            </div>
+            <button class="icon-button" id="shellLibraryBtn" type="button" title="库务与个性化" aria-label="库务与个性化" aria-controls="shellWorkspace" aria-expanded="false"><svg class="ic ic-settings" width="18" height="18"><use href="#ic-settings"/></svg></button>
+            <button class="icon-button shell-scan-trigger" id="scanBtn" title="扫描影片库" aria-label="扫描影片库"><svg class="ic ic-scan" width="18" height="18"><use href="#ic-scan"/></svg><span class="shell-scan-label">开始扫描</span></button>
+            <button class="shell-primary-action" id="shellContinueBtn" type="button" title="回到最近浏览" onclick="switchView('recent')"><svg class="ic ic-play" width="16" height="16"><use href="#ic-play"/></svg><span>继续浏览</span></button>
         </div>
-        <div class="scan-progress">
+        <div class="scan-progress" aria-hidden="true">
             <div class="scan-progress-bar" id="scanProgressBar"></div>
         </div>
     </header>
 
+    <div class="shell-scrim" id="shellScrim" hidden></div>
+    <aside class="shell-workspace" id="shellWorkspace" aria-label="库务与个性化" hidden>
+        <div class="shell-workspace-head">
+            <div><span class="shell-eyebrow">YOUR COLLECTION</span><h2>库务与个性化</h2></div>
+            <button class="icon-button" id="shellWorkspaceClose" type="button" aria-label="关闭库务与个性化"><svg class="ic ic-close" width="18" height="18"><use href="#ic-close"/></svg></button>
+        </div>
+        <nav class="shell-workspace-tabs" aria-label="库务面板">
+            <button type="button" class="active" data-shell-tab="library" aria-selected="true"><svg class="ic" width="16" height="16"><use href="#ic-server"/></svg>库务</button>
+            <button type="button" data-shell-tab="appearance" aria-selected="false"><svg class="ic" width="16" height="16"><use href="#ic-paint"/></svg>外观</button>
+            <button type="button" data-shell-tab="alerts" aria-selected="false"><svg class="ic" width="16" height="16"><use href="#ic-bell"/></svg>通知</button>
+        </nav>
+        <div class="shell-workspace-body">
+            <section data-shell-panel="library">
+                <div class="shell-panel-intro"><h3>保持馆藏新鲜</h3><p>日常只需检查新增；完整扫描用于整理整个影片库。</p></div>
+                <button class="shell-task-primary" id="watchNowBtn" title="只检查媒体目录里的新增文件"><svg class="ic" width="18" height="18"><use href="#ic-refresh"/></svg><span id="watchNowLabel">检查新增</span></button>
+                <div class="shell-task-row"><div><strong>自动目录监控</strong><p>在后台发现新文件，间隔会自适应。</p></div><button class="btn btn-sm btn-secondary" id="watchToggleBtn" title="暂停或恢复目录监控"><svg class="ic" width="16" height="16"><use href="#ic-eye"/></svg><span id="watchToggleLabel">监控 开</span></button></div>
+                <div class="shell-status-card"><button class="scan-dot idle" id="scanDot" aria-label="扫描与监控状态"><span class="scan-dot-core"></span></button><div class="scan-pop" id="scanPop"><div class="scan-pop-sec" id="scanPopScan">暂无扫描任务</div><div class="scan-pop-sec" id="scanPopWatch"></div></div></div>
+                <button class="shell-settings-link" id="shellAllSettings" type="button"><svg class="ic" width="17" height="17"><use href="#ic-settings"/></svg>全部设置<svg class="ic" width="15" height="15"><use href="#ic-chevronRight"/></svg></button>
+            </section>
+            <section data-shell-panel="appearance" hidden>
+                <div class="shell-panel-intro"><h3>你的放映室</h3><p>皮肤只改变氛围，不改变操作习惯。</p></div>
+                <div class="shell-preference-row"><div><strong>明暗模式</strong><p>在当前皮肤中切换明暗。</p></div><button class="icon-button" id="themeToggle" title="切换明暗模式" aria-label="切换明暗模式"><svg class="ic ic-moon" width="18" height="18"><use href="#ic-moon"/></svg></button></div>
+                <div class="v4-skin-switch" id="v4SkinSwitch" role="group" aria-label="界面风格">
+                    <button class="v4-skin-btn" data-skin="classic" data-short="纸" data-label="纸 · Paper" onclick="setV4Skin('classic')" aria-label="纸风格"><span class="v4-dot"></span><span>纸</span></button>
+                    <button class="v4-skin-btn" data-skin="matinee" data-short="夜" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span><span>夜</span></button>
+                    <button class="v4-skin-btn" data-skin="whale" data-short="鲸" data-label="鲸 · Deep Whale" onclick="setV4Skin('whale')" aria-label="鲸鱼娘主题"><span class="v4-dot"></span><span>鲸</span></button>
+                    <button class="v4-skin-btn" data-skin="ink" data-short="墨" data-label="墨 · Ink" onclick="setV4Skin('ink')" aria-label="墨色档案主题"><span class="v4-dot"></span><span>墨</span></button>
+                    <button class="v4-skin-btn" data-skin="amis" data-short="弥" data-label="爱弥斯 · Amis" onclick="setV4Skin('amis')" aria-label="爱弥斯主题"><span class="v4-dot"></span><span>弥</span></button>
+                </div>
+                <button class="shell-preference-row" id="adultToggle" title="显示或隐藏成人内容入口" onclick="toggleAdultNav()"><span><strong>隐私内容</strong><p>控制成人与隐私库入口的显示。</p></span><svg class="ic ic-lock" width="18" height="18"><use href="#ic-lock"/></svg></button>
+                <button class="shell-preference-row" id="shortcutHelpBtn" title="全局快捷键指南（? 或 F1）" onclick="toggleShortcutsModal()"><span><strong>快捷键指南</strong><p>用键盘更快地浏览你的馆藏。</p></span><svg class="ic" width="18" height="18"><use href="#ic-info"/></svg></button>
+            </section>
+            <section data-shell-panel="alerts" hidden>
+                <div class="notification-panel" id="notificationPanel">
+                    <div class="notification-header"><span>通知中心</span><div><button class="btn btn-sm btn-secondary" onclick="markAllRead()">全部已读</button><button class="btn btn-sm btn-secondary" onclick="clearAllNotifications()">清空</button></div></div>
+                    <div class="notification-list" id="notificationList"><div class="shell-empty-note">暂无通知</div></div>
+                </div>
+            </section>
+        </div>
+    </aside>
+
     <div class="main-container">
         <aside class="sidebar" id="mainSidebar">
             <!-- v1.3 #4：侧栏收起/展开（Ctrl+B 同效；状态记忆在 localStorage.sidebarRail） -->
-            <div class="sb-topline"><button type="button" class="sb-collapse-btn" id="sbCollapseBtn" onclick="toggleSidebarRail()" title="收起侧栏（Ctrl+B）">«</button></div>
+            <div class="sb-topline"><span class="sidebar-caption">馆藏目录</span><button type="button" class="sb-collapse-btn" id="sbCollapseBtn" onclick="toggleSidebarRail()" title="收起侧栏（Ctrl+B）" aria-label="收起或展开侧栏"><svg class="ic" width="15" height="15"><use href="#ic-chevronLeft"/></svg></button></div>
             <div class="mobile-only-actions" id="mSidebarActions"></div>
             <div class="sidebar-section">
                 <h3>推荐</h3>
@@ -373,6 +404,26 @@
                 <div class="nav-item" data-view="favhub">
                     <span>⭐ 收藏夹</span>
                 </div>
+                <div class="nav-item" data-view="novel-records">
+                    <span>📖 小说阅读记录</span>
+                </div>
+                <div class="nav-item" data-view="comic-records">
+                    <span>📚 漫画阅读记录</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>次元资料</h3>
+                <!-- v4：萌娘百科 + GameKee 原生资料阅读（文章在应用内排版，不套 webview） -->
+                <div class="nav-item" data-view="wiki">
+                    <span>📖 萌娘百科</span>
+                </div>
+                <div class="nav-item" data-view="gamekee">
+                    <span>🎮 GameKee</span>
+                </div>
+                <div class="nav-item" data-view="galgame">
+                    <span>💗 Galgame 资料库</span>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -434,7 +485,7 @@
             
             <div class="sidebar-section">
                 <h3>排序方式</h3>
-                <select id="sortSelect" class="select-input">
+                <select id="sortSelect" class="select-input" aria-label="媒体排序方式" title="媒体排序方式">
                     <option value="hot">🔥 热度排序</option>
                     <option value="recent">🆕 最新添加</option>
                     <option value="play">▶️ 播放次数</option>
@@ -477,7 +528,7 @@
                 <div class="home-backdrop"><img src="img/app-icon.png" alt=""></div>
                 <!-- round158：鲸鱼娘首屏（只在 whale 皮肤显示，由 CSS 控显隐；不新增数据请求） -->
                 <section class="wh-hero" aria-label="鲸鱼娘 · 深海馆藏">
-                    <img class="wh-hero-art" src="img/whale/hero-1-v3.webp" alt="月夜水下图书室里的鲸鱼娘 · 人身人腿与小鲸尾" loading="lazy">
+                    <img class="wh-hero-art" src="img/whale/hero-1-v4.webp" alt="银杏红墙前穿奶油旗装的鲸鱼娘 · 蓝发与蓝珠链" loading="lazy">
                     <div class="wh-hero-veil" aria-hidden="true"></div>
                     <div class="wh-hero-inner">
                         <p class="wh-hero-kicker">DEEP WHALE · 深海放映季</p>
@@ -511,6 +562,21 @@
                         <div class="th-hero-stats">
                             <span><b id="ikHeroMovies">0</b><i>馆藏条目</i></span>
                             <span><b id="ikHeroBooks">0</b><i>册书与漫画</i></span>
+                        </div>
+                    </div>
+                    <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                </section>
+                <!-- round174：爱弥斯 · 暖书房夜读（只在 amis 皮肤显示，三张首屏图随机轮换） -->
+                <section class="th-hero am-hero" aria-label="爱弥斯 · 书房夜读">
+                    <img class="th-hero-art" src="img/amis/hero-1.webp" alt="暖灯书房里读着书的爱弥斯 · 黑丝绒晚礼服与玫瑰粉长发" loading="lazy">
+                    <div class="th-hero-veil" aria-hidden="true"></div>
+                    <div class="th-hero-inner">
+                        <p class="th-hero-kicker">AMIS · 书房夜读</p>
+                        <p class="th-hero-greet">主人，今晚想从哪一页开始？</p>
+                        <h2 class="th-hero-title">把夜晚<br>读成温柔。</h2>
+                        <div class="th-hero-stats">
+                            <span><b id="amHeroMovies">0</b><i>馆藏影片</i></span>
+                            <span><b id="amHeroBooks">0</b><i>册书与漫画</i></span>
                         </div>
                     </div>
                     <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
@@ -715,6 +781,11 @@
             <!-- round173b：追番页独立视图容器 -->
             <div id="seriesView" style="display:none;"></div>
 
+            <!-- v4：次元资料独立视图容器（萌娘百科 / GameKee） -->
+            <div id="wikiView" style="display:none;"></div>
+            <div id="gamekeeView" style="display:none;"></div>
+            <div id="galgameView" style="display:none;"></div>
+
             <!-- 猜你喜欢 · 魔术卡片（magic-likes.js 渲染） -->
             <div id="magicView" class="magic-view"></div>
             
@@ -739,6 +810,8 @@
 
             <!-- 设置页视图 -->
             <div id="settingsView" style="display:none;"></div>
+            <!-- 2026-11：阅读记录中心（小说 / 漫画），由 js/read-records.js 渲染 -->
+            <div id="recordsView" style="display:none;"></div>
 
             <!-- 扩展功能视图（年度报告 / 刮削失败），由 features.js 渲染 -->
             <div id="featureView" style="display:none;"></div>
@@ -1223,7 +1296,7 @@
     </nav>
 
     <!-- r90：全局 ASR 语音悬浮按钮 (点击对麦克风说话，自动送达 AI 助手) -->
-    <button class="global-asr-fab" id="globalAsrFab" title="点击开始语音输入 (按住说话 / F2)">🎙️</button>
+    <button class="global-asr-fab" id="globalAsrFab" title="语音输入（按住说话 / F2）" aria-label="语音输入"><svg class="ic" width="20" height="20"><use href="#ic-headphones"/></svg></button>
 
     <!-- v4.6.0：hls.js 不再同步阻塞首屏（404 KB，只有点播放 m3u8 时才需要）。
          首次需要时由 app.js 的 ensureHls() 动态注入并按需缓存，普通 mp4/直链完全不加载。
@@ -1237,9 +1310,16 @@
          app.js 的 prefTitle() 依赖 window.cvDisplayTitle。 -->
     <script src="js/aipc-title-clean.js"></script>
     <script src="js/round153-folia.js"></script>
+    <!-- 2026-11：漫画/小说库「书架工作台」新渲染器（放在 app.js 之前，保证 hash 直达/首屏也能挂载） -->
+    <script src="js/read-workspace.js"></script>
+    <script src="js/read-records.js"></script>
     <script src="js/app.js"></script>
+    <script src="js/app-shell.js"></script>
     <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
     <script src="js/series-view.js"></script>
+    <!-- v4：次元资料（萌娘百科 / GameKee），同样在 app.js 之后 -->
+    <script src="js/wiki-hub.js"></script>
+    <script src="js/galgame-view.js"></script>
     <script src="js/source-picker.js"></script>
     <script src="js/series-graph.js"></script>
     <script src="js/jellyfin-panel.js"></script>

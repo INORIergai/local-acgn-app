@@ -26,6 +26,8 @@ import cn.cinemavault.app.data.model.CalendarItem
 import cn.cinemavault.app.data.model.Movie
 import cn.cinemavault.app.data.model.Stats
 import cn.cinemavault.app.data.model.posterUrl
+import cn.cinemavault.app.ui.scan.DeepLinkBus
+import cn.cinemavault.app.ui.scan.ScanConnectButton
 
 @Composable
 fun HomeScreen(
@@ -49,7 +51,29 @@ private fun ConnectScreen(vm: MainViewModel, modifier: Modifier) {
     Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text("Cinema Vault", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.primary)
         Text("连接到电脑/NAS 本地影库", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(28.dp))
+
+        // 主入口：扫码。电脑端打开 http://<局域网IP>:3517/connect.html 即可出码
+        ScanConnectButton(modifier = Modifier.fillMaxWidth()) { raw ->
+            DeepLinkBus.offer(raw)
+        }
+        if (vm.loading) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("正在连接…", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (vm.message != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(vm.message!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Spacer(Modifier.height(24.dp))
+        Text("或手动输入地址", style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = server, onValueChange = { server = it },
             label = { Text("局域网 IP 或穿透网址") },
@@ -57,8 +81,8 @@ private fun ConnectScreen(vm: MainViewModel, modifier: Modifier) {
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Uri)
         )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { vm.connect(server) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = { vm.connect(server) }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
             Text("立即连接")
         }
     }

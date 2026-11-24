@@ -139,6 +139,51 @@
     return 1 - lev(a, b) / m;
   }
 
+  /* ★ round113-P8：合并前的**必要不充分**预筛。
+     为什么要它：groupItems 的合并是 O(簇数²)，每次都要跑一遍 Levenshtein 动态规划
+     （两个 30 字的中文标题 = 900 次格子运算 ≈ 25µs）。小说库 4095 本 → 273 个簇
+     ⇒ 3.7 万次 DP ≈ 2.0 秒，全部压在进入视图的那一帧上。
+     实测耗时随 n 严格平方增长（500/1000/2000/4095 = 25/115/435/1955ms），
+     所以瓶颈确实是两两比较，不是逐条提取（逐条提取 4095 次只要 ~50ms）。
+
+     三级判据，全部是**必要条件**，只用来快速排除不可能 ≥0.8 的对，
+     最终是否合并仍由原来的 similarity() 说了算 ⇒ 结果与改造前一致：
+       ① 前缀包含：similarity 里 ≥5 字时的前缀包含直接算 1 分，这类必须放行，先判；
+       ② 长度带：lev(a,b) ≥ |la-lb| ⇒ sim ≤ 1 - |la-lb|/max，差超 0.2 必不达标；
+       ③ 共同字符数：每次编辑最多消掉一个共同字符 ⇒ lev ≤ 0.2·max 要求
+          至少 0.8·max 个位置的字符在对方里出现过。用字符集合判，
+          重复字符会重复计数（判据偏松），只会漏放不会错杀。 */
+  function shareEnough(a, csA, b, csB) {
+    var la = a.length, lb = b.length, m = la >= lb ? la : lb;
+    var need = m * 0.8;
+    var small = la <= lb ? a : b;
+    var big = la <= lb ? csB : csA;
+    var hit = 0;
+    for (var i = 0; i < small.length; i++) {
+      if (big.has(small[i])) { hit++; if (hit >= need) return true; }
+    }
+    return hit >= need;
+  }
+  function charSet(s) {
+    var set = new Set();
+    for (var i = 0; i < s.length; i++) set.add(s[i]);
+    return set;
+  }
+
+  /* 标题 → 系列键 的记忆化。同一个标题在来回切目录/切库时会被反复解析，
+     一次解析要跑 13 条正则 + 最多 3 层括号递归，属于纯函数，缓存绝对安全。
+     上限定在 8000 条，超了就整体丢弃重来（避免长会话里无限增长）。 */
+  var keyCache = new Map();
+  function extractSeriesKeyCached(raw) {
+    var s = String(raw == null ? '' : raw);
+    var hit = keyCache.get(s);
+    if (hit !== undefined) return hit;
+    var k = extractSeriesKey(s);
+    if (keyCache.size >= 8000) keyCache.clear();
+    keyCache.set(s, k);
+    return k;
+  }
+
   /* ---------------- 分组 ---------------- */
 
   /**
@@ -149,7 +194,7 @@
   function groupItems(items, titleFn) {
     var keyed = [];
     for (var i = 0; i < items.length; i++) {
-      var k = extractSeriesKey(titleFn(items[i]));
+      var k = extractSeriesKeyCached(titleFn(items[i]));
       if (k) keyed.push({ k: k, it: items[i] });
     }
     var byKey = new Map();
@@ -158,12 +203,23 @@
       byKey.get(e.k).push(e.it);
     });
     var clusters = [];
-    byKey.forEach(function (list, key) { clusters.push({ key: key, list: list }); });
+    byKey.forEach(function (list, key) { clusters.push({ key: key, list: list, cs: charSet(key) }); });
     clusters.sort(function (a, b) { return b.list.length - a.list.length; });
     var merged = [];
     clusters.forEach(function (c) {
+      var la = c.key.length;
       for (var i = 0; i < merged.length; i++) {
-        if (similarity(c.key, merged[i].key) >= 0.8) { merged[i].list = merged[i].list.concat(c.list); return; }
+        var o = merged[i], lb = o.key.length;
+        /* ① 前缀包含 —— similarity 里直接判 1 分，必须合并 */
+        if (la >= 5 && lb >= 5 && (la <= lb ? o.key.indexOf(c.key) === 0 : c.key.indexOf(o.key) === 0)) {
+          o.list = o.list.concat(c.list); return;
+        }
+        /* ② 长度带 */
+        var mx = la >= lb ? la : lb;
+        if (Math.abs(la - lb) > mx * 0.2) continue;
+        /* ③ 共同字符数 */
+        if (!shareEnough(c.key, c.cs, o.key, o.cs)) continue;
+        if (similarity(c.key, o.key) >= 0.8) { o.list = o.list.concat(c.list); return; }
       }
       merged.push(c);
     });
@@ -177,7 +233,7 @@
   var CSS = [
     '.av-series-row{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:6px 2px 2px;scrollbar-width:thin;}',
     '.av-series-row .av-scap{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;',
-    'border:1px solid var(--border,#888780);background:var(--bg-card,transparent);color:var(--text,#ddd);font-size:12.5px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;}',
+    'border:1px solid var(--border,#888780);background:var(--bg-card,transparent);color:var(--text,#ddd);font-size:12.5px;cursor:pointer;white-space:nowrap;transition:background var(--mv2-d1, .15s) var(--mv2-snap, ease),border-color var(--mv2-d1, .15s) var(--mv2-snap, ease);}',
     '.av-series-row .av-scap:hover{border-color:var(--primary,#f0a43c);color:var(--primary,#f0a43c);}',
     '.av-series-row .av-scap.active{background:var(--primary,#f0a43c);border-color:var(--primary,#f0a43c);color:#1c1917;font-weight:500;}',
     '.av-series-row .av-scap .n{opacity:.65;font-size:11.5px;}',
@@ -187,7 +243,7 @@
     'background:var(--bg-card,#26221c);border:1px solid var(--border,#888780);}',
     '.av-stack .av-stack-under.u1{transform:rotate(1.6deg) translate(4px,7px);opacity:.75;}',
     '.av-stack .av-stack-under.u2{transform:rotate(-2deg) translate(-4px,9px);opacity:.55;}',
-    '.av-stack .av-stack-top{position:relative;z-index:2;transition:transform .18s ease;}',
+    '.av-stack .av-stack-top{position:relative;z-index:2;transition:transform var(--mv2-d1, .18s) var(--mv2-snap, ease);}',
     '.av-stack:hover .av-stack-top{transform:translateY(-4px);}',
     '.av-stack .av-stack-hit{position:absolute;inset:0 0 26px 0;z-index:3;}',
     '.av-stack .av-stack-badge{position:absolute;z-index:4;top:-7px;right:-5px;padding:2px 8px;border-radius:999px;',

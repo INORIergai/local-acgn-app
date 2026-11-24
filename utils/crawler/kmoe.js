@@ -13,6 +13,12 @@ class KmoeCrawler {
     this.cookie = options.cookie || '';
     this.loggedIn = false;
 
+    // round112：把「这次请求到底是登录墙还是真的搜不到」暴露给调用方。
+    // 旧实现两种都返回 []，扫描器无法判断源是否可用，只能每个文件都重试一遍
+    // （实测每个文件烧 3~100 秒，几千个文件等于永远扫不完）。
+    this.loginWall = false;
+    this.lastError = '';
+
     // 镜像列表：kzo/kxx/kzz/koz 是同一套站点的多个入口，
     // 实测会偶发「Client network socket disconnected before secure TLS」，
     // 单挂一个域名会让整轮扫描卡死，所以保留备选做失败转移。
@@ -26,9 +32,11 @@ class KmoeCrawler {
       //   确有需要时在 config.sources.kmoe.proxy 里显式指定代理。
       proxy: options.proxy !== undefined ? options.proxy : (config.sources?.kmoe?.proxy || null),
       timeout: config.network?.timeout || 15000,
-      retryCount: config.network?.retryCount || 2
+      // round112：这里以前写的是 retryCount（Request 不认这个键），于是永远走
+      // base.js 的默认 3 次重试 —— 站点不通时单次搜索要烧 3×10s。改成正确的 retry。
+      retry: options.retry || config.network?.retryCount || 2
     });
-    
+
     // 如果有cookie，直接设置
     if (this.cookie) {
       this.setCookie(this.cookie);
@@ -157,6 +165,12 @@ class KmoeCrawler {
    * 站点已改为 /list.php?s=关键词 形式（旧的 /l/关键词,.../ 仍兼容但依赖登录态）
    */
   async search(keyword, page = 1) {
+    // round112：错误状态以「一次 search」为单位累积。
+    // 早期实现把重置写在 _parseListPage 开头 —— 新格式 URL 超时失败、旧格式 URL
+    // 成功但 0 结果，结果一进门就把上一次的 lastError 冲掉了，扫描器看到的永远是
+    // 「源是好的，只是没搜到」，熔断器根本不跳，于是每个文件都要白烧 33 秒。
+    this.loginWall = false;
+    this.lastError = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         // 新格式：/list.php?s=关键词&page=页码
@@ -229,19 +243,40 @@ class KmoeCrawler {
       const keywords = $('meta[name="keywords"]').attr('content') || '';
       const kwParts = keywords.split(',').map(s => s.trim()).filter(Boolean);
       const authorFromMeta = kwParts.length >= 2 ? kwParts[1] : '';
+      /* round143：站点文案是**繁体**（「狀態」「分類」「語言」），而且信息根本不在 `<td>` 里
+       * —— 实测详情页是 `<font class="text_bglight"> 狀態：連載 地區：日本 語言：繁體 …
+       * 分類：後宮 (12) 魔法 (11) 冒險 (10)</font>` 这种「一行塞多组键值」的纯文本。
+       * 旧实现 `td:contains("状态").next()` 永远返回空，于是状态/分类长期读不到，
+       * 还让「分类」变成空数组导致漫画一条题材标签都建不起来。 */
+      const infoLines = [];
+      $('font.text_bglight').each((i, el) => {
+        const t = $(el).text().replace(/\s+/g, ' ').trim();
+        if (t) infoLines.push(t);
+      });
+      const infoAll = infoLines.join(' | ');
+      const grab = (labels) => {
+        for (const lb of labels) {
+          const m = infoAll.match(new RegExp(lb + '：\\s*([^|]+?)(?=\\s+(?:狀態|状态|地區|地区|語言|语言|最後出版|最后出版|更新|版本|掃者|扫者|維護者|维护者|訂閱|订阅|收藏|讀過|读过|熱度|热度|分類|分类|作者)\\s*[：:]|$|\\s\\|)'));
+          if (m && m[1].trim()) return m[1].trim();
+        }
+        return '';
+      };
+
       const authorMatch = $('td:contains("作者")').next().text().trim();
       detail.author = authorMatch || authorFromMeta;
 
-      // 状态
-      const statusMatch = $('td:contains("状态")').next().text().trim();
+      const statusMatch = grab(['狀態', '状态']);
       if (statusMatch) detail.status = statusMatch;
 
-      // 分类
-      const categoryMatch = $('td:contains("分类")').next().text().trim();
-      if (categoryMatch) detail.category = categoryMatch;
+      // 分类：把「後宮 (12) 魔法 (11)」里的计数去掉，只留题材名
+      const catRaw = grab(['分類', '分类']);
+      if (catRaw) {
+        const names = catRaw.replace(/\(\s*\d+\s*\)/g, ' ').split(/[\s,、/]+/).map(s => s.trim()).filter(Boolean);
+        if (names.length) detail.category = names.join(',');
+      }
 
-      // 简介
-      const introMatch = $('td:contains("简介")').next().text().trim();
+      // 简介（kzo.moe 多数条目本身没有简介，读到空属正常，不要当异常）
+      const introMatch = grab(['簡介', '简介', '內容簡介', '内容简介']);
       if (introMatch) detail.intro = introMatch;
 
       // 评分
@@ -481,7 +516,7 @@ class KmoeCrawler {
         { name: '輕小說改編', value: 'CAT*輕改' },
         { name: '連環畫', value: 'CAT*連環畫' }
       ];
-      
+
       return categories;
     } catch (e) {
       return [];
@@ -522,12 +557,14 @@ class KmoeCrawler {
           if (!this._isLoginWall(html2)) return this._extractFromHtml(html2);
         }
         console.log('[Kmoe] ⚠️ 需要登录，Cookie无效且自动重登失败，请到设置页更新Kmoe账号密码');
+        this.loginWall = true;      // round112：让调用方可以熔断，而不是逐个文件重撞
         return [];
       }
 
       return this._extractFromHtml(html);
     } catch (e) {
       console.log('[Kmoe] 解析列表页失败:', e.message);
+      this.lastError = (e && e.message) || String(e);
       return [];
     }
   }
@@ -559,7 +596,7 @@ class KmoeCrawler {
       // 用正则表达式匹配 disp_divinfo 调用
       // disp_divinfo( "div_info_"+"1", "url", "cover", "color", "tag_jp", "tag_en", "tag_end", "tag_brk", "score", "name", "author", "status", "update" )
       const regex = /disp_divinfo\(\s*[^,]+,\s*["']([^"']+)["'],\s*["']([^"']+)["'],\s*[^,]+,\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']+)["'],\s*["']([^"']+)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["']\s*\)/g;
-      
+
       let match;
       while ((match = regex.exec(html)) !== null) {
         const bookUrl = match[1];
@@ -573,17 +610,17 @@ class KmoeCrawler {
         const bookAuthor = match[9];
         const wordStatus = match[10];
         const wordUpdate = match[11];
-        
+
         if (bookName && bookUrl) {
           // 去掉标题里的HTML标签
           const cleanTitle = bookName.replace(/<[^>]+>/g, '').trim();
-          
+
           // 判断状态
           let status = '连载中';
           if (tagEnd === '' || tagEnd === 'none') {
             status = '已完结';
           }
-          
+
           // 判断语言
           let language = '中文';
           if (tagJp !== 'none') {
@@ -591,7 +628,7 @@ class KmoeCrawler {
           } else if (tagEn !== 'none') {
             language = '英语';
           }
-          
+
           results.push({
             title: cleanTitle,
             cover: coverUrl,
@@ -605,7 +642,7 @@ class KmoeCrawler {
           });
         }
       }
-      
+
       return results;
     } catch (e) {
       console.log('[Kmoe] 解析条目失败:', e.message);
@@ -620,9 +657,9 @@ class KmoeCrawler {
     try {
       const fullUrl = chapterUrl.startsWith('http') ? chapterUrl : this.baseUrl + chapterUrl;
       const $ = await this.request.getHtml(fullUrl);
-      
+
       const images = [];
-      
+
       // 查找所有图片
       $('img.comic_img, img.read_img, #images img').each((i, el) => {
         const src = $(el).attr('src') || $(el).attr('data-src') || '';
@@ -630,7 +667,7 @@ class KmoeCrawler {
           images.push(src.startsWith('http') ? src : this.baseUrl + src);
         }
       });
-      
+
       // 如果没找到，尝试从JS里提取
       if (images.length === 0) {
         const scriptText = $('script').text();
@@ -643,7 +680,7 @@ class KmoeCrawler {
           }
         }
       }
-      
+
       return images;
     } catch (e) {
       console.log('[Kmoe] 获取章节图片失败:', e.message);
@@ -943,13 +980,13 @@ class KmoeCrawler {
     try {
       const detail = await this.getDetail(comicUrl);
       if (!detail || !detail.chapters) return null;
-      
+
       // 找下载链接
       const downloadChapter = detail.chapters.find(c => c.type === 'download');
       if (downloadChapter) {
         return downloadChapter.url;
       }
-      
+
       return null;
     } catch (e) {
       console.log('[Kmoe] 获取下载链接失败:', e.message);

@@ -59,14 +59,14 @@
 
 /* 整体感：图标在 label 内，动 label 即「图标+功能字」一起动 */
 .sidebar .nav-item > span:first-child {
-  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--mv2-d3, 0.45s) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .sidebar .nav-item:hover > span:first-child { transform: translateX(3px); }
 .sidebar .nav-item:active > span:first-child { transform: translateX(1px) scale(0.98); }
 
 /* 行级入场（与图标登场同拍）：整行轻轻浮起，编队错峰 */
 .sidebar .nav-item.nv-in > span:first-child {
-  animation: nvRowIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: nvRowIn 0.6s var(--mv2-settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
   animation-delay: var(--nvd, 0s);
 }
 @keyframes nvRowIn {
@@ -76,4 +76,22 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar .nav-item > span:first-child { transition: none; }
   .sidebar .nav-item.nv-in > span:first-child { animation: none; }
+}
+
+/* ============================================================
+   round129：页头（#toolbarTitle）里的小图标
+   ------------------------------------------------------------
+   隐私组六个板块原来页头都是同一个 🔞（用户原话「点进去左上角的
+   图标全都是同一个」）。改成 <img class="tt-ic"> 插同一个 96px 资源后，
+   尺寸/基线必须在这里钉死，否则 96px 原图会把页头标题撑成一坨。
+   ============================================================ */
+.toolbar-title .tt-ic,
+#toolbarTitle .tt-ic {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  vertical-align: -4px;
+  margin-right: 7px;
+  -webkit-user-drag: none;
+  user-select: none;
 }

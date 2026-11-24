@@ -1,9 +1,10 @@
 {
+  "id": "rebo-zhijia",
   "factoryId": "web-selector",
   "version": 2,
   "arguments": {
     "name": "热播之家",
-    "description": "直连",
+    "description": "",
     "iconUrl": "https://www.rebozj.pro/template/jianhei/statics/img/favicon.png",
     "searchConfig": {
       "searchUrl": "https://www.rebozj.pro/search/-------------.html?wd={keyword}&submit=",

@@ -26,8 +26,8 @@
 .mv-reveal {
     opacity: 0.001;
     transform: translateY(10px);
-    transition: opacity .55s var(--mv-ease-out),
-                transform .55s var(--mv-ease-out);
+    transition: opacity var(--mv2-d3, .55s) var(--mv-ease-out),
+                transform var(--mv2-d3, .55s) var(--mv-ease-out);
     transition-delay: var(--mv-delay, 0ms);
 }
 .mv-reveal.mv-visible {
@@ -49,16 +49,16 @@
 /* ---------- 3. 卡片悬停：海报慢推近（vineyard 标志性的 image zoom） ---------- */
 .movie-poster-wrap { overflow: hidden; }
 .movie-card .movie-poster {
-    transition: transform .7s var(--mv-ease-out);
+    transition: transform var(--mv2-d3, .7s) var(--mv-ease-out);
 }
 .movie-card:hover .movie-poster {
     transform: scale(1.055);
 }
 /* 卡片本体：原来的 180ms 太快，换成 vineyard 慢节奏 + 柔和阴影 */
 .movie-card {
-    transition: transform .45s var(--mv-ease-out),
-                box-shadow .45s var(--mv-ease-out),
-                border-color .3s ease !important;
+    transition: transform var(--mv2-d3, .45s) var(--mv-ease-out),
+                box-shadow var(--mv2-d3, .45s) var(--mv-ease-out),
+                border-color var(--mv2-d2, .3s) var(--mv2-snap, ease) !important;
 }
 .movie-card:hover {
     transform: translateY(-5px);
@@ -81,7 +81,7 @@
     background: var(--primary);
     transform: scaleY(0);
     transform-origin: center;
-    transition: transform .28s var(--mv-ease-soft);
+    transition: transform var(--mv2-d2, .28s) var(--mv-ease-soft);
 }
 .nav-item:hover::before,
 .nav-item.active::before {
@@ -89,45 +89,55 @@
 }
 .nav-item > span:first-child {
     display: inline-block;
-    transition: transform .28s var(--mv-ease-soft);
+    transition: transform var(--mv2-d2, .28s) var(--mv-ease-soft);
 }
 .nav-item:hover > span:first-child {
     transform: translateX(4px);
 }
 
 /* ---------- 5. 按钮：按下压扁（Aardvark 实测 squash） + 悬停轻浮 ---------- */
+/* round113 P0：时长改读令牌（--mv2-d1），未加载令牌层时回退到原值 .18s，
+   删掉 round113-motion.css 的 link 仍保持旧行为。曲线统一到 snap（状态级切换不留尾巴）。 */
 .btn {
-    transition: transform .18s var(--mv-ease-soft), background .18s ease,
-                border-color .18s ease, box-shadow .18s ease, opacity .18s ease !important;
+    transition: transform var(--mv2-d1, .18s) var(--mv2-snap, var(--mv-ease-soft)),
+                background var(--mv2-d1, .18s) var(--mv2-snap, ease),
+                border-color var(--mv2-d1, .18s) var(--mv2-snap, ease),
+                box-shadow var(--mv2-d1, .18s) var(--mv2-snap, ease),
+                opacity var(--mv2-d1, .18s) var(--mv2-snap, ease) !important;
 }
 .btn:not(:disabled):hover { transform: translateY(-1px); }
 .btn:not(:disabled):active { transform: scale(.955, .925); }
 .theme-toggle, .ic-btn {
-    transition: transform .2s var(--mv-ease-soft), background .18s ease !important;
+    transition: transform var(--mv2-d1, .2s) var(--mv2-snap, var(--mv-ease-soft)),
+                background var(--mv2-d1, .18s) var(--mv2-snap, ease) !important;
 }
 .theme-toggle:hover, .ic-btn:hover { transform: translateY(-1px) rotate(-4deg); }
 .theme-toggle:active, .ic-btn:active { transform: scale(.92); }
 
 /* ---------- 6. 标签 / 女优卡：入场错峰 + 悬停 ---------- */
 .tag-item {
-    transition: transform .3s var(--mv-ease-soft), background .2s ease,
-                border-color .2s ease !important;
+    transition: transform var(--mv2-d2, .3s) var(--mv2-settle, var(--mv-ease-soft)),
+                background var(--mv2-d2, .2s) var(--mv2-snap, ease),
+                border-color var(--mv2-d2, .2s) var(--mv2-snap, ease) !important;
 }
 .tag-item:hover { transform: translateY(-2px); }
 .actress-card {
-    transition: transform .35s var(--mv-ease-soft), box-shadow .35s ease,
-                border-color .2s ease !important;
+    transition: transform var(--mv2-d2, .35s) var(--mv2-settle, var(--mv-ease-soft)),
+                box-shadow var(--mv2-d2, .35s) var(--mv2-snap, ease),
+                border-color var(--mv2-d2, .2s) var(--mv2-snap, ease) !important;
 }
 .actress-card:hover { transform: translateY(-4px); }
 
 /* ---------- 7. 画廊：箭头淡入更柔、圆点弹跳 ---------- */
 .gallery-arrow {
-    transition: opacity .3s ease, transform .3s var(--mv-ease-soft),
-                background .2s ease !important;
+    transition: opacity var(--mv2-d2, .3s) var(--mv2-snap, ease),
+                transform var(--mv2-d2, .3s) var(--mv2-settle, var(--mv-ease-soft)),
+                background var(--mv2-d2, .2s) var(--mv2-snap, ease) !important;
 }
 .gallery-arrow:hover { transform: translateY(-50%) scale(1.08); }
 .gallery-dots > * {
-    transition: transform .3s var(--mv-ease-soft), background .2s ease !important;
+    transition: transform var(--mv2-d2, .3s) var(--mv2-settle, var(--mv-ease-soft)),
+                background var(--mv2-d2, .2s) var(--mv2-snap, ease) !important;
 }
 
 /* ---------- 8. 工具栏标题：视图切换时的呼吸感（motion.js 加 .title-swap） ---------- */
@@ -138,13 +148,16 @@
 .title-swap { animation: titleSwap .4s var(--mv-ease-soft); }
 
 /* ---------- 9. 模态/抽屉遮罩：backdrop 渐入 ---------- */
-.modal { transition: background .25s ease; }
-.modal.show { animation: scrimIn .25s ease; }
+/* round113 P1：遮罩淡入改读令牌（260ms snap），未加载令牌层时回退原值 */
+.modal { transition: background var(--mv2-d2, .25s) var(--mv2-snap, ease); }
+.modal.show { animation: scrimIn var(--mv2-d2, .25s) var(--mv2-snap, ease); }
 @keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---------- 10. Toast：从右下弹性滑入 ---------- */
 .notification {
-    transition: transform .45s var(--mv-ease-soft), opacity .3s ease !important;
+    /* round113 P1：位置走 spring（1.4% 过冲，像岛屿弹出），透明度走 snap */
+    transition: transform var(--mv2-d3, .45s) var(--mv2-spring, var(--mv-ease-soft)),
+                opacity var(--mv2-d2, .3s) var(--mv2-snap, ease) !important;
 }
 
 /* ---------- 减少动态效果：一键全关 ---------- */
