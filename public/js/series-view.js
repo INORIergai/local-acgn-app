@@ -375,16 +375,31 @@
     }
 
     // 点某个源的「播放」：解析出流并唤起播放器
+    /* 2026-11：解析失败/超时自动换下一个候选源（Kazumi 多线路体验）。
+       候选面板里每张卡都有一个 ▶ 按钮，按顺序试，最多由用户点几次就试几个。 */
+    function tryNextSource(btn) {
+        const all = [...document.querySelectorAll('.epsrc-play:not(.disabled)')];
+        const idx = all.indexOf(btn);
+        const next = all.slice(idx + 1).find((b) => b.dataset && !b.dataset.tried);
+        if (next) {
+            if (window.showNotification) showNotification('正在换源', '上一个源解析失败或超时，自动尝试下一个');
+            next.click();
+        } else if (window.showNotification) {
+            showNotification('没有更多可用源', '可以稍后重试，或用右下「搜 BT 兜底」');
+        }
+    }
+
     async function playEpisodeSource(btn) {
         const src = btn.dataset.src, url = btn.dataset.url;
         if (!src || !url) { if (window.showNotification) showNotification('无法播放', '候选信息缺失'); return; }
+        btn.dataset.tried = '1';
         const title = btn.dataset.title || '';
         const epno = btn.dataset.epno || '';
         window.__svPlayingEpisode = Number(btn.dataset.eid) || 0;
         window.__svPlayingTitle = title;
         if (window.showNotification) showNotification('正在解析播放地址', '首次解析可能需要十几秒');
         try {
-            const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url), { timeout: 90000 });
+            const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url), { timeout: 35000 });
             if (d && d.code === 0 && window.showVideoPlayer) {
                 /* ★ 必须先关掉分集抽屉与来源面板：
                  *   抽屉的 .sv-modal-mask z-index=900，而 #playerModal 只有 520，
@@ -395,10 +410,14 @@
                     Number(btn.dataset.pos) || 0, Number(btn.dataset.eid) || 0);
             } else if (d && d.code === 0 && !window.showVideoPlayer) {
                 if (window.showNotification) showNotification('播放器不可用', '请刷新页面后重试');
-            } else if (window.showNotification) {
-                showNotification('解析失败', (d && d.msg) || '该源播放地址解析失败，换一个源试试');
+            } else {
+                if (window.showNotification) showNotification('解析失败', (d && d.msg) || '该源播放地址解析失败，自动换源');
+                tryNextSource(btn);
             }
-        } catch (e) { if (window.showNotification) showNotification('解析失败', e.message); }
+        } catch (e) {
+            if (window.showNotification) showNotification('解析失败', (e && e.message && /timeout|abort/i.test(e.message) ? '该源超过 35 秒没返回播放地址，自动换源' : e.message));
+            tryNextSource(btn);
+        }
     }
 
     // ---------- v6.4.0④ 手动挂本地影片 ----------
@@ -606,13 +625,13 @@
             window.__svPlayingTitle = btn.dataset.title || '';
             if (window.showNotification) showNotification('正在解析在线播放地址', '首次解析可能需十几秒（内置浏览器嗅探）');
             try {
-                const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url), { timeout: 90000 });
+                const d = await api('/api/media-source/resolve?source=' + encodeURIComponent(src) + '&url=' + encodeURIComponent(url), { timeout: 35000 });
                 if (d && d.code === 0 && window.showVideoPlayer) {
                     closeDetail();   // 同 playEpisodeSource：不关抽屉会把播放器盖住
                     window.showVideoPlayer(d.data.streamUrl, btn.dataset.title + ' · 第' + (btn.dataset.epno || '') + '集', d.data.kind,
                         Number(btn.dataset.pos) || 0, Number(btn.dataset.eid) || 0);
                 } else if (window.showNotification) showNotification('解析失败', (d && d.msg) || '未知错误');
-            } catch (e) { if (window.showNotification) showNotification('解析失败', e.message); }
+            } catch (e) { if (window.showNotification) showNotification('解析失败', (e && e.message && /timeout|abort/i.test(e.message) ? '该源超过 35 秒没返回播放地址，换一个源试试' : e.message)); }
             return;
         }
         if (act === 'copy-magnet') {

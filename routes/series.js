@@ -283,7 +283,21 @@ router.post('/episode/sources', async (req, res) => {
           const exact = eps.filter((e) => numOf(e) === epNo);
           // 同集号有多条时优先第一线路（channelTier 小）
           exact.sort((a, b) => (a.channelTier || 0) - (b.channelTier || 0));
-          const hit = exact[0];
+          /* 2026-11：Kazumi 语义 —— 源返回的剧集数组顺序就是集号（episodeIndex+1）。
+             很多源的标题是「更新至12集」「01」「HD」这类，numOf 抠不出数字，
+             只认 exact 会导致整源判“未定位到第 N 集”。这里加下标兜底：
+               · 源集数明显大于目标集数（多季合页，> epNo*3+12）时不兜底，避免串季；
+               · 标题能抠出数字且与 epNo 差超过 1 时不兜底（源从第 0 集/预告开始会差 1）。 */
+          let hit = exact[0];
+          if (!hit && eps.length) {
+            const byIndex = eps[epNo - 1];
+            const suspicious = eps.length > epNo * 3 + 12;
+            const n = byIndex ? numOf(byIndex) : NaN;
+            if (byIndex && byIndex.url && !suspicious && (!Number.isFinite(n) || Math.abs(n - epNo) <= 1)) {
+              hit = byIndex;
+            }
+          }
+          row.factory = src.factoryId || '';
           if (hit && hit.url) {
             row.state = 'ready';
             row.episodeName = '第' + epNo + '集';
@@ -302,7 +316,13 @@ router.post('/episode/sources', async (req, res) => {
       }
     };
     await Promise.all([worker(), worker(), worker()]);
-    out.sort((a, b) => (a.state === 'ready' ? 0 : 1) - (b.state === 'ready' ? 0 : 1) || a.tier - b.tier);
+    /* 排序：能播的在前 → 直出 API 源（json-api/next）优先于需要浏览器嗅探的源 →
+       源 tier。用户点第一张卡片就能播，不必等 web-selector 的 30 秒嗅探。 */
+    const readyRank = (r) => (r.state === 'ready' ? 0 : 1);
+    /* 直出 API（json-api）最快；web-selector 要开页面抽 URL；kazumi 规则常要浏览器嗅探，
+       放在最后，避免用户点第一张就等 30 秒。 */
+    const factoryRank = (r) => (r.factory === 'json-api' ? 0 : (r.factory === 'kazumi' ? 2 : 1));
+    out.sort((a, b) => readyRank(a) - readyRank(b) || factoryRank(a) - factoryRank(b) || (a.tier || 0) - (b.tier || 0));
     res.json({ code: 0, data: {
       keyword: kw, episodeNo: epNo, candidates: out,
       states: found.states, scanned: found.scanned,

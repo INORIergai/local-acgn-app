@@ -16255,6 +16255,27 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
             if (seq !== playerSeq) return;          // 已关播放器或已换片，放弃这次挂载
             if (window.Hls && window.Hls.isSupported()) {
                 hlsInstance = new window.Hls({ maxBufferLength: 30 });
+                /* 2026-11：追番播放排障 —— hls.js 的错误以前完全没人接，
+                   源失效时用户只看到一直转圈。这里把 fatal 错误翻成人话并尝试恢复。 */
+                hlsInstance.on(window.Hls.Events.ERROR, function (_evt, data) {
+                    if (!data || !data.fatal || seq !== playerSeq) return;
+                    if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                        if (typeof showNotification === 'function') showNotification('播放源连接失败', '该源可能已失效，正在重试；若持续失败请换一个来源', 'warn');
+                        try { hlsInstance.startLoad(); } catch (e) { /* ignore */ }
+                    } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                        if (typeof showNotification === 'function') showNotification('视频解码失败', '正在尝试恢复，若持续黑屏请换源', 'warn');
+                        try { hlsInstance.recoverMediaError(); } catch (e) { /* ignore */ }
+                    } else if (typeof showNotification === 'function') {
+                        showNotification('播放失败', '该源无法播放，换一个来源试试', 'warn');
+                    }
+                });
+                /* 12 秒还没起播：提示一次，避免“永远加载中” */
+                setTimeout(function () {
+                    if (seq !== playerSeq) return;
+                    if (video.readyState < 2 && !video.paused) {
+                        if (typeof showNotification === 'function') showNotification('加载较慢', '这个源响应偏慢，可以继续等或换一个来源', 'warn');
+                    }
+                }, 12000);
                 hlsInstance.loadSource(videoUrl);
                 hlsInstance.attachMedia(video);
             } else {

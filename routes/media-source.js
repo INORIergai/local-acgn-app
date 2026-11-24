@@ -287,14 +287,22 @@ router.get('/resolve', async (req, res) => {
             browser: req.query.browser !== '0'
         });
         if (!r.url) return res.json({ code: -1, msg: r.error || '没解析到播放地址', via: r.via || '' });
+        /* 2026-11：regex 源从 HTML/JSON 里抠出来的 URL 常带首尾引号（实测稀饭 web 源
+           得到 `...022.mp4"`，代理直连 401）。出口统一清洗，避免把脏 URL 传给代理。 */
+        const rawUrl = String(r.url).trim()
+            .replace(/^[\s"']+|[\s"',;]+$/g, '')
+            .replace(/\\\//g, '/');
+        if (!/^https?:\/\//i.test(rawUrl)) {
+            return res.json({ code: -1, msg: '解析到的播放地址不合法', via: r.via || '' });
+        }
 
         const token = newToken({ headers: r.headers || {}, cookie: r.cookie || '' });
-        const isHls = /\.m3u8(\?|$)/i.test(r.url);
-        const streamUrl = `/api/media-source/${isHls ? 'stream' : 'seg'}?token=${encodeURIComponent(token)}&u=${encodeURIComponent(r.url)}`;
+        const isHls = /\.m3u8(\?|$)/i.test(rawUrl);
+        const streamUrl = `/api/media-source/${isHls ? 'stream' : 'seg'}?token=${encodeURIComponent(token)}&u=${encodeURIComponent(rawUrl)}`;
         res.json({
             code: 0,
             data: {
-                url: r.url,
+                url: rawUrl,
                 streamUrl,
                 kind: isHls ? 'hls' : 'mp4',
                 sourceId: id,
@@ -305,6 +313,7 @@ router.get('/resolve', async (req, res) => {
         });
     } catch (e) {
         // 解析器（尤其是浏览器嗅探）偶发抛错时必须给出 JSON，否则前端 fetch 永远等不到响应
+        console.error('[media-source resolve]', (e && e.stack) || e);
         try { res.json({ code: -1, msg: '解析异常：' + (e && e.message || e) }); }
         catch (e2) { /* 头已发就放弃 */ }
     }
@@ -494,7 +503,20 @@ router.get('/seg', async (req, res) => {
     // 图片缓冲用于缓存；视频/分片必须边下边发，不能等整个文件 arrayBuffer 完成。
     const streaming = !keyLocked;
     if (streaming) {
-        const r = await engine.grab(u, { timeout: 30000, headers: reqHeaders, cookie: ctx.cookie || '', stream: true });
+        const grabOnce = (hdrs) => engine.grab(u, { timeout: 30000, headers: hdrs, cookie: ctx.cookie || '', stream: true });
+        let r = await grabOnce(reqHeaders);
+        /* 2026-11：防盗链的另一面 —— 有的 CDN 给了 Referer 反而直接 400
+           （实测稀饭 Next 的 apn.moedot.net：不带 Referer 206，带就 400）。
+           流媒体失败且状态是 400/401/403 时，剥掉 Referer 再试一次。 */
+        if ((!r.ok || !r.body) && [400, 401, 403].includes(Number(r.status))) {
+            const noRef = Object.assign({}, reqHeaders);
+            delete noRef.Referer;
+            delete noRef.referer;
+            if (Object.keys(noRef).length !== Object.keys(reqHeaders).length) {
+                try { if (r.body && r.body.cancel) await r.body.cancel(); } catch (e) { /* ignore */ }
+                r = await grabOnce(noRef);
+            }
+        }
         if (!r.ok || !r.body) return res.status(502).json({ code: -1, msg: '分片拉取失败：' + (r.error || ('HTTP ' + r.status)) });
         res.status(r.status || 200);
         res.set('Content-Type', r.ctype || 'application/octet-stream');

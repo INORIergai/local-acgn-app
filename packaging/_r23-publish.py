@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.22'
+TAG = 'v6.8.23'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.22：阅读记录中心与 AI 划线
+COMMIT_MSG = """v6.8.23：追番播放链路修复
 
-- 新增「小说阅读记录 / 漫画阅读记录」：今日环形/累计/最近阅读/14 天曲线/书摘回顾/今日一句/AI 简报
-- AI 伴读新增名词解释、划线提问、剧情简要、智能摘抄（选中文字工具条）
-- 书摘落库 reading_notes，记录页可回顾与删除
-- 小说正文左右留白 36px
-- 排行榜「去观看」动漫改为进在线源聚合搜索；聚合页移除动漫板块；AV/里番未解锁隐藏
+- 集号按源返回顺序对齐（Kazumi 语义），多季合页保护
+- 候选排序：直出 API 源优先，浏览器嗅探源最后
+- 解析失败/35 秒超时自动换下一个源
+- 播放代理：清洗正则源 URL 首尾引号；Referer 被拒时自动剥离重试
+- 播放器：HLS 致命错误提示 + 12 秒慢加载提醒
 
-版本：6.8.22"""
+版本：6.8.23"""
 
 
 def get_token():
