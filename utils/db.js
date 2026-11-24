@@ -521,6 +521,26 @@ function migrate() {
       UNIQUE(kind, scope)
     );
   `);
+
+  /* 2026-11：阅读书摘 / 划线（小说 + 漫画通用）。
+     只存「用户选中并保存的原文」+ 可选 AI 解释/笔记；不存整章正文。
+     source: manual=手动摘抄 / ai=AI 智能摘抄 / ask=划线提问留下的句子。 */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reading_notes (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      movieId      INTEGER NOT NULL,
+      kind         TEXT    NOT NULL DEFAULT 'novel',
+      chapter      INTEGER DEFAULT 0,
+      chapterTitle TEXT    DEFAULT '',
+      quote        TEXT    NOT NULL,
+      note         TEXT    DEFAULT '',
+      source       TEXT    DEFAULT 'manual',
+      createdAt    INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(movieId) REFERENCES movies(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_reading_notes_kind ON reading_notes(kind, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_reading_notes_movie ON reading_notes(movieId, kind, createdAt DESC);
+  `);
   // 给历史行补 startedAt / finishedAt（SQLite ADD COLUMN 有 DEFAULT 限制，老表用 ALTER）
   const mpCols = db.prepare('PRAGMA table_info(media_progress)').all().map(c => c.name);
   for (const [name, def] of [['startedAt', 'INTEGER DEFAULT 0'], ['finishedAt', 'INTEGER DEFAULT 0']]) {

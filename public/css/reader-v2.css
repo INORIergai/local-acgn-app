@@ -612,3 +612,122 @@ body.cr-v2 #stripContent::-webkit-scrollbar-thumb { background: rgba(255,255,255
 
 /* 长条模式懒加载占位：未加载的页先占一屏，避免滚动条抖动/页码失真 */
 body.cr-v2 .strip-page { min-height: calc(min(920px, 100vw) * 1.42); align-items: flex-start; }
+
+/* 小说正文左右留白：全宽排版时文字不贴窗口边（用户反馈“左右两侧留一点点距离”） */
+body.nv-v2 .paged-inner { padding-left: 36px; padding-right: 36px; }
+body.nv-v2 #chapterContent { padding-left: 36px; padding-right: 36px; }
+@media (max-width: 860px) {
+    body.nv-v2 .paged-inner { padding-left: 16px; padding-right: 16px; }
+    body.nv-v2 #chapterContent { padding-left: 16px; padding-right: 16px; }
+}
+
+/* 选中文字工具条 + AI 快捷面板 */
+#selToolbar {
+    position: fixed;
+    z-index: 46;
+    display: none;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 10px;
+    background: rgba(8, 11, 16, .94);
+    border: 1px solid rgba(255, 255, 255, .14);
+    box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .8);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+#selToolbar button {
+    border: 0;
+    background: transparent;
+    color: #e9eef7;
+    font-size: 12px;
+    padding: 6px 11px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#selToolbar button:hover { background: rgba(255, 255, 255, .12); }
+#selToolbar .st-sep { width: 1px; height: 16px; background: rgba(255, 255, 255, .14); margin: 0 2px; }
+
+#aiQuick {
+    position: fixed;
+    right: 18px;
+    bottom: 138px;
+    z-index: 47;
+    width: min(390px, calc(100vw - 36px));
+    display: none;
+    flex-direction: column;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    background: rgba(10, 14, 20, .96);
+    color: #e9eef7;
+    box-shadow: 0 30px 70px -30px #000;
+    overflow: hidden;
+}
+#aiQuick.show { display: flex; }
+#aiQuick .aq-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+#aiQuick .aq-head button {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: #93a1b5;
+    cursor: pointer;
+    font-size: 12px;
+}
+#aiQuick .aq-src { padding: 10px 14px 0; font-size: 11px; line-height: 1.6; color: #8b98aa; }
+#aiQuick .aq-body {
+    padding: 10px 14px 14px;
+    max-height: 40vh;
+    overflow: auto;
+    font-size: 13px;
+    line-height: 1.85;
+    color: #dbe3ee;
+    white-space: pre-wrap;
+}
+#aiQuick .aq-ask { display: flex; gap: 6px; padding: 0 14px 12px; }
+#aiQuick .aq-ask textarea {
+    flex: 1 1 auto;
+    min-height: 58px;
+    resize: vertical;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, .14);
+    background: rgba(255, 255, 255, .05);
+    color: #e9eef7;
+    padding: 8px;
+    font-size: 12.5px;
+    outline: none;
+}
+#aiQuick .aq-ask button {
+    align-self: flex-end;
+    border: 0;
+    border-radius: 8px;
+    background: #7fb6e8;
+    color: #061018;
+    font-weight: 600;
+    padding: 8px 14px;
+    cursor: pointer;
+}
+#aiQuick .aq-foot {
+    display: none;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid rgba(255, 255, 255, .1);
+}
+#aiQuick .aq-foot button {
+    border: 1px solid rgba(255, 255, 255, .14);
+    background: transparent;
+    color: #c9d4e2;
+    border-radius: 8px;
+    padding: 6px 11px;
+    font-size: 11.5px;
+    cursor: pointer;
+}
+#aiQuick .aq-foot button:hover { border-color: #7fb6e8; color: #fff; }

@@ -947,6 +947,7 @@
             <div class="acp-head"><b>✨ AI 伴读</b><button onclick="closeAllPanels()" aria-label="关闭">✕</button></div>
             <div class="acp-tabs">
                 <button class="acp-tab on" data-acp-mode="recap">前情提要</button>
+                <button class="acp-tab" data-acp-mode="summary">剧情简要</button>
                 <button class="acp-tab" data-acp-mode="characters">人物卡</button>
                 <button class="acp-tab" data-acp-mode="polish">润色本章</button>
             </div>
@@ -973,6 +974,28 @@
         </div>
     </div>
     
+    <!-- 2026-11：选中文字工具条（解释 / 提问 / 摘抄） -->
+    <div id="selToolbar" role="toolbar" aria-label="选中文字操作">
+        <button type="button" data-sel="explain">解释</button>
+        <span class="st-sep"></span>
+        <button type="button" data-sel="ask">提问</button>
+        <span class="st-sep"></span>
+        <button type="button" data-sel="quote">摘抄</button>
+    </div>
+    <div id="aiQuick" role="dialog" aria-label="AI 划线结果">
+        <div class="aq-head"><span id="aqTitle">AI</span><button type="button" id="aqClose" aria-label="关闭">✕</button></div>
+        <div class="aq-src" id="aqSrc"></div>
+        <div class="aq-body" id="aqBody"></div>
+        <div class="aq-ask" id="aqAsk" style="display:none;">
+            <textarea id="aqAskInput" placeholder="针对这段文字提问，例如：这句话在暗示什么？"></textarea>
+            <button type="button" id="aqAskSend">发送</button>
+        </div>
+        <div class="aq-foot" id="aqFoot" style="display:none;">
+            <button type="button" id="aqCopy">复制</button>
+            <button type="button" id="aqSave">存为书摘</button>
+        </div>
+    </div>
+
     <!-- 轻量提示 -->
     <div id="toast" class="reader-toast"></div>
 
@@ -1791,6 +1814,178 @@
             document.getElementById('overlay').classList.remove('visible');
         }
 
+        /* ========== 2026-11：选中文字工具条（解释 / 提问 / 摘抄） ========== */
+        (function initSelectionTools() {
+            var bar = document.getElementById('selToolbar');
+            var quick = document.getElementById('aiQuick');
+            if (!bar || !quick) return;
+            var qTitle = document.getElementById('aqTitle');
+            var qSrc = document.getElementById('aqSrc');
+            var qBody = document.getElementById('aqBody');
+            var qAsk = document.getElementById('aqAsk');
+            var qAskInput = document.getElementById('aqAskInput');
+            var qAskSend = document.getElementById('aqAskSend');
+            var qFoot = document.getElementById('aqFoot');
+            var qCopy = document.getElementById('aqCopy');
+            var qSave = document.getElementById('aqSave');
+            var selText = '';
+            var lastAnswer = '';
+            var lastMode = '';
+
+            function readerToast(msg) {
+                var t = document.getElementById('toast');
+                if (!t) return;
+                t.textContent = msg;
+                t.classList.add('show');
+                clearTimeout(readerToast._t);
+                readerToast._t = setTimeout(function () { t.classList.remove('show'); }, 1600);
+            }
+
+            function inBody(node) {
+                var el = node && (node.nodeType === 1 ? node : node.parentElement);
+                return !!(el && el.closest && el.closest('#pagedText, #pagedText2, #chapterText'));
+            }
+            function currentSelection() {
+                var sel = window.getSelection();
+                if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+                var text = String(sel.toString() || '').replace(/\s+/g, ' ').trim();
+                if (text.length < 2) return null;
+                var range = sel.getRangeAt(0);
+                if (!inBody(range.commonAncestorContainer)) return null;
+                return { text: text.slice(0, 2000), rect: range.getBoundingClientRect() };
+            }
+            function showBar(sel) {
+                selText = sel.text;
+                var r = sel.rect;
+                bar.style.display = 'flex';
+                var top = Math.max(10, r.top - 46);
+                var left = Math.min(window.innerWidth - 220, Math.max(10, r.left + r.width / 2 - 96));
+                bar.style.top = top + 'px';
+                bar.style.left = left + 'px';
+            }
+            function hideBar() { bar.style.display = 'none'; }
+
+            document.addEventListener('mouseup', function (e) {
+                if (e.target.closest && e.target.closest('#selToolbar, #aiQuick')) return;
+                setTimeout(function () {
+                    var sel = currentSelection();
+                    if (sel) showBar(sel); else hideBar();
+                }, 10);
+            });
+            document.addEventListener('touchend', function (e) {
+                if (e.target.closest && e.target.closest('#selToolbar, #aiQuick')) return;
+                setTimeout(function () {
+                    var sel = currentSelection();
+                    if (sel) showBar(sel); else hideBar();
+                }, 120);
+            });
+            document.addEventListener('scroll', function () { hideBar(); }, true);
+            bar.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            bar.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+
+            function openQuick(title, src) {
+                qTitle.textContent = title || 'AI';
+                qSrc.textContent = src ? ('选中：' + src.slice(0, 60) + (src.length > 60 ? '…' : '')) : '';
+                qBody.textContent = '';
+                qAsk.style.display = 'none';
+                qFoot.style.display = 'none';
+                quick.classList.add('show');
+            }
+            function closeQuick() { quick.classList.remove('show'); }
+
+            function aiCompanion(mode, extra) {
+                var payload = Object.assign({ mode: mode, chapterIndex: currentChapter }, extra || {});
+                return fetch('/api/novel/' + novelId + '/ai-companion', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(function (r) { return r.json(); }).then(function (j) {
+                    if (!j || j.code !== 0) throw new Error((j && j.msg) || 'AI 暂不可用');
+                    return String(j.data.text || '').trim();
+                });
+            }
+
+            function runExplain() {
+                if (!selText) return;
+                lastMode = 'explain';
+                openQuick('名词解释', selText);
+                qBody.textContent = '正在解释…';
+                aiCompanion('explain', { selection: selText }).then(function (text) {
+                    lastAnswer = text;
+                    qBody.textContent = text || '（AI 没有返回内容）';
+                    qFoot.style.display = 'flex';
+                }).catch(function (e) {
+                    qBody.textContent = e.message + '（检查 设置 → AI 助手 是否已配置模型）';
+                });
+            }
+            function runAsk() {
+                if (!selText) return;
+                lastMode = 'ask';
+                openQuick('划线提问', selText);
+                qBody.textContent = '针对选中的文字提问，AI 只依据上下文回答。';
+                qAsk.style.display = 'flex';
+                qAskInput.value = '';
+                qAskInput.focus();
+            }
+            function sendAsk() {
+                var q = String(qAskInput.value || '').trim();
+                if (!q) { qAskInput.focus(); return; }
+                qAsk.style.display = 'none';
+                qBody.textContent = '正在思考…';
+                lastMode = 'ask';
+                aiCompanion('ask', { selection: selText, question: q }).then(function (text) {
+                    lastAnswer = text;
+                    qBody.textContent = text || '（AI 没有返回内容）';
+                    qFoot.style.display = 'flex';
+                }).catch(function (e) {
+                    qBody.textContent = e.message + '（检查 设置 → AI 助手 是否已配置模型）';
+                });
+            }
+            function saveQuote() {
+                if (!selText) return;
+                var chapterTitle = (document.getElementById('pagedTitle') || document.getElementById('chapterTitle') || {}).textContent || '';
+                fetch('/api/media/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        movieId: novelId,
+                        kind: 'novel',
+                        chapter: currentChapter,
+                        chapterTitle: chapterTitle.slice(0, 120),
+                        quote: selText,
+                        note: lastMode === 'quote' ? '' : String(lastAnswer || '').slice(0, 2000),
+                        source: lastMode === 'ask' ? 'ask' : (lastAnswer ? 'ai' : 'manual')
+                    })
+                }).then(function (r) { return r.json(); }).then(function (j) {
+                    if (j && j.code === 0) readerToast('已加入书摘');
+                    else readerToast('保存失败：' + ((j && j.msg) || '未知错误'));
+                }).catch(function () { readerToast('保存失败：网络异常'); });
+            }
+
+            bar.querySelector('[data-sel="explain"]').addEventListener('click', function () { hideBar(); runExplain(); });
+            bar.querySelector('[data-sel="ask"]').addEventListener('click', function () { hideBar(); runAsk(); });
+            bar.querySelector('[data-sel="quote"]').addEventListener('click', function () {
+                hideBar();
+                lastMode = 'quote';
+                lastAnswer = '';
+                saveQuote();
+                if (window.getSelection) { try { window.getSelection().removeAllRanges(); } catch (e) { } }
+            });
+            document.getElementById('aqClose').addEventListener('click', closeQuick);
+            qAskSend.addEventListener('click', sendAsk);
+            qAskInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendAsk(); }
+            });
+            qCopy.addEventListener('click', function () {
+                if (!lastAnswer) return;
+                navigator.clipboard.writeText(lastAnswer).then(function () { readerToast('已复制'); }).catch(function () { });
+            });
+            qSave.addEventListener('click', function () { saveQuote(); });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && quick.classList.contains('show')) { e.stopPropagation(); closeQuick(); }
+            }, true);
+        })();
+
         /* ========== r153 · C2：AI 伴读 ========== */
         let acpMode = 'recap';
         let acpText = '';
@@ -1812,7 +2007,7 @@
             const body = document.getElementById('acpBody');
             const foot = document.getElementById('acpFoot');
             foot.style.display = 'none';
-            const labels = { recap: '正在回溯前三章…', characters: '正在整理当前进度的人物关系…', polish: '正在润色当前章节（可能需要十几秒）…' };
+            const labels = { recap: '正在回溯前三章…', summary: '正在概括本章…', characters: '正在整理当前进度的人物关系…', polish: '正在润色当前章节（可能需要十几秒）…' };
             body.innerHTML = '<div class="acp-load">' + labels[acpMode] + '</div>';
             const my = ++acpToken;
             fetch(`/api/novel/${novelId}/ai-companion`, {

@@ -175,6 +175,7 @@
     <link rel="stylesheet" href="css/read-resume.css">
     <!-- 2026-11：漫画/小说库「书架工作台」（必须排在旧 av-board/round73 之后，覆盖树视图） -->
     <link rel="stylesheet" href="css/read-workspace.css">
+    <link rel="stylesheet" href="css/read-records.css">
     <link rel="stylesheet" href="css/round160-whale-surface.css">
     <link rel="stylesheet" href="css/round161-home-fit.css">
     <link rel="stylesheet" href="css/round162-ink-theme.css">
@@ -377,6 +378,12 @@
                 </div>
                 <div class="nav-item" data-view="favhub">
                     <span>⭐ 收藏夹</span>
+                </div>
+                <div class="nav-item" data-view="novel-records">
+                    <span>📖 小说阅读记录</span>
+                </div>
+                <div class="nav-item" data-view="comic-records">
+                    <span>📚 漫画阅读记录</span>
                 </div>
             </div>
 
@@ -759,6 +766,8 @@
 
             <!-- 设置页视图 -->
             <div id="settingsView" style="display:none;"></div>
+            <!-- 2026-11：阅读记录中心（小说 / 漫画），由 js/read-records.js 渲染 -->
+            <div id="recordsView" style="display:none;"></div>
 
             <!-- 扩展功能视图（年度报告 / 刮削失败），由 features.js 渲染 -->
             <div id="featureView" style="display:none;"></div>
@@ -1259,6 +1268,7 @@
     <script src="js/round153-folia.js"></script>
     <!-- 2026-11：漫画/小说库「书架工作台」新渲染器（放在 app.js 之前，保证 hash 直达/首屏也能挂载） -->
     <script src="js/read-workspace.js"></script>
+    <script src="js/read-records.js"></script>
     <script src="js/app.js"></script>
     <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
     <script src="js/series-view.js"></script>

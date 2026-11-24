@@ -13894,6 +13894,7 @@ function hideGallery() {
 function switchView(view) {
     // ★ P0：切换代次 +1，所有 viewBound 请求在返回时会发现自己已过期。
     viewToken++;
+    document.body.classList.remove('rr-mode');
     // Phase A：离开影视库/动漫库时收起"在线最新"卡片区
     const ob = document.getElementById('onlineBrowseBar');
     if (ob && !['movies', 'anime', 'movies-adult'].includes(view)) ob.hidden = true;
@@ -13969,6 +13970,7 @@ function switchView(view) {
     document.getElementById('statsPanel').style.display = 'none';
     document.getElementById('emptyTip').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    { const rv = document.getElementById('recordsView'); if (rv) rv.style.display = 'none'; }
     // round173b：离开追番页时收起独立视图 + 卸载事件监听（避免点别的视图还触发追番的委托）
     if (view !== 'series' && window.SeriesView && typeof window.SeriesView.hide === 'function') window.SeriesView.hide();
     const featureView = document.getElementById('featureView');
@@ -14133,6 +14135,19 @@ function switchView(view) {
             break;
         default:
             break;
+        case 'novel-records':
+        case 'comic-records': {
+            const recType = view === 'comic-records' ? 'comic' : 'novel';
+            document.getElementById('movieGrid').style.display = 'none';
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            updateToolbarTitle(recType === 'comic' ? '📚 漫画阅读记录' : '📖 小说阅读记录');
+            const rv = document.getElementById('recordsView');
+            if (rv) rv.style.display = 'block';
+            document.body.classList.add('rr-mode');
+            if (window.ReadRecords && window.ReadRecords.mount) window.ReadRecords.mount(recType);
+            break;
+        }
         case 'settings':
             document.getElementById('movieGrid').style.display = 'none';
             document.getElementById('sortSelect').parentElement.style.display = 'none';

@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.21'
+TAG = 'v6.8.22'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,14 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.21：长条模式与阅读器可配置项
+COMMIT_MSG = """v6.8.22：阅读记录中心与 AI 划线
 
-- 漫画新增长条（Webtoon）模式：连续滚动、图片懒加载、按视口算页码、目录可跳转
-- 阅读设置新增「点击区」（三区/仅左右/关闭）与「滚轮方向」（可反转）
-- 小说恢复章内页码：重开回到上次那一页（position 落库）
-- 系列摞卡 hover 展开、加书脊厚度
+- 新增「小说阅读记录 / 漫画阅读记录」：今日环形/累计/最近阅读/14 天曲线/书摘回顾/今日一句/AI 简报
+- AI 伴读新增名词解释、划线提问、剧情简要、智能摘抄（选中文字工具条）
+- 书摘落库 reading_notes，记录页可回顾与删除
+- 小说正文左右留白 36px
+- 排行榜「去观看」动漫改为进在线源聚合搜索；聚合页移除动漫板块；AV/里番未解锁隐藏
 
-版本：6.8.21"""
+版本：6.8.22"""
 
 
 def get_token():
@@ -196,8 +197,32 @@ print('  ✅ %d 个 blob 就绪' % len(results))
 
 # ---------------------------------------------------------------- 建 tree
 print('\n创建 tree ...')
-tree = [{'path': rel, 'mode': '100644', 'type': 'blob', 'sha': results[rel]} for _, rel in files]
-s, res = api('POST', '/repos/%s/%s/git/trees' % (OWNER, REPO), {'tree': tree}, timeout=180)
+base_tree_sha = None
+old_map = {}
+if old_sha:
+    _s0, _oc = api('GET', '/repos/%s/%s/git/commits/%s' % (OWNER, REPO, old_sha), timeout=60)
+    if _s0 == 200:
+        base_tree_sha = (_oc.get('tree') or {}).get('sha')
+    if base_tree_sha:
+        _s0, _ot = api('GET', '/repos/%s/%s/git/trees/%s?recursive=1' % (OWNER, REPO, base_tree_sha), timeout=120)
+        if _s0 == 200:
+            for _it in (_ot.get('tree') or []):
+                if _it.get('type') == 'blob':
+                    old_map[_it['path']] = _it['sha']
+local_paths = set(rel for _, rel in files)
+tree = []
+for _p, rel in files:
+    if base_tree_sha and old_map.get(rel) == results[rel]:
+        continue
+    tree.append({'path': rel, 'mode': '100644', 'type': 'blob', 'sha': results[rel]})
+for _p in old_map:
+    if _p not in local_paths:
+        tree.append({'path': _p, 'mode': '100644', 'type': 'blob', 'sha': None})
+_body = {'tree': tree}
+if base_tree_sha:
+    _body['base_tree'] = base_tree_sha
+print('  base_tree=%s 变化项=%d' % (base_tree_sha or '(全量)', len(tree)))
+s, res = api('POST', '/repos/%s/%s/git/trees' % (OWNER, REPO), _body, timeout=180)
 if s not in (200, 201):
     print('✗ 建 tree 失败：%s %s' % (s, res))
     sys.exit(1)

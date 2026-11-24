@@ -795,7 +795,7 @@ router.post('/:id/ai-companion', async (req, res) => {
         const novel = getMovieById.get(req.params.id);
         if (!novel) return res.json({ code: -1, msg: '小说不存在' });
         const mode = String((req.body && req.body.mode) || 'recap');
-        if (!['recap', 'characters', 'polish'].includes(mode)) {
+        if (!['recap', 'characters', 'polish', 'explain', 'ask', 'summary', 'quote'].includes(mode)) {
             return res.json({ code: -1, msg: '未知的伴读模式' });
         }
         const content = getNovelContent(novel.filePath, novel.id);
@@ -804,7 +804,16 @@ router.post('/:id/ai-companion', async (req, res) => {
             parseInt(req.body && req.body.chapterIndex, 10) || 0,
             content.chapters.length - 1
         ));
-        const cacheKey = `${novel.id}:${cur}:${mode}`;
+        /* 2026-11：划线相关模式需要选中文本与提问 */
+        const selection = String((req.body && req.body.selection) || '').replace(/\s+/g, ' ').trim().slice(0, 2000);
+        const question = String((req.body && req.body.question) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if ((mode === 'explain' || mode === 'ask') && !selection) {
+            return res.json({ code: -1, msg: '请先选中要解释或提问的原文' });
+        }
+        if (mode === 'ask' && !question) {
+            return res.json({ code: -1, msg: '请输入要问的问题' });
+        }
+        const cacheKey = `${novel.id}:${cur}:${mode}:${selection.slice(0, 40)}:${question.slice(0, 40)}`;
         if (companionCache.has(cacheKey)) {
             return res.json({ code: 0, data: { ...companionCache.get(cacheKey), cached: true } });
         }
@@ -813,25 +822,39 @@ router.post('/:id/ai-companion', async (req, res) => {
             .replace(/<[^>]+>/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
-        const from = mode === 'characters' ? 0 : Math.max(0, cur - 2);
-        const to = mode === 'polish' ? cur + 1 : cur + 1;
+        const singleChapterMode = ['polish', 'summary', 'quote', 'explain', 'ask'].includes(mode);
+        const from = mode === 'characters' ? 0 : (singleChapterMode ? cur : Math.max(0, cur - 2));
+        const to = cur + 1;
         const parts = [];
-        let budget = 26000;
+        let budget = singleChapterMode ? 12000 : 26000;
         for (let i = from; i < to && budget > 0; i++) {
             const ch = content.chapters[i];
             if (!ch) continue;
             let t = plain(ch);
-            if (mode === 'polish' && t.length > 7000) t = t.slice(0, 7000) + '…';
+            if (singleChapterMode && t.length > 7000) t = t.slice(0, 7000) + '…';
             if (t.length > budget) t = t.slice(0, budget);
             budget -= t.length;
-            parts.push(`【${ch.title || '第 ' + (i + 1) + ' 章'}】\n${t}`);
+            parts.push(`【${ch.title || '第 ' + (i + 1) + ' 章'}】
+${t}`);
         }
 
         const sourceForPolish = mode === 'polish' ? plain(content.chapters[cur]) : '';
         const prompts = {
             recap: '请用 200 字以内总结以上章节的核心剧情，只讲已经发生的事，结尾点出当前悬念。不要剧透后文。',
             characters: '请提取截至当前进度已经登场的人物，输出 3~6 条：姓名 / 身份 / 与主角关系 / 一句性格特征。严格只用以上文本，不要推测或剧透后文。',
-            polish: '以上只有一章原文。请只改写这一章，输出自然流畅的中文（保留情节、人名、专有名词和章节标题不变，去掉机翻腔）。严禁改写成其它章节、严禁续写、严禁概括。直接输出同一章正文，不要解释。'
+            polish: '以上只有一章原文。请只改写这一章，输出自然流畅的中文（保留情节、人名、专有名词和章节标题不变，去掉机翻腔）。严禁改写成其它章节、严禁续写、严禁概括。直接输出同一章正文，不要解释。',
+            summary: '用 120 字以内概括本章发生了什么。只讲本章已发生的事，不剧透后文，不评论、不抒情。',
+            quote: '从本章原文中挑选 3-5 句值得摘抄的句子，逐行输出原句。不要编号、不要解释、不要改写、不要加引号。',
+            explain: `读者选中了以下原文：
+「${selection}」
+
+请解释其中的名词、典故、背景或潜台词（如果选段本身是一个词，给出它在本书语境下的含义）。2-4 句，直接给解释，不剧透后文。`,
+            ask: `读者选中了以下原文：
+「${selection}」
+
+读者的问题：${question}
+
+只依据原文与本章上下文回答，200 字以内；不确定就说不知道，不要编造，不剧透后文。`
         };
         const { callAI } = require('../utils/ai-service');
         const text = await callAI(
