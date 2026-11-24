@@ -43,6 +43,8 @@
         playSeq: 0,
         srcPicked: '',
         season: null,
+        dlData: null,
+        dlTimer: 0,
     };
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
@@ -702,14 +704,153 @@
         const nextIdx = eps.findIndex((e) => e.episodeNo === season.nextEpisode);
         const startIdx = nextIdx >= 0 ? nextIdx : 0;
         if (hero) {
+            const canDownload = season.mode === 'online';
             hero.innerHTML = '<button class="svd-btn primary big" data-act="play-next">▶ 从第 ' + esc(eps[startIdx] ? eps[startIdx].episodeNo : 1) + ' 集开始</button>'
-                + '<button class="svd-btn" data-act="play-ep" data-idx="0">从头播放</button>';
+                + '<button class="svd-btn" data-act="play-ep" data-idx="0">从头播放</button>'
+                + (canDownload
+                    ? '<button class="svd-btn" data-act="dl-season">⬇ 下载本季（' + eps.length + ' 集）</button>'
+                      + '<label class="svd-dl-up" title="ffmpeg 放大到 2560 宽 + 轻锐化；这是确定性画质增强，不是 AI 超分">'
+                      + '<input type="checkbox" id="svdUpscale"> 2.4K 增强</label>'
+                    : '');
         }
         grid.innerHTML = eps.map((ep, i) => {
             const p = season.progress[ep.episodeNo] || {};
             const cls = p.watched ? ' watched' : (ep.episodeNo === season.nextEpisode ? ' next' : (p.position > 3 ? ' partial' : ''));
             return '<button class="svd-ep' + cls + '" data-act="play-ep" data-idx="' + i + '" title="' + esc(ep.title || ('第' + ep.episodeNo + '集')) + '">'
                 + esc(ep.episodeNo) + '</button>';
+        }).join('');
+    }
+
+    // ---------------- 后台分集下载 ----------------
+    const DL_STATE = { queued: '排队中', running: '下载中', done: '已完成', error: '失败', canceled: '已取消' };
+
+    function fmtClock(sec) {
+        const s = Math.max(0, Math.floor(Number(sec) || 0));
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const ss = String(s % 60).padStart(2, '0');
+        return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + ss;
+    }
+    function fmtBytes(n) {
+        const b = Number(n) || 0;
+        if (b < 1024) return b + ' B';
+        if (b < 1024 * 1024) return (b / 1024).toFixed(0) + ' KB';
+        if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+        return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    async function downloadSeason() {
+        const season = S.season;
+        if (!season || season.mode !== 'online') { notify('先选一个在线源', '在线源加载出全集后才能下载'); return; }
+        const eps = (season.episodes || []).filter((e) => e && e.url)
+            .map((e) => ({ episodeNo: e.episodeNo, url: e.url }));
+        if (!eps.length) { notify('没有可下载的集', '这个源没有解析出剧集'); return; }
+        const up = q('#svdUpscale');
+        const upscale = !!(up && up.checked);
+        try {
+            const r = await api('/api/series/episodes/download', {
+                method: 'POST', timeout: 60000,
+                body: JSON.stringify({
+                    title: season.title, sourceId: season.sourceId, episodes: eps, upscale,
+                }),
+            });
+            if (!r || r.code !== 0) throw new Error((r && r.msg) || '投递失败');
+            notify('已加入下载队列', r.data.queued + ' 集' + (upscale ? ' · 2.4K 增强' : ' · 原画直封装'));
+            refreshDownloadsBadge();
+            openDownloads();
+        } catch (e) { notify('下载投递失败', e.message); }
+    }
+
+    async function downloadEpisode(idx) {
+        const season = S.season;
+        if (!season || season.mode !== 'online') return;
+        const ep = (season.episodes || [])[idx];
+        if (!ep || !ep.url) { notify('这一集没有可下载地址', ''); return; }
+        const up = q('#svdUpscale');
+        const upscale = !!(up && up.checked);
+        try {
+            const r = await api('/api/series/episodes/download', {
+                method: 'POST', timeout: 45000,
+                body: JSON.stringify({
+                    title: season.title, sourceId: season.sourceId,
+                    episodes: [{ episodeNo: ep.episodeNo, url: ep.url }], upscale,
+                }),
+            });
+            if (!r || r.code !== 0) throw new Error((r && r.msg) || '投递失败');
+            notify('已加入下载队列', '第 ' + ep.episodeNo + ' 集' + (upscale ? ' · 2.4K 增强' : ''));
+            refreshDownloadsBadge();
+        } catch (e) { notify('下载投递失败', e.message); }
+    }
+
+    async function refreshDownloadsBadge() {
+        try {
+            const r = await api('/api/series/downloads', { timeout: 15000 });
+            if (!r || r.code !== 0) return;
+            S.dlData = r.data;
+            const active = (r.data.jobs || []).filter((j) => j.state === 'running' || j.state === 'queued').length;
+            const badge = document.getElementById('svDlBadge');
+            if (badge) {
+                badge.textContent = active ? String(active) : '';
+                badge.style.display = active ? '' : 'none';
+            }
+            if (q('#svdlList')) renderDownloadJobs();
+        } catch (e) { /* 后台任务接口失败不影响页面 */ }
+    }
+
+    function openDownloads() {
+        const host = ensureHost('svDlHost');
+        host.innerHTML = '<div class="svdl-mask" data-act="dl-close"><aside class="svdl-panel" role="dialog" aria-modal="true">'
+            + '<header class="svdl-head"><h3>⬇ 下载任务</h3>'
+            + '<div class="svdl-actions"><button class="svdl-btn" data-act="dl-refresh">刷新</button>'
+            + '<button class="svdl-btn" data-act="dl-clear">清理已完成</button>'
+            + '<button class="svdl-x" data-act="dl-close" aria-label="关闭">✕</button></div></header>'
+            + '<div class="svdl-list" id="svdlList"><div class="svd-empty">加载中…</div></div>'
+            + '<footer class="svdl-foot" id="svdlFoot"></footer>'
+            + '</aside></div>';
+        if (S.dlTimer) clearInterval(S.dlTimer);
+        S.dlTimer = setInterval(refreshDownloadsBadge, 2000);
+        refreshDownloadsBadge();
+    }
+
+    function closeDownloads() {
+        if (S.dlTimer) { clearInterval(S.dlTimer); S.dlTimer = 0; }
+        const host = document.getElementById('svDlHost');
+        if (host) host.innerHTML = '';
+    }
+
+    function renderDownloadJobs() {
+        const list = document.getElementById('svdlList');
+        const foot = document.getElementById('svdlFoot');
+        if (!list) return;
+        const d = S.dlData || { jobs: [] };
+        const jobs = d.jobs || [];
+        const active = jobs.filter((j) => j.state === 'running' || j.state === 'queued').length;
+        if (foot) {
+            foot.innerHTML = '<span>保存位置：<code>' + esc(d.root || '') + '</code></span>'
+                + '<span>' + (active ? '进行中 ' + active + ' 个' : '当前没有进行中的任务') + '</span>';
+        }
+        if (!jobs.length) {
+            list.innerHTML = '<div class="svd-empty">还没有下载任务。<br>在选源后的集数面板里点「⬇ 下载本季」即可后台下载。</div>';
+            return;
+        }
+        list.innerHTML = jobs.map((j) => {
+            const state = DL_STATE[j.state] || j.state;
+            const prog = j.state === 'running' || j.state === 'done'
+                ? '已下 ' + fmtClock(j.positionSec) + (j.sizeBytes ? ' · ' + fmtBytes(j.sizeBytes) : '')
+                : '';
+            return '<div class="svdl-row">'
+                + '<div class="svdl-main"><div class="svdl-title">第 ' + esc(j.episodeNo) + ' 集'
+                + '<i class="svdl-state ' + esc(j.state) + '">' + esc(state) + '</i>'
+                + (j.upscale ? '<i class="svdl-2k">2.4K</i>' : '') + '</div>'
+                + '<small>' + esc(j.title) + '</small>'
+                + (prog ? '<small>' + esc(prog) + '</small>' : '')
+                + (j.error ? '<small class="svdl-err">' + esc(j.error) + '</small>' : '')
+                + '</div>'
+                + '<div class="svdl-row-actions">'
+                + (j.state === 'running' || j.state === 'queued'
+                    ? '<button class="svdl-btn" data-act="dl-cancel" data-id="' + esc(j.id) + '">取消</button>'
+                    : '<button class="svdl-btn" data-act="dl-reveal" data-id="' + esc(j.id) + '">位置</button>')
+                + '</div></div>';
         }).join('');
     }
 
@@ -987,6 +1128,34 @@
         }
         if (act === 'continue-watch') { startWatching(); return; }
         if (act === 'play-next') { playNextEpisode(); return; }
+        if (act === 'dl-season') { downloadSeason(); return; }
+        if (act === 'dl-episode') { downloadEpisode(Number(btn.getAttribute('data-idx')) || 0); return; }
+        if (act === 'downloads') { openDownloads(); return; }
+        if (act === 'dl-close') {
+            if (e.target === btn || btn.classList.contains('svdl-x')) closeDownloads();
+            return;
+        }
+        if (act === 'dl-refresh') { refreshDownloadsBadge(); return; }
+        if (act === 'dl-clear') {
+            api('/api/series/downloads/clear', { method: 'POST', body: '{}' })
+                .then(() => refreshDownloadsBadge())
+                .catch((err) => notify('清理失败', err.message));
+            return;
+        }
+        if (act === 'dl-cancel') {
+            const id = btn.getAttribute('data-id') || '';
+            api('/api/series/downloads/cancel', { method: 'POST', body: JSON.stringify({ id }) })
+                .then((r) => { if (r && r.code === 0) refreshDownloadsBadge(); else notify('取消失败', (r && r.msg) || ''); })
+                .catch((err) => notify('取消失败', err.message));
+            return;
+        }
+        if (act === 'dl-reveal') {
+            const id = btn.getAttribute('data-id') || '';
+            api('/api/series/downloads/reveal', { method: 'POST', body: JSON.stringify({ id }) })
+                .then((r) => { if (!r || r.code !== 0) notify('打开失败', (r && r.msg) || ''); })
+                .catch((err) => notify('打开失败', err.message));
+            return;
+        }
         if (act === 'play-ep') {
             const idx = Number(btn.getAttribute('data-idx'));
             if (S.season && S.season.mode === 'local') playLocalEpisode(idx);
@@ -1048,7 +1217,8 @@
             + '<div class="sv-head-title"><h2>追番</h2><span class="sv-head-sub" id="svHeadSub"></span></div>'
             + '<div class="sv-head-actions">'
             + '<button class="sv-refresh" data-act="check-updates">检查更新</button>'
-            + '<button class="sv-refresh" id="svSourcesBtn">🔌 在线源</button>'
+            + '<button class="sv-refresh" data-act="downloads">⬇ 下载任务<span class="sv-dl-badge" id="svDlBadge" style="display:none"></span></button>'
+            + '<button class="sv-refresh" id="svSourcesBtn">🧩 插件商店</button>'
             + '<button class="sv-refresh" id="svRefreshBtn">刷新放送表</button>'
             + '</div></div>'
             + '<section class="svh-hero" id="svHero" style="display:none"></section>'
@@ -1108,6 +1278,7 @@
         loadBoard();
         loadCalendar(false);
         loadRank(false);
+        refreshDownloadsBadge();
         if (window.SeriesGraph && window.SeriesGraph.injectButton) window.SeriesGraph.injectButton();
         if (window.JellyfinPanel && window.JellyfinPanel.injectButton) window.JellyfinPanel.injectButton();
         autoRefreshSources();
@@ -1119,6 +1290,7 @@
         document.body.classList.remove('sv-mode');
         if (S.heroTimer) { clearInterval(S.heroTimer); S.heroTimer = 0; }
         closeDetail();
+        closeDownloads();
         if (S.bound) {
             document.removeEventListener('click', onClick);
             document.removeEventListener('keydown', onKeydown);

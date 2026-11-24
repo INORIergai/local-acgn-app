@@ -24,6 +24,9 @@ const { pipeline } = require('node:stream/promises');
 const engine = require('../utils/media-sources/engine');
 const reading = require('../utils/media-sources/reading');
 const onlineHistory = require('../utils/online-history');
+const streamTokens = require('../utils/media-sources/stream-tokens');
+const newToken = streamTokens.newToken;
+const ctxOf = streamTokens.ctxOf;
 
 // ==================================================================
 // 并发控制：多源搜索时限制同时在跑的请求数，别把机器和站点一起打爆
@@ -258,20 +261,8 @@ router.get('/episodes', async (req, res) => {
     res.json({ code: 0, data: { sourceId: id, sourceName: s.name, url, episodes: r.episodes, error: r.error || '' } });
 });
 
-// 播放上下文：resolve 出来的 Referer / UA / Cookie 要带到流代理里，
-// 但 URL 上不好塞这些（还会被浏览器和日志看见）→ 存内存换成一次性 token。
-const streamCtx = new Map();
-const CTX_TTL = 2 * 60 * 60 * 1000;
-
-function newToken(ctx) {
-    const token = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-    streamCtx.set(token, { ...ctx, at: Date.now() });
-    if (streamCtx.size > 300) {
-        const now = Date.now();
-        for (const [k, v] of streamCtx) if (now - v.at > CTX_TTL) streamCtx.delete(k);
-    }
-    return token;
-}
+// 播放上下文（Referer/UA/Cookie）与一次性 token 已抽到 utils/media-sources/stream-tokens.js，
+// 追番后台下载与流代理共用同一个 token 表。
 
 router.get('/resolve', async (req, res) => {
     try {
@@ -348,12 +339,6 @@ function assertSafeProxyUrl(raw) {
     return parsed.href;
 }
 
-function ctxOf(token) {
-    const c = streamCtx.get(String(token || ''));
-    if (!c) return null;
-    if (Date.now() - c.at > CTX_TTL) { streamCtx.delete(token); return null; }
-    return c;
-}
 
 /** m3u8：把分片和 KEY/MAP 的地址全部改写成走 /seg 的同源地址 */
 function rewriteHlsPlaylist(text, baseUrl, token) {

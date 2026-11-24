@@ -485,6 +485,67 @@ router.post('/source-episodes', async (req, res) => {
 });
 
 /**
+ * 后台分集下载：前端把当前源的全集（集号+集页 URL）一次投进来，
+ * 队列最多 2 并发；普通模式 -c copy，2.4K 增强模式 ffmpeg 重编码。
+ * 解析流地址放在任务真正开始时做，避免一次投 12 集把解析器打爆。
+ */
+router.post('/episodes/download', (req, res) => {
+    try {
+        const dl = require('../utils/anime-downloader');
+        const title = String(req.body.title || '未命名番剧');
+        const sourceId = String(req.body.sourceId || '');
+        const upscale = req.body.upscale === true;
+        const eps = Array.isArray(req.body.episodes) ? req.body.episodes.slice(0, 200) : [];
+        if (!sourceId || !eps.length) return res.json({ code: -1, msg: '缺少 sourceId 或 episodes' });
+        const jobsOut = [];
+        const failed = [];
+        for (const e of eps) {
+            try {
+                jobsOut.push(dl.enqueue({
+                    title,
+                    episodeNo: e.episodeNo,
+                    sourceId,
+                    episodeUrl: e.url,
+                    upscale,
+                }));
+            } catch (err) {
+                failed.push({ episodeNo: e.episodeNo, error: err.message });
+            }
+        }
+        res.json({ code: jobsOut.length ? 0 : -1, data: {
+            queued: jobsOut.length, failed, jobs: jobsOut, upscale,
+        }, msg: jobsOut.length ? '' : '没有可下载的集' });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.get('/downloads', (req, res) => {
+    try {
+        const dl = require('../utils/anime-downloader');
+        res.json({ code: 0, data: { root: dl.ROOT, active: dl.activeCount(), jobs: dl.listJobs() } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/downloads/cancel', (req, res) => {
+    try {
+        const ok = require('../utils/anime-downloader').cancel(String(req.body.id || ''));
+        res.json({ code: ok ? 0 : -1, data: { canceled: ok }, msg: ok ? '' : '任务不存在或已结束' });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/downloads/clear', (req, res) => {
+    try {
+        res.json({ code: 0, data: { cleared: require('../utils/anime-downloader').clearFinished() } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+router.post('/downloads/reveal', (req, res) => {
+    try {
+        require('../utils/anime-downloader').reveal(String(req.body.id || ''));
+        res.json({ code: 0, data: { ok: true } });
+    } catch (e) { res.json({ code: -1, msg: e.message }); }
+});
+
+/**
  * 一键挂载：搜源 → 按标题相似度 + tier 选最优 → 解析剧集 → 写进 episodes。
  * 前端「+ 追番」成功后直接调它，失败了再降级成手动选源弹窗。
  */

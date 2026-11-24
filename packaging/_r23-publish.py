@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.26'
+TAG = 'v6.8.27'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.26：GALGAME 资料库（Kungal + InariGal）
+COMMIT_MSG = """v6.8.27：后台分集下载 + 插件商店 + 2.4K 增强
 
-- 新增 GALGAME 资料库：Kungal 作品库 + InariGal 直链下载
-- Kungal：5013 部作品、搜索/排序、简介/截图/角色、资源列表与网盘发券
-- InariGal：下载榜/搜索/详情，直链下载（302 解析）
-- 下载面板：网盘链接、提取码、解压密码一键复制
-- TouchGal：Cloudflare 限制说明 + 外链入口，预留开发者 Token 接入
+- 后台分集下载：选源后一键投递整季，队列 2 并发，进度/取消/打开位置
+- 2.4K 增强：ffmpeg 放大到 2560×1440 + 轻锐化（确定性画质增强，非 AI 超分）
+- 插件商店：38 个在线源可搜索、按类型筛选、单个启停、检查 Kazumi 规则更新
+- 流代理 token 抽成共享模块，播放与下载共用同一条代理链
 
-版本：6.8.26"""
+版本：6.8.27"""
 
 
 def get_token():

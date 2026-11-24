@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.26'
-TAG = 'v6.8.26'
+VER = '6.8.27'
+TAG = 'v6.8.27'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,14 +92,12 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.26 · GALGAME 资料库（Kungal + InariGal）
+## v6.8.27 · 后台分集下载 + 插件商店 + 2.4K 增强
 
-- 新增侧栏「💗 Galgame 资料库」：左作品列表 + 右详情 + 下载面板，全程应用内原生排版。
-- Kungal 主源：5013 部作品，支持搜索、最近更新/评分/发售/浏览排序、R18 开关；详情含简介、标签、别名、截图、角色与资源列表。
-- InariGal 补充：下载榜、搜索、详情与角色；资源为直链下载，后端解析 302 后交给浏览器。
-- 下载面板：网盘链接一键打开、提取码/解压密码一键复制；提示来自社区资源，后续内置模拟器会在这里直接下载/安装/启动。
-- TouchGal：整站 Cloudflare Managed Challenge，站内直连必须开发者 Token；当前作为外部入口展示，并注明 KunMoe（Kungal 官方源码）仓库。
-- 稳定性：Kungal/Inari 图片统一走服务端图片代理，修掉浏览器直连图床被热链策略拦掉的裂图。
+- 后台分集下载：选源后点「⬇ 下载本季」，整季进入后台队列（最多 2 并发），关掉页面也会继续；下载任务抽屉可看进度、取消、打开文件位置。
+- 2.4K 增强：下载时勾选「2.4K 增强」，ffmpeg 用 lanczos 放大到 2560×1440 并做轻锐化（确定性画质增强，不是 AI 超分；UI 已注明）。
+- 插件商店：追番页「🧩 插件商店」列出全部在线源，支持搜索、按「网页规则 / JSON 接口 / Kazumi 规则」筛选、单个启停、全选/全不选，并可检查 Kazumi 规则更新。
+- 稳定性：播放代理的 Referer/UA/Cookie token 抽成共享模块，播放与下载共用同一条代理链；下载走本机代理，避免 ffmpeg 直连源站被防盗链 400。
 
 - 内置 Android v5.2.0 安装包。
 

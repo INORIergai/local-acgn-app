@@ -371,3 +371,67 @@ body.sv-detail-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
     .svh-card, .svh-poster img, .svh-btn, .svd-panel { transition: none !important; animation: none !important; }
 }
+
+/* ---------------- 后台分集下载 ---------------- */
+.sv-dl-badge {
+    display: inline-block; min-width: 16px; height: 16px; line-height: 16px; padding: 0 4px;
+    margin-left: 4px; border-radius: 999px; background: var(--primary); color: #fff;
+    font-size: 10px; font-weight: 700; text-align: center; vertical-align: 1px;
+}
+.svd-dl-up {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted);
+    cursor: pointer; user-select: none; padding: 4px 2px;
+}
+.svd-dl-up input { accent-color: var(--primary); }
+
+.svdl-mask {
+    position: fixed; inset: 0; z-index: 3000; background: rgba(6,7,10,.55);
+    display: flex; justify-content: flex-end; animation: svd-fade .14s ease both;
+}
+.svdl-panel {
+    width: min(440px, 94vw); height: 100%; display: flex; flex-direction: column;
+    background: var(--bg, #17181c); color: var(--text);
+    border-left: 1px solid var(--border); box-shadow: -18px 0 50px rgba(0,0,0,.35);
+    animation: svdl-in .2s cubic-bezier(.2,.8,.3,1) both;
+}
+@keyframes svdl-in { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.svdl-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 16px 18px; border-bottom: 1px solid var(--border);
+}
+.svdl-head h3 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.svdl-actions { display: flex; align-items: center; gap: 6px; }
+.svdl-btn {
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+    border-radius: 8px; padding: 5px 10px; font-size: 11.5px; cursor: pointer;
+}
+.svdl-btn:hover { color: var(--primary); border-color: var(--primary); }
+.svdl-x {
+    border: 0; background: transparent; color: var(--text); width: 30px; height: 30px;
+    border-radius: 50%; cursor: pointer; font-size: 14px;
+}
+.svdl-x:hover { background: rgba(127,127,127,.14); }
+.svdl-list { flex: 1 1 auto; overflow-y: auto; padding: 10px 14px; }
+.svdl-row {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px;
+    border-bottom: 1px solid var(--border); min-width: 0;
+}
+.svdl-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.svdl-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.svdl-main small { font-size: 11px; color: var(--text-muted); line-height: 1.5;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svdl-state {
+    font-style: normal; font-size: 10px; font-weight: 500; padding: 0 6px; line-height: 1.7;
+    border-radius: 5px; border: 1px solid var(--border); color: var(--text-muted);
+}
+.svdl-state.running { color: var(--primary); border-color: var(--primary); }
+.svdl-state.done { color: var(--success, #3f9e5a); border-color: currentColor; }
+.svdl-state.error { color: var(--danger, #c45545); border-color: currentColor; }
+.svdl-2k { font-style: normal; font-size: 9.5px; color: #d98c3f; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
+.svdl-err { color: var(--danger, #c45545) !important; white-space: normal !important; }
+.svdl-row-actions { flex: 0 0 auto; padding-top: 2px; }
+.svdl-foot {
+    padding: 12px 18px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted);
+    display: flex; flex-direction: column; gap: 5px; line-height: 1.6;
+}
+.svdl-foot code { font-size: 10.5px; word-break: break-all; }
