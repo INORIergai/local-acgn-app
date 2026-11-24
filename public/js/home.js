@@ -901,7 +901,7 @@
         if (whBooks) whBooks.textContent = booksText;
         const whTotal = document.getElementById('whHeroTotal');
         if (whTotal) whTotal.textContent = totalText;
-        ['wh', 'pp', 'nt', 'ik'].forEach((p) => {
+        ['wh', 'pp', 'nt', 'ik', 'am'].forEach((p) => {
             if (p === 'wh') return;
             const total = document.getElementById(p + 'HeroMovies');
             if (total) total.textContent = totalText;

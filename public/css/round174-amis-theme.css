@@ -1,0 +1,317 @@
+/* ============================================================================
+   round174 · 爱弥斯 · Amis
+   第五套皮肤：暖书房夜读 —— 酒红暖黑底、玫瑰粉、香槟金。
+   来自 Alife 角色卡的爱弥斯（归墟研究院人造生命少女）专属形象：
+   晚礼服书房、樱花庭院、夜景白裙三张首屏，皮肤与 AI 人格 aimeis 联动。
+   纪律：只重定义色与光，不动任何尺寸；与其他皮肤互不影响。
+   ============================================================================ */
+
+html[data-v4skin="amis"] body,
+html[data-v4skin="amis"] body.dark {
+    --bg: #140D10;
+    --bg-elevated: #1E1419;
+    --card-bg: #21161B;
+    --card-bg-hover: #2B1D24;
+    --text: #F6EAE6;
+    --text-muted: #C0A8A6;
+    /* 小字角标在 #140D10 上约 5.1:1，正文级达标 */
+    --text-faint: #957F7E;
+    --border: #3A272E;
+    --border-strong: #55383F;
+    --primary: #E8A2B2;
+    --primary-strong: #F4C4D0;
+    --primary-soft: rgba(232, 162, 178, .14);
+    --danger: #E0785C;
+    --danger-soft: rgba(224, 120, 92, .14);
+    --gold-primary: #D9B26E;
+    --accent: #D9B26E;
+    --accent-soft: rgba(217, 178, 110, .13);
+    --accent-line: rgba(217, 178, 110, .44);
+    --sprocket-bg: #2A1A20;
+    --sprocket-hole: #140D10;
+    --shadow-1: 0 1px 2px rgba(8, 3, 5, .6);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .82);
+    --font-display: "Noto Serif SC", "Songti SC", "STZhongsong", Georgia, serif;
+    --cv-glass-rgb: 30, 20, 25;
+    --cv-glass-edge: rgba(246, 234, 230, .10);
+    --cv-glass-edge-2: rgba(0, 0, 0, .52);
+    --cv-glass-shadow: 0 30px 80px -24px rgba(0, 0, 0, .85);
+    --cv-glass-spec: linear-gradient(160deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 46%);
+    --cv-scrim-rgb: 20, 13, 16;
+    --cv-scrim-strong-rgb: 27, 17, 21;
+}
+
+html[data-v4skin="amis"] body {
+    background:
+        radial-gradient(64% 46% at 84% -6%, rgba(217, 178, 110, .10), transparent 64%),
+        radial-gradient(50% 40% at 4% 102%, rgba(232, 162, 178, .09), transparent 66%),
+        linear-gradient(180deg, #160E12 0%, #140D10 46%, #100A0C 100%);
+    background-attachment: fixed;
+    color: var(--text);
+}
+
+html[data-v4skin="amis"] .navbar,
+html[data-v4skin="amis"] .main-container { position: relative; z-index: 1; }
+
+html[data-v4skin="amis"] ::selection { background: rgba(232, 162, 178, .28); color: #FFF6F1; }
+html[data-v4skin="amis"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-v4skin="amis"] ::-webkit-scrollbar-track { background: #140D10; }
+html[data-v4skin="amis"] ::-webkit-scrollbar-thumb {
+    background: #4A3038;
+    border: 2px solid #140D10;
+    border-radius: 999px;
+}
+
+/* ---------- 顶栏 / 侧栏：暖黑玻璃 + 香槟金细线 ---------- */
+html[data-v4skin="amis"] .navbar {
+    background: rgba(20, 13, 16, .90);
+    border-bottom: 1px solid rgba(217, 178, 110, .26);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+}
+html[data-v4skin="amis"] .logo { font-family: var(--font-display); letter-spacing: .02em; }
+html[data-v4skin="amis"] .logo::before {
+    background: linear-gradient(180deg, #F4C4D0, #D9B26E);
+    box-shadow: 0 0 12px rgba(232, 162, 178, .55);
+}
+html[data-v4skin="amis"] .search-box input,
+html[data-v4skin="amis"] #searchInput {
+    background: #1B1216;
+    border-color: #3A272E;
+    color: var(--text);
+}
+html[data-v4skin="amis"] #searchInput::placeholder { color: var(--text-faint); }
+html[data-v4skin="amis"] #searchInput:focus {
+    border-color: rgba(232, 162, 178, .55);
+    box-shadow: 0 0 0 3px rgba(232, 162, 178, .12);
+}
+html[data-v4skin="amis"] .theme-toggle {
+    background: #1B1216;
+    border-color: #3A272E;
+    color: var(--text);
+}
+html[data-v4skin="amis"] .theme-toggle:hover { border-color: #E8A2B2; color: #F4C4D0; }
+
+html[data-v4skin="amis"] .sidebar {
+    background: linear-gradient(180deg, #170F13, #140D10);
+    border-right: 1px solid #2E1F25;
+}
+html[data-v4skin="amis"] .sidebar h3,
+html[data-v4skin="amis"] .sidebar-section > h3 {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .18em;
+    color: #9A8280;
+}
+html[data-v4skin="amis"] .nav-item { margin: 1px 8px; border-radius: 8px; color: #C6AEAC; }
+html[data-v4skin="amis"] .nav-item:hover { background: rgba(246, 234, 230, .05); color: #F6EAE6; }
+html[data-v4skin="amis"] .nav-item.active {
+    background: linear-gradient(90deg, rgba(232, 162, 178, .16), rgba(232, 162, 178, .02) 82%) !important;
+    box-shadow: inset 2px 0 0 #E8A2B2;
+    color: #FFF3F4 !important;
+}
+
+/* ---------- 按钮 / 输入 ---------- */
+html[data-v4skin="amis"] .btn:not(.btn-secondary):not(.btn-danger),
+html[data-v4skin="amis"] .btn-primary {
+    background: linear-gradient(180deg, #F4C4D0, #D98CA0);
+    border-color: rgba(217, 178, 110, .50);
+    color: #2A1016;
+}
+html[data-v4skin="amis"] .btn:not(.btn-secondary):not(.btn-danger):hover,
+html[data-v4skin="amis"] .btn-primary:hover { filter: brightness(1.06); }
+html[data-v4skin="amis"] .btn-secondary {
+    background: #21161B;
+    border-color: #3A272E;
+    color: #D6BEBB;
+}
+html[data-v4skin="amis"] .settings-input,
+html[data-v4skin="amis"] .select-input {
+    background: #1B1216 !important;
+    border-color: #3A272E !important;
+    color: #F6EAE6 !important;
+}
+html[data-v4skin="amis"] .settings-input:focus,
+html[data-v4skin="amis"] .select-input:focus {
+    border-color: rgba(232, 162, 178, .55) !important;
+    box-shadow: 0 0 0 3px rgba(232, 162, 178, .12) !important;
+}
+
+/* ---------- 卡片 / 列表 ---------- */
+html[data-v4skin="amis"] .movie-card,
+html[data-v4skin="amis"] .movie-card-compact {
+    border-radius: 12px !important;
+    border-color: #33222A !important;
+    background: #1B1216 !important;
+}
+html[data-v4skin="amis"] .movie-card:hover { border-color: rgba(232, 162, 178, .50) !important; }
+html[data-v4skin="amis"] .rank-item:hover { border-color: rgba(232, 162, 178, .42) !important; }
+html[data-v4skin="amis"] .home-rank {
+    border-radius: 12px;
+    border: 1px solid #33222A;
+    background: linear-gradient(180deg, #1D1318, #170F13);
+}
+html[data-v4skin="amis"] .home-rank-title { font-family: var(--font-display); letter-spacing: .01em; }
+html[data-v4skin="amis"] .home-rank-tab.active {
+    background: #D98CA0;
+    border-color: #D98CA0;
+    color: #2A1016;
+}
+html[data-v4skin="amis"] .home-rank .rank-num { color: #E8A2B2; font-family: var(--font-mono); }
+
+/* 今夜主映：用爱弥斯书房图做衬底，左侧压暗保证文案 */
+html[data-v4skin="amis"] .hcs-shell {
+    border-radius: 14px !important;
+    border-color: rgba(217, 178, 110, .28) !important;
+    background:
+        linear-gradient(90deg, rgba(20, 13, 16, .97) 0%, rgba(20, 13, 16, .88) 48%, rgba(20, 13, 16, .34) 100%),
+        url("/img/amis/hero-2.webp") center 36% / cover no-repeat,
+        #140D10 !important;
+}
+html[data-v4skin="amis"] .hcs-sprocket {
+    background-color: #2A1A20 !important;
+    border-bottom-color: rgba(217, 178, 110, .26) !important;
+    background-image: repeating-linear-gradient(90deg, transparent 0 10px, rgba(217, 178, 110, .28) 10px 18px, transparent 18px 28px) !important;
+}
+html[data-v4skin="amis"] .hcs-kicker {
+    color: #EBC98E !important;
+    border-color: rgba(217, 178, 110, .40) !important;
+    background: rgba(20, 13, 16, .70) !important;
+}
+html[data-v4skin="amis"] .hcs-title { font-family: var(--font-display); }
+html[data-v4skin="amis"] .hcs-btn-primary {
+    background: linear-gradient(180deg, #F4C4D0, #D98CA0) !important;
+    border-color: rgba(217, 178, 110, .45) !important;
+    color: #2A1016 !important;
+}
+
+/* ---------- 爱弥斯首屏（只在 amis 皮肤显示） ---------- */
+.am-hero { display: none; }
+html[data-v4skin="amis"] body #homeView.active {
+    grid-template-areas:
+        "hero hero"
+        "stage stage"
+        "chat rank"
+        "cal cal" !important;
+    grid-template-rows: auto auto minmax(440px, auto) auto !important;
+}
+html[data-v4skin="amis"] .am-hero {
+    grid-area: hero;
+    position: relative;
+    display: block;
+    min-height: 258px;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(217, 178, 110, .30);
+    background: #150E12;
+    box-shadow: 0 28px 70px -32px rgba(0, 0, 0, .9);
+}
+html[data-v4skin="amis"] .am-hero .th-hero-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 30%;
+    transform: scale(1.015);
+}
+html[data-v4skin="amis"] .am-hero .th-hero-veil {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(18, 10, 13, .96) 0%, rgba(18, 10, 13, .82) 34%, rgba(18, 10, 13, .16) 66%, rgba(18, 10, 13, .42) 100%),
+        linear-gradient(0deg, rgba(18, 10, 13, .82), transparent 58%);
+}
+html[data-v4skin="amis"] .am-hero .th-hero-kicker { color: var(--accent); letter-spacing: .20em; }
+html[data-v4skin="amis"] .am-hero .th-hero-greet { color: #D8B8B0; }
+html[data-v4skin="amis"] .am-hero .th-hero-title {
+    color: #FFF6F1;
+    text-shadow: 0 12px 40px rgba(0, 0, 0, .78);
+}
+html[data-v4skin="amis"] .am-hero .th-hero-stats b { color: #FFF6F1; }
+html[data-v4skin="amis"] .am-hero .th-hero-stats i { color: #B79C9A; }
+html[data-v4skin="amis"] .am-hero .th-hero-rail span { background: rgba(217, 178, 110, .58); }
+
+/* 右上角书签装饰：一根玫瑰金竖线 + 小方块，像夹在书里的书签 */
+html[data-v4skin="amis"] .am-hero::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 42px;
+    width: 10px;
+    height: 34px;
+    background: linear-gradient(180deg, #E8A2B2, #D9B26E);
+    border-radius: 0 0 4px 4px;
+    opacity: .85;
+    z-index: 1;
+}
+
+/* ---------- 主题卡 / AI 头像 / 工作台空态 ---------- */
+html[data-v4skin="amis"] .theme-card {
+    background: rgba(27, 18, 22, .62) !important;
+    border-color: rgba(232, 162, 178, .16) !important;
+}
+html[data-v4skin="amis"] .theme-card.active {
+    border-color: rgba(232, 162, 178, .55) !important;
+    box-shadow: 0 0 0 1px rgba(232, 162, 178, .25), 0 0 24px rgba(217, 178, 110, .14) !important;
+}
+html body .theme-card[data-v4skin="amis"] {
+    background-image:
+        linear-gradient(90deg, rgba(20, 13, 16, .95), rgba(20, 13, 16, .28)),
+        url("/img/amis/hero-1.webp") !important;
+    background-size: cover !important;
+    background-position: center 30% !important;
+}
+html body .theme-card[data-v4skin="amis"] .theme-card-info { color: #F6EAE6; }
+html body .theme-card[data-v4skin="amis"] .theme-card-info > div:first-child { color: #FFF6F1 !important; }
+html body .theme-card[data-v4skin="amis"] .theme-card-info div:last-child { color: #C0A8A6 !important; }
+
+html[data-v4skin="amis"] .ai-avatar,
+html[data-v4skin="amis"] .ai-top-avatar {
+    border: 1px solid rgba(232, 162, 178, .42);
+    background-image: url("/img/amis/closeup-1.webp");
+    background-size: cover;
+    background-position: center 22%;
+    color: transparent;
+}
+html[data-v4skin="amis"] #aiModal .dsn-greet-mark {
+    width: 60px;
+    height: 60px;
+    margin: 0 auto 12px !important;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(232, 162, 178, .45);
+    background: url("/img/amis/closeup-1.webp") center 22% / cover no-repeat;
+    box-shadow: 0 0 0 3px rgba(232, 162, 178, .08);
+    font-size: 0 !important;
+    color: transparent;
+}
+html[data-v4skin="amis"] #aiModal .ai-greet-ic {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(232, 162, 178, .45);
+    background: url("/img/amis/closeup-1.webp") center 22% / cover no-repeat;
+    box-shadow: 0 0 0 3px rgba(232, 162, 178, .08);
+}
+html[data-v4skin="amis"] #aiModal .ai-greet-ic svg { display: none; }
+
+/* 顶栏风格圆点 */
+.v4-skin-btn[data-skin="amis"] .v4-dot {
+    background: linear-gradient(135deg, #140D10 46%, #D9B26E 46%, #E8A2B2 100%);
+}
+
+/* ---------- 通知 / 弹窗 ---------- */
+html[data-v4skin="amis"] .notification {
+    background: rgba(30, 20, 25, .96) !important;
+    border-color: rgba(217, 178, 110, .30) !important;
+    color: #F6EAE6 !important;
+}
+html[data-v4skin="amis"] .notification-title { color: #FFF6F1; }
+html[data-v4skin="amis"] .notification-msg { color: #C0A8A6; }
+
+/* ---------- 移动端：首屏压低，文案收小（与 round173-mobile-v6 同口径） ---------- */
+@media (max-width: 720px) {
+    html[data-v4skin="amis"] .am-hero::after { right: 18px; height: 24px; width: 8px; }
+}

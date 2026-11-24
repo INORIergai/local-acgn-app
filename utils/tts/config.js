@@ -33,15 +33,15 @@ const CONFIG_FILE = path.join(runtimeDir(), 'tts-config.json');
  */
 function defaultCacheDir() {
   if (process.env.CINEMAVAULT_TTS_CACHE) return process.env.CINEMAVAULT_TTS_CACHE;
-  // 常见项目位置（打包后 exe 旁边的可写数据区）
-  const roots = [
-    'D:\\ai program\\local-movie-library\\exe\\本地数据-敏感',
-    'G:\\ai program\\local-movie-library\\exe\\本地数据-敏感',
-  ];
-  for (const r of roots) {
-    try { if (fs.existsSync(r)) return path.join(r, 'tts-cache'); } catch (e) { }
-  }
-  // 兜底：看看有没有别的盘装了本项目
+  /* 数据根目录与桌面主进程 pickDataRoot() 同口径（便携版跟 exe 走，安装版走 %APPDATA%）。
+     源码里不写死任何盘符/项目目录 —— 导出包是公开分发的，写死会让别人的探测必然落空。 */
+  const uo = process.env.CINEMAVAULT_USER_DATA || '';
+  const pe = process.env.PORTABLE_EXECUTABLE_DIR || '';
+  const dataRoot = uo || (pe ? path.join(pe, 'CinemaVault-Data')
+    : (process.env.APPDATA ? path.join(process.env.APPDATA, 'CinemaVault') : runtimeDir()));
+  const sensitive = path.join(dataRoot, '本地数据-敏感');
+  try { if (fs.existsSync(sensitive)) return path.join(sensitive, 'tts-cache'); } catch (e) { }
+  // 兜底：数据根目录下的 tts-cache
   return path.join(runtimeDir(), 'tts-cache');
 }
 

@@ -185,6 +185,8 @@
     <link rel="stylesheet" href="css/round173g-player.css">
     <!-- ★ round173：墨皮肤补齐 V6 新模块（必须排在 round168 之后、mobile.css 之前） -->
     <link rel="stylesheet" href="css/round173-ink-v6.css">
+    <!-- ★ round174：爱弥斯皮肤（暖书房 · 玫瑰金；与 AI 人格 aimeis 联动） -->
+    <link rel="stylesheet" href="css/round174-amis-theme.css">
     <!-- ★ 移动端适配层必须真正置于整条样式链最末。
          2026-11 实测：此前它排在 round151~168 之前，导致 V5 首页典藏放映台、
          四皮肤拟人首屏、三态书版、V6 阅读大厅/原生流等 15 个后加载补丁
@@ -245,6 +247,7 @@
                 <button class="v4-skin-btn" data-skin="matinee" data-short="夜" data-label="夜 · Night" onclick="setV4Skin('matinee')" aria-label="夜风格"><span class="v4-dot"></span></button>
                 <button class="v4-skin-btn" data-skin="whale" data-short="鲸" data-label="🐋 鲸 · Deep Whale" onclick="setV4Skin('whale')" aria-label="鲸鱼娘主题"><span class="v4-dot"></span></button>
                 <button class="v4-skin-btn" data-skin="ink" data-short="墨" data-label="墨 · Ink" onclick="setV4Skin('ink')" aria-label="墨色档案主题"><span class="v4-dot"></span></button>
+                <button class="v4-skin-btn" data-skin="amis" data-short="弥" data-label="🌸 爱弥斯 · Amis" onclick="setV4Skin('amis')" aria-label="爱弥斯主题"><span class="v4-dot"></span></button>
             </div>
             <button class="theme-toggle" id="shortcutHelpBtn" title="全局快捷键指南（按 ? 或 F1 呼出）" onclick="toggleShortcutsModal()"><span style="font-weight:700;font-size:14px;font-family:var(--font-mono);line-height:1;">?</span></button>
             <button class="theme-toggle" id="aiTopBtn" title="AI助手" aria-label="AI助手"><svg class="ic ic-ai" width="16" height="16"><use href="#ic-ai"/></svg></button>
@@ -477,7 +480,7 @@
                 <div class="home-backdrop"><img src="img/app-icon.png" alt=""></div>
                 <!-- round158：鲸鱼娘首屏（只在 whale 皮肤显示，由 CSS 控显隐；不新增数据请求） -->
                 <section class="wh-hero" aria-label="鲸鱼娘 · 深海馆藏">
-                    <img class="wh-hero-art" src="img/whale/hero-1-v3.webp" alt="月夜水下图书室里的鲸鱼娘 · 人身人腿与小鲸尾" loading="lazy">
+                    <img class="wh-hero-art" src="img/whale/hero-1-v4.webp" alt="银杏红墙前穿奶油旗装的鲸鱼娘 · 蓝发与蓝珠链" loading="lazy">
                     <div class="wh-hero-veil" aria-hidden="true"></div>
                     <div class="wh-hero-inner">
                         <p class="wh-hero-kicker">DEEP WHALE · 深海放映季</p>
@@ -511,6 +514,21 @@
                         <div class="th-hero-stats">
                             <span><b id="ikHeroMovies">0</b><i>馆藏条目</i></span>
                             <span><b id="ikHeroBooks">0</b><i>册书与漫画</i></span>
+                        </div>
+                    </div>
+                    <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                </section>
+                <!-- round174：爱弥斯 · 暖书房夜读（只在 amis 皮肤显示，三张首屏图随机轮换） -->
+                <section class="th-hero am-hero" aria-label="爱弥斯 · 书房夜读">
+                    <img class="th-hero-art" src="img/amis/hero-1.webp" alt="暖灯书房里读着书的爱弥斯 · 黑丝绒晚礼服与玫瑰粉长发" loading="lazy">
+                    <div class="th-hero-veil" aria-hidden="true"></div>
+                    <div class="th-hero-inner">
+                        <p class="th-hero-kicker">AMIS · 书房夜读</p>
+                        <p class="th-hero-greet">主人，今晚想从哪一页开始？</p>
+                        <h2 class="th-hero-title">把夜晚<br>读成温柔。</h2>
+                        <div class="th-hero-stats">
+                            <span><b id="amHeroMovies">0</b><i>馆藏影片</i></span>
+                            <span><b id="amHeroBooks">0</b><i>册书与漫画</i></span>
                         </div>
                     </div>
                     <div class="th-hero-rail" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>

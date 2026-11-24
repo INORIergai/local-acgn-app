@@ -557,7 +557,7 @@ html[data-v4skin="whale"] .theme-card.active {
 html[data-v4skin="whale"] .theme-card[data-v4skin="whale"] {
     background-image:
         linear-gradient(180deg, rgba(5, 12, 24, .18), rgba(5, 12, 24, .88)),
-        url("/img/whale/card.webp") !important;
+        url("/img/whale/card-v2.webp") !important;
     background-size: cover !important;
     background-position: center 28% !important;
 }

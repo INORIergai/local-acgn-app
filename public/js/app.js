@@ -8201,6 +8201,13 @@ function renderSettings(config) {
                                     <div style="font-size: 12px; color: var(--text-muted);">墨黑底 · 纸灰字 · 一点朱红</div>
                                 </div>
                             </div>
+                            <div class="theme-card ${getV4Skin() === 'amis' ? 'active' : ''}" data-v4skin="amis" onclick="pickV4Skin('amis')">
+                                <div class="theme-dot" style="background: linear-gradient(135deg, #140D10 42%, #D9B26E 42%, #E8A2B2 100%);"></div>
+                                <div class="theme-card-info">
+                                    <div style="font-weight: 600; font-size: 14px;">🌸 爱弥斯 · Amis</div>
+                                    <div style="font-size: 12px; color: var(--text-muted);">暖书房 · 玫瑰金 · 爱弥斯陪伴</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -16992,12 +16999,13 @@ var V4_SKIN_KEY = 'v4Skin';
      matinee = 夜 · Night（暖黑 + 纸白 + 琥珀）
    aurora / ambient 下线：它们是另一套语法（紫蓝极光 / 中性炭黑），
    且组件级硬编码没跟上（统计条写死橙色、告警条写死暖橙），留 4 套等于每个组件写 4 遍。 */
-var V4_SKINS = ['classic', 'matinee', 'whale', 'ink'];
+var V4_SKINS = ['classic', 'matinee', 'whale', 'ink', 'amis'];
 var V4_SKIN_NAMES = {
     classic: '纸 · Paper',
     matinee: '夜 · Night',
     whale: '鲸 · Deep Whale',
-    ink: '墨 · Ink'
+    ink: '墨 · Ink',
+    amis: '爱弥斯 · Amis'
 };
 /* 老用户的偏好平滑迁移：两套已下线的暗色皮肤都落到「夜」 */
 var V4_SKIN_ALIAS = { aurora: 'matinee', ambient: 'matinee' };
@@ -17054,7 +17062,7 @@ function applyV4Skin(skin) {
        否则点「夜」看到的还是浅色，用户会以为没生效。 */
     /* round153：whale 是深海暗场，同样挂 .dark；它自己的深海令牌在
        round153-whale-theme.css 里以 html[data-v4skin="whale"] 覆盖。 */
-    var wantDark = (skin === 'matinee' || skin === 'whale' || skin === 'ink');
+    var wantDark = (skin === 'matinee' || skin === 'whale' || skin === 'ink' || skin === 'amis');
     document.body.classList.toggle('dark', wantDark);
     try { localStorage.setItem('darkMode', wantDark ? 'true' : 'false'); } catch (e) { }
     var tb = document.getElementById('themeToggle');
@@ -17123,8 +17131,9 @@ function applyWhaleSkinBits(skin) {
     var themeArt = {
         classic: '/img/paper/closeup-v2.webp',
         matinee: '/img/night/closeup-v2.webp',
-        whale: '/img/whale/closeup-v2.webp',
-        ink: '/img/ink/closeup-1.webp'
+        whale: '/img/whale/closeup-v3.webp',
+        ink: '/img/ink/closeup-1.webp',
+        amis: '/img/amis/closeup-1.webp'
     };
     var mascot = document.getElementById('homeMascotStatic');
     if (mascot) mascot.src = themeArt[skin] || 'img/mascot.png';
@@ -17142,14 +17151,16 @@ function applyWhaleSkinBits(skin) {
 var V4_HERO_ART = {
     classic: ['/img/paper/hero-1.webp', '/img/paper/hero-2.webp', '/img/paper/hero-3.webp'],
     matinee: ['/img/night/hero-1.webp', '/img/night/hero-2.webp', '/img/night/hero-3.webp'],
-    whale: ['/img/whale/hero-1-v3.webp', '/img/whale/hero-2-v3.webp', '/img/whale/hero-3-v3.webp'],
-    ink: ['/img/ink/hero-1.webp', '/img/ink/hero-2.webp', '/img/ink/hero-3.webp']
+    whale: ['/img/whale/hero-1-v4.webp', '/img/whale/hero-2-v4.webp', '/img/whale/hero-3-v4.webp'],
+    ink: ['/img/ink/hero-1.webp', '/img/ink/hero-2.webp', '/img/ink/hero-3.webp'],
+    amis: ['/img/amis/hero-1.webp', '/img/amis/hero-2.webp', '/img/amis/hero-3.webp']
 };
 var V4_HERO_SEL = {
     classic: '.pp-hero .th-hero-art',
     matinee: '.nt-hero .th-hero-art',
     whale: '.wh-hero-art',
-    ink: '.ik-hero .th-hero-art'
+    ink: '.ik-hero .th-hero-art',
+    amis: '.am-hero .th-hero-art'
 };
 var V4_INK_CLOSEUPS = ['/img/ink/closeup-1.webp', '/img/ink/closeup-2.webp'];
 var _heroRotateTimer = null;
@@ -17195,23 +17206,34 @@ function setV4Skin(skin) {
 }
 
 /* round153：皮肤 ↔ AI 人格联动。
-   只在用户没有自定义人格时自动切换（默认管家 → 深寻；离开鲸皮肤且当前仍是深寻 → 回默认管家），
-   一旦用户自己选过爱弥斯/达妮雅/自定义，就不再碰他的选择。 */
+   whale ↔ deep_whale（鲸鱼娘·深寻），amis ↔ aimeis（爱弥斯）。
+   只在用户没有自定义人格时自动切换；用 localStorage 记住「上一次是皮肤自动设的」
+   值，离开该皮肤时只复位自己设过的，绝不覆盖用户手动选的其他人格。 */
 function syncWhalePersona(skin) {
     fetch('/api/ai/persona').then(function (r) { return r.json(); }).then(function (j) {
         if (!j || j.code !== 0 || !j.data) return;
         var cur = (j.data.current && j.data.current.presetId) || 'butler';
+        var AUTO_KEY = 'cvPersonaAuto';
+        var auto = '';
+        try { auto = localStorage.getItem(AUTO_KEY) || ''; } catch (e) { }
+        var want = { whale: 'deep_whale', amis: 'aimeis' }[skin] || null;
         var next = null;
-        if (skin === 'whale' && cur === 'butler') next = 'deep_whale';
-        else if (skin !== 'whale' && cur === 'deep_whale') next = 'butler';
-        if (!next) return;
+        if (want && (cur === 'butler' || auto === cur)) next = want;
+        else if (!want && auto && auto === cur) next = 'butler';
+        if (!next || next === cur) return;
         return fetch('/api/ai/persona', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ presetId: next })
         }).then(function (r2) { return r2.json(); }).then(function (j2) {
-            if (j2 && j2.code === 0 && typeof showNotification === 'function') {
-                showNotification('AI 人格已联动', next === 'deep_whale' ? '鲸鱼娘 · 深寻 已上线' : '已恢复默认管家');
+            if (!j2 || j2.code !== 0) return;
+            try {
+                if (next === 'butler') localStorage.removeItem(AUTO_KEY);
+                else localStorage.setItem(AUTO_KEY, next);
+            } catch (e3) { }
+            if (typeof showNotification === 'function') {
+                showNotification('AI 人格已联动', next === 'deep_whale' ? '鲸鱼娘 · 深寻 已上线'
+                    : next === 'aimeis' ? '爱弥斯 已上线' : '已恢复默认管家');
             }
         });
     }).catch(function () { /* 未配置 AI 或离线时静默 */ });

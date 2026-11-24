@@ -336,9 +336,9 @@ html[data-v4skin="whale"] .home-mascot {
 html[data-v4skin="whale"] .ai-avatar,
 html[data-v4skin="whale"] .ai-top-avatar {
     border: 1px solid var(--accent-line);
-    background-image: url("/img/whale/closeup-v2.webp");
+    background-image: url("/img/whale/closeup-v3.webp");
     background-size: cover;
-    background-position: center 32%;
+    background-position: center 22%;
     color: transparent;
 }
 

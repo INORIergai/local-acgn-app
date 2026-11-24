@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.17'
+TAG = 'v6.8.18'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.17：阅读体验修复
+COMMIT_MSG = """v6.8.18：鲸鱼娘与爱弥斯主题图
 
-- 老用户翻页左右留白修复(旧页宽设置迁移为铺满)
-- 章节标题解码HTML实体
-- 小说阅读器鼠标滚轮翻页
-- 小说/漫画库顶部「继续阅读+随机来一本」
-- 含 v6.8.16 双页/页眉页脚/动画
+- 鲸鱼娘主题换装：旗装银杏/白蓝汉服雪中/暗红汉服书房三张首屏 + 新特写
+- 新增第五皮肤「爱弥斯 · Amis」：暖书房玫瑰金，三张首屏(晚礼服书房/樱花庭院/夜景白裙)
+- 爱弥斯皮肤联动 AI 人格 aimeis；看板娘/AI头像使用其特写
+- 含 v6.8.17 阅读体验修复(留白/标题/滚轮/续读)
 
-版本：6.8.17"""
+版本：6.8.18"""
 
 
 def get_token():
