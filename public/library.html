@@ -186,6 +186,8 @@
     <link rel="stylesheet" href="css/series-home.css">
     <!-- ★ v4：次元资料（萌娘百科 / GameKee 原生阅读） -->
     <link rel="stylesheet" href="css/wiki-hub.css">
+    <!-- ★ v4：GALGAME 资料库（Kungal / InariGal） -->
+    <link rel="stylesheet" href="css/galgame.css">
     <!-- ★ round173e：Bangumi 同步设置面板 -->
     <link rel="stylesheet" href="css/round173e-bangumi.css">
     <!-- ★ round173g：播放器增强（字幕/跳过OPED/缓冲条/PiP） -->
@@ -399,6 +401,9 @@
                 </div>
                 <div class="nav-item" data-view="gamekee">
                     <span>🎮 GameKee</span>
+                </div>
+                <div class="nav-item" data-view="galgame">
+                    <span>💗 Galgame 资料库</span>
                 </div>
             </div>
 
@@ -760,6 +765,7 @@
             <!-- v4：次元资料独立视图容器（萌娘百科 / GameKee） -->
             <div id="wikiView" style="display:none;"></div>
             <div id="gamekeeView" style="display:none;"></div>
+            <div id="galgameView" style="display:none;"></div>
 
             <!-- 猜你喜欢 · 魔术卡片（magic-likes.js 渲染） -->
             <div id="magicView" class="magic-view"></div>
@@ -1293,6 +1299,7 @@
     <script src="js/series-view.js"></script>
     <!-- v4：次元资料（萌娘百科 / GameKee），同样在 app.js 之后 -->
     <script src="js/wiki-hub.js"></script>
+    <script src="js/galgame-view.js"></script>
     <script src="js/source-picker.js"></script>
     <script src="js/series-graph.js"></script>
     <script src="js/jellyfin-panel.js"></script>

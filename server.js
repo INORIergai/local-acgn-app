@@ -517,6 +517,7 @@ app.use('/api/jellyfin', require('./routes/jellyfin'));   // v6.5.0：Jellyfin �
 app.use('/api/series', require('./routes/series'));   // round173：追番数据层（series/season/episode/follows/progress）
 app.use('/api/wiki', require('./routes/wiki'));       // v4：萌娘百科资料页（搜索/正文清洗/镜像降级）
 app.use('/api/gamekee', require('./routes/gamekee')); // v4：GameKee 资料页（/v1 JSON + 正文清洗）
+app.use('/api/galgame', require('./routes/galgame')); // v4：GALGAME 资料库（Kungal/InariGal）
 app.use('/api/maintenance', require('./routes/maintenance'));   // round37：封面缓存盘点/清理/回收站
 app.use('/api/connect', require('./routes/connect'));   // 移动端扫码连接（connect.html 二维码页）
 

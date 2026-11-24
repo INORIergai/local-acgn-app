@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.25'
-TAG = 'v6.8.25'
+VER = '6.8.26'
+TAG = 'v6.8.26'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,13 +92,14 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.25 · 次元资料（萌娘百科 + GameKee）
+## v6.8.26 · GALGAME 资料库（Kungal + InariGal）
 
-- 新增侧栏「次元资料」：萌娘百科 + GameKee，两个页面都是应用内原生阅读，不套 webview。
-- 萌娘百科：搜索（主站 opensearch + 镜像全文）、正文服务端清洗（去脚本/导航框/编辑链接/引用）、章节锚点跳转、内链在本页继续打开、图片自动改写回 storage CDN；镜像全挂时降级为主站导语。
-- GameKee：一次拉全 466 款游戏库本地过滤；游戏主页（简介/截图/资讯）、攻略文章列表、目录树懒加载、正文块 JSON/旧 HTML 双格式渲染。
-- 联动：追番详情页新增「📖 资料」按钮，直接跳到对应番剧条目；条目名不完全匹配时自动改成搜索相关条目。
-- 图片代理修复：不再把 567/Cloudflare 错误页当封面缓存；GameKee CDN 自动补站点 Referer，图标/截图/正文图都能加载。
+- 新增侧栏「💗 Galgame 资料库」：左作品列表 + 右详情 + 下载面板，全程应用内原生排版。
+- Kungal 主源：5013 部作品，支持搜索、最近更新/评分/发售/浏览排序、R18 开关；详情含简介、标签、别名、截图、角色与资源列表。
+- InariGal 补充：下载榜、搜索、详情与角色；资源为直链下载，后端解析 302 后交给浏览器。
+- 下载面板：网盘链接一键打开、提取码/解压密码一键复制；提示来自社区资源，后续内置模拟器会在这里直接下载/安装/启动。
+- TouchGal：整站 Cloudflare Managed Challenge，站内直连必须开发者 Token；当前作为外部入口展示，并注明 KunMoe（Kungal 官方源码）仓库。
+- 稳定性：Kungal/Inari 图片统一走服务端图片代理，修掉浏览器直连图床被热链策略拦掉的裂图。
 
 - 内置 Android v5.2.0 安装包。
 

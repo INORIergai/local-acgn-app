@@ -13976,8 +13976,10 @@ function switchView(view) {
     // v4：次元资料两个独立视图同理
     if (view !== 'wiki' && window.WikiView && typeof window.WikiView.hide === 'function') window.WikiView.hide();
     if (view !== 'gamekee' && window.GameKeeView && typeof window.GameKeeView.hide === 'function') window.GameKeeView.hide();
+    if (view !== 'galgame' && window.GalgameView && typeof window.GalgameView.hide === 'function') window.GalgameView.hide();
     { const wv = document.getElementById('wikiView'); if (wv) wv.style.display = 'none'; }
     { const gv = document.getElementById('gamekeeView'); if (gv) gv.style.display = 'none'; }
+    { const gav = document.getElementById('galgameView'); if (gav) gav.style.display = 'none'; }
     const featureView = document.getElementById('featureView');
     if (featureView) featureView.style.display = 'none';
     const profileStrip = document.getElementById('profileStrip');
@@ -14126,6 +14128,11 @@ function switchView(view) {
             document.getElementById('sortSelect').parentElement.style.display = 'none';
             hideGallery();
             if (window.GameKeeView && window.GameKeeView.show) window.GameKeeView.show();
+            break;
+        case 'galgame':
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            if (window.GalgameView && window.GalgameView.show) window.GalgameView.show();
             break;
         case 'favorites':
             document.getElementById('movieGrid').style.display = 'grid';

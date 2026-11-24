@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.25'
+TAG = 'v6.8.26'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.25：次元资料（萌娘百科 + GameKee）
+COMMIT_MSG = """v6.8.26：GALGAME 资料库（Kungal + InariGal）
 
-- 新增「次元资料」功能栏：萌娘百科 + GameKee，原生阅读不套 webview
-- 萌娘百科：搜索/正文清洗/章节锚点/内链站内跳转/图片改写 storage CDN
-- GameKee：466 款游戏库、攻略文章、目录树懒加载、正文原生排版
-- 追番详情新增「📖 资料」一键跳对应条目
-- 图片代理修复：不再缓存 567/HTML 错误页；GameKee CDN 自动补 Referer
+- 新增 GALGAME 资料库：Kungal 作品库 + InariGal 直链下载
+- Kungal：5013 部作品、搜索/排序、简介/截图/角色、资源列表与网盘发券
+- InariGal：下载榜/搜索/详情，直链下载（302 解析）
+- 下载面板：网盘链接、提取码、解压密码一键复制
+- TouchGal：Cloudflare 限制说明 + 外链入口，预留开发者 Token 接入
 
-版本：6.8.25"""
+版本：6.8.26"""
 
 
 def get_token():
