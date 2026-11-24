@@ -184,6 +184,8 @@
     <link rel="stylesheet" href="css/round173b-series.css">
     <!-- ★ v4：追番首页（Banner/周表/排行/海报墙）+ 源优先详情弹层 -->
     <link rel="stylesheet" href="css/series-home.css">
+    <!-- ★ v4：次元资料（萌娘百科 / GameKee 原生阅读） -->
+    <link rel="stylesheet" href="css/wiki-hub.css">
     <!-- ★ round173e：Bangumi 同步设置面板 -->
     <link rel="stylesheet" href="css/round173e-bangumi.css">
     <!-- ★ round173g：播放器增强（字幕/跳过OPED/缓冲条/PiP） -->
@@ -386,6 +388,17 @@
                 </div>
                 <div class="nav-item" data-view="comic-records">
                     <span>📚 漫画阅读记录</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>次元资料</h3>
+                <!-- v4：萌娘百科 + GameKee 原生资料阅读（文章在应用内排版，不套 webview） -->
+                <div class="nav-item" data-view="wiki">
+                    <span>📖 萌娘百科</span>
+                </div>
+                <div class="nav-item" data-view="gamekee">
+                    <span>🎮 GameKee</span>
                 </div>
             </div>
 
@@ -743,6 +756,10 @@
 
             <!-- round173b：追番页独立视图容器 -->
             <div id="seriesView" style="display:none;"></div>
+
+            <!-- v4：次元资料独立视图容器（萌娘百科 / GameKee） -->
+            <div id="wikiView" style="display:none;"></div>
+            <div id="gamekeeView" style="display:none;"></div>
 
             <!-- 猜你喜欢 · 魔术卡片（magic-likes.js 渲染） -->
             <div id="magicView" class="magic-view"></div>
@@ -1274,6 +1291,8 @@
     <script src="js/app.js"></script>
     <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
     <script src="js/series-view.js"></script>
+    <!-- v4：次元资料（萌娘百科 / GameKee），同样在 app.js 之后 -->
+    <script src="js/wiki-hub.js"></script>
     <script src="js/source-picker.js"></script>
     <script src="js/series-graph.js"></script>
     <script src="js/jellyfin-panel.js"></script>

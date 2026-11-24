@@ -13973,6 +13973,11 @@ function switchView(view) {
     { const rv = document.getElementById('recordsView'); if (rv) rv.style.display = 'none'; }
     // round173b：离开追番页时收起独立视图 + 卸载事件监听（避免点别的视图还触发追番的委托）
     if (view !== 'series' && window.SeriesView && typeof window.SeriesView.hide === 'function') window.SeriesView.hide();
+    // v4：次元资料两个独立视图同理
+    if (view !== 'wiki' && window.WikiView && typeof window.WikiView.hide === 'function') window.WikiView.hide();
+    if (view !== 'gamekee' && window.GameKeeView && typeof window.GameKeeView.hide === 'function') window.GameKeeView.hide();
+    { const wv = document.getElementById('wikiView'); if (wv) wv.style.display = 'none'; }
+    { const gv = document.getElementById('gamekeeView'); if (gv) gv.style.display = 'none'; }
     const featureView = document.getElementById('featureView');
     if (featureView) featureView.style.display = 'none';
     const profileStrip = document.getElementById('profileStrip');
@@ -14110,6 +14115,17 @@ function switchView(view) {
             hideGallery();
             updateToolbarTitle('📺 追番');
             if (window.SeriesView && window.SeriesView.show) window.SeriesView.show();
+            break;
+        // v4：次元资料（萌娘百科 / GameKee）—— 独立视图，原生排版远程正文
+        case 'wiki':
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            if (window.WikiView && window.WikiView.show) window.WikiView.show();
+            break;
+        case 'gamekee':
+            document.getElementById('sortSelect').parentElement.style.display = 'none';
+            hideGallery();
+            if (window.GameKeeView && window.GameKeeView.show) window.GameKeeView.show();
             break;
         case 'favorites':
             document.getElementById('movieGrid').style.display = 'grid';

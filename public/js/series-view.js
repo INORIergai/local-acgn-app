@@ -441,6 +441,7 @@
             + STATUS_ORDER.map((st) => '<option value="' + st + '"' + (following === st ? ' selected' : '') + '>' + STATUS_LABELS[st] + '</option>').join('')
             + '</select>'
             + '<button class="svd-btn" data-act="search-bt" data-title="' + esc(s.title) + '">🔍 搜 BT</button>'
+            + '<button class="svd-btn" data-act="wiki" data-title="' + esc(s.title) + '">📖 资料</button>'
             + '<button class="svd-btn" data-act="rescan">↻ 重新搜源</button>'
             + '</div></div></div>'
             + '<div class="svd-body">'
@@ -993,6 +994,18 @@
             return;
         }
         if (act === 'search-bt') { openBtSearch(btn.getAttribute('data-title') || ''); return; }
+        if (act === 'wiki') {
+            const title = btn.getAttribute('data-title') || (S.detail && S.detail.series ? S.detail.series.title : '');
+            if (!title) return;
+            closeDetail();
+            if (window.WikiView && window.WikiView.open) {
+                if (typeof window.switchView === 'function') window.switchView('wiki');
+                window.WikiView.open(title);
+            } else {
+                notify('资料页未加载', '请刷新页面后重试');
+            }
+            return;
+        }
         if (act === 'copy-magnet') {
             copyText(btn.getAttribute('data-magnet') || '').then((ok) => {
                 notify(ok ? '磁力已复制' : '复制失败', ok ? '粘贴到夸克/下载器离线下载' : '请手动复制');

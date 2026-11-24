@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.24'
+TAG = 'v6.8.25'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.24：追番源优先 + 首页重排 + HLS 修复
+COMMIT_MSG = """v6.8.25：次元资料（萌娘百科 + GameKee）
 
-- 追番详情改为 Kazumi 式源优先：点番先搜同名番的源，选源后直接加载全集
-- 首页重排：Hero Banner + 本周放送（周切换）+ 热门排行 + 追番海报墙
-- 海报右上角显示 Bangumi 评分（本地缓存 14 天，命中即出）
-- 一集播完自动下一集并回写进度；解析失败自动换下一个源
-- 修复 HLS 二级播放列表未改写导致分片 404、播放器一直转圈
+- 新增「次元资料」功能栏：萌娘百科 + GameKee，原生阅读不套 webview
+- 萌娘百科：搜索/正文清洗/章节锚点/内链站内跳转/图片改写 storage CDN
+- GameKee：466 款游戏库、攻略文章、目录树懒加载、正文原生排版
+- 追番详情新增「📖 资料」一键跳对应条目
+- 图片代理修复：不再缓存 567/HTML 错误页；GameKee CDN 自动补 Referer
 
-版本：6.8.24"""
+版本：6.8.25"""
 
 
 def get_token():
