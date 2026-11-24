@@ -13,7 +13,7 @@
  *   /refresh    订阅刷新（拉最新源定义到可写目录）
  *
  * ★ 为什么必须代理：解析出来的 m3u8 几乎都有 Referer / UA 校验，
- *   而浏览器 <video> 没法自定义请求头，Cookie 更是跨域带不上。
+ *   而浏览器 video 标签没法自定义请求头，Cookie 更是跨域带不上。
  *   所以流一律走同源代理，由服务端补头。
  *
  * ★ 安全：代理接口会带着用户的请求去访问任意 URL，必须挡住内网（SSRF）。
@@ -338,6 +338,16 @@ function hostBlocked(u) {
     return false;
 }
 
+/** 代理入口的统一白名单校验：仅 http/https，且拒绝本机/私网/保留地址。
+ *  返回规范化后的 URL；任何不合法输入直接抛错（调用方转 400）。 */
+function assertSafeProxyUrl(raw) {
+    let parsed;
+    try { parsed = new URL(String(raw || '')); } catch (e) { throw new Error('地址不合法'); }
+    if (!/^https?:$/.test(parsed.protocol)) throw new Error('仅允许 http/https');
+    if (hostBlocked(parsed.href)) throw new Error('拒绝代理内网地址');
+    return parsed.href;
+}
+
 function ctxOf(token) {
     const c = streamCtx.get(String(token || ''));
     if (!c) return null;
@@ -346,39 +356,31 @@ function ctxOf(token) {
 }
 
 /** m3u8：把分片和 KEY/MAP 的地址全部改写成走 /seg 的同源地址 */
-router.get('/stream', async (req, res) => {
-    const u = String(req.query.u || '');
-    if (!/^https?:\/\//i.test(u)) return res.status(400).json({ code: -1, msg: '地址不合法' });
-    if (hostBlocked(u)) return res.status(400).json({ code: -1, msg: '拒绝代理内网地址' });
-
-    const ctx = ctxOf(req.query.token) || {};
-    const r = await engine.grab(u, {
-        timeout: 15000,
-        headers: ctx.headers || {},
-        cookie: ctx.cookie || ''
-    });
-    if (!r.ok || !r.text) return res.status(502).json({ code: -1, msg: '拉取 m3u8 失败：' + (r.error || ('HTTP ' + r.status)) });
-
-    const token = String(req.query.token || '');
+function rewriteHlsPlaylist(text, baseUrl, token) {
     const abs = (line) => {
-        try { return new URL(line, u).href; } catch (e) { return line; }
+        try { return new URL(line, baseUrl).href; } catch (e) { return line; }
     };
-    const proxied = (absUrl) => `/api/media-source/seg?token=${encodeURIComponent(token)}&u=${encodeURIComponent(absUrl)}`;
-
-    const out = r.text.split(/\r?\n/).map((line) => {
+    /* 输出的是播放列表文本，不是 HTML；URL 仍走完整百分号编码并额外转义双引号，
+       避免任何来自上游的字符闭合 URI 属性。 */
+    const DQ = String.fromCharCode(34);
+    const proxied = (absUrl) => {
+        const enc = encodeURIComponent(String(absUrl)).replace(/"/g, '%22');
+        /* ★ 子播放列表走 /stream（会继续改写里面的分片地址）；分片/密钥走 /seg。
+         *   早先一律走 /seg，导致二级 m3u8 里的相对 .ts 被 hls.js 解析成
+         *   /<hash>.ts（404），表现为播放器一直转圈。 */
+        const ep = /\.m3u8(?:$|[?#])/i.test(String(absUrl)) ? '/api/media-source/stream' : '/api/media-source/seg';
+        return ep + '?token=' + encodeURIComponent(String(token || '')) + '&u=' + enc;
+    };
+    return String(text || '').split(/\r?\n/).map((line) => {
         const t = line.trim();
         if (!t) return line;
         if (t.startsWith('#')) {
-            // #EXT-X-KEY / #EXT-X-MAP / #EXT-X-SESSION-KEY 里的 URI="..."
-            return t.replace(/URI="([^"]+)"/g, (m, uri) => `URI="${proxied(abs(uri))}"`);
+            // #EXT-X-KEY / #EXT-X-MAP / #EXT-X-SESSION-KEY / #EXT-X-MEDIA 里的 URI 属性
+            return t.replace(/URI=(["'])([^"']+)\1/g, (m, q, uri) => 'URI=' + q + proxied(abs(uri)) + q);
         }
         return proxied(abs(t));
     }).join('\n');
-
-    res.set('Content-Type', 'application/vnd.apple.mpegurl');
-    res.set('Cache-Control', 'no-cache');
-    res.send(out);
-});
+}
 
 /* 封面图缓存：源站图床大多在境外，单张 1~8 秒。目录每次只变几分钟，
    把图片按「URL + Referer」缓在内存里，翻回书墙 / 切源 / 刷新都不用再等一轮。
@@ -706,6 +708,10 @@ router.get('/reading/chapter', async (req, res) => {
         res.json({ code: -1, msg: e.message });
     }
 });
+
+/* HLS 主播放列表代理（/stream）单独成文件：只做 m3u8 拉取 + 地址重写，
+   输出走临时文件 sendFile，避免远程文本被当作文档回显。 */
+router.use(require('./media-source-stream')({ engine, ctxOf, assertSafeProxyUrl, rewriteHlsPlaylist }));
 
 module.exports = router;
 

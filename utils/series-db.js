@@ -426,7 +426,11 @@ function importFromCalendar(days) {
         followStatus: getFollowStatus(s.id),
         episode: it.episode != null ? it.episode : null,
         airingAt: it.airingAt || null,
-        date: day.date || ''
+        date: day.date || '',
+        /* 放送表源（cycanime）自带评分与总集数时直接透传：
+         * 海报评分先显示它，Bangumi 评分回来后再覆盖（少一次等待） */
+        score: it.score != null && Number(it.score) > 0 ? Number(it.score) : null,
+        totalEps: it.totalEps != null ? Number(it.totalEps) : null
       });
     }
   }

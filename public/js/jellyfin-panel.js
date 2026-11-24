@@ -76,7 +76,8 @@
     btn.id = 'jfEntry'; btn.className = 'sg-entry'; btn.type = 'button';
     btn.innerHTML = '📡 Jellyfin';
     btn.addEventListener('click', open);
-    view.appendChild(btn);
+    const bar = view.querySelector('.sv-head-actions');
+    (bar || view).appendChild(btn);
   }
 
   window.JellyfinPanel = { open, close, injectButton };

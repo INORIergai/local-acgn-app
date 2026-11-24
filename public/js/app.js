@@ -16333,9 +16333,27 @@ function showVideoPlayer(videoUrl, title = '视频播放', kind = '', startAt = 
     };
 
     video.onended = () => {
-        if (!window.currentOnlinePlayback || !window.MediaSource) return;
-        window.MediaSource.saveProgress(video.duration || video.currentTime, video.duration, true);
-        window.MediaSource.next({ automatic: true, loopMode: playerLoopMode });
+        if (window.currentOnlinePlayback && window.MediaSource) {
+            window.MediaSource.saveProgress(video.duration || video.currentTime, video.duration, true);
+            window.MediaSource.next({ automatic: true, loopMode: playerLoopMode });
+            return;
+        }
+        /* 追番（v4 源优先）：一集播完先把进度标成已看，再交给 SeriesView 自动播下一集。
+           SeriesView 内部有 __svSeason 上下文；不追番的普通在线播放会被它直接忽略。 */
+        if (currentPlayerEpisode) {
+            fetch('/api/series/episode/progress', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    episodeId: currentPlayerEpisode,
+                    position: Math.floor(video.duration || video.currentTime || 0),
+                    duration: Math.floor(video.duration || 0),
+                    watched: 1
+                })
+            }).catch(() => {});
+        }
+        if (window.SeriesView && typeof window.SeriesView.onPlayerEnded === 'function') {
+            window.SeriesView.onPlayerEnded();
+        }
     };
 }
 

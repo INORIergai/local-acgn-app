@@ -193,7 +193,9 @@
     btn.id = 'sgEntry'; btn.className = 'sg-entry'; btn.type = 'button';
     btn.innerHTML = '🕸 系列关系图';
     btn.addEventListener('click', open);
-    view.appendChild(btn);
+    // v4：优先放进首页头部按钮组（底部裸追加会在新布局里显得孤立）
+    const bar = view.querySelector('.sv-head-actions');
+    (bar || view).appendChild(btn);
   }
 
   window.SeriesGraph = { open, close, injectButton };
