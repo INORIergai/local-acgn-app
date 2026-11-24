@@ -3307,19 +3307,32 @@ async function renderResumeBar(type) {
     }
 }
 
+/* ===== 2026-11：漫画/小说库「书架工作台」新渲染器（js/read-workspace.js） =====
+   新页接管 #movieGrid 并自带走完整分区；旧 av-board 树保留为回退：
+   localStorage.rwLegacy=1（或 URL ?rwLegacy=1）时走旧路径；?rwLegacy=0 恢复新页。 */
+function rwLegacyEnabled() {
+    try {
+        const q = new URLSearchParams(location.search).get('rwLegacy');
+        if (q === '1') localStorage.setItem('rwLegacy', '1');
+        if (q === '0') localStorage.removeItem('rwLegacy');
+        return localStorage.getItem('rwLegacy') === '1';
+    } catch (e) { return false; }
+}
+function rwAvailable() {
+    return !!(window.RW && typeof window.RW.mount === 'function') && !rwLegacyEnabled();
+}
+
 async function loadComic(page = 1) {
     updateToolbarTitle('📚 漫画库');
     currentView = 'comic';
     currentPage = page;
-    // Reeden 式入口：最显眼处「继续阅读上次 + 随机来一本」
-    renderResumeBar('comic');
     const prevGuess = document.getElementById('avGuessBoard');
     if (prevGuess) {
         const g = document.getElementById('movieGrid');
         if (g) g.innerHTML = '';
     }
-    
-    // 增加切换按钮
+
+    // 本地 / 网盘 / 全部 三态切换（外层工具栏，新页与旧页共用）
     const toolbarRight = document.querySelector('.toolbar-right');
     if (toolbarRight && !document.getElementById('comicCloudToggle')) {
         toolbarRight.insertAdjacentHTML('afterbegin', `
@@ -3330,7 +3343,27 @@ async function loadComic(page = 1) {
             </div>
         `);
     }
-    
+
+    // 新书架（推倒重做版）：分区 + 续读 + 状态筛选 + 网格/列表
+    if (rwAvailable()) {
+        try {
+            await RW.mount('comic');
+            const st = window.RW.getState ? window.RW.getState() : null;
+            if (st && st.tree) {
+                comicTree = st.tree;
+                comicTreePath = st.path || '';
+                const c = document.getElementById('countComic');
+                if (c) c.textContent = countTreeItems(st.tree);
+            }
+        } catch (e) {
+            console.error('加载漫画书架失败:', e);
+        }
+        return;
+    }
+
+    // Reeden 式入口：最显眼处「继续阅读上次 + 随机来一本」（仅旧版树视图）
+    renderResumeBar('comic');
+
     try {
         const res = await fetch('/api/comic/tree');
         const data = await res.json();
@@ -6049,15 +6082,13 @@ async function loadNovel(page = 1) {
     updateToolbarTitle('📖 小说库');
     currentView = 'novel';
     currentPage = page;
-    // Reeden 式入口：最显眼处「继续阅读上次 + 随机来一本」
-    renderResumeBar('novel');
     const prevGuess = document.getElementById('avGuessBoard');
     if (prevGuess) {
         const g = document.getElementById('movieGrid');
         if (g) g.innerHTML = '';
     }
-    
-    // 增加切换按钮
+
+    // 本地 / 网盘 / 全部 三态切换
     const toolbarRight = document.querySelector('.toolbar-right');
     if (toolbarRight && !document.getElementById('novelCloudToggle')) {
         toolbarRight.insertAdjacentHTML('afterbegin', `
@@ -6068,7 +6099,27 @@ async function loadNovel(page = 1) {
             </div>
         `);
     }
-    
+
+    // 新书架（推倒重做版）
+    if (rwAvailable()) {
+        try {
+            await RW.mount('novel');
+            const st = window.RW.getState ? window.RW.getState() : null;
+            if (st && st.tree) {
+                novelTree = st.tree;
+                novelTreePath = st.path || '';
+                const c = document.getElementById('countNovel');
+                if (c) c.textContent = countTreeItems(st.tree);
+            }
+        } catch (e) {
+            console.error('加载小说书架失败:', e);
+        }
+        return;
+    }
+
+    // Reeden 式入口（仅旧版树视图）
+    renderResumeBar('novel');
+
     try {
         const res = await fetch('/api/novel/tree');
         const data = await res.json();
@@ -13849,6 +13900,10 @@ function switchView(view) {
     // 离开小说库/漫画库时收起「继续阅读」横幅
     const rrb = document.getElementById('readResumeBar');
     if (rrb && !['novel', 'comic'].includes(view)) rrb.style.display = 'none';
+    /* 新书架：离开漫画/小说库时卸载（清批量选择、作废进行中的请求代次） */
+    if (window.RW && typeof window.RW.unmount === 'function' && !['novel', 'comic'].includes(view)) {
+        try { window.RW.unmount(); } catch (e) { /* 忽略 */ }
+    }
     // 切换视图时坚决重置可能残余的长任务等待遮罩与加载器
     if (window.NVX_LONG && typeof window.NVX_LONG.reset === 'function') {
         window.NVX_LONG.reset();

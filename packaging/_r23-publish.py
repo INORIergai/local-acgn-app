@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.18'
+TAG = 'v6.8.19'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,14 +35,16 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.18：鲸鱼娘与爱弥斯主题图
+COMMIT_MSG = """v6.8.19：漫画/小说阅读体验推倒重做
 
-- 鲸鱼娘主题换装：旗装银杏/白蓝汉服雪中/暗红汉服书房三张首屏 + 新特写
-- 新增第五皮肤「爱弥斯 · Amis」：暖书房玫瑰金，三张首屏(晚礼服书房/樱花庭院/夜景白裙)
-- 爱弥斯皮肤联动 AI 人格 aimeis；看板娘/AI头像使用其特写
-- 含 v6.8.17 阅读体验修复(留白/标题/滚轮/续读)
+- 漫画/小说库改为「书架工作台」：继续阅读主卡/在读货架/合集/全部馆藏/状态筛选/批量/网格列表
+- 漫画阅读器：滚轮翻页、三段点击区(左上一页/中工具栏/右下一页)、键盘 PageUp/Down/Home/End、沉浸外壳
+- 小说阅读器：同款沉浸外壳，设置面板加关闭按钮，遮罩层级修正
+- 修复 /api/media/resume 恒为 null（续读入口以前拿不到数据）
+- 小说进度接口返回计算结果并与漫画对齐
+- 后端 API 形状保持不变，旧 av-board 树保留为回退（?rwLegacy=1）
 
-版本：6.8.18"""
+版本：6.8.19"""
 
 
 def get_token():

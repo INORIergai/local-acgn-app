@@ -173,6 +173,8 @@
     <link rel="stylesheet" href="css/source-picker.css">
     <link rel="stylesheet" href="css/episode-sources.css">
     <link rel="stylesheet" href="css/read-resume.css">
+    <!-- 2026-11：漫画/小说库「书架工作台」（必须排在旧 av-board/round73 之后，覆盖树视图） -->
+    <link rel="stylesheet" href="css/read-workspace.css">
     <link rel="stylesheet" href="css/round160-whale-surface.css">
     <link rel="stylesheet" href="css/round161-home-fit.css">
     <link rel="stylesheet" href="css/round162-ink-theme.css">
@@ -1255,6 +1257,8 @@
          app.js 的 prefTitle() 依赖 window.cvDisplayTitle。 -->
     <script src="js/aipc-title-clean.js"></script>
     <script src="js/round153-folia.js"></script>
+    <!-- 2026-11：漫画/小说库「书架工作台」新渲染器（放在 app.js 之前，保证 hash 直达/首屏也能挂载） -->
+    <script src="js/read-workspace.js"></script>
     <script src="js/app.js"></script>
     <!-- round173b：追番页模块（必须在 app.js 之后，供 switchView('series') 调用） -->
     <script src="js/series-view.js"></script>

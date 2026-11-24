@@ -865,8 +865,10 @@
             .paged-inner { max-width: 100%; }
         }
     </style>
+    <!-- 2026-11：阅读器新外壳（沉浸式工具栏 / 三段点击区 / 抽屉） -->
+    <link rel="stylesheet" href="css/reader-v2.css">
 </head>
-<body>
+<body class="nv-v2">
     <div class="reader-container">
         <!-- 顶部工具栏 -->
         <div class="toolbar" id="toolbar">
@@ -875,22 +877,23 @@
                 <div class="toolbar-title" id="novelTitle">加载中...</div>
             </div>
             <div class="toolbar-right">
-                <button class="btn" id="btnPrevBook" onclick="prevBook()" style="display:none;">◀ 上一本</button>
-                <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;">下一本 ▶</button>
-                <button class="btn" id="btnReadMode" onclick="toggleReadMode()" title="切换 滚动 / 翻页 阅读">📖 翻页</button>
-                <button class="btn" onclick="toggleCatalog()">📑 目录</button>
-                <button class="btn" onclick="toggleAICompanion()" title="AI 伴读：前情提要 / 人物卡 / 润色">✨ 伴读</button>
-                <button class="btn" onclick="toggleSettings()">⚙️ 设置</button>
-                <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
+                <button class="btn" id="btnPrevBook" onclick="prevBook()" style="display:none;" title="上一本（Shift+←）">上一本</button>
+                <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;" title="下一本（Shift+→）">下一本</button>
+                <button class="btn" id="btnReadMode" onclick="toggleReadMode()" title="切换 滚动 / 翻页 阅读">翻页</button>
+                <button class="btn" onclick="toggleCatalog()" title="目录">目录</button>
+                <button class="btn" onclick="toggleAICompanion()" title="AI 伴读：前情提要 / 人物卡 / 润色">伴读</button>
+                <button class="btn" onclick="toggleSettings()" title="排版 / 主题 / 翻页动画">设置</button>
+                <button class="btn" onclick="toggleNightMode()" title="夜间背景">夜间</button>
+                <button class="btn" onclick="toggleFullscreen()" title="全屏（F11）">全屏</button>
             </div>
         </div>
         
         <!-- 阅读区域 -->
-        <div class="reader-area" id="readerArea" onclick="handleReaderClick(event)">
-            <div class="page-nav prev" onclick="event.stopPropagation(); pageTurn(-1)">
+        <div class="reader-area" id="readerArea">
+            <div class="page-nav prev">
                 <div class="page-nav-arrow">‹</div>
             </div>
-            <div class="page-nav next" onclick="event.stopPropagation(); pageTurn(1)">
+            <div class="page-nav next">
                 <div class="page-nav-arrow">›</div>
             </div>
             <div class="loading" id="loading">
@@ -926,7 +929,7 @@
         
         <!-- 目录侧边栏 -->
         <div class="catalog-sidebar" id="catalogSidebar">
-            <div class="catalog-header">📑 目录</div>
+            <div class="catalog-header">目录<button class="rnv-x" onclick="toggleCatalog()" aria-label="收起目录">✕</button></div>
             <div class="catalog-list" id="catalogList">
                 <!-- 目录动态生成 -->
             </div>
@@ -935,6 +938,7 @@
         <!-- round81：内部由 js/reader-settings.js 按 SCHEMA 全量渲染，
              加 / 删 / 改名选项只动那一个文件，不用再碰这里 -->
         <div class="settings-panel" id="settingsPanel">
+            <div class="rnv-drawer-head"><b>阅读设置</b><button class="rnv-x" onclick="toggleSettings()" aria-label="关闭设置">✕</button></div>
             <div id="rsNovelRoot"></div>
         </div>
 
@@ -974,6 +978,8 @@
 
     <!-- round79：纸张卷曲翻页（PaperCurl，默认动效）
          ⚠️ 必须在内联脚本之前：内联脚本在 DOMContentLoaded 时就会 initPageCurl() -->
+    <!-- 2026-11：三段点击区 / 滚轮翻页 / 键盘补充 -->
+    <script src="js/reader-shell.js"></script>
     <script src="js/paper-curl.js"></script>
     <!-- round81：设置面板引擎（必须在内联脚本之前，loadSettings 会用到） -->
     <script src="js/reader-settings.js"></script>
@@ -1055,12 +1061,26 @@
             
             loadNovelInfo();
             setupKeyboardControls();
-            setupWheelControls();
             setupTouchGestures();
+            /* 2026-11：点击区 + 滚轮统一交给阅读外壳（旧 setupWheelControls 已停用） */
+            if (window.ReaderShell) {
+                ReaderShell.attach({
+                    area: '#readerArea',
+                    onPrev: function () { if (readMode === 'page' || pdfMode) pageTurn(-1); else prevChapter(); },
+                    onNext: function () { if (readMode === 'page' || pdfMode) pageTurn(1); else nextChapter(); },
+                    onCenter: toggleToolbar,
+                    isRtl: function () { return false; },
+                    scrollMode: function () { return readMode !== 'page' && !pdfMode; },
+                    onFullscreen: toggleFullscreen,
+                    hintKey: 'cv:novelTapHint',
+                    autoHideMs: 4500
+                });
+            }
 
-            // 移动端：默认完全隐藏工具栏与状态条，进入 100% 纯净全屏
+            // 移动端：先收起 chrome，点中间/滑到边缘再唤出
             if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
                 isToolbarVisible = false;
+                document.body.classList.add('chrome-hidden');
                 document.getElementById('toolbar').classList.add('hidden');
                 document.getElementById('progressBar').classList.add('hidden');
             }
@@ -1608,12 +1628,12 @@
                 document.body.classList.add('read-mode-page');
                 paged.style.display = 'flex';
                 chat.style.display = 'none';
-                if (btn) btn.textContent = '📜 滚动';
+                if (btn) btn.textContent = '滚动';
             } else {
                 document.body.classList.remove('read-mode-page');
                 paged.style.display = 'none';
                 chat.style.display = 'block';
-                if (btn) btn.textContent = '📖 翻页';
+                if (btn) btn.textContent = '翻页';
             }
         }
 
@@ -2021,10 +2041,23 @@
         }
         
         // 切换工具栏显示
+        // 2026-11：状态源改为 body.chrome-hidden（与阅读外壳的自动隐藏/边缘唤出共用）
         function toggleToolbar() {
-            isToolbarVisible = !isToolbarVisible;
-            document.getElementById('toolbar').classList.toggle('hidden', !isToolbarVisible);
-            document.getElementById('progressBar').classList.toggle('hidden', !isToolbarVisible);
+            var hidden = document.body.classList.contains('chrome-hidden');
+            isToolbarVisible = hidden;
+            document.body.classList.toggle('chrome-hidden', !hidden);
+            document.getElementById('toolbar').classList.toggle('hidden', !hidden);
+            document.getElementById('progressBar').classList.toggle('hidden', !hidden);
+            if (hidden && window.ReaderShell) ReaderShell.showChrome();
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                var el = document.documentElement;
+                if (el.requestFullscreen) el.requestFullscreen().catch(function () { });
+            } else if (document.exitFullscreen) {
+                document.exitFullscreen().catch(function () { });
+            }
         }
         
         // 键盘控制

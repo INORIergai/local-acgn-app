@@ -1,0 +1,575 @@
+/* ============================================================================
+   reader-v2.css —— 漫画 / 小说阅读器新外壳（沉浸式）
+   ----------------------------------------------------------------------------
+   取代旧的「fixed 工具栏 + 手写 padding 让位 + 硬编码 z-index」。
+   布局：grid 三行（横向 chrome / 内容 / 底部 chrome），尺寸全靠行高与 gap。
+   交互：由 js/reader-shell.js 负责三段点击区/滚轮/键盘；本文件只管视觉。
+   适用范围：body.cr-v2（漫画）、body.nv-v2（小说）。
+   ========================================================================== */
+
+/* ---------------- 通用 ---------------- */
+body.cr-v2,
+body.nv-v2 {
+    --rv-bg: #05070b;
+    --rv-chrome: rgba(10, 14, 20, .72);
+    --rv-chrome-line: rgba(255, 255, 255, .10);
+    --rv-text: #e9eef7;
+    --rv-muted: #93a1b5;
+    --rv-accent: #7fb6e8;
+    --rv-radius: 14px;
+    --rv-z-content: 1;
+    --rv-z-chrome: 30;
+    --rv-z-scrim: 35;
+    --rv-z-drawer: 40;
+    --rv-z-finish: 50;
+    --rv-z-toast: 60;
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--rv-bg);
+}
+/* 漫画没有正文排版层，全局色可以直接给深色；
+   小说正文沿用阅读主题自己的纸色/字色，绝不能在这里覆盖 body 的 color，
+   否则浅色纸 + 浅色字会几乎看不见。 */
+body.cr-v2 { color: var(--rv-text); }
+body.nv-v2 .toolbar,
+body.nv-v2 .progress-bar,
+body.nv-v2 .catalog-sidebar,
+body.nv-v2 .settings-panel,
+body.nv-v2 .ai-reader-panel { color: var(--rv-text); }
+
+body.cr-v2 .reader-container,
+body.nv-v2 .reader-container {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: 100vh;
+    width: 100%;
+    gap: 0;
+}
+
+body.cr-v2 .toolbar,
+body.nv-v2 .toolbar {
+    position: relative;
+    top: auto; left: auto; right: auto; bottom: auto;
+    z-index: var(--rv-z-chrome);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: auto;
+    min-height: 54px;
+    margin: 10px 12px 0;
+    padding: 8px 10px;
+    border-radius: var(--rv-radius);
+    border: 1px solid var(--rv-chrome-line);
+    background: var(--rv-chrome);
+    -webkit-backdrop-filter: blur(16px) saturate(1.1);
+    backdrop-filter: blur(16px) saturate(1.1);
+    box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .9);
+    transition: transform .28s ease, opacity .28s ease;
+}
+body.chrome-hidden.cr-v2 .toolbar,
+body.chrome-hidden.nv-v2 .toolbar {
+    transform: translateY(-140%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.cr-v2 .toolbar-left,
+body.nv-v2 .toolbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+body.cr-v2 .toolbar-right,
+body.nv-v2 .toolbar-right { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+
+body.cr-v2 .toolbar-title,
+body.nv-v2 .toolbar-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--rv-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(46vw, 520px);
+}
+
+/* 工具栏按钮：图标胶囊 */
+body.cr-v2 .toolbar .btn,
+body.nv-v2 .toolbar .btn {
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--rv-muted);
+    font-size: 12.5px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+    white-space: nowrap;
+}
+body.cr-v2 .toolbar .btn:hover,
+body.nv-v2 .toolbar .btn:hover {
+    background: rgba(255, 255, 255, .08);
+    color: var(--rv-text);
+    border-color: var(--rv-chrome-line);
+}
+body.cr-v2 .toolbar .btn.on,
+body.nv-v2 .toolbar .btn.on {
+    background: rgba(127, 182, 232, .16);
+    color: var(--rv-accent);
+    border-color: rgba(127, 182, 232, .35);
+}
+
+/* ---------------- 阅读区 ---------------- */
+body.cr-v2 .reader-area,
+body.nv-v2 .reader-area {
+    position: relative;
+    z-index: var(--rv-z-content);
+    min-height: 0;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+body.cr-v2 #comicStage {
+    height: 100% !important;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+body.cr-v2 .comic-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 2px;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+body.cr-v2 #comicImage2 { display: none; }
+body.cr-v2.dual-page #comicImage2 { display: block; max-width: 49.4%; }
+body.cr-v2.dual-page #comicImage { max-width: 49.4%; }
+
+/* 旧左右热区交给新点击区，视觉上不再出现箭头 */
+body.cr-v2 .page-nav,
+body.nv-v2 .page-nav {
+    pointer-events: none !important;
+    opacity: 0 !important;
+    display: none !important;
+}
+
+/* 缩放控件：右下悬浮 */
+body.cr-v2 .zoom-controls {
+    position: fixed;
+    right: 18px;
+    bottom: 84px;
+    z-index: var(--rv-z-chrome);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    opacity: .55;
+    transition: opacity .2s ease;
+}
+body.cr-v2 .zoom-controls:hover { opacity: 1; }
+body.cr-v2 .zoom-btn {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--rv-chrome-line);
+    background: var(--rv-chrome);
+    color: var(--rv-text);
+    font-size: 16px;
+    cursor: pointer;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+body.chrome-hidden.cr-v2 .zoom-controls { opacity: 0; pointer-events: none; }
+
+/* ---------------- 底部进度栏 ---------------- */
+body.cr-v2 .progress-bar,
+body.nv-v2 .progress-bar {
+    position: relative;
+    left: auto; right: auto; bottom: auto;
+    z-index: var(--rv-z-chrome);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 12px 10px;
+    padding: 8px 12px;
+    border-radius: var(--rv-radius);
+    border: 1px solid var(--rv-chrome-line);
+    background: var(--rv-chrome);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 -10px 30px -20px rgba(0, 0, 0, .9);
+    transition: transform .28s ease, opacity .28s ease;
+}
+body.chrome-hidden.cr-v2 .progress-bar,
+body.chrome-hidden.nv-v2 .progress-bar {
+    transform: translateY(140%);
+    opacity: 0;
+    pointer-events: none;
+}
+body.cr-v2 .progress-bar .btn,
+body.nv-v2 .progress-bar .btn {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--rv-muted);
+    font-size: 12px;
+    cursor: pointer;
+}
+body.cr-v2 .progress-bar .btn:hover,
+body.nv-v2 .progress-bar .btn:hover { background: rgba(255, 255, 255, .08); color: var(--rv-text); }
+body.cr-v2 .page-info,
+body.nv-v2 .page-info {
+    font-family: var(--font-mono, monospace);
+    font-size: 11.5px;
+    color: var(--rv-muted);
+    min-width: 64px;
+    text-align: center;
+    white-space: nowrap;
+}
+body.cr-v2 .progress-slider,
+body.nv-v2 .progress-slider {
+    position: relative;
+    flex: 1 1 auto;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+body.cr-v2 .progress-slider::before,
+body.nv-v2 .progress-slider::before {
+    content: "";
+    position: absolute; left: 0; right: 0; height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .16);
+}
+body.cr-v2 .progress-fill,
+body.nv-v2 .progress-fill {
+    position: relative;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--rv-accent);
+    box-shadow: 0 0 10px rgba(127, 182, 232, .45);
+    min-width: 2px;
+}
+body.cr-v2 .reading-time,
+body.nv-v2 .reading-time {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: var(--rv-muted);
+    min-width: 42px;
+    text-align: right;
+}
+
+/* ---------------- 目录 / 设置抽屉 ---------------- */
+body.cr-v2 .thumbnail-sidebar,
+body.cr-v2 .rs-drawer,
+body.nv-v2 .catalog-sidebar,
+body.nv-v2 .settings-panel {
+    position: fixed;
+    top: 0; bottom: 0;
+    height: 100vh;
+    z-index: var(--rv-z-drawer);
+    margin: 0;
+    border-radius: 0;
+    border-left: 1px solid var(--rv-chrome-line);
+    background: rgba(8, 11, 16, .94);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    box-shadow: -24px 0 60px -30px rgba(0, 0, 0, .9);
+    transition: transform .3s cubic-bezier(.22, .78, .2, 1);
+}
+body.cr-v2 .thumbnail-sidebar { width: 292px; right: 0; transform: translateX(105%); padding: 0; }
+body.cr-v2 .thumbnail-sidebar.open { transform: none; }
+body.cr-v2 .rs-drawer { width: 360px; right: 0; transform: translateX(105%); }
+body.cr-v2 .rs-drawer.open { transform: none; }
+body.nv-v2 .catalog-sidebar { width: 300px; left: 0; transform: translateX(-105%); border-left: 0; border-right: 1px solid var(--rv-chrome-line); box-shadow: 24px 0 60px -30px rgba(0,0,0,.9); padding: 0; }
+body.nv-v2 .catalog-sidebar.open { transform: none; }
+body.nv-v2 .settings-panel { width: 370px; right: 0; transform: translateX(105%); }
+body.nv-v2 .settings-panel.open { transform: none; }
+
+body.cr-v2 .thumbnail-head,
+body.nv-v2 .catalog-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rv-chrome-line);
+}
+body.cr-v2 .thumbnail-title,
+body.nv-v2 .catalog-head h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rv-text);
+    margin: 0;
+}
+body.cr-v2 .thumbnail-close {
+    margin-left: auto;
+    width: 28px; height: 28px;
+    border: 0; border-radius: 8px;
+    background: transparent; color: var(--rv-muted);
+    cursor: pointer;
+}
+body.cr-v2 .thumbnail-close:hover { background: rgba(255,255,255,.08); color: var(--rv-text); }
+body.cr-v2 .thumbnail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 14px;
+    overflow: auto;
+    height: calc(100% - 56px);
+}
+body.cr-v2 .thumbnail-item {
+    position: relative;
+    border-radius: 7px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    cursor: pointer;
+    background: rgba(255, 255, 255, .04);
+}
+body.cr-v2 .thumbnail-item.current { border-color: var(--rv-accent); box-shadow: 0 0 0 1px rgba(127,182,232,.4); }
+body.cr-v2 .thumbnail-item img { display: block; width: 100%; height: auto; }
+body.cr-v2 .thumbnail-item .thumb-no,
+body.cr-v2 .thumbnail-item .thumbnail-page-num {
+    position: absolute; left: 4px; bottom: 4px;
+    padding: 1px 5px; border-radius: 5px;
+    background: rgba(0, 0, 0, .6);
+    color: #fff; font-size: 9.5px;
+    font-family: var(--font-mono, monospace);
+}
+
+/* 抽屉内设置面板：留出内边距（rs-* 内部样式仍由 reader-settings.css 负责） */
+body.cr-v2 .rs-drawer #rsComicRoot,
+body.nv-v2 .settings-panel #rsNovelRoot {
+    padding: 16px;
+    height: 100%;
+    overflow: auto;
+}
+body.cr-v2 .rs-drawer .rs-head,
+body.nv-v2 .settings-panel .rs-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+/* 遮罩 */
+body.cr-v2 .thumbnail-scrim,
+body.cr-v2 .rs-scrim,
+body.nv-v2 #overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--rv-z-scrim);
+    background: rgba(2, 4, 7, .52);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .24s ease;
+}
+body.cr-v2 .thumbnail-scrim.show,
+body.cr-v2 .rs-scrim.show,
+body.cr-v2 .rs-scrim.visible,
+body.nv-v2 #overlay.visible { opacity: 1; pointer-events: auto; }
+
+/* ---------------- 结算卡 / 提示 ---------------- */
+body.cr-v2 .finish-card {
+    position: fixed;
+    inset: 0;
+    z-index: var(--rv-z-finish);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 4, 7, .62);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+body.cr-v2 .finish-card.show { display: flex; }
+body.cr-v2 .finish-inner {
+    width: min(420px, calc(100vw - 40px));
+    padding: 26px 24px;
+    border-radius: 18px;
+    border: 1px solid var(--rv-chrome-line);
+    background: rgba(12, 16, 22, .96);
+    box-shadow: 0 30px 80px -30px #000;
+    text-align: center;
+}
+body.cr-v2 .finish-inner .f-title { font-size: 20px; font-weight: 600; color: var(--rv-text); }
+body.cr-v2 .finish-inner .f-sub { margin-top: 6px; font-size: 12.5px; color: var(--rv-muted); }
+body.cr-v2 .finish-inner .f-actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+body.cr-v2 .finish-inner .f-btn {
+    border-radius: 10px; padding: 9px 16px;
+    border: 1px solid var(--rv-chrome-line);
+    background: transparent; color: var(--rv-text);
+    font-size: 12.5px; cursor: pointer;
+}
+body.cr-v2 .finish-inner .f-btn.main { background: var(--rv-accent); border-color: var(--rv-accent); color: #061018; font-weight: 600; }
+body.cr-v2 .finish-inner .f-btn.ghost { color: var(--rv-muted); }
+body.cr-v2 .finish-inner .f-btn:disabled { opacity: .45; cursor: default; }
+
+body.cr-v2 .reader-toast,
+body.nv-v2 .reader-toast {
+    position: fixed;
+    left: 50%; bottom: 84px;
+    transform: translateX(-50%) translateY(8px);
+    z-index: var(--rv-z-toast);
+    padding: 9px 16px;
+    border-radius: 999px;
+    background: rgba(10, 14, 20, .92);
+    border: 1px solid var(--rv-chrome-line);
+    color: var(--rv-text);
+    font-size: 12.5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+}
+body.cr-v2 .reader-toast.show,
+body.nv-v2 .reader-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------------- 首次三段区提示 ---------------- */
+.rs-tap-hint {
+    position: fixed;
+    inset: 54px 12px 58px;
+    z-index: 25;
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 1fr;
+    gap: 6px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .3s ease;
+}
+.rs-tap-hint.show { opacity: 1; }
+.rs-tap-hint span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: rgba(127, 182, 232, .07);
+    border: 1px dashed rgba(127, 182, 232, .28);
+    color: rgba(233, 238, 247, .78);
+    font-size: 12px;
+    letter-spacing: .08em;
+}
+.rs-tap-hint span:nth-child(2) { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .16); }
+
+/* ---------------- 手机 ---------------- */
+@media (max-width: 720px) {
+    body.cr-v2 .toolbar,
+    body.nv-v2 .toolbar { margin: 6px 6px 0; padding: 6px; min-height: 48px; }
+    body.cr-v2 .toolbar .btn,
+    body.nv-v2 .toolbar .btn { height: 30px; padding: 0 8px; font-size: 11.5px; }
+    body.cr-v2 .progress-bar,
+    body.nv-v2 .progress-bar { margin: 0 6px 6px; padding: 6px 8px; }
+    body.cr-v2 .thumbnail-sidebar { width: 84vw; }
+    body.cr-v2 .rs-drawer { width: 88vw; }
+    body.nv-v2 .catalog-sidebar { width: 84vw; }
+    body.nv-v2 .settings-panel { width: 88vw; }
+    body.cr-v2 .zoom-controls { bottom: 74px; right: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.cr-v2 .toolbar, body.nv-v2 .toolbar,
+    body.cr-v2 .progress-bar, body.nv-v2 .progress-bar,
+    body.cr-v2 .thumbnail-sidebar, body.cr-v2 .rs-drawer,
+    body.nv-v2 .catalog-sidebar, body.nv-v2 .settings-panel { transition: none !important; }
+}
+/* ---------------- 设置抽屉内部：暗底适配 ----------------
+   reader-settings.css 的 .rs-* 默认是浅色主题（黑字），只有 body.night-mode 才切浅字。
+   新外壳的抽屉固定是暗玻璃，所以在这里直接给出暗底版本，不依赖 body.night-mode
+   （否则白天主题的小说阅读器打开设置会一片黑字不可读）。 */
+body.cr-v2 .rs-drawer,
+body.nv-v2 .settings-panel { color: var(--rv-text); }
+body.cr-v2 .rs-drawer .rs-title,
+body.nv-v2 .settings-panel .rs-title {
+    color: var(--rv-text);
+    border-bottom-color: rgba(255, 255, 255, .12);
+}
+body.cr-v2 .rs-drawer .rs-label,
+body.nv-v2 .settings-panel .rs-label { color: rgba(255, 255, 255, .78); }
+body.cr-v2 .rs-drawer .rs-hint,
+body.nv-v2 .settings-panel .rs-hint { color: rgba(255, 255, 255, .40); }
+body.cr-v2 .rs-drawer .rs-option,
+body.nv-v2 .settings-panel .rs-option {
+    border-color: rgba(255, 255, 255, .14);
+    color: rgba(255, 255, 255, .82);
+}
+body.cr-v2 .rs-drawer .rs-option:hover,
+body.nv-v2 .settings-panel .rs-option:hover { border-color: var(--rv-accent); color: #fff; }
+body.cr-v2 .rs-drawer .rs-option.active,
+body.nv-v2 .settings-panel .rs-option.active {
+    background: var(--rv-accent);
+    border-color: var(--rv-accent);
+    color: #061018;
+    font-weight: 600;
+}
+body.cr-v2 .rs-drawer .rs-swatch,
+body.nv-v2 .settings-panel .rs-swatch { border-color: rgba(255, 255, 255, .22); }
+body.cr-v2 .rs-drawer .rs-swatch.active,
+body.nv-v2 .settings-panel .rs-swatch.active { border-color: var(--rv-accent); }
+
+/* ---------------- 小说：抽屉头 / 目录头 / 正文留白 ----------------
+   旧布局靠 fixed 工具栏 + padding 78/92 让位；新外壳把 chrome 放回 grid 行，
+   这里把正文与提示条的留白收紧，避免上下大片空白。 */
+body.nv-v2 .rnv-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rv-chrome-line);
+}
+body.nv-v2 .rnv-drawer-head b { font-size: 13px; font-weight: 600; color: var(--rv-text); }
+body.nv-v2 .rnv-x {
+    width: 28px; height: 28px;
+    border: 0; border-radius: 8px;
+    background: transparent; color: var(--rv-muted);
+    font-size: 13px; cursor: pointer;
+}
+body.nv-v2 .rnv-x:hover { background: rgba(255,255,255,.08); color: var(--rv-text); }
+body.nv-v2 .catalog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rv-chrome-line);
+    font-size: 13px; font-weight: 600; color: var(--rv-text);
+}
+body.nv-v2 .catalog-list { height: calc(100% - 57px); overflow: auto; padding: 10px; }
+
+body.nv-v2 .paged-content { padding: 18px 0 48px !important; }
+body.nv-v2 .paged-inner { max-width: none; }
+body.nv-v2 .paged-hint {
+    position: absolute;
+    left: 50%; bottom: 6px;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(8, 11, 16, .62);
+    border: 1px solid var(--rv-chrome-line);
+    color: var(--rv-muted);
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+body.nv-v2 .paged-hint .paged-btn {
+    border: 0; background: transparent;
+    color: var(--rv-muted); font-size: 11.5px;
+    cursor: pointer; padding: 2px 6px; border-radius: 6px;
+}
+body.nv-v2 .paged-hint .paged-btn:hover { background: rgba(255,255,255,.08); color: var(--rv-text); }
+body.nv-v2 .chapter-title { font-family: var(--font-display, serif); }
+
+/* TTS 朗读条：让位给新的底部进度胶囊（原 bottom:16 会压住进度条） */
+body.nv-v2 .nv-tts-bar { bottom: 76px; }
+body.chrome-hidden.nv-v2 .nv-tts-bar { opacity: 0; pointer-events: none; transition: opacity .22s ease; }
+@media (max-width: 860px) {
+    body.nv-v2 .nv-tts-bar { bottom: 70px; left: 10px; right: 10px; }
+}
+
+/* 章内页码胶囊：左移，让出右下角给 TTS 朗读条 */
+body.nv-v2 .paged-hint { left: 16px; transform: none; }
+@media (max-width: 860px) {
+    body.nv-v2 .paged-hint { display: none; }   /* 手机上点击区/滑动已够，不占正文 */
+}

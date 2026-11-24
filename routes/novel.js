@@ -861,12 +861,12 @@ router.post('/:id/ai-companion', async (req, res) => {
 // 保存阅读进度
 router.post('/:id/progress', (req, res) => {
     try {
-        // round73：total（总章节数）由前端上报
+        // round73：total（总章节数）由前端上报；position 是章内页序号（新阅读器会真实上报）
         const { chapter, position, total } = req.body;
         const novelId = req.params.id;
         const r = saveMediaProgress(novelId, 'novel', { chapter, position, total });
-        
-        res.json({ code: 0, msg: '进度已保存' });
+        // 与 comic 对齐：把计算结果回给前端，状态角标/进度条可即时同步
+        res.json({ code: 0, msg: '进度已保存', data: r });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
     }

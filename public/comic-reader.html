@@ -704,8 +704,10 @@
             .comic-curl { display: none !important; }
         }
     </style>
+    <!-- 2026-11：阅读器新外壳（沉浸式工具栏 / 三段点击区 / 抽屉） -->
+    <link rel="stylesheet" href="css/reader-v2.css">
 </head>
-<body>
+<body class="cr-v2">
     <div class="reader-container">
         <!-- 顶部工具栏 -->
         <div class="toolbar" id="toolbar">
@@ -714,17 +716,15 @@
                 <div class="toolbar-title" id="comicTitle">加载中...</div>
             </div>
             <div class="toolbar-right">
-                <button class="btn" id="btnPrevBook" onclick="prevBook()" style="display:none;">◀ 上一本</button>
-                <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;">下一本 ▶</button>
-                <button class="btn" id="btnDualPage" onclick="toggleDualPage()" title="单页 / 双页跨页拼合切换">📖 单页</button>
-                <button class="btn" id="btnRtl" onclick="toggleRtlMode()" title="翻页方向切换：常规左翻 / 日漫从右往左翻">⇄ 左翻</button>
-                <button class="btn" id="btnToc" onclick="toggleThumbnails()" aria-expanded="false" aria-controls="thumbnailSidebar">📑 目录</button>
-                <button class="btn" onclick="toggleNightMode()">🌙 夜间</button>
-                <!-- round81：把「设置」按钮找回来。
-                     排版方式 / 阅读方向 原本各占一个工具栏按钮（📖、⇄），保留作快捷开关，
-                     完整设置（含缩放默认值、背景、翻页样式、翻页速度、自动翻页）进抽屉。 -->
-                <button class="btn" id="btnSettings" onclick="toggleComicSettings()" title="阅读设置：排版 / 方向 / 背景 / 翻页">⚙️ 设置</button>
-                <button class="btn" onclick="resetZoom()">🔍 重置</button>
+                <button class="btn" id="btnPrevBook" onclick="prevBook()" style="display:none;" title="上一本（Shift+←）">上一本</button>
+                <button class="btn" id="btnNextBook" onclick="nextBook()" style="display:none;" title="下一本（Shift+→）">下一本</button>
+                <button class="btn" id="btnDualPage" onclick="toggleDualPage()" title="单页 / 双页跨页拼合切换">单页</button>
+                <button class="btn" id="btnRtl" onclick="toggleRtlMode()" title="翻页方向：左翻 / 日漫右往左">左翻</button>
+                <button class="btn" id="btnToc" onclick="toggleThumbnails()" aria-expanded="false" aria-controls="thumbnailSidebar" title="目录（缩略图）">目录</button>
+                <button class="btn" onclick="toggleNightMode()" title="夜间背景">夜间</button>
+                <button class="btn" id="btnSettings" onclick="toggleComicSettings()" title="阅读设置：排版 / 方向 / 背景 / 翻页">设置</button>
+                <button class="btn" onclick="resetZoom()" title="重置缩放（Ctrl+滚轮缩放）">重置</button>
+                <button class="btn" onclick="toggleFullscreen()" title="全屏（F11 / F）">全屏</button>
             </div>
         </div>
         
@@ -810,6 +810,8 @@
     </div>
     
     <!-- round79：纸张卷曲引擎（WebGL 图片卷曲 + DOM 文本卷曲共用） -->
+    <!-- 2026-11：三段点击区 / 滚轮翻页 / 键盘补充（必须在业务初始化前） -->
+    <script src="js/reader-shell.js"></script>
     <script src="js/paper-curl.js"></script>
     <!-- round81：设置面板引擎（必须在内联脚本之前） -->
     <script src="js/reader-settings.js"></script>
@@ -843,9 +845,9 @@
 
         function updateModeButtons() {
             const btnD = document.getElementById('btnDualPage');
-            if (btnD) btnD.textContent = dualPageMode ? '📖 双页' : '📖 单页';
+            if (btnD) btnD.textContent = dualPageMode ? '双页' : '单页';
             const btnR = document.getElementById('btnRtl');
-            if (btnR) btnR.textContent = rtlMode ? '⇄ 日漫右翻' : '⇄ 左翻';
+            if (btnR) btnR.textContent = rtlMode ? '日漫右翻' : '左翻';
             const arrowL = document.getElementById('navLeftArrow');
             const arrowR = document.getElementById('navRightArrow');
             if (arrowL && arrowR) {
@@ -1074,13 +1076,30 @@
             loadComicSettings();
             updateModeButtons();
             loadComicInfo();
-            setupKeyboardControls();
-            setupMouseControls();
-            setupTouchGestures();
+            setupKeyboardControls();   // ←→ / 空格 / ↑↓ / 0 / Esc / f 仍由旧逻辑处理
+            setupTouchGestures();      // 移动端横滑 / 捏合
+            setupPan();                // 放大后的拖拽平移（旧 setupMouseControls 里的最后一步）
+            /* 2026-11：桌面/移动统一用三段点击区 + 滚轮翻页（旧 setupMouseControls 已停用） */
+            if (window.ReaderShell) {
+                ReaderShell.attach({
+                    area: '#readerArea',
+                    onPrev: prevPage,
+                    onNext: nextPage,
+                    onCenter: toggleToolbar,
+                    isRtl: function () { return !!rtlMode; },
+                    onFirst: function () { loadPage(0, -1); },
+                    onLast: function () { if (totalPages > 0) loadPage(totalPages - 1, 1); },
+                    onFullscreen: toggleFullscreen,
+                    hintKey: 'cv:comicTapHint',
+                    autoHideMs: 4500,
+                    suppressClick: function () { return !!suppressImgClick; }
+                });
+            }
 
-            // 移动端：默认完全隐藏工具栏与状态条，进入 100% 纯净全屏
+            // 移动端：先收起 chrome，点中间/滑到下边缘再唤出
             if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
                 isToolbarVisible = false;
+                document.body.classList.add('chrome-hidden');
                 document.getElementById('toolbar').classList.add('hidden');
                 document.getElementById('progressBar').classList.add('hidden');
             }
@@ -1625,11 +1644,26 @@
         }
         
         // 切换工具栏显示
+        // 2026-11：状态源改为 body.chrome-hidden —— 阅读外壳（自动隐藏/鼠标移到边缘唤出）
+        // 与页面按钮共用同一个状态，避免“自动隐藏后第一次点击没反应”。
         function toggleToolbar() {
-            isToolbarVisible = !isToolbarVisible;
-            document.getElementById('toolbar').classList.toggle('hidden', !isToolbarVisible);
-            document.getElementById('progressBar').classList.toggle('hidden', !isToolbarVisible);
-            document.getElementById('zoomControls').classList.toggle('visible', isToolbarVisible);
+            var hidden = document.body.classList.contains('chrome-hidden');
+            isToolbarVisible = hidden;   // 当前隐藏 → 这次点击是“显示”
+            document.body.classList.toggle('chrome-hidden', !hidden);
+            document.getElementById('toolbar').classList.toggle('hidden', !hidden);
+            document.getElementById('progressBar').classList.toggle('hidden', !hidden);
+            document.getElementById('zoomControls').classList.toggle('visible', hidden);
+            // 显示后重新计时，避免“刚点出来就被旧的自动隐藏定时器收走”
+            if (hidden && window.ReaderShell) ReaderShell.showChrome();
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                var el = document.documentElement;
+                if (el.requestFullscreen) el.requestFullscreen().catch(function () { });
+            } else if (document.exitFullscreen) {
+                document.exitFullscreen().catch(function () { });
+            }
         }
         
         // 缩略图侧边栏
