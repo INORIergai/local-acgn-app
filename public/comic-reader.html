@@ -750,6 +750,9 @@
                 <canvas id="comicCurl" class="comic-curl" aria-hidden="true"></canvas>
             </div>
             
+            <!-- 2026-11：长条（Webtoon）模式容器：垂直连续滚动，图片懒加载 -->
+            <div id="stripContent" aria-label="长条阅读"><div id="stripInner"></div></div>
+
             <div class="page-nav next" id="navNext" onclick="onNavSideClick('right')">
                 <div class="page-nav-arrow" id="navRightArrow">›</div>
             </div>
@@ -845,7 +848,7 @@
 
         function updateModeButtons() {
             const btnD = document.getElementById('btnDualPage');
-            if (btnD) btnD.textContent = dualPageMode ? '双页' : '单页';
+            if (btnD) btnD.textContent = (comicRS && comicRS.layout === 'strip') ? '长条' : (dualPageMode ? '双页' : '单页');
             const btnR = document.getElementById('btnRtl');
             if (btnR) btnR.textContent = rtlMode ? '日漫右翻' : '左翻';
             const arrowL = document.getElementById('navLeftArrow');
@@ -887,6 +890,13 @@
         var comicRS = null;
         var comicAutoTurn = null;
 
+        /* 2026-11：长条（Webtoon）模式状态 */
+        var stripMode = false;
+        var stripBuilt = false;
+        var stripObserver = null;
+        var stripScrollTimer = null;
+        var stripSaveAt = 0;
+
         /** 旧键一次性迁移：comic_dual_page / comic_rtl_mode（round80 及更早） */
         function migrateLegacyComicSettings(def) {
             try {
@@ -914,6 +924,7 @@
             if (!s) return;
 
             dualPageMode = (s.layout === 'dual');
+            stripMode = (s.layout === 'strip');
             rtlMode = (s.rtl === 'rtl');
             isNightMode = !!s.night;
 
@@ -933,6 +944,14 @@
 
             restartComicAutoTurn();
             updateModeButtons();
+            applyStripMode();
+            /* 点击区 / 滚轮方向热更新到阅读外壳 */
+            if (window.ReaderShell && ReaderShell.updateOptions) {
+                ReaderShell.updateOptions({
+                    tapZones: s.tapZone || 'thirds',
+                    wheelInvert: s.wheelDir === 'invert'
+                });
+            }
             ReaderSettings.save('comic', s);
             renderComicPanel();
         }
@@ -980,6 +999,119 @@
         function settingsOpen() {
             var p = document.getElementById('comicSettingsPanel');
             return !!(p && p.classList.contains('open'));
+        }
+
+        /* 长条（Webtoon）模式
+           图片/目录格式：每页一张 img，原生垂直滚动 + loading=lazy；
+           PDF：滚动到视口附近才用 pdf.js 渲染成 dataURL（全量渲染会吃光内存）。
+           进度按“当前视口顶部所在的页”计算，滚动停止 180ms 后更新并节流落库。 */
+        function applyStripMode() {
+            const on = !!stripMode;
+            document.body.classList.toggle('strip-mode', on);
+            if (!on) {
+                if (stripObserver) { try { stripObserver.disconnect(); } catch (e) { } stripObserver = null; }
+                const inner = document.getElementById('stripInner');
+                if (inner) inner.innerHTML = '';
+                stripBuilt = false;
+                return;
+            }
+            if (totalPages > 0) buildStrip();
+        }
+
+        function buildStrip() {
+            const inner = document.getElementById('stripInner');
+            const sc = document.getElementById('stripContent');
+            if (!inner || !sc || totalPages <= 0) return;
+            inner.innerHTML = '';
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < totalPages; i++) {
+                const page = document.createElement('div');
+                page.className = 'strip-page';
+                page.dataset.idx = String(i);
+                const img = document.createElement('img');
+                img.alt = '第' + (i + 1) + ' 页';
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                /* 懒加载期间先给一屏占位，否则未加载的页高度为 0：
+                   滚动条会跳、进度按 offsetTop 算出来的页码也是错的。
+                   图片真正加载完成后清掉占位，让真实比例生效。 */
+                img.addEventListener('load', function () { page.style.minHeight = '0'; });
+                if (isPdfMode) {
+                    img.dataset.pdf = String(i);
+                } else {
+                    img.src = `/api/comic/${comicId}/page/${i}`;
+                }
+                page.appendChild(img);
+                frag.appendChild(page);
+            }
+            inner.appendChild(frag);
+            stripBuilt = true;
+
+            if (isPdfMode) {
+                if (stripObserver) { try { stripObserver.disconnect(); } catch (e) { } }
+                stripObserver = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (en) {
+                        if (!en.isIntersecting) return;
+                        const img = en.target.querySelector('img[data-pdf]');
+                        if (!img || img.dataset.done === '1') return;
+                        img.dataset.done = '1';
+                        const idx = Number(img.dataset.pdf);
+                        renderPdfPageUrlCached(idx).then(function (url) {
+                            img.src = url;
+                        }).catch(function () { img.dataset.done = ''; });
+                    });
+                }, { root: sc, rootMargin: '700px 0px' });
+                inner.querySelectorAll('.strip-page').forEach(function (d) { stripObserver.observe(d); });
+            }
+
+            if (!sc.__stripBound) {
+                sc.__stripBound = true;
+                sc.addEventListener('scroll', onStripScroll, { passive: true });
+            }
+            stripScrollToPage(currentPage, false);
+            updateStripProgress();
+        }
+
+        function stripScrollToPage(idx, smooth) {
+            const sc = document.getElementById('stripContent');
+            if (!sc) return;
+            const page = sc.querySelector('.strip-page[data-idx="' + idx + '"]');
+            if (!page) return;
+            sc.scrollTo({ top: page.offsetTop, behavior: smooth === false ? 'auto' : 'smooth' });
+        }
+
+        function updateStripProgress() {
+            const pct = totalPages > 0 ? Math.min(100, ((currentPage + 1) / totalPages) * 100) : 0;
+            const info = document.getElementById('pageInfo');
+            if (info) info.textContent = `${currentPage + 1} / ${totalPages}`;
+            const fill = document.getElementById('progressFill');
+            if (fill) fill.style.width = pct + '%';
+            const slider = document.getElementById('progressSlider');
+            if (slider) slider.style.setProperty('--knob', pct + '%');
+            if (typeof updateThumbnailHighlight === 'function') updateThumbnailHighlight();
+        }
+
+        function onStripScroll() {
+            if (!stripMode) return;
+            clearTimeout(stripScrollTimer);
+            stripScrollTimer = setTimeout(function () {
+                const sc = document.getElementById('stripContent');
+                if (!sc) return;
+                const pages = sc.querySelectorAll('.strip-page');
+                if (!pages.length) return;
+                const cTop = sc.getBoundingClientRect().top;
+                let idx = 0;
+                for (let i = 0; i < pages.length; i++) {
+                    if (pages[i].getBoundingClientRect().top - cTop <= 12) idx = i; else break;
+                }
+                if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 4) idx = pages.length - 1;
+                if (idx !== currentPage) {
+                    currentPage = idx;
+                    updateStripProgress();
+                    const now = Date.now();
+                    if (now - stripSaveAt > 1200) { stripSaveAt = now; saveProgress(); }
+                }
+            }, 180);
         }
 
         /** 图片反色：夜间模式的 filter 只在 <img> 上，跟 body.night-mode 同步 */
@@ -1092,7 +1224,11 @@
                     onFullscreen: toggleFullscreen,
                     hintKey: 'cv:comicTapHint',
                     autoHideMs: 4500,
-                    suppressClick: function () { return !!suppressImgClick; }
+                    suppressClick: function () { return !!suppressImgClick; },
+                    tapZones: (comicRS && comicRS.tapZone) || 'thirds',
+                    wheelInvert: !!(comicRS && comicRS.wheelDir === 'invert'),
+                    /* 长条模式滚轮交还容器原生滚动 */
+                    scrollMode: function () { return stripMode; }
                 });
             }
 
@@ -1387,6 +1523,16 @@
             // round81：手动翻页要重置自动翻页倒计时，否则「5 秒自动翻」会在半路被截胡
             if (typeof restartComicAutoTurn === 'function') restartComicAutoTurn();
 
+            /* 长条模式：只滚动，不动单页舞台 */
+            if (stripMode) {
+                currentPage = pageIndex;
+                if (!stripBuilt) buildStrip();
+                stripScrollToPage(pageIndex, false);
+                updateStripProgress();
+                saveProgress();
+                return;
+            }
+
             currentPage = pageIndex;
             const img1 = document.getElementById('comicImage');
             const img2 = document.getElementById('comicImage2');
@@ -1502,6 +1648,11 @@
         
         // 上一页
         function prevPage() {
+            if (stripMode) {
+                const sc = document.getElementById('stripContent');
+                if (sc) sc.scrollBy({ top: -Math.round(sc.clientHeight * 0.88), behavior: 'smooth' });
+                return;
+            }
             const step = dualPageMode ? 2 : 1;
             if (currentPage > 0) {
                 loadPage(Math.max(0, currentPage - step), -1);
@@ -1510,6 +1661,11 @@
 
         // 下一页（最后一页 → 弹结算卡，而不是无声无息停在原地）
         function nextPage() {
+            if (stripMode) {
+                const sc = document.getElementById('stripContent');
+                if (sc) sc.scrollBy({ top: Math.round(sc.clientHeight * 0.88), behavior: 'smooth' });
+                return;
+            }
             const step = dualPageMode ? 2 : 1;
             if (currentPage + step < totalPages) {
                 loadPage(currentPage + step, 1);
@@ -1542,6 +1698,10 @@
             const rect = slider.getBoundingClientRect();
             const percent = (event.clientX - rect.left) / rect.width;
             const targetPage = Math.floor(percent * totalPages);
+            if (stripMode) {
+                stripScrollToPage(Math.max(0, Math.min(totalPages - 1, targetPage)), false);
+                return;
+            }
             loadPage(Math.max(0, Math.min(totalPages - 1, targetPage)));
         }
         

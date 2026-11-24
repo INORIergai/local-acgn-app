@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.20'
+TAG = 'v6.8.21'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,15 +35,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.20：书架 v3 排版与系列聚合
+COMMIT_MSG = """v6.8.21：长条模式与阅读器可配置项
 
-- 书卡重做：封面 2:3、标题两行截断不再溢出、副标题紧跟、收藏星标、无封面书脊
-- 网格断点分档：1100px 五列、手机三列；卡片加淡底与 hover 描边
-- 文件夹树可折叠；新增「收藏」快筛
-- 同系列 >=3 本自动聚合成摞卡，点开只显示该系列（带面包屑返回）
-- 漫画阅读器目录缩略图上限 50 -> 300 页
+- 漫画新增长条（Webtoon）模式：连续滚动、图片懒加载、按视口算页码、目录可跳转
+- 阅读设置新增「点击区」（三区/仅左右/关闭）与「滚轮方向」（可反转）
+- 小说恢复章内页码：重开回到上次那一页（position 落库）
+- 系列摞卡 hover 展开、加书脊厚度
 
-版本：6.8.20"""
+版本：6.8.21"""
 
 
 def get_token():

@@ -573,3 +573,42 @@ body.nv-v2 .paged-hint { left: 16px; transform: none; }
 @media (max-width: 860px) {
     body.nv-v2 .paged-hint { display: none; }   /* 手机上点击区/滑动已够，不占正文 */
 }
+
+/* ---------------- 漫画长条（Webtoon）模式 ---------------- */
+body.cr-v2 #stripContent {
+    display: none;
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+body.cr-v2.strip-mode #stripContent { display: block; }
+body.cr-v2.strip-mode #comicStage,
+body.cr-v2.strip-mode #loading,
+body.cr-v2.strip-mode .zoom-controls { display: none !important; }
+body.cr-v2 #stripInner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 0 24px;
+}
+body.cr-v2 .strip-page {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+body.cr-v2 .strip-page img {
+    width: 100%;
+    max-width: 920px;
+    height: auto;
+    display: block;
+}
+body.cr-v2 .strip-page + .strip-page { margin-top: 2px; }
+body.cr-v2 #stripContent::-webkit-scrollbar { width: 6px; }
+body.cr-v2 #stripContent::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 999px; }
+
+/* 长条模式懒加载占位：未加载的页先占一屏，避免滚动条抖动/页码失真 */
+body.cr-v2 .strip-page { min-height: calc(min(920px, 100vw) * 1.42); align-items: flex-start; }

@@ -1073,7 +1073,9 @@
                     scrollMode: function () { return readMode !== 'page' && !pdfMode; },
                     onFullscreen: toggleFullscreen,
                     hintKey: 'cv:novelTapHint',
-                    autoHideMs: 4500
+                    autoHideMs: 4500,
+                    tapZones: (novelRS && novelRS.tapZone) || 'thirds',
+                    wheelInvert: !!(novelRS && novelRS.wheelDir === 'invert')
                 });
             }
 
@@ -1187,6 +1189,11 @@
                         return;
                     }
                     if (totalChapters > 0) {
+                        /* 2026-11：恢复章内页码（position = 上次分页后的页索引）。
+                           只有上次停在同一章时才恢复；换过字体/窗口导致页数变化时由 showPage 夹紧。 */
+                        var savedPos = Number(novelInfo.currentPosition) || 0;
+                        var savedCh = Number(novelInfo.currentChapter) || 0;
+                        pendingSeek = (savedPos > 0 && savedCh === currentChapter) ? savedPos : null;
                         loadChapter(currentChapter);
                         startReadingTimer();
                     } else {
@@ -1690,7 +1697,11 @@
                 await fetch(`/api/novel/${novelId}/progress`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chapter: currentChapter, position: 0, total: totalChapters })
+                    body: JSON.stringify({
+                        chapter: currentChapter,
+                        position: readMode === 'page' ? (Number(currentPage) || 0) : 0,
+                        total: totalChapters
+                    })
                 });
             } catch (e) {
                 console.log('保存进度失败:', e.message);
@@ -1950,6 +1961,14 @@
             if (typeof pageStarts !== 'undefined' && pageStarts.length) updatePageHeaderFooter(currentPage, pageStarts.length, isDualPage());
 
             restartNovelAutoTurn();
+
+            /* 点击区 / 滚轮方向热更新到阅读外壳 */
+            if (window.ReaderShell && ReaderShell.updateOptions) {
+                ReaderShell.updateOptions({
+                    tapZones: s.tapZone || 'thirds',
+                    wheelInvert: s.wheelDir === 'invert'
+                });
+            }
 
             ReaderSettings.save('novel', s);
             renderNovelPanel();

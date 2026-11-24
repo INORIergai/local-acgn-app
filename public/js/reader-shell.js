@@ -73,6 +73,7 @@
     function tapZone(x, w) {
         var r = x / Math.max(1, w);
         var zones = (S.opts && S.opts.tapZones) || 'thirds';
+        if (zones === 'off') return 'none';
         if (zones === 'sides') return r < 0.5 ? 'left' : 'right';
         if (r < 0.25) return 'left';
         if (r > 0.75) return 'right';
@@ -90,6 +91,7 @@
 
         var rect = area.getBoundingClientRect();
         var zone = tapZone(e.clientX - rect.left, rect.width);
+        if (zone === 'none') return;   // 设置里关掉了点击翻页：交给页面/滚动容器自己处理
 
         if (zone === 'center') {
             /* 页面提供 onCenter 时由页面全权控制（它自己会同步 body.chrome-hidden），
@@ -121,6 +123,7 @@
         if (now - S.wheelAt < (opts.wheelThrottle || 280)) { S.wheelAcc = 0; return; }
         S.wheelAt = now;
         var down = S.wheelAcc > 0;
+        if (opts.wheelInvert) down = !down;
         S.wheelAcc = 0;
         if (e.cancelable) e.preventDefault();
         if (down) goNext(); else goPrev();
@@ -193,6 +196,14 @@
         detach: function () {
             S.attached = false;
             if (S.hideTimer) { clearTimeout(S.hideTimer); S.hideTimer = null; }
+        },
+        /** 设置面板改点击区/滚轮方向时热更新，不重绑事件 */
+        updateOptions: function (patch) {
+            if (!S.opts) return RS;
+            if (patch && typeof patch === 'object') {
+                Object.keys(patch).forEach(function (k) { S.opts[k] = patch[k]; });
+            }
+            return RS;
         },
         showChrome: function () { setChrome(false); },
         hideChrome: function () { setChrome(true); },
