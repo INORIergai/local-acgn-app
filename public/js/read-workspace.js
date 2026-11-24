@@ -1,22 +1,30 @@
 /* ============================================================================
-   read-workspace.js —— 漫画库 / 小说库「书架工作台」（推倒重做版）
+   read-workspace.js —— 漫画库 / 小说库「书架工作台」v3
    ----------------------------------------------------------------------------
-   替换 av-board 的「左树 + 右主区 + 统计浮层」拼贴结构。保留的能力：
-   文件夹 drill-down/面包屑、续读、随机一本、状态筛选、排序、网格/列表、
-   批量状态、详情抽屉、阅读器跳转、本地/网盘切换入口（由外层工具栏提供）。
-   数据结构见 /api/{comic|novel}/tree 与 /api/media/progress-map|resume|stats。
+   v3（2026-11-24 晚间）：在 v2 的分区结构上重做卡片与信息密度：
+     · 卡片成为真正的「书卡」：封面 2:3、标题严格两行、收藏星标、hover 底色；
+     · 网格断点按视口明确分档，不再出现 1100px 挤 6 列；
+     · 左栏文件夹树可折叠，新增「收藏」快筛；
+     · 同层同系列 ≥3 本自动聚成「系列摞卡」，点开只显示该系列；
+     · 页头统计 chips 化，挂 body.rw-mode 隐藏全局重复标题。
+   数据契约不变：/api/{comic|novel}/tree + progress-map + resume + stats。
    ========================================================================== */
 (function () {
     'use strict';
 
-    if (window.RW && window.RW.__v2) return;
+    if (window.RW && window.RW.__v3) return;
 
     var RW = {};
-    RW.__v2 = true;
+    RW.__v3 = true;
     window.RW = RW;
 
-    /* ---------------- 基础工具 ---------------- */
-    var FOLDER_SVG = '<svg width="18" height="16" viewBox="0 0 18 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.6h5.2l1.5 2.1H16v7.1H2z"/></svg>';
+    /* --- 图标 --- */
+    var FOLDER_SVG = '<svg width="17" height="15" viewBox="0 0 18 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.6h5.2l1.5 2.1H16v7.1H2z"/></svg>';
+    var STAR_SVG = '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 .9l1.55 3.2 3.5.5-2.55 2.45.6 3.5L6 8.9 2.9 10.55l.6-3.5L.95 4.6l3.5-.5z"/></svg>';
+    var DICE_SVG = '<svg width="34" height="34" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="30" height="30" rx="7"/><circle cx="14" cy="14" r="2.2" fill="currentColor" stroke="none"/><circle cx="26" cy="14" r="2.2" fill="currentColor" stroke="none"/><circle cx="20" cy="20" r="2.2" fill="currentColor" stroke="none"/><circle cx="14" cy="26" r="2.2" fill="currentColor" stroke="none"/><circle cx="26" cy="26" r="2.2" fill="currentColor" stroke="none"/></svg>';
+    var CHEV_SVG = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>';
+
+    /* --- 基础工具 --- */
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -49,19 +57,6 @@
             return arr[Math.floor(Math.random() * arr.length)];
         }
     }
-    function coverPlaceholder(it) {
-        var raw = String((it && (it.title || it.displayTitle || it.fileName)) || '');
-        var label = raw.replace(/^[\s\d.、:：\-—]+/, '').slice(0, 14) || (S.type === 'comic' ? '漫画' : '小说');
-        var h = 0;
-        var seed = String((it && it.id) || raw);
-        for (var i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-        /* 与深海/夜读皮肤同温的冷色相池，避免随机出土黄/橄榄的“脏”封面 */
-        var HUES = [206, 218, 231, 244, 258, 272, 196, 178];
-        var hue = HUES[h % HUES.length];
-        var c1 = 'hsl(' + hue + ',26%,22%)';
-        var c2 = 'hsl(' + ((hue + 14) % 360) + ',22%,12%)';
-        return '<div class="rw-cover-ph rw-cover-letter" style="background:linear-gradient(155deg,' + c1 + ',' + c2 + ')"><span>' + esc(label) + '</span></div>';
-    }
     function posterOf(it) {
         if (typeof window.getPosterUrl === 'function') {
             try { return window.getPosterUrl(it) || ''; } catch (e) { /* fallthrough */ }
@@ -74,7 +69,7 @@
         return fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.json(); });
     }
 
-    /* ---------------- 状态 ---------------- */
+    /* --- 状态 --- */
     var LS = {
         get: function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
         set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
@@ -83,8 +78,8 @@
     var S = {
         type: null,
         tree: null,
-        roots: [],
         path: '',
+        series: '',
         progress: {},
         resume: null,
         stats: { reading: 0, done: 0, shelved: 0 },
@@ -97,15 +92,14 @@
         loading: true,
         error: '',
         selected: {},
+        treeOpen: {},
         lastFetch: 0
     };
     RW.S = S;
 
     var _treeCache = { comic: { at: 0, data: null }, novel: { at: 0, data: null } };
-    var _bound = false;
-    var _io = null;
 
-    /* ---------------- 树工具 ---------------- */
+    /* --- 树工具 --- */
     function findNode(root, path) {
         if (!path) return root;
         var parts = String(path).split('/').filter(Boolean);
@@ -120,21 +114,22 @@
         }
         return node;
     }
-    function countNode(node, type) {
+    var _countCache = null;
+    function countNode(node) {
+        if (_countCache && _countCache.node === node) return _countCache.val;
         var n = (node.items || []).length;
-        var covers = 0;
         var cover = '';
         for (var i = 0; i < node.items.length; i++) {
-            if (!cover && (node.items[i].posterPath || node.items[i].localPosterPath)) {
-                cover = posterOf(node.items[i]); covers++;
-            }
+            if (!cover && (node.items[i].posterPath || node.items[i].localPosterPath)) cover = posterOf(node.items[i]);
         }
         for (var k = 0; k < node.children.length; k++) {
-            var sub = countNode(node.children[k], type);
+            var sub = countNode(node.children[k]);
             n += sub.n;
-            if (!cover && sub.cover) { cover = sub.cover; }
+            if (!cover && sub.cover) cover = sub.cover;
         }
-        return { n: n, cover: cover };
+        var val = { n: n, cover: cover };
+        _countCache = { node: node, val: val };
+        return val;
     }
     function collectAll(node, out) {
         out = out || [];
@@ -146,7 +141,38 @@
         return S.tree ? collectAll(S.tree, []) : [];
     }
 
-    /* ---------------- 状态归一 ---------------- */
+    /* --- 系列聚类 --- */
+    function seriesKey(title) {
+        var t = String(title || '').replace(/^[\s\d.、:：\-—]+/, '');
+        t = t.replace(/(第\s*)?[\d一二三四五六七八九十百千零]+\s*[卷话話回章集部册]/g, '');
+        t = t.replace(/\b(vol\.?|volume)\s*\d+/gi, '');
+        t = t.replace(/[（(]\s*\d+\s*[)）]/g, '');
+        t = t.replace(/[\s\-—_·]+$/, '').trim();
+        return t.slice(0, 40);
+    }
+    function seriesGroups(items) {
+        var map = {};
+        var order = [];
+        items.forEach(function (it) {
+            var key = seriesKey(it.title || it.displayTitle || it.fileName || '');
+            if (!key || key.length < 2) return;
+            if (!map[key]) { map[key] = []; order.push(key); }
+            map[key].push(it);
+        });
+        var groups = [];
+        order.forEach(function (key) {
+            var list = map[key];
+            if (list.length < 3) return;
+            var sorted = sortItems(list);
+            var cover = '';
+            for (var i = 0; i < sorted.length && !cover; i++) cover = posterOf(sorted[i]);
+            groups.push({ key: key, items: sorted, n: list.length, cover: cover });
+        });
+        groups.sort(function (a, b) { return b.n - a.n; });
+        return groups;
+    }
+
+    /* --- 状态归一 --- */
     function stateOf(it) {
         var p = S.progress[it.id];
         if (p) {
@@ -159,24 +185,24 @@
         var p = S.progress[it.id];
         return p ? Math.max(0, Math.min(100, Number(p.p) || 0)) : 0;
     }
-    function unitLabel(it, state) {
+    function unitLabel(it) {
         var p = S.progress[it.id];
         if (S.type === 'comic') {
-            if (p && p.t > 0) return '读到第 ' + (Number(p.c) + 1) + ' / ' + p.t + ' 页';
+            if (p && p.t > 0) return '第 ' + (Number(p.c) + 1) + ' / ' + p.t + ' 页';
             return fmtSize(it.fileSize) || '漫画';
         }
-        if (p && p.t > 0) return '读到第 ' + (Number(p.c) + 1) + ' / ' + p.t + ' 章';
+        if (p && p.t > 0) return '第 ' + (Number(p.c) + 1) + ' / ' + p.t + ' 章';
         return '小说' + (fmtSize(it.fileSize) ? ' · ' + fmtSize(it.fileSize) : '');
     }
 
-    /* ---------------- 排序 / 筛选 ---------------- */
+    /* --- 排序 / 筛选 --- */
     var collator = (function () {
         try { return new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' }); }
         catch (e) { return null; }
     })();
     function cmpName(a, b) {
-        var x = a.displayTitle || a.title || a.fileName || '';
-        var y = b.displayTitle || b.title || b.fileName || '';
+        var x = a.title || a.displayTitle || a.fileName || '';
+        var y = b.title || b.displayTitle || b.fileName || '';
         return collator ? collator.compare(x, y) : String(x).localeCompare(String(y));
     }
     function sortItems(items) {
@@ -184,26 +210,47 @@
         if (S.sort === 'name') arr.sort(cmpName);
         else if (S.sort === 'size') arr.sort(function (a, b) { return (Number(b.fileSize) || 0) - (Number(a.fileSize) || 0); });
         else if (S.sort === 'progress') arr.sort(function (a, b) { return percentOf(b) - percentOf(a); });
-        else arr.sort(function (a, b) { return (Number(b.addedTime) || 0) - (Number(a.addedTime) || 0); }); // recent
+        else arr.sort(function (a, b) { return (Number(b.addedTime) || 0) - (Number(a.addedTime) || 0); });
         return arr;
     }
     function matchFilter(it) {
         if (S.filter === 'all') return true;
+        if (S.filter === 'fav') return Number(it.favorite) === 1;
         return stateOf(it) === S.filter;
     }
     function matchQuery(it) {
         if (!S.q) return true;
         var q = S.q.toLowerCase();
-        var hay = [it.displayTitle, it.title, it.fileName, it.relPath, it.folderName].join(' ').toLowerCase();
+        var hay = [it.title, it.displayTitle, it.fileName, it.relPath, it.folderName].join(' ').toLowerCase();
         return hay.indexOf(q) >= 0;
     }
+    function matchSeries(it) {
+        if (!S.series) return true;
+        return seriesKey(it.title || it.displayTitle || it.fileName || '') === S.series;
+    }
     function visibleItems() {
-        return sortItems(allItems().filter(function (it) { return matchFilter(it) && matchQuery(it); }));
+        return sortItems(allItems().filter(function (it) {
+            return matchFilter(it) && matchQuery(it) && matchSeries(it);
+        }));
+    }
+    function currentItems(node) {
+        return (node.items || []).filter(function (it) { return matchQuery(it) && matchFilter(it); });
     }
 
-    /* ---------------- 渲染 ---------------- */
-    function rootEl() { return document.getElementById('movieGrid'); }
-
+    /* --- 卡片 --- */
+    function coverPlaceholder(it) {
+        var raw = String((it && (it.title || it.displayTitle || it.fileName)) || '');
+        var label = raw.replace(/^[\s\d.、:：\-—]+/, '').slice(0, 16) || (S.type === 'comic' ? '漫画' : '小说');
+        var h = 0;
+        var seed = String((it && it.id) || raw);
+        for (var i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+        var HUES = [206, 218, 231, 244, 258, 272, 196, 178];
+        var hue = HUES[h % HUES.length];
+        var c1 = 'hsl(' + hue + ',24%,21%)';
+        var c2 = 'hsl(' + ((hue + 14) % 360) + ',20%,11%)';
+        return '<div class="rw-cover-ph rw-cover-letter" style="background:linear-gradient(155deg,' + c1 + ',' + c2 + ')">'
+            + '<span>' + esc(label) + '</span><i class="rw-spine"></i></div>';
+    }
     function statusBadge(it) {
         var st = stateOf(it);
         if (st === 'reading') {
@@ -214,32 +261,41 @@
         if (st === 'shelved') return '<span class="rw-st shelved">搁置</span>';
         return '';
     }
-
-    function cardHtml(it, opts) {
-        opts = opts || {};
+    function cardHtml(it) {
         var cover = posterOf(it);
         var st = stateOf(it);
         var p = percentOf(it);
         var title = it.title || it.displayTitle || it.fileName || '(无标题)';
         var sel = !!S.selected[it.id];
-        var openLabel = st === 'reading' ? '继续阅读' : '打开阅读';
+        var fav = Number(it.favorite) === 1;
         return '<article class="rw-card' + (sel ? ' sel' : '') + '" data-rw-id="' + esc(it.id) + '" tabindex="0" role="button"'
             + ' aria-label="' + esc(title) + '">'
             + '<div class="rw-cover">'
             + (cover ? '<img loading="lazy" src="' + esc(cover) + '" alt="" onerror="this.style.display=\'none\'">'
                 : coverPlaceholder(it))
             + statusBadge(it)
+            + (fav ? '<span class="rw-fav" title="已收藏">' + STAR_SVG + '</span>' : '')
             + (p > 0 && st !== 'done' ? '<span class="rw-prog"><i style="width:' + p + '%"></i></span>' : '')
-            + '<button class="rw-open" data-rw-act="read">' + openLabel + ' ›</button>'
+            + '<button class="rw-open" data-rw-act="read" tabindex="-1">' + (st === 'reading' ? '继续阅读' : '打开阅读') + ' ›</button>'
             + '</div>'
             + '<h3 class="rw-ct" title="' + esc(title) + '">' + esc(title) + '</h3>'
-            + '<p class="rw-cs">' + esc(unitLabel(it, st)) + '</p>'
+            + '<p class="rw-cs">' + esc(unitLabel(it)) + '</p>'
+            + '</article>';
+    }
+    function seriesCardHtml(g) {
+        var imgs = g.items.slice(0, 3).map(function (it, i) {
+            var c = posterOf(it);
+            return c ? '<img class="rw-series-img i' + i + '" loading="lazy" src="' + esc(c) + '" alt="">' : '';
+        }).join('');
+        return '<article class="rw-series" data-rw-act="series" data-rw-key="' + esc(g.key) + '" tabindex="0" role="button">'
+            + '<div class="rw-series-art">' + imgs + '<span class="rw-series-n">' + g.n + ' 卷</span></div>'
+            + '<h3 class="rw-series-t" title="' + esc(g.key) + '">' + esc(g.key) + '</h3>'
+            + '<p class="rw-series-s">共 ' + g.n + ' 本</p>'
             + '</article>';
     }
 
-    function shelfCardHtml(it) {
-        return cardHtml(it, { shelf: true });
-    }
+    /* --- 页面骨架 --- */
+    function rootEl() { return document.getElementById('movieGrid'); }
 
     function treeHtml(node, depth) {
         var kids = (node.children || []).slice().sort(function (a, b) {
@@ -248,38 +304,49 @@
         if (!kids.length) return '';
         var html = '<ul>';
         kids.forEach(function (c) {
-            var cnt = countNode(c, S.type).n;
-            var on = S.path === c.path || (S.path && S.path.indexOf(c.path + '/') === 0);
-            html += '<li><button class="rw-tree-node' + (S.path === c.path ? ' on' : '') + '"'
+            var cnt = countNode(c).n;
+            var hasKids = (c.children || []).length > 0;
+            var onPath = S.path === c.path || (S.path && S.path.indexOf(c.path + '/') === 0);
+            var open = !!S.treeOpen[c.path] || onPath;
+            html += '<li>'
+                + '<div class="rw-tree-row' + (S.path === c.path ? ' on' : '') + '">'
+                + '<button class="rw-tree-tog' + (hasKids ? '' : ' leaf') + (open ? ' open' : '') + '"'
+                + ' data-rw-act="tog" data-rw-path="' + esc(c.path) + '" title="' + (open ? '收起' : '展开') + '">' + CHEV_SVG + '</button>'
+                + '<button class="rw-tree-node' + (S.path === c.path ? ' on' : '') + '"'
                 + ' data-rw-act="folder" data-rw-path="' + esc(c.path) + '" title="' + esc(c.name) + '">'
-                + '<span>' + FOLDER_SVG + '</span><em>' + esc(c.name) + '</em><b>' + cnt + '</b></button>'
-                + treeHtml(c, depth + 1) + '</li>';
+                + '<span class="rw-tree-ic">' + FOLDER_SVG + '</span><em>' + esc(c.name) + '</em><b>' + cnt + '</b></button>'
+                + '</div>'
+                + (open ? treeHtml(c, depth + 1) : '')
+                + '</li>';
         });
         return html + '</ul>';
     }
 
     function crumbsHtml(node) {
-        if (!S.path) return '';
-        var parts = S.path.split('/').filter(Boolean);
+        if (!S.path && !S.series) return '';
+        var parts = S.path ? S.path.split('/').filter(Boolean) : [];
         var html = '<div class="rw-crumbs"><button data-rw-act="folder" data-rw-path="">' + (S.type === 'comic' ? '漫画库' : '小说库') + '</button>';
         var acc = '';
         parts.forEach(function (name) {
             acc = acc ? acc + '/' + name : name;
             html += '<span>/</span><button data-rw-act="folder" data-rw-path="' + esc(acc) + '">' + esc(name) + '</button>';
         });
+        if (S.series) {
+            html += '<span>/</span><span class="rw-crumb-series">系列：' + esc(S.series) + '</span>'
+                + '<button class="rw-crumb-x" data-rw-act="clear-series" title="退出系列">✕</button>';
+        }
         return html + '</div>';
     }
 
     function contHtml() {
         var r = S.resume;
         if (!r) {
-            return '<div class="rw-continue" data-rw-act="noop">'
-                + '<div class="rw-continue-cover"><div class="rw-cover-ph rw-cover-letter" style="position:static;height:100%;background:linear-gradient(155deg,hsl(218,26%,22%),hsl(232,22%,12%))"><span>' + (S.type === 'comic' ? '漫画' : '小说') + '</span></div></div>'
+            return '<div class="rw-continue is-empty" data-rw-act="noop">'
+                + '<div class="rw-continue-cover">' + coverPlaceholder({ title: S.type === 'comic' ? '漫画' : '小说', id: 'empty' }) + '</div>'
                 + '<div class="rw-continue-body">'
                 + '<p class="rw-continue-k">CONTINUE · 继续阅读</p>'
                 + '<h2 class="rw-continue-t">还没有阅读记录</h2>'
-                + '<p class="rw-continue-p">从下面挑一本开始，之后这里会记住你读到哪里。</p>'
-                + '<div class="rw-continue-meta"><span>提示：任何一本都可以点开</span></div>'
+                + '<p class="rw-continue-p">从下面挑一本开始，之后这里会记住你读到哪一页。</p>'
                 + '</div></div>';
         }
         var cov = posterOf(r);
@@ -291,16 +358,18 @@
         }
         var pct = Math.max(0, Math.min(100, Number(r.percent) || 0));
         return '<div class="rw-continue" data-rw-act="read" data-rw-id="' + esc(r.id) + '" role="button" tabindex="0">'
-            + '<div class="rw-continue-cover">' + (cov ? '<img src="' + esc(cov) + '" alt="" onerror="this.style.display=\'none\'">' : '<div class="rw-cover-ph rw-cover-letter" style="position:static;height:100%;background:linear-gradient(155deg,hsl(218,26%,22%),hsl(232,22%,12%))"><span>' + (S.type === 'comic' ? '漫画' : '小说') + '</span></div>') + '</div>'
+            + '<div class="rw-continue-cover">' + (cov
+                ? '<img src="' + esc(cov) + '" alt="" onerror="this.style.display=\'none\'">'
+                : coverPlaceholder({ title: S.type === 'comic' ? '漫画' : '小说', id: 'cont' }))
+            + '</div>'
             + '<div class="rw-continue-body">'
             + '<p class="rw-continue-k">CONTINUE · 继续阅读</p>'
             + '<h2 class="rw-continue-t" title="' + esc(r.title) + '">' + esc(r.title || '未命名') + '</h2>'
-            + '<p class="rw-continue-p">' + esc(progText) + ' · 上次读于 ' + esc(relTime(r.updatedAt)) + '</p>'
+            + '<p class="rw-continue-p">' + esc(progText) + ' <i>·</i> 上次读于 ' + esc(relTime(r.updatedAt)) + '</p>'
             + '<div class="rw-continue-bar"><i style="width:' + pct + '%"></i></div>'
-            + '<div class="rw-continue-meta"><span>' + pct + '%</span>'
             + '</div>'
             + '<button class="rw-continue-go">继续阅读 ›</button>'
-            + '</div></div>';
+            + '</div>';
     }
 
     function randomHtml() {
@@ -308,146 +377,80 @@
         var pick = pickOne(pool);
         if (!pick) {
             return '<div class="rw-random" data-rw-act="noop"><div class="rw-random-k">RANDOM · 随手一本</div>'
-                + '<div class="rw-random-ic">🎲</div><div class="rw-random-t">暂无条目</div>'
-                + '<div class="rw-random-p">扫描后这里会随机挑一本给你</div></div>';
+                + '<div class="rw-random-ic">' + DICE_SVG + '</div><div class="rw-random-t">暂无条目</div></div>';
         }
-        var t = pick.displayTitle || pick.title || pick.fileName || '未命名';
+        var t = pick.title || pick.displayTitle || pick.fileName || '未命名';
         return '<div class="rw-random" data-rw-act="read" data-rw-id="' + esc(pick.id) + '" role="button" tabindex="0" title="直接打开《' + esc(t) + '》">'
             + '<div class="rw-random-k">RANDOM · 随手一本</div>'
-            + '<div class="rw-random-ic">🎲</div>'
+            + '<div class="rw-random-ic">' + DICE_SVG + '</div>'
             + '<div class="rw-random-t" title="' + esc(t) + '">' + esc(t) + '</div>'
-            + '<div class="rw-random-p">点一下直接开读（每次换一本）</div></div>';
+            + '<div class="rw-random-p">点一下直接开读</div></div>';
     }
 
-    function stripeHtml(it, label) {
-        return '<article class="rw-card" data-rw-id="' + esc(it.id) + '" tabindex="0" role="button">'
-            + '<div class="rw-cover">' + (posterOf(it) ? '<img loading="lazy" src="' + esc(posterOf(it)) + '" alt="">' : coverPlaceholder(it))
-            + statusBadge(it) + '</div>'
-            + '<h3 class="rw-ct">' + esc(it.title || it.displayTitle || '') + '</h3>'
-            + '<p class="rw-cs">' + esc(label) + '</p></article>';
-    }
-
-    function mainHtml(node) {
-        var all = visibleItems();
-        var curItems = (node.items || []).filter(function (it) { return matchQuery(it); });
-        var reading = sortItems(allItems().filter(function (it) { return stateOf(it) === 'reading'; }))
-            .filter(matchQuery).slice(0, 10);
-        var folders = (node.children || []).slice().sort(function (a, b) {
-            return collator ? collator.compare(a.name, b.name) : String(a.name).localeCompare(String(b.name));
-        });
-
-        var html = '';
-        html += contHtml();
-        html += randomHtml();
-        // hero row 已用 section 包裹，这里输出成一个 section 容器
-        html += '<section class="rw-section" aria-label="继续阅读与随机">';
-
-        if (reading.length) {
-            html += '<section class="rw-section" data-rw-sec="reading">'
-                + '<div class="rw-sec-head"><h2>在读 · 最近</h2><span class="rw-sec-sub">' + reading.length + ' 本</span>'
-                + '<button class="rw-sec-more" data-rw-act="filter" data-rw-filter="reading">查看全部 ›</button></div>'
-                + '<div class="rw-shelf">' + reading.map(function (it) {
-                    return '<article class="rw-card" data-rw-id="' + esc(it.id) + '" tabindex="0" role="button">'
-                        + '<div class="rw-cover">' + (posterOf(it) ? '<img loading="lazy" src="' + esc(posterOf(it)) + '" alt="">' : coverPlaceholder(it))
-                        + statusBadge(it) + '<span class="rw-prog"><i style="width:' + percentOf(it) + '%"></i></span>'
-                        + '<button class="rw-open" data-rw-act="read">继续阅读 ›</button></div>'
-                        + '<h3 class="rw-ct">' + esc(it.title || it.displayTitle || '') + '</h3>'
-                        + '<p class="rw-cs">' + esc(unitLabel(it, 'reading')) + '</p></article>';
-                }).join('') + '</div></section>';
-        }
-
-        if (folders.length) {
-            html += '<section class="rw-section" data-rw-sec="collections">'
-                + '<div class="rw-sec-head"><h2>合集</h2><span class="rw-sec-sub">' + folders.length + ' 个文件夹</span></div>'
-                + '<div class="rw-collections">' + folders.map(function (f) {
-                    var c = countNode(f, S.type);
-                    var cov = c.cover;
-                    return '<button class="rw-folder" data-rw-act="folder" data-rw-path="' + esc(f.path) + '">'
-                        + '<span class="rw-folder-art">' + (cov ? '<img loading="lazy" src="' + esc(cov) + '" alt="">' : '') + '<span class="rw-folder-stack">' + FOLDER_SVG + '</span></span>'
-                        + '<span class="rw-folder-body"><span class="rw-folder-t">' + esc(f.name) + '</span>'
-                        + '<span class="rw-folder-n">' + c.n + ' 本</span></span></button>';
-                }).join('') + '</div></section>';
-        }
-
-        html += '<section class="rw-section" data-rw-sec="all">'
-            + '<div class="rw-sec-head"><h2>' + (S.filter === 'all' ? (S.path ? '本文件夹' : '全部馆藏') : filterName(S.filter)) + '</h2>'
-            + '<span class="rw-sec-sub">' + all.length + ' 本</span>'
-            + '<div class="rw-chips">' + chipsHtml() + '</div></div>'
-            + '<div class="rw-grid' + (S.view === 'list' ? ' rw-list' : '') + '" id="rwGrid">' + gridHtml(all) + '</div>'
-            + '<div class="rw-foot" id="rwFoot">' + footHtml(all) + '</div>'
-            + '</section>';
-
-        html += '</section>';
-        return html;
-    }
-
-    function filterName(f) {
-        return { reading: '在读', done: '已读', shelved: '搁浅', unread: '未读' }[f] || '全部馆藏';
-    }
     function chipsHtml() {
-        var counts = { all: allItems().length, reading: 0, unread: 0, done: 0, shelved: 0 };
-        allItems().forEach(function (it) { var s = stateOf(it); if (counts[s] != null) counts[s]++; });
-        return [['all', '全部'], ['reading', '在读'], ['unread', '未读'], ['done', '已读'], ['shelved', '搁浅']]
+        var counts = { all: allItems().length, reading: 0, unread: 0, done: 0, shelved: 0, fav: 0 };
+        allItems().forEach(function (it) {
+            var s = stateOf(it);
+            if (counts[s] != null) counts[s]++;
+            if (Number(it.favorite) === 1) counts.fav++;
+        });
+        return [['all', '全部'], ['reading', '在读'], ['unread', '未读'], ['done', '已读'], ['shelved', '搁浅'], ['fav', '收藏']]
             .map(function (p) {
                 return '<button class="rw-chip' + (S.filter === p[0] ? ' on' : '') + '" data-rw-act="filter" data-rw-filter="' + p[0] + '">'
-                    + p[1] + ' <b style="opacity:.7;font-weight:400">' + (counts[p[0]] || 0) + '</b></button>';
+                    + p[1] + '<b>' + (counts[p[0]] || 0) + '</b></button>';
             }).join('');
     }
     function gridHtml(items) {
         var show = items.slice(0, S.visible);
-        if (!show.length) {
-            return ''; // 空态由 footHtml 统一渲染
-        }
-        return show.map(function (it) { return cardHtml(it); }).join('');
+        if (!show.length) return '';
+        return show.map(cardHtml).join('');
     }
     function footHtml(items) {
         if (!items.length) {
-            return '<div class="rw-empty"><div class="rw-empty-ic">🗂</div>'
-                + '<h3>' + (S.q ? '没有匹配「' + esc(S.q) + '」的条目' : (S.filter === 'all' ? '这里还没有内容' : '这个筛选下暂时没有内容')) + '</h3>'
-                + '<p>' + (S.q ? '换个关键词，或清空搜索' : '返回全部，或去扫描/网盘里添加') + '</p>'
+            var msg = S.q ? '没有匹配「' + esc(S.q) + '」的条目'
+                : (S.series ? '这个系列下暂时没有内容' : (S.filter === 'all' ? '这里还没有内容' : '这个筛选下暂时没有内容'));
+            return '<div class="rw-empty"><div class="rw-empty-ic">' + FOLDER_SVG + '</div>'
+                + '<h3>' + msg + '</h3><p>' + (S.q ? '换个关键词，或清空搜索' : '返回全部，或去扫描/网盘里添加') + '</p>'
                 + '<button data-rw-act="' + (S.q ? 'clearq' : 'filter') + '" data-rw-filter="all">' + (S.q ? '清空搜索' : '看全部') + '</button></div>';
         }
-        if (items.length <= S.visible) {
-            return '<span>已显示全部 ' + items.length + ' 本</span>';
-        }
+        if (items.length <= S.visible) return '<span>已显示全部 ' + items.length + ' 本</span>';
         return '<span>已显示 ' + Math.min(S.visible, items.length) + ' / ' + items.length + '</span>'
             + '<button class="rw-more" data-rw-act="more">加载更多</button>';
     }
 
     function pageHtml(node) {
-        var counts = { all: allItems().length, reading: 0, unread: 0, done: 0, shelved: 0 };
-        allItems().forEach(function (it) { var s = stateOf(it); if (counts[s] != null) counts[s]++; });
-        var main = mainHtml(node);
-        // 把 hero 两块包成一行：mainHtml 开头输出的是 cont+random，这里重新组织
-        var hero = '<section class="rw-section rw-hero-row" aria-label="继续阅读与随手一本">' + contHtml() + randomHtml() + '</section>';
-        // 去掉 mainHtml 里重复的 hero 部分（mainHtml 已含 cont/random 与外壳，改为直接拼装）
+        var counts = { all: allItems().length, reading: 0, unread: 0, done: 0, shelved: 0, fav: 0 };
+        allItems().forEach(function (it) {
+            var s = stateOf(it);
+            if (counts[s] != null) counts[s]++;
+            if (Number(it.favorite) === 1) counts.fav++;
+        });
         return '<div class="rw-page" data-rw-type="' + esc(S.type) + '">'
             + '<header class="rw-head">'
             + '<div class="rw-head-main">'
             + '<p class="rw-kicker">LIBRARY · ' + (S.type === 'comic' ? 'MANGA' : 'NOVEL') + '</p>'
             + '<h1 class="rw-title">' + (S.type === 'comic' ? '漫画库' : '小说库') + '</h1>'
-            + '<p class="rw-sub"><b>' + counts.all + '</b> 本 <i>·</i> 在读 ' + counts.reading
-            + ' <i>·</i> 已读 ' + counts.done + (counts.shelved ? ' <i>·</i> 搁浅 ' + counts.shelved : '') + '</p>'
+            + '<div class="rw-stats">'
+            + '<span class="rw-stat"><b>' + counts.all + '</b>本</span>'
+            + '<span class="rw-stat reading"><b>' + counts.reading + '</b>在读</span>'
+            + '<span class="rw-stat"><b>' + counts.done + '</b>已读</span>'
+            + (counts.fav ? '<span class="rw-stat fav"><b>' + counts.fav + '</b>收藏</span>' : '')
+            + '</div>'
             + '</div>'
             + '<div class="rw-head-tools">'
             + '<input class="rw-search" id="rwSearch" type="search" placeholder="在本库中搜索…" value="' + esc(S.q) + '" autocomplete="off">'
-            + '<select class="rw-select" id="rwSort" aria-label="排序">'
-            + sortOpts()
-            + '</select>'
+            + '<select class="rw-select" id="rwSort" aria-label="排序">' + sortOpts() + '</select>'
             + '<div class="rw-viewtoggle" role="group" aria-label="视图">'
             + '<button data-rw-act="view" data-rw-view="grid" class="' + (S.view === 'grid' ? 'on' : '') + '" title="网格">'
             + '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="1.5" width="4.4" height="4.4" rx="1"/><rect x="8.1" y="1.5" width="4.4" height="4.4" rx="1"/><rect x="1.5" y="8.1" width="4.4" height="4.4" rx="1"/><rect x="8.1" y="8.1" width="4.4" height="4.4" rx="1"/></svg></button>'
             + '<button data-rw-act="view" data-rw-view="list" class="' + (S.view === 'list' ? 'on' : '') + '" title="列表">'
             + '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h10M2 7h10M2 11h10"/></svg></button>'
-            + '</div>'
-            + '</div></header>'
+            + '</div></div></header>'
             + '<div class="rw-body">'
-            + '<nav class="rw-rail" aria-label="分类">'
-            + railHtml(node)
-            + '</nav>'
+            + '<nav class="rw-rail" aria-label="分类">' + railHtml() + '</nav>'
             + '<main class="rw-main">'
             + crumbsHtml(node)
-            + hero
+            + '<section class="rw-section rw-hero-row" aria-label="继续阅读与随手一本">' + contHtml() + randomHtml() + '</section>'
             + mainSections(node)
             + '</main>'
             + '</div>'
@@ -462,61 +465,63 @@
         }).join('');
     }
 
-    function railHtml(node) {
-        var counts = { all: allItems().length, reading: 0, unread: 0, done: 0, shelved: 0 };
-        allItems().forEach(function (it) { var s = stateOf(it); if (counts[s] != null) counts[s]++; });
+    function railHtml() {
+        var counts = { all: allItems().length, reading: 0, unread: 0, done: 0, shelved: 0, fav: 0 };
+        allItems().forEach(function (it) {
+            var s = stateOf(it);
+            if (counts[s] != null) counts[s]++;
+            if (Number(it.favorite) === 1) counts.fav++;
+        });
         var items = [
             ['all', '全部馆藏', '▦'],
             ['reading', '在读', '◐'],
             ['unread', '未读', '○'],
             ['done', '已读', '✓'],
-            ['shelved', '搁浅', '⏸']
+            ['shelved', '搁浅', '⏸'],
+            ['fav', '收藏', '★']
         ];
-        var html = '<div class="rw-rail-group"><div class="rw-rail-h">状态</div>';
+        var html = '<div class="rw-rail-group"><div class="rw-rail-h">筛选</div>';
         html += items.map(function (it) {
             return '<button class="rw-nav' + (S.filter === it[0] ? ' on' : '') + '" data-rw-act="filter" data-rw-filter="' + it[0] + '">'
                 + '<span class="rw-nav-ic">' + it[2] + '</span><span>' + it[1] + '</span>'
                 + '<span class="rw-nav-n">' + (counts[it[0]] || 0) + '</span></button>';
         }).join('');
         html += '</div>';
-        var tree = treeHtml(node, 0);
+        var tree = treeHtml(S.tree || { children: [], items: [] }, 0);
         if (tree) {
             html += '<div class="rw-rail-group"><div class="rw-rail-h">文件夹</div><div class="rw-tree">' + tree + '</div></div>';
         }
-        html += '<div class="rw-rail-group"><div class="rw-rail-h">提示</div>'
-            + '<div style="padding:4px 10px;font-size:11px;line-height:1.6;color:var(--text-faint)">'
-            + 'Ctrl / ⌘ + 点击卡片可多选<br>双击卡片直接开读</div></div>';
+        html += '<div class="rw-rail-group"><div class="rw-rail-h">操作</div>'
+            + '<div class="rw-tip">Ctrl / ⌘ + 点击卡片可多选<br>双击卡片直接开读</div></div>';
         return html;
     }
 
-    /* mainHtml 里已包含 hero（cont/random）+ 各分区，这里单独抽出来避免重复 */
     function mainSections(node) {
-        // 与 mainHtml 相同的后半段，但不含 cont/random
         var all = visibleItems();
         var reading = sortItems(allItems().filter(function (it) { return stateOf(it) === 'reading'; }))
-            .filter(matchQuery).slice(0, 10);
+            .filter(function (it) { return matchQuery(it) && matchSeries(it); }).slice(0, 10);
         var folders = (node.children || []).slice().sort(function (a, b) {
             return collator ? collator.compare(a.name, b.name) : String(a.name).localeCompare(String(b.name));
         });
+        var series = (!S.series) ? seriesGroups(currentItems(node)).slice(0, 12) : [];
+
         var html = '';
         if (reading.length) {
             html += '<section class="rw-section" data-rw-sec="reading">'
                 + '<div class="rw-sec-head"><h2>在读 · 最近</h2><span class="rw-sec-sub">' + reading.length + ' 本</span>'
                 + '<button class="rw-sec-more" data-rw-act="filter" data-rw-filter="reading">查看全部 ›</button></div>'
-                + '<div class="rw-shelf">' + reading.map(function (it) {
-                    return '<article class="rw-card" data-rw-id="' + esc(it.id) + '" tabindex="0" role="button">'
-                        + '<div class="rw-cover">' + (posterOf(it) ? '<img loading="lazy" src="' + esc(posterOf(it)) + '" alt="">' : coverPlaceholder(it))
-                        + statusBadge(it) + '<span class="rw-prog"><i style="width:' + percentOf(it) + '%"></i></span>'
-                        + '<button class="rw-open" data-rw-act="read">继续阅读 ›</button></div>'
-                        + '<h3 class="rw-ct">' + esc(it.title || it.displayTitle || '') + '</h3>'
-                        + '<p class="rw-cs">' + esc(unitLabel(it, 'reading')) + '</p></article>';
-                }).join('') + '</div></section>';
+                + '<div class="rw-shelf">' + reading.map(cardHtml).join('') + '</div></section>';
+        }
+        if (series.length) {
+            html += '<section class="rw-section" data-rw-sec="series">'
+                + '<div class="rw-sec-head"><h2>系列</h2><span class="rw-sec-sub">' + series.length + ' 个系列</span></div>'
+                + '<div class="rw-shelf rw-series-shelf">' + series.map(seriesCardHtml).join('') + '</div></section>';
         }
         if (folders.length) {
             html += '<section class="rw-section" data-rw-sec="collections">'
                 + '<div class="rw-sec-head"><h2>合集</h2><span class="rw-sec-sub">' + folders.length + ' 个文件夹</span></div>'
                 + '<div class="rw-collections">' + folders.map(function (f) {
-                    var c = countNode(f, S.type);
+                    var c = countNode(f);
                     return '<button class="rw-folder" data-rw-act="folder" data-rw-path="' + esc(f.path) + '">'
                         + '<span class="rw-folder-art">' + (c.cover ? '<img loading="lazy" src="' + esc(c.cover) + '" alt="">' : '') + '<span class="rw-folder-stack">' + FOLDER_SVG + '</span></span>'
                         + '<span class="rw-folder-body"><span class="rw-folder-t">' + esc(f.name) + '</span>'
@@ -524,7 +529,7 @@
                 }).join('') + '</div></section>';
         }
         html += '<section class="rw-section" data-rw-sec="all">'
-            + '<div class="rw-sec-head"><h2>' + (S.filter === 'all' ? (S.path ? '本文件夹' : '全部馆藏') : filterName(S.filter)) + '</h2>'
+            + '<div class="rw-sec-head"><h2>' + (S.series ? '系列' : (S.filter === 'all' ? (S.path ? '本文件夹' : '全部馆藏') : filterName(S.filter))) + '</h2>'
             + '<span class="rw-sec-sub">' + all.length + ' 本</span>'
             + '<div class="rw-chips">' + chipsHtml() + '</div></div>'
             + '<div class="rw-grid' + (S.view === 'list' ? ' rw-list' : '') + '" id="rwGrid">' + gridHtml(all) + '</div>'
@@ -533,12 +538,16 @@
         return html;
     }
 
-    /* ---------------- 渲染入口 ---------------- */
+    function filterName(f) {
+        return { reading: '在读', done: '已读', shelved: '搁浅', unread: '未读', fav: '收藏' }[f] || '全部馆藏';
+    }
+
+    /* --- 渲染入口 --- */
     function render() {
         var grid = rootEl();
-        if (!grid || !S.type) return;
-        if (!S.tree) return; // 骨架由 mount 负责
+        if (!grid || !S.type || !S.tree) return;
         var node = findNode(S.tree, S.path);
+        _countCache = null;
         grid.innerHTML = pageHtml(node);
         bind(grid);
         if (S.selected && Object.keys(S.selected).length) updateBatchBar();
@@ -552,7 +561,7 @@
         grid.innerHTML = '<div class="rw-page" data-rw-type="' + esc(S.type) + '">'
             + '<header class="rw-head"><div class="rw-head-main">'
             + '<p class="rw-kicker">LIBRARY</p><h1 class="rw-title">' + (S.type === 'comic' ? '漫画库' : '小说库') + '</h1>'
-            + '<p class="rw-sub">正在整理书架…</p></div></header>'
+            + '<div class="rw-stats"><span class="rw-stat">正在整理书架…</span></div></div></header>'
             + '<div class="rw-body"><div class="rw-main"><section class="rw-section"><div class="rw-grid">' + sk.join('') + '</div></section></div></div></div>';
     }
 
@@ -560,13 +569,13 @@
         var grid = rootEl();
         if (!grid) return;
         grid.innerHTML = '<div class="rw-page"><div class="rw-empty" style="margin-top:40px">'
-            + '<div class="rw-empty-ic">⚠️</div><h3>书架加载失败</h3>'
+            + '<div class="rw-empty-ic">⚠</div><h3>书架加载失败</h3>'
             + '<p>' + esc(msg || '网络或接口异常') + '</p>'
             + '<button data-rw-act="retry">重试</button></div></div>';
         bind(grid);
     }
 
-    /* ---------------- 事件 ---------------- */
+    /* --- 事件 --- */
     function bind(root) {
         if (root.__rwBound) return;
         root.__rwBound = true;
@@ -581,16 +590,30 @@
         if (actEl) {
             var act = actEl.getAttribute('data-rw-act');
             if (act === 'folder') { e.preventDefault(); goFolder(actEl.getAttribute('data-rw-path') || ''); return; }
+            if (act === 'tog') {
+                e.preventDefault(); e.stopPropagation();
+                var p = actEl.getAttribute('data-rw-path') || '';
+                S.treeOpen[p] = !S.treeOpen[p];
+                render();
+                return;
+            }
             if (act === 'filter') { e.preventDefault(); setFilter(actEl.getAttribute('data-rw-filter') || 'all'); return; }
             if (act === 'view') { e.preventDefault(); setView(actEl.getAttribute('data-rw-view') || 'grid'); return; }
+            if (act === 'series') {
+                e.preventDefault();
+                S.series = actEl.getAttribute('data-rw-key') || '';
+                S.visible = 120;
+                render();
+                return;
+            }
+            if (act === 'clear-series') { e.preventDefault(); S.series = ''; render(); return; }
             if (act === 'more') { e.preventDefault(); S.visible += 120; rerenderGrid(); return; }
             if (act === 'clearq') { e.preventDefault(); S.q = ''; refreshView(); return; }
             if (act === 'retry') { e.preventDefault(); RW.mount(S.type, { force: true }); return; }
             if (act === 'read') {
                 e.preventDefault(); e.stopPropagation();
-                var id = Number(actEl.getAttribute('data-rw-id') || (actEl.closest('[data-rw-id]') || {}).getAttribute && actEl.closest('[data-rw-id]').getAttribute('data-rw-id'));
-                if (!id) { var card0 = actEl.closest('[data-rw-id]'); if (card0) id = Number(card0.getAttribute('data-rw-id')); }
-                openReader(id);
+                var holder = actEl.closest('[data-rw-id]');
+                openReader(holder ? Number(holder.getAttribute('data-rw-id')) : 0);
                 return;
             }
             if (act === 'batch') { e.preventDefault(); doBatch(actEl.getAttribute('data-rw-status')); return; }
@@ -599,7 +622,7 @@
         }
         var card = e.target.closest('.rw-card, .rw-continue');
         if (!card) return;
-        if (e.target.closest('.rw-open')) return; // 交给 read 分支
+        if (e.target.closest('.rw-open')) return;
         var id = Number(card.getAttribute('data-rw-id'));
         if (!id) return;
         if (e.ctrlKey || e.metaKey) {
@@ -612,10 +635,10 @@
 
     function onKey(e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
-        var card = e.target.closest && e.target.closest('.rw-card, .rw-continue, .rw-folder');
-        if (!card) return;
+        var el = e.target.closest && e.target.closest('.rw-card, .rw-continue, .rw-folder, .rw-series');
+        if (!el) return;
         e.preventDefault();
-        card.click();
+        el.click();
     }
 
     function onChange(e) {
@@ -638,11 +661,17 @@
         }, 220);
     }
 
-    /* ---------------- 交互动作 ---------------- */
+    /* --- 交互动作 --- */
     function goFolder(path) {
         S.path = path || '';
+        S.series = '';
         S.visible = 120;
         S.filter = 'all';
+        if (path) {
+            var parts = path.split('/');
+            var acc = '';
+            parts.forEach(function (p) { acc = acc ? acc + '/' + p : p; S.treeOpen[acc] = true; });
+        }
         render();
         var grid = rootEl();
         if (grid) {
@@ -668,17 +697,13 @@
         var g = document.getElementById('rwGrid');
         if (g) g.innerHTML = gridHtml(all);
         var f = document.getElementById('rwFoot');
-        if (f) {
-            f.innerHTML = footHtml(all);
-            bind(f);
-        }
+        if (f) { f.innerHTML = footHtml(all); bind(f); }
         if (g) bind(g);
     }
 
     function refreshView(keepFocus) {
-        var wasFocused = keepFocus;
         render();
-        if (wasFocused) {
+        if (keepFocus) {
             var s = document.getElementById('rwSearch');
             if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
         }
@@ -694,8 +719,7 @@
         var grid = rootEl();
         if (!grid) return;
         grid.querySelectorAll('.rw-card[data-rw-id]').forEach(function (c) {
-            var on = !!S.selected[Number(c.getAttribute('data-rw-id'))];
-            c.classList.toggle('sel', on);
+            c.classList.toggle('sel', !!S.selected[Number(c.getAttribute('data-rw-id'))]);
         });
         updateBatchBar();
     }
@@ -739,17 +763,14 @@
         });
     }
 
-    /* ---------------- 数据加载 ---------------- */
+    /* --- 数据 --- */
     function fetchTree(force) {
         var c = _treeCache[S.type];
-        if (!force && c.data && Date.now() - c.at < 60000) {
-            return Promise.resolve(c.data);
-        }
+        if (!force && c.data && Date.now() - c.at < 60000) return Promise.resolve(c.data);
         return getJSON('/api/' + S.type + '/tree').then(function (j) {
             if (!j || j.code !== 0 || !j.data) throw new Error((j && j.msg) || '目录树加载失败');
-            var d = j.data;
-            if (!d.tree) throw new Error('目录树为空');
-            var root = d.tree;
+            var root = j.data.tree;
+            if (!root) throw new Error('目录树为空');
             if (!Array.isArray(root.children)) root.children = [];
             if (!Array.isArray(root.items)) root.items = [];
             c.data = root; c.at = Date.now();
@@ -760,33 +781,25 @@
     RW.mount = function (type, opts) {
         opts = opts || {};
         if (type !== 'comic' && type !== 'novel') return Promise.resolve(false);
-        var prevType = S.type;
+        var prev = S.type;
         S.type = type;
-        if (prevType !== type) {
-            S.path = '';
-            S.filter = 'all';
-            S.q = '';
-            S.selected = {};
-            S.visible = 120;
+        if (prev !== type) {
+            S.path = ''; S.series = ''; S.filter = 'all'; S.q = '';
+            S.selected = {}; S.visible = 120; S.treeOpen = {};
             S.sort = LS.get('rw:' + type + ':sort', 'recent');
             S.view = LS.get('rw:' + type + ':view', 'grid');
-            S.resume = null;
-            S.progress = {};
+            S.resume = null; S.progress = {};
         }
         var mySeq = ++S.seq;
-        S.loading = true;
-        S.error = '';
+        S.loading = true; S.error = '';
+        document.body.classList.add('rw-mode');
 
-        // 旧版续读横幅在 #movieGrid 之前，新页自带续读卡，移除避免双份
         var oldBar = document.getElementById('readResumeBar');
         if (oldBar) oldBar.remove();
 
         renderSkeleton();
         var grid = rootEl();
-        if (grid) {
-            grid.classList.remove('tree-mode');
-            grid.classList.add('rw-mode');
-        }
+        if (grid) { grid.classList.remove('tree-mode'); grid.classList.add('rw-mode'); }
 
         return Promise.all([
             fetchTree(!!opts.force),
@@ -794,7 +807,7 @@
             getJSON('/api/media/resume?type=' + type).catch(function () { return null; }),
             getJSON('/api/media/stats?type=' + type).catch(function () { return null; })
         ]).then(function (res) {
-            if (mySeq !== S.seq) return false; // 已切走
+            if (mySeq !== S.seq) return false;
             S.tree = res[0];
             var pm = res[1];
             S.progress = (pm && pm.code === 0 && pm.data) ? pm.data : {};
@@ -807,8 +820,7 @@
             return true;
         }).catch(function (e) {
             if (mySeq !== S.seq) return false;
-            S.loading = false;
-            S.error = e.message || '加载失败';
+            S.loading = false; S.error = e.message || '加载失败';
             renderError(S.error);
             return false;
         });
@@ -823,14 +835,11 @@
         S.seq++;
         S.selected = {};
         S.loading = false;
+        S.series = '';
+        document.body.classList.remove('rw-mode');
         var bar = document.getElementById('rwBatchBar');
         if (bar) bar.remove();
     };
 
     RW.getState = function () { return S; };
-
-    /* 让旧代码也能拿到当前挂载态 */
-    window.addEventListener('message', function (e) {
-        if (e && e.data && e.data.type === 'cv:rw-refresh') RW.refresh();
-    });
 })();

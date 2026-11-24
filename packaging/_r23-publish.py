@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
 BRANCH = 'main'
-TAG = 'v6.8.19'
+TAG = 'v6.8.20'
 # 按脚本位置推导（round24）：不写死开发机绝对路径 —— 换台机器 clone 下来就能直接跑，
 # 也不会把作者的项目目录带进公开仓库。
 # 本脚本要同时兼容两种落点，所以这里做了探测：
@@ -35,16 +35,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
 PUB = os.path.join(_ROOT, 'git') if os.path.isdir(os.path.join(_ROOT, 'git')) else _ROOT
 GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
-COMMIT_MSG = """v6.8.19：漫画/小说阅读体验推倒重做
+COMMIT_MSG = """v6.8.20：书架 v3 排版与系列聚合
 
-- 漫画/小说库改为「书架工作台」：继续阅读主卡/在读货架/合集/全部馆藏/状态筛选/批量/网格列表
-- 漫画阅读器：滚轮翻页、三段点击区(左上一页/中工具栏/右下一页)、键盘 PageUp/Down/Home/End、沉浸外壳
-- 小说阅读器：同款沉浸外壳，设置面板加关闭按钮，遮罩层级修正
-- 修复 /api/media/resume 恒为 null（续读入口以前拿不到数据）
-- 小说进度接口返回计算结果并与漫画对齐
-- 后端 API 形状保持不变，旧 av-board 树保留为回退（?rwLegacy=1）
+- 书卡重做：封面 2:3、标题两行截断不再溢出、副标题紧跟、收藏星标、无封面书脊
+- 网格断点分档：1100px 五列、手机三列；卡片加淡底与 hover 描边
+- 文件夹树可折叠；新增「收藏」快筛
+- 同系列 >=3 本自动聚合成摞卡，点开只显示该系列（带面包屑返回）
+- 漫画阅读器目录缩略图上限 50 -> 300 页
 
-版本：6.8.19"""
+版本：6.8.20"""
 
 
 def get_token():

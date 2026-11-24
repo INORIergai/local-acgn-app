@@ -1693,8 +1693,9 @@
             const grid = document.getElementById('thumbnailGrid');
             grid.innerHTML = '';
             
-            // 只加载前50页的缩略图，避免加载过多
-            const limit = Math.min(totalPages, 50);
+            // 缩略图上限放宽到 300 页（图片走 loading="lazy"，滚动到才请求；
+            // 旧的 50 页硬上限会让长篇漫画后半本在目录里“消失”）。
+            const limit = Math.min(totalPages, 300);
             for (let i = 0; i < limit; i++) {
                 const item = document.createElement('div');
                 item.className = 'thumbnail-item' + (i === currentPage ? ' current' : '');
