@@ -1023,20 +1023,20 @@ async function processSingleAnimeFile(filePath) {
       try {
         const hash = crypto.createHash('md5').update(filePath).digest('hex');
         const cachePath = path.join(__dirname, '../cache/posters', `${hash}.jpg`);
-        
+
         // 保存到视频同目录（方便下次扫描直接找到，不用重复刮削）
         const videoDir = path.dirname(filePath);
         const baseName = path.basename(filePath, path.extname(filePath));
         const localCoverPath = path.join(videoDir, `${baseName}-poster.jpg`);
-        
+
         // 下载到本地视频目录
         await downloadPoster(webData.cover, localCoverPath);
-        
+
         // 同时复制一份到缓存目录用于显示
         if (fs.existsSync(localCoverPath)) {
           fs.copyFileSync(localCoverPath, cachePath);
         }
-        
+
         posterPath = `${hash}.jpg`;
         localPosterPath = cachePath;
         console.log(`  ✓ 封面已保存到视频目录: ${baseName}-poster.jpg`);

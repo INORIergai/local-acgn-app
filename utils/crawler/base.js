@@ -126,7 +126,7 @@ class Request {
           }
         } catch (_) {}
       }
-      
+
       // 提取响应 cookie
       const setCookies = res.headers.get('set-cookie');
       if (setCookies) {
@@ -223,7 +223,7 @@ async function downloadImage(url, savePath, referer, uaType = 'chrome') {
     try {
       if (i > 0) await new Promise(r => setTimeout(r, 1000 * i));
 
-      const headers = { 
+      const headers = {
         'User-Agent': UA_POOL[uaType] || UA_POOL.chrome,
         'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
       };
@@ -250,7 +250,7 @@ async function downloadImage(url, savePath, referer, uaType = 'chrome') {
       }
       clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      
+
       const buf = await res.arrayBuffer();
       // ★ 落盘前必须确认拿到的是「真图片」：
       //   91动漫 的图床（pic.tuafjz.cn 等）返回的是 AES-128-CBC 密文，

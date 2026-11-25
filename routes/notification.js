@@ -16,8 +16,8 @@ router.get('/', (req, res) => {
     try {
         const list = getAllNotifications.all();
         const unreadCount = getUnreadNotificationCount.get();
-        res.json({ 
-            code: 0, 
+        res.json({
+            code: 0,
             data: {
                 list,
                 unreadCount: unreadCount?.count || 0

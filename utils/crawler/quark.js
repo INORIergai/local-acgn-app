@@ -1,7 +1,7 @@
 /**
  * 夸克网盘爬虫
  * 功能：文件列表、搜索、下载、在线播放
- * 
+ *
  * API文档（逆向自QuarkPan项目）：
  * - 基础URL: https://drive-pc.quark.cn/1/clouddrive
  * - 必须参数: pr=ucpro&fr=pc&uc_param_str=&__t=时间戳&__dt=1000
@@ -69,24 +69,24 @@ class QuarkCrawler {
     try {
       const urlParams = new URLSearchParams(this._buildParams(params));
       const url = `${this.baseUrl}${path}?${urlParams.toString()}`;
-      
+
       const options = {
         method: 'GET',
         headers: this._buildHeaders()
       };
-      
+
       if (this.proxy) {
         options.agent = new HttpsProxyAgent(this.proxy);
       }
-      
+
       const response = await fetch(url, options);
       const text = await response.text();
-      
+
       if (response.status === 401) {
         this.loggedIn = false;
         throw new Error('认证失败，请重新设置Cookie');
       }
-      
+
       try {
         const json = JSON.parse(text);
         this._throwIfApiError(json, response.status, text);
@@ -137,25 +137,25 @@ class QuarkCrawler {
     try {
       const urlParams = new URLSearchParams(this._buildParams(params));
       const url = `${this.baseUrl}${path}?${urlParams.toString()}`;
-      
+
       const options = {
         method: 'POST',
         headers: this._buildHeaders(),
         body: JSON.stringify(data)
       };
-      
+
       if (this.proxy) {
         options.agent = new HttpsProxyAgent(this.proxy);
       }
-      
+
       const response = await fetch(url, options);
       const text = await response.text();
-      
+
       if (response.status === 401) {
         this.loggedIn = false;
         throw new Error('认证失败，请重新设置Cookie');
       }
-      
+
       try {
         const json = JSON.parse(text);
         this._throwIfApiError(json, response.status, text);
@@ -219,7 +219,7 @@ class QuarkCrawler {
         _fetch_total: '1',
         _sort: `${order}:${desc ? 'desc' : 'asc'},updated_at:desc`
       });
-      
+
       const list = result.data?.list || [];
       const total = Number(result.data?.total ?? result.metadata?._total ?? 0) || list.length;
       return {
@@ -249,7 +249,7 @@ class QuarkCrawler {
         _size: pageSize.toString(),
         _fetch_total: '1'
       });
-      
+
       return {
         list: result.data?.list || [],
         total: result.data?.total || 0,
@@ -272,7 +272,7 @@ class QuarkCrawler {
       const result = await this._get('/file/info', {
         fid
       });
-      
+
       return result.data || null;
     } catch (e) {
       console.log('[夸克网盘] 获取文件详情失败:', e.message);
@@ -287,7 +287,7 @@ class QuarkCrawler {
   async getDownloadUrl(fid) {
     this.lastDownloadError = null;
     try {
-      const result = await this._post('/file/download', 
+      const result = await this._post('/file/download',
         { fids: [fid] },
         {
           sys: 'win32',
@@ -296,7 +296,7 @@ class QuarkCrawler {
           guid: ''
         }
       );
-      
+
       if (result && result.data && result.data.length > 0) {
         return result.data[0]?.download_url || null;
       }
@@ -315,7 +315,7 @@ class QuarkCrawler {
    */
   async getDownloadUrls(fids) {
     try {
-      const result = await this._post('/file/download', 
+      const result = await this._post('/file/download',
         { fids },
         {
           sys: 'win32',
@@ -324,7 +324,7 @@ class QuarkCrawler {
           guid: ''
         }
       );
-      
+
       const downloadUrls = {};
       if (result.data && result.data.length > 0) {
         for (const item of result.data) {
@@ -393,15 +393,15 @@ class QuarkCrawler {
         'video': ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv'],
         'anime': ['动漫', '动画', 'mp4', 'mkv']
       };
-      
+
       const keywordList = keywords[category] || [];
       let allResults = [];
-      
+
       for (const keyword of keywordList) {
         const results = await this.search(keyword, page, pageSize);
         allResults = allResults.concat(results.list || []);
       }
-      
+
       // 去重
       const seen = new Set();
       const uniqueResults = allResults.filter(item => {
@@ -409,7 +409,7 @@ class QuarkCrawler {
         seen.add(item.fid);
         return true;
       });
-      
+
       return {
         list: uniqueResults,
         total: uniqueResults.length,
@@ -473,7 +473,7 @@ class QuarkCrawler {
         pdir_fid: parentId,
         dir: true
       });
-      
+
       return result.data || null;
     } catch (e) {
       console.log('[夸克网盘] 创建文件夹失败:', e.message);
@@ -490,7 +490,7 @@ class QuarkCrawler {
       const result = await this._post('/file/delete', {
         fids
       });
-      
+
       return result.data || null;
     } catch (e) {
       console.log('[夸克网盘] 删除文件失败:', e.message);
@@ -509,7 +509,7 @@ class QuarkCrawler {
         fid,
         file_name: name
       });
-      
+
       return result.data || null;
     } catch (e) {
       console.log('[夸克网盘] 重命名文件失败:', e.message);
@@ -528,7 +528,7 @@ class QuarkCrawler {
         fids,
         to_pdir_fid: targetFid
       });
-      
+
       return result.data || null;
     } catch (e) {
       console.log('[夸克网盘] 移动文件失败:', e.message);

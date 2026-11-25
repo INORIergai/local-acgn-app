@@ -225,7 +225,7 @@ class ComicNewReleaseChecker {
     // 去掉首尾空格和特殊符号
     clean = clean.trim();
     clean = clean.replace(/^[-_\s]+|[-_\s]+$/g, '');
-    
+
     return clean;
   }
 
@@ -236,10 +236,10 @@ class ComicNewReleaseChecker {
     if (!str1 || !str2) return 0;
     const s1 = str1.toLowerCase();
     const s2 = str2.toLowerCase();
-    
+
     if (s1 === s2) return 1;
     if (s1.includes(s2) || s2.includes(s1)) return 0.8;
-    
+
     // 简单的字符重合度计算
     const set1 = new Set(s1.split(''));
     const set2 = new Set(s2.split(''));

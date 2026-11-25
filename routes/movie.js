@@ -381,15 +381,15 @@ router.post('/:id/upload-poster', async (req, res) => {
             const videoDir = path.dirname(movie.filePath);
             const videoExt = path.extname(movie.fileName);
             const baseName = movie.fileName.replace(videoExt, '');
-            
+
             // 保存为 poster.jpg
             const localPoster1 = path.join(videoDir, 'poster.jpg');
             fs.writeFileSync(localPoster1, buffer);
-            
+
             // 保存为 folder.jpg
             const localPoster2 = path.join(videoDir, 'folder.jpg');
             fs.writeFileSync(localPoster2, buffer);
-            
+
             // 保存为与视频同名的 jpg
             const localPoster3 = path.join(videoDir, `${baseName}.jpg`);
             fs.writeFileSync(localPoster3, buffer);
@@ -404,8 +404,8 @@ router.post('/:id/upload-poster', async (req, res) => {
         // round37：回收这部片上一张缓存封面（别人还在引用的不会被删）
         try { retirePoster([movie.posterPath, movie.localPosterPath], posterFileName); } catch (e) { }
 
-        res.json({ 
-            code: 0, 
+        res.json({
+            code: 0,
             msg: '封面上传成功',
             data: {
                 posterPath: posterFileName,
@@ -732,8 +732,8 @@ router.post('/:id/upload-poster-url', async (req, res) => {
 
         console.log(`[URL上传封面] 成功: ${posterFileName}`);
 
-        res.json({ 
-            code: 0, 
+        res.json({
+            code: 0,
             msg: '封面下载并保存成功',
             data: {
                 posterPath: posterFileName,
@@ -898,7 +898,7 @@ router.get('/search', (req, res) => {
                 return Number.isFinite(mm) && mm >= lo && mm <= hi;
             });
         }
-        
+
         // round41 #4：排序（默认名称 A→Z）
         const sortKey = req.query.sort || 'name';
         data = applySearchSort(data, sortKey === 'relevance' ? 'name' : sortKey, req.query.order);
@@ -1728,7 +1728,7 @@ router.get('/:id/search-posters', async (req, res) => {
         // 根据文件路径判断资源类型（优先于数据库中的type字段）
         const detectedType = detectTypeByPath(movie.filePath);
         const finalType = movie.type || detectedType;
-        
+
         console.log(`[搜索海报] 影片: ${movie.fileName}, 路径: ${movie.filePath}, 数据库type: ${movie.type}, 路径检测type: ${detectedType}, 最终使用: ${finalType}`);
 
         let realFileName = movie.fileName;
@@ -2196,7 +2196,7 @@ router.post('/batch-poster/start', async (req, res) => {
                 // 根据文件路径判断资源类型，确保使用正确的刮削源
                 const detectedType = detectTypeByPath(movie.filePath);
                 const finalType = movie.type || detectedType;
-                
+
                 // 搜索海报
                 const posters = await searchAllPosters(movie.avid, movie.cleanName, movie.fileName, finalType, movie.filePath);
 

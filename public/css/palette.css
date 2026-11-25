@@ -1,0 +1,305 @@
+/* ============================================================================
+   Palette · 五套皮肤真正拥有不同的底色与材质
+   纸=宣纸米白 / 夜=炭黑胶片 / 鲸=深海蓝 / 墨=档案黑 / 弥=暖玫瑰书房
+   本文件只重定义颜色与材质令牌，不动尺寸；最后加载以收敛历史层叠。
+   对比度按 WCAG 2.2 AA 设计：正文 ≥4.5:1，大标题/主按钮 ≥3:1。
+   ========================================================================== */
+
+/* ---- 纸 · Paper：温润宣纸 + 浓墨 + 赭金 ---- */
+html[data-v4skin="classic"],
+html:not([data-v4skin]) {
+    --bg: #F5F1E9;
+    --bg-elevated: #FFFDF7;
+    --card-bg: #FDFBF5;
+    --card-bg-hover: #FFFDF9;
+    --text: #231E17;
+    --text-muted: #6B6256;
+    --text-faint: #7D7368;
+    --border: #DDD6C9;
+    --border-strong: #B8AE9D;
+    --primary: #8A5A12;
+    --primary-strong: #6E460B;
+    --primary-soft: rgba(138, 90, 18, .09);
+    --accent: #8A5A12;
+    --accent-soft: rgba(138, 90, 18, .09);
+    --danger: #A33A2A;
+    --danger-soft: rgba(163, 58, 42, .10);
+    --sprocket-bg: #E4DECF;
+    --sprocket-hole: #F5F1E9;
+    --shadow-1: 0 1px 3px rgba(38, 33, 26, .06);
+    --shadow-2: 0 10px 30px -12px rgba(38, 33, 26, .20);
+    --ink-solid: #231E17;
+    --ink-accent: #8A5A12;
+    --ink-danger: #A33A2A;
+    --ink-rule: rgba(35, 30, 23, .12);
+    --skin-name: "纸 · Paper";
+    --skin-mode: light;
+    --skin-accent: #8A5A12;
+    --font-display: "Songti SC", "STZhongsong", "Source Han Serif SC", "SimSun", Georgia, serif;
+}
+html[data-v4skin="classic"] body,
+html:not([data-v4skin]) body {
+    background: var(--bg);
+    color: var(--text);
+}
+html[data-v4skin="classic"] .navbar,
+html:not([data-v4skin]) .navbar {
+    background: color-mix(in srgb, var(--bg) 95%, transparent);
+    border-bottom-color: var(--border);
+}
+html[data-v4skin="classic"] .sidebar,
+html:not([data-v4skin]) .sidebar { background: var(--bg); }
+html[data-v4skin="classic"] .brand-mark,
+html:not([data-v4skin]) .brand-mark { color: var(--primary); }
+html[data-v4skin="classic"] .shell-primary-action,
+html:not([data-v4skin]) .shell-primary-action {
+    background: var(--ink-solid);
+    border-color: var(--ink-solid);
+    color: #F5F1E9;
+}
+html[data-v4skin="classic"] .nav-item.active,
+html:not([data-v4skin]) .nav-item.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    box-shadow: inset 2px 0 0 var(--primary);
+}
+
+/* ---- 夜 · Night：真正的炭黑放映室，不是浅色暖纸 ---- */
+html[data-v4skin="matinee"] body,
+html[data-v4skin="matinee"] body.dark {
+    --bg: #141210;
+    --bg-elevated: #1E1B16;
+    --card-bg: #201C17;
+    --card-bg-hover: #2A241C;
+    --text: #F1E8D8;
+    --text-muted: #A89B88;
+    --text-faint: #7A6E5E;
+    --border: #2E2820;
+    --border-strong: #4A4032;
+    --primary: #D99A43;
+    --primary-strong: #F0B75E;
+    --primary-soft: rgba(217, 154, 67, .13);
+    --accent: #D99A43;
+    --accent-soft: rgba(217, 154, 67, .13);
+    --danger: #D8755C;
+    --danger-soft: rgba(216, 117, 92, .13);
+    --sprocket-bg: #32271A;
+    --sprocket-hole: #141210;
+    --shadow-1: 0 1px 3px rgba(0, 0, 0, .40);
+    --shadow-2: 0 14px 40px -12px rgba(0, 0, 0, .70);
+    --ink-solid: #F1E8D8;
+    --ink-accent: #D99A43;
+    --ink-danger: #D8755C;
+    --ink-rule: rgba(241, 232, 216, .12);
+    --skin-name: "夜 · Night";
+    --skin-mode: dark;
+    --skin-accent: #D99A43;
+    --font-display: Georgia, "Times New Roman", "STZhongsong", "SimSun", serif;
+    background: var(--bg);
+    color: var(--text);
+}
+html[data-v4skin="matinee"] .navbar {
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    border-bottom-color: var(--border);
+}
+html[data-v4skin="matinee"] .sidebar { background: var(--bg); }
+html[data-v4skin="matinee"] .brand-mark { color: var(--primary); }
+html[data-v4skin="matinee"] .shell-primary-action {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #141210;
+}
+html[data-v4skin="matinee"] .nav-item.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    box-shadow: inset 2px 0 0 var(--primary);
+}
+html[data-v4skin="matinee"] .search-box,
+html[data-v4skin="matinee"] #searchInput { background: var(--card-bg); color: var(--text); }
+html[data-v4skin="matinee"] .icon-button { color: var(--text-muted); }
+html[data-v4skin="matinee"] .icon-button:hover,
+html[data-v4skin="matinee"] .icon-button[aria-expanded="true"] { color: var(--primary); background: var(--primary-soft); }
+html[data-v4skin="matinee"] .shell-ai-action { color: var(--text); border-color: var(--border); }
+html[data-v4skin="matinee"] .shell-ai-action:hover { background: var(--primary-soft); border-color: var(--primary); }
+html[data-v4skin="matinee"] .facet-group .f-pill { color: var(--text-muted); }
+html[data-v4skin="matinee"] .facet-group .f-pill.active { background: var(--primary-soft) !important; color: var(--primary) !important; border-color: var(--border); }
+
+/* ---- 鲸 · Deep Whale：深海蓝，整体冷色系 ---- */
+html[data-v4skin="whale"] body,
+html[data-v4skin="whale"] body.dark {
+    --bg: #0A1622;
+    --bg-elevated: #0E1E30;
+    --card-bg: #112236;
+    --card-bg-hover: #16304A;
+    --text: #DCE9F7;
+    --text-muted: #8AA3C2;
+    --text-faint: #5A7A9E;
+    --border: #1C3450;
+    --border-strong: #2A4A6E;
+    --primary: #7FB6E8;
+    --primary-strong: #A9D2F5;
+    --primary-soft: rgba(127, 182, 232, .14);
+    --accent: #7FB6E8;
+    --accent-soft: rgba(127, 182, 232, .14);
+    --danger: #E0785C;
+    --danger-soft: rgba(224, 120, 92, .14);
+    --sprocket-bg: #1A2C46;
+    --sprocket-hole: #0A1622;
+    --shadow-1: 0 1px 2px rgba(3, 8, 18, .55);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .78);
+    --ink-solid: #DCE9F7;
+    --ink-accent: #7FB6E8;
+    --ink-danger: #E0785C;
+    --ink-rule: rgba(220, 233, 247, .10);
+    --skin-name: "鲸 · Deep Whale";
+    --skin-mode: dark;
+    --skin-accent: #7FB6E8;
+    --font-display: "Noto Serif SC", "Songti SC", "STZhongsong", Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+}
+html[data-v4skin="whale"] .navbar {
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    border-bottom-color: var(--border);
+}
+html[data-v4skin="whale"] .sidebar { background: var(--bg); }
+html[data-v4skin="whale"] .brand-mark { color: var(--primary); }
+html[data-v4skin="whale"] .shell-primary-action {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #0A1622;
+}
+html[data-v4skin="whale"] .nav-item.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    box-shadow: inset 2px 0 0 var(--primary);
+}
+html[data-v4skin="whale"] .search-box,
+html[data-v4skin="whale"] #searchInput { background: var(--card-bg); color: var(--text); }
+html[data-v4skin="whale"] .icon-button { color: var(--text-muted); }
+html[data-v4skin="whale"] .icon-button:hover,
+html[data-v4skin="whale"] .icon-button[aria-expanded="true"] { color: var(--primary); background: var(--primary-soft); }
+html[data-v4skin="whale"] .shell-ai-action { color: var(--text); border-color: var(--border); }
+html[data-v4skin="whale"] .shell-ai-action:hover { background: var(--primary-soft); border-color: var(--primary); }
+html[data-v4skin="whale"] .facet-group .f-pill { color: var(--text-muted); }
+html[data-v4skin="whale"] .facet-group .f-pill.active { background: var(--primary-soft) !important; color: var(--primary) !important; border-color: var(--border); }
+
+/* ---- 墨 · Ink：档案黑 + 纸灰 + 一点朱红 ---- */
+html[data-v4skin="ink"] body,
+html[data-v4skin="ink"] body.dark {
+    --bg: #0D0D10;
+    --bg-elevated: #131316;
+    --card-bg: #17171A;
+    --card-bg-hover: #1E1E22;
+    --text: #EDE9E1;
+    --text-muted: #9C978F;
+    --text-faint: #86817A;
+    --border: #27272B;
+    --border-strong: #3A3A40;
+    --primary: #C8443C;
+    --primary-strong: #E15A50;
+    --primary-soft: rgba(200, 68, 60, .14);
+    --accent: #C8443C;
+    --accent-soft: rgba(200, 68, 60, .12);
+    --danger: #E15A50;
+    --danger-soft: rgba(225, 90, 80, .14);
+    --sprocket-bg: #111113;
+    --sprocket-hole: #0D0D10;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .70);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .90);
+    --ink-solid: #EDE9E1;
+    --ink-accent: #C8443C;
+    --ink-danger: #E15A50;
+    --ink-rule: rgba(237, 233, 225, .10);
+    --skin-name: "墨 · Ink";
+    --skin-mode: dark;
+    --skin-accent: #C8443C;
+    --font-display: "Songti SC", "STZhongsong", "Source Han Serif SC", "SimSun", Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+}
+html[data-v4skin="ink"] .navbar {
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    border-bottom-color: rgba(200, 68, 60, .22);
+}
+html[data-v4skin="ink"] .sidebar { background: var(--bg); }
+html[data-v4skin="ink"] .brand-mark { color: var(--primary); }
+html[data-v4skin="ink"] .shell-primary-action {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #FFF6F2;
+}
+html[data-v4skin="ink"] .nav-item.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    box-shadow: inset 2px 0 0 var(--primary);
+}
+html[data-v4skin="ink"] .search-box,
+html[data-v4skin="ink"] #searchInput { background: var(--card-bg); color: var(--text); }
+html[data-v4skin="ink"] .icon-button { color: var(--text-muted); }
+html[data-v4skin="ink"] .icon-button:hover,
+html[data-v4skin="ink"] .icon-button[aria-expanded="true"] { color: var(--primary); background: var(--primary-soft); }
+html[data-v4skin="ink"] .shell-ai-action { color: var(--text); border-color: var(--border); }
+html[data-v4skin="ink"] .shell-ai-action:hover { background: var(--primary-soft); border-color: var(--primary); }
+html[data-v4skin="ink"] .facet-group .f-pill { color: var(--text-muted); }
+html[data-v4skin="ink"] .facet-group .f-pill.active { background: var(--primary-soft) !important; color: var(--primary) !important; border-color: var(--border); }
+
+/* ---- 弥 · Amis：暖玫瑰书房，不是灰黑 ---- */
+html[data-v4skin="amis"] body,
+html[data-v4skin="amis"] body.dark {
+    --bg: #1C1418;
+    --bg-elevated: #241A1F;
+    --card-bg: #281E23;
+    --card-bg-hover: #33242C;
+    --text: #F6EAE6;
+    --text-muted: #C0A8A6;
+    --text-faint: #957F7E;
+    --border: #3A272E;
+    --border-strong: #55383F;
+    --primary: #E8A2B2;
+    --primary-strong: #F4C4D0;
+    --primary-soft: rgba(232, 162, 178, .13);
+    --accent: #D9B26E;
+    --accent-soft: rgba(217, 178, 110, .13);
+    --danger: #E0785C;
+    --danger-soft: rgba(224, 120, 92, .14);
+    --sprocket-bg: #2A1A20;
+    --sprocket-hole: #1C1418;
+    --shadow-1: 0 1px 2px rgba(8, 3, 5, .60);
+    --shadow-2: 0 18px 46px -18px rgba(0, 0, 0, .82);
+    --ink-solid: #F6EAE6;
+    --ink-accent: #E8A2B2;
+    --ink-danger: #E0785C;
+    --ink-rule: rgba(246, 234, 230, .10);
+    --skin-name: "弥 · Amis";
+    --skin-mode: dark;
+    --skin-accent: #E8A2B2;
+    --font-display: "Noto Serif SC", "Songti SC", "STZhongsong", Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+}
+html[data-v4skin="amis"] .navbar {
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    border-bottom-color: var(--border);
+}
+html[data-v4skin="amis"] .sidebar { background: var(--bg); }
+html[data-v4skin="amis"] .brand-mark { color: var(--primary); }
+html[data-v4skin="amis"] .shell-primary-action {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #1C1418;
+}
+html[data-v4skin="amis"] .nav-item.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    box-shadow: inset 2px 0 0 var(--primary);
+}
+html[data-v4skin="amis"] .search-box,
+html[data-v4skin="amis"] #searchInput { background: var(--card-bg); color: var(--text); }
+html[data-v4skin="amis"] .icon-button { color: var(--text-muted); }
+html[data-v4skin="amis"] .icon-button:hover,
+html[data-v4skin="amis"] .icon-button[aria-expanded="true"] { color: var(--primary); background: var(--primary-soft); }
+html[data-v4skin="amis"] .shell-ai-action { color: var(--text); border-color: var(--border); }
+html[data-v4skin="amis"] .shell-ai-action:hover { background: var(--primary-soft); border-color: var(--primary); }
+html[data-v4skin="amis"] .facet-group .f-pill { color: var(--text-muted); }
+html[data-v4skin="amis"] .facet-group .f-pill.active { background: var(--primary-soft) !important; color: var(--primary) !important; border-color: var(--border); }

@@ -371,7 +371,7 @@
                     head.innerHTML = '<div class="gk-game-title">'
                         + (ginfo.icon ? '<img src="' + esc(ginfo.icon) + '" alt="">' : '')
                         + '<div><h3>' + esc(ginfo.name) + '</h3>'
-                        + '<div class="gk-game-meta">' + esc((d.ext && d.ext.developer) || '') 
+                        + '<div class="gk-game-meta">' + esc((d.ext && d.ext.developer) || '')
                         + ((d.ext && d.ext.pubArea) ? ' · ' + esc(d.ext.pubArea) : '') + '</div></div></div>'
                         + ((d.ext && d.ext.desc) ? '<p class="gk-game-desc">' + esc(d.ext.desc) + '</p>' : '');
                 }

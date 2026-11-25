@@ -197,7 +197,7 @@ router.post('/cartoon', (req, res) => {
 // 获取扫描状态
 router.get('/status', (req, res) => {
     const module = req.query.module || 'movie';
-    
+
     let status;
     switch (module) {
         case 'comic':
@@ -292,9 +292,9 @@ router.post('/export-nfo', async (req, res) => {
     if (exportNfoStatus.running) {
         return res.json({ code: -1, msg: '正在导出中，请稍候' });
     }
-    
+
     const { overwrite = false } = req.body || {};
-    
+
     exportNfoStatus = {
         running: true,
         total: 0,
@@ -303,38 +303,38 @@ router.post('/export-nfo', async (req, res) => {
         failed: 0,
         skipped: 0
     };
-    
+
     res.json({ code: 0, msg: '已开始批量导出NFO' });
-    
+
     // 后台执行
     (async () => {
         const db = require('../utils/db');
         const { generateNfo } = require('../utils/nfo_utils');
         const path = require('path');
         const fs = require('fs');
-        
+
         const movies = db.getAllMovies();
         exportNfoStatus.total = movies.length;
-        
+
         for (let i = 0; i < movies.length; i++) {
             const movie = movies[i];
             exportNfoStatus.current = i + 1;
-            
+
             try {
                 const dir = path.dirname(movie.filePath);
                 const stem = path.basename(movie.filePath, path.extname(movie.filePath));
                 const nfoPath = path.join(dir, `${stem}.nfo`);
-                
+
                 // 如果已经存在且不覆盖，跳过
                 if (fs.existsSync(nfoPath) && !overwrite) {
                     exportNfoStatus.skipped++;
                     continue;
                 }
-                
+
                 // 获取女优和标签
                 const actresses = db.getMovieActresses(movie.id) || [];
                 const tags = db.getMovieTags(movie.id) || [];
-                
+
                 // 生成NFO
                 generateNfo({
                     ...movie,
@@ -342,14 +342,14 @@ router.post('/export-nfo', async (req, res) => {
                     genres: tags.map(t => t.name),
                     actresses: actresses.map(a => a.name)
                 }, nfoPath);
-                
+
                 exportNfoStatus.success++;
-                
+
             } catch (e) {
                 exportNfoStatus.failed++;
             }
         }
-        
+
         exportNfoStatus.running = false;
     })();
 });

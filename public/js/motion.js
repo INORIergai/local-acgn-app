@@ -67,8 +67,8 @@
         }
     }
 
-    // .av-card/.av-folder 自带 avPop 入场动画，不重复挂 reveal
-    var WATCH_SEL = '.movie-card, .actress-card, .tag-item, .folder-card, .stat-card';
+    // 媒体网格以稳定浏览为先；只给演员/标签/统计的首次出现一次轻入场。
+    var WATCH_SEL = '.actress-card, .tag-item, .stat-card';
 
     var gridObserver = new MutationObserver(function (muts) {
         var fresh = [];
@@ -145,7 +145,7 @@
         busy[key] = true;
         el.dataset.mvCounting = '1';
         var t0 = null;
-        var DUR = 1250;                              // r62: 从 650ms 放慢到 1250ms，舒缓清晰
+        var DUR = 480;
         var hasDecimal = m[1].indexOf('.') !== -1;
         function step(ts) {
             if (!t0) t0 = ts;

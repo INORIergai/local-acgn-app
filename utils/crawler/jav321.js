@@ -101,7 +101,7 @@ async function searchJav321ByAvid(avid) {
     if (col9.length) {
       col9.find('b').each((_, b) => {
         const label = $detail(b).text().trim();
-        
+
         // 片商
         if (label === 'メーカー') {
           let next = b.nextSibling;
@@ -110,7 +110,7 @@ async function searchJav321ByAvid(avid) {
             producer = $detail(next).text().trim();
           }
         }
-        
+
         // 时长
         if (label === '収録時間') {
           let next = b.nextSibling;
@@ -120,7 +120,7 @@ async function searchJav321ByAvid(avid) {
             if (m) duration = parseInt(m[1]);
           }
         }
-        
+
         // 系列
         if (label === 'シリーズ') {
           let next = b.nextSibling;
@@ -129,7 +129,7 @@ async function searchJav321ByAvid(avid) {
             serial = $detail(next).text().trim();
           }
         }
-        
+
         // 评分
         if (label === '平均評価') {
           let next = b.nextSibling;

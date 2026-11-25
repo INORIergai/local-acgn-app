@@ -168,11 +168,11 @@ router.get('/random', (req, res) => {
                 return mType === typeLower0;
             });
         }
-        
+
         // 随机打乱并取limit个
         const shuffled = movies.sort(() => 0.5 - Math.random());
         const result = shuffled.slice(0, limit);
-        
+
         res.json({ code: 0, data: result });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
@@ -349,12 +349,12 @@ router.get('/movie/:id', (req, res) => {
     try {
         const movie = getMovieById.get(req.params.id);
         if (!movie) return res.json({ code: -1, msg: '不存在' });
-        
+
         const tags = getMovieTags.all(req.params.id);
         const actresses = getMovieActresses.all(req.params.id);
-        
-        res.json({ 
-            code: 0, 
+
+        res.json({
+            code: 0,
             data: {
                 ...movie,
                 tags,

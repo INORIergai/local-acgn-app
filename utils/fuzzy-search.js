@@ -12,7 +12,7 @@
  *   `spy family`     → ["spy","family"]    → 命中 `SPY×FAMILY`
  *   `铃木 第四夜`    → 繁转简后命中 `鈴木みら乃 … 第四夜`
  * 一字未中时再退一步做「限距子序列」匹配（容忍漏字，如 pretycation ⊂ prettycation）。
- * 
+ *
  * 只做「放宽」，不做「收紧」：原来 LIKE 能搜到的，归一化后必然还能搜到。
  */
 const { T2S_FULL } = require('./crawler/t2s-dict');   // OpenCC 繁→简 3221 字映射（crawler 已在用）

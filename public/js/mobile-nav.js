@@ -144,7 +144,7 @@
         skinRow.appendChild(skinLabel);
 
         ['.v4-skin-switch', '#themeToggle'].forEach(function (sel) {
-            var el = document.querySelector('.nav-right ' + sel);
+            var el = document.querySelector(sel);
             if (!el) return;
             var ph = document.createComment('m-moved:' + sel);
             el.parentNode.insertBefore(ph, el);
@@ -192,7 +192,7 @@
         var scanGroup = document.createElement('div');
         scanGroup.className = 'm-cc-scan-group';
         ['#scanBtn', '#watchNowBtn', '#watchToggleBtn', '#scanStatusWrap'].forEach(function (sel) {
-            var el = document.querySelector('.nav-right ' + sel);
+            var el = document.querySelector(sel);
             if (!el) return;
             var ph = document.createComment('m-moved:' + sel);
             el.parentNode.insertBefore(ph, el);
@@ -203,6 +203,16 @@
 
         /* 2.4 客户端更新检查 */
         var updateBtn = document.createElement('button');
+        var libraryBtn = document.createElement('button');
+        libraryBtn.type = 'button';
+        libraryBtn.className = 'btn btn-sm btn-secondary m-cc-update-btn';
+        libraryBtn.textContent = '库务与个性化';
+        libraryBtn.addEventListener('click', function () {
+            closeDrawer();
+            document.getElementById('shellLibraryBtn')?.click();
+        });
+        actionsHost.appendChild(libraryBtn);
+
         updateBtn.type = 'button';
         updateBtn.className = 'btn btn-sm btn-secondary m-cc-update-btn';
         updateBtn.innerHTML = '🔄 检查客户端更新';

@@ -158,24 +158,24 @@ async function searchJavDBByActress(actressName, page = 1) {
     const results = [];
     $('.movie-list .item').each((_, item) => {
       const $item = $(item);
-      
+
       // 番号
       const num = $item.find('.video-title strong').text().trim();
-      
+
       // 标题
       const title = $item.find('.video-title').text().trim().replace(num, '').trim();
-      
+
       // 封面
       let cover = $item.find('.video-cover img, img').first().attr('src') || '';
       if (cover) {
         cover = cover.replace('ps.jpg', 'pl.jpg').replace('/pt/', '/pl/');
       }
-      
+
       // 详情链接
       const link = $item.find('a[href^="/v/"]');
       const detailPath = link.attr('href') || '';
       const detailUrl = detailPath ? `${baseUrl}${detailPath}` : '';
-      
+
       if (num && title) {
         results.push({
           num,

@@ -84,10 +84,10 @@ class HanimePwCrawler {
         // 移除末尾的斜杠，避免URL拼接时出现双斜杠
         this.baseUrl = baseUrl.replace(/\/+$/, '');
     }
-    
+
     /**
      * 拼接URL
-     * @param {string} path 
+     * @param {string} path
      * @returns {string}
      */
     buildUrl(path) {
@@ -284,13 +284,13 @@ class HanimePwCrawler {
                     const $img = $el.find('img');
                     const imgSrc = $img.attr('data-src') || $img.attr('src') || '';
                     const title = $img.attr('alt') || $el.text().trim() || '';
-                    
+
                     if (href && imgSrc && title && (href.includes('/video/') || href.includes('/watch/') || href.includes('/watch?v='))) {
                         const fullCover = imgSrc.startsWith('http') ? imgSrc :
                             imgSrc.startsWith('/') ? `${realBase}${imgSrc}` : `${realBase}/${imgSrc}`;
                         const fullUrl = href.startsWith('http') ? href :
                             href.startsWith('/') ? `${realBase}${href}` : `${realBase}/${href}`;
-                        
+
                         results.push({
                             title: title.trim(),
                             cover: fullCover,

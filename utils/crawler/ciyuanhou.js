@@ -20,9 +20,9 @@ class CiyuanhouCrawler {
     try {
       const url = `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}`;
       const $ = await this.request.getHtml(url);
-      
+
       const results = [];
-      
+
       // 解析搜索结果列表
       $('.novel-item, .book-item, .item, .list-item').each((i, el) => {
         const $el = $(el);
@@ -31,7 +31,7 @@ class CiyuanhouCrawler {
         const href = $el.find('a').first().attr('href') || '';
         const url = href.startsWith('http') ? href : this.baseUrl + href;
         const author = $el.find('.author, .writer').first().text().trim();
-        
+
         if (title) {
           results.push({
             title,
@@ -42,7 +42,7 @@ class CiyuanhouCrawler {
           });
         }
       });
-      
+
       return results;
     } catch (e) {
       console.log('[次元狗] 搜索失败:', e.message);
@@ -58,12 +58,12 @@ class CiyuanhouCrawler {
   async getDetail(url) {
     try {
       const $ = await this.request.getHtml(url);
-      
+
       const title = $('.novel-title, .book-title, h1, .title').first().text().trim();
       const cover = $('.novel-cover img, .book-cover img, .cover img').first().attr('src') || '';
       const description = $('.novel-desc, .book-desc, .description, .intro, .summary').first().text().trim();
       const author = $('.author, .writer, .novel-author').first().text().trim();
-      
+
       // 提取信息
       const info = {};
       $('.info-item, .meta-item, .novel-info li, .detail-info li').each((i, el) => {
@@ -75,7 +75,7 @@ class CiyuanhouCrawler {
           info[key] = value;
         }
       });
-      
+
       // 提取章节列表
       const chapters = [];
       $('.chapter-list a, .volume-list a, .catalog a, .chapter-item a').each((i, el) => {
@@ -83,12 +83,12 @@ class CiyuanhouCrawler {
         const name = $el.text().trim();
         const href = $el.attr('href') || '';
         const chapterUrl = href.startsWith('http') ? href : this.baseUrl + href;
-        
+
         if (name) {
           chapters.push({ name, url: chapterUrl });
         }
       });
-      
+
       return {
         title,
         cover,
@@ -116,10 +116,10 @@ class CiyuanhouCrawler {
     name = name.replace(/\(.*?\)/g, '');
     name = name.replace(/(epub|mobi|pdf|txt|zip|rar|轻小说|完结|全本)/gi, '');
     name = name.trim();
-    
+
     const results = await this.search(name);
     if (results.length === 0) return null;
-    
+
     return await this.getDetail(results[0].url);
   }
 }

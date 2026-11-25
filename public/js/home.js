@@ -58,9 +58,18 @@
     }
 
     /* r75：轻量 Markdown 渲染 —— AI 常回 **粗体** 和 | 表格 |，
-       原样 innerHTML 会满屏星号竖线。必须在 esc() 之后跑，无 XSS 面。 */
+       原样 innerHTML 会满屏星号竖线。必须在 esc() 之后跑，无 XSS 面。
+       round190：补围栏代码块（```sql 等）。与 app.js 的同名实现保持同一口径：
+       先把围栏整段摘成占位符，其余行内规则跑完再还原。 */
     function mdLite(s) {
-        return String(s || '')
+        const codeBlocks = [];
+        const src = String(s || '').replace(/```([\w+#.-]*)[ \t]*\r?\n?([\s\S]*?)```/g, (m, lang, code) => {
+            const clean = String(code || '').replace(/\s+$/, '');
+            const label = lang ? `<span class="md-pre-lang">${lang}</span>` : '';
+            codeBlocks.push('<pre class="md-pre">' + label + '<code>' + clean + '</code></pre>');
+            return '\u0000mdpre' + (codeBlocks.length - 1) + '\u0000';
+        });
+        let out = src
             .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
             .replace(/\*\*/g, '')
             .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
@@ -78,6 +87,7 @@
             })
             .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
             .replace(/\n{3,}/g, '\n\n');
+        return out.replace(/\u0000mdpre(\d+)\u0000/g, (m, i) => codeBlocks[Number(i)] || '');
     }
 
     function addMsg(role, text, opts) {
@@ -975,7 +985,7 @@
                         '</div>' +
                         '<div class="hcs-info">' +
                             '<div class="hcs-kicker-row">' +
-                                '<span class="hcs-kicker">🎬 TONIGHT\'S FEATURE · 今夜主映</span>' +
+                                '<span class="hcs-kicker">' + (window.uiIcon ? window.uiIcon('film', 13) : '') + ' TONIGHT\'S FEATURE · 今夜主映</span>' +
                                 '<span class="hcs-greeting">' + esc(greeting()) + ' · 典藏放映室</span>' +
                                 '<span class="hcs-ticket-no">ARCHIVE #' + String(active.id || 1).padStart(4, '0') + '</span>' +
                             '</div>' +
@@ -989,9 +999,9 @@
                             '<p class="hcs-reason">✦ ' + esc(reason) + '</p>' +
                             '<div class="hcs-actions">' +
                                 '<button type="button" class="hcs-btn hcs-btn-primary" data-stage-open="' + active.id + '" data-stage-type="' + esc(active.type || '') + '">' + tm.cta + '</button>' +
-                                '<button type="button" class="hcs-btn hcs-btn-secondary" data-stage-detail="' + active.id + '">🗂 藏品档案</button>' +
-                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-next="1" title="切换下一部主映藏品">🎲 换一部</button>' +
-                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-ask="' + esc(title) + '" title="让 AI 策展人介绍这部作品">💬 AI 导读</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-secondary" data-stage-detail="' + active.id + '">' + (window.uiIcon ? window.uiIcon('folder', 14) : '') + ' 藏品档案</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-next="1" title="切换下一部主映藏品">' + (window.uiIcon ? window.uiIcon('shuffle', 14) : '') + ' 换一部</button>' +
+                                '<button type="button" class="hcs-btn hcs-btn-ghost" data-stage-ask="' + esc(title) + '" title="让 AI 策展人介绍这部作品">' + (window.uiIcon ? window.uiIcon('chat', 14) : '') + ' AI 导读</button>' +
                             '</div>' +
                         '</div>' +
                     '</div>' +
@@ -1001,10 +1011,10 @@
                             '<button type="button" class="hcs-side-link" data-stage-nav="guess">进入挑片台 →</button>' +
                         '</div>' +
                         '<div class="hcs-pulse-grid">' +
-                            '<button type="button" class="hcs-pulse-card" data-stage-nav="novel"><span class="hcs-pulse-num">' + Number(st.novel || 0).toLocaleString() + '</span><span class="hcs-pulse-name">📚 典藏小说</span></button>' +
-                            '<button type="button" class="hcs-pulse-card" data-stage-nav="comic"><span class="hcs-pulse-num">' + Number(st.comic || 0).toLocaleString() + '</span><span class="hcs-pulse-name">✒️ 典藏漫画</span></button>' +
-                            '<button type="button" class="hcs-pulse-card" data-stage-nav="film"><span class="hcs-pulse-num">' + Number(st.film || 0).toLocaleString() + '</span><span class="hcs-pulse-name">🎞 馆藏影视</span></button>' +
-                            '<button type="button" class="hcs-pulse-card" data-stage-nav="guess"><span class="hcs-pulse-num">' + Number(st.total || 0).toLocaleString() + '</span><span class="hcs-pulse-name">🏛 全馆总计</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="novel"><span class="hcs-pulse-num">' + Number(st.novel || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('book', 12) : '') + ' 典藏小说</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="comic"><span class="hcs-pulse-num">' + Number(st.comic || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('comic', 12) : '') + ' 典藏漫画</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="film"><span class="hcs-pulse-num">' + Number(st.film || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('film', 12) : '') + ' 馆藏影视</span></button>' +
+                            '<button type="button" class="hcs-pulse-card" data-stage-nav="guess"><span class="hcs-pulse-num">' + Number(st.total || 0).toLocaleString() + '</span><span class="hcs-pulse-name">' + (window.uiIcon ? window.uiIcon('layers', 12) : '') + ' 全馆总计</span></button>' +
                         '</div>' +
                         '<div class="hcs-reel-head">' +
                             '<span class="hcs-side-label">CURATED REEL · 今夜候选胶片</span>' +

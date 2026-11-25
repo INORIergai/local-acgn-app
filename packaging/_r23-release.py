@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.27'
-TAG = 'v6.8.27'
+VER = '6.8.31'
+TAG = 'v6.8.31'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,16 +92,13 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.27 · 后台分集下载 + 插件商店 + 2.4K 增强
+## v6.8.30 · 设置页导航吹出融合
 
-- 后台分集下载：选源后点「⬇ 下载本季」，整季进入后台队列（最多 2 并发），关掉页面也会继续；下载任务抽屉可看进度、取消、打开文件位置。
-- 2.4K 增强：下载时勾选「2.4K 增强」，ffmpeg 用 lanczos 放大到 2560×1440 并做轻锐化（确定性画质增强，不是 AI 超分；UI 已注明）。
-- 插件商店：追番页「🧩 插件商店」列出全部在线源，支持搜索、按「网页规则 / JSON 接口 / Kazumi 规则」筛选、单个启停、全选/全不选，并可检查 Kazumi 规则更新。
-- 稳定性：播放代理的 Referer/UA/Cookie token 抽成共享模块，播放与下载共用同一条代理链；下载走本机代理，避免 ffmpeg 直连源站被防盗链 400。
+- 进入设置时，设置分类栏紧贴主导航滑出接管左侧，中间不再留突兀空白。
+- 设置分类栏去掉了独立卡片外观，与主导航连成一片，只保留一条发丝分隔线。
+- 设置内容紧随分类栏，宽度随窗口自适应；手机端仍是横向分类条。
 
-- 内置 Android v5.2.0 安装包。
-
-首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
+内置 Android v5.2.0 安装包。首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
 
 def get_token():
@@ -171,7 +168,7 @@ else:
     print('创建 release %s ...' % TAG)
     s, rel = api('POST', '/repos/%s/%s/releases' % (OWNER, REPO), {
         'tag_name': TAG,
-        'target_commitish': 'main',
+        'target_commitish': 'android-native-v5-handoff',
         'name': 'Cinema Vault %s · 午夜场' % TAG,
         'body': BODY,
         'draft': False,

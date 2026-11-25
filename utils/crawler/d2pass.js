@@ -116,18 +116,18 @@ function parseJson(data, site, movieId) {
  */
 async function fetchGalleryFromHtml(req, site, movieId) {
   if (site !== 'caribbeancom') return [];
-  
+
   try {
     const htmlUrl = SITE_DETAIL_URL[site].replace('{id}', movieId);
     const res = await req.get(htmlUrl);
     if (!res.ok) return [];
     const html = await res.text();
-    
+
     const nums = html.match(/images\/l\/(\d{3})\.jpg/g) || [];
     const seen = new Set();
     const images = [];
     const base = `https://www.caribbeancom.com/moviepages/${movieId}/images/l`;
-    
+
     for (const numStr of nums) {
       const num = numStr.match(/(\d{3})/)[1];
       if (!seen.has(num)) {
@@ -281,7 +281,7 @@ async function searchD2PassByAvid(avid) {
 
       const data = await res.json();
       const video = parseJson(data, site, movieId);
-      
+
       if (video) {
         // Caribbeancom 补充 gallery 图片
         if (!video.sampleImages.length && site === 'caribbeancom') {

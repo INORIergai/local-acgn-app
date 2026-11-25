@@ -17,10 +17,10 @@ class QuarkScanner {
             webUrl: 'https://pan.quark.cn',
             cookie: config.sources.quark.cookie
         });
-        
+
         const dbPath = path.join(__dirname, '..', 'db', 'movie.db');
         this.db = new Database(dbPath);
-        
+
         this.posterCacheDir = path.join(__dirname, '..', 'cache', 'posters');
         if (!fs.existsSync(this.posterCacheDir)) {
             fs.mkdirSync(this.posterCacheDir, { recursive: true });
@@ -32,22 +32,22 @@ class QuarkScanner {
      */
     async scanComics() {
         console.log('[夸克漫画扫描] 开始扫描...');
-        
+
         // 获取根目录
         const root = await this.crawler.getFileList('0', 1, 100);
         const comicFolder = root.list?.find(f => f.file_name.includes('漫画') && f.dir);
-        
+
         if (!comicFolder) {
             console.log('[夸克漫画扫描] 未找到漫画文件夹');
             return 0;
         }
-        
+
         console.log('[夸克漫画扫描] 找到漫画文件夹:', comicFolder.file_name);
-        
+
         // 获取所有漫画文件
         const allFiles = await this.getAllFiles(comicFolder.fid);
         console.log(`[夸克漫画扫描] 找到 ${allFiles.length} 个文件`);
-        
+
         let added = 0;
         for (const file of allFiles) {
             try {
@@ -57,7 +57,7 @@ class QuarkScanner {
                 console.error('  导入失败:', file.file_name, e.message);
             }
         }
-        
+
         console.log(`[夸克漫画扫描] 完成！新增 ${added} 个`);
         return added;
     }
@@ -67,22 +67,22 @@ class QuarkScanner {
      */
     async scanNovels() {
         console.log('[夸克小说扫描] 开始扫描...');
-        
+
         // 获取根目录
         const root = await this.crawler.getFileList('0', 1, 100);
         const novelFolder = root.list?.find(f => f.file_name.includes('轻小说') && f.dir);
-        
+
         if (!novelFolder) {
             console.log('[夸克小说扫描] 未找到轻小说文件夹');
             return 0;
         }
-        
+
         console.log('[夸克小说扫描] 找到轻小说文件夹:', novelFolder.file_name);
-        
+
         // 获取所有小说文件
         const allFiles = await this.getAllFiles(novelFolder.fid);
         console.log(`[夸克小说扫描] 找到 ${allFiles.length} 个文件/文件夹`);
-        
+
         let added = 0;
         for (const file of allFiles) {
             try {
@@ -92,7 +92,7 @@ class QuarkScanner {
                 console.error('  导入失败:', file.file_name, e.message);
             }
         }
-        
+
         console.log(`[夸克小说扫描] 完成！新增 ${added} 个`);
         return added;
     }
@@ -104,11 +104,11 @@ class QuarkScanner {
         const result = [];
         let page = 1;
         const pageSize = 200;
-        
+
         while (true) {
             const list = await this.crawler.getFileList(fid, page, pageSize);
             if (!list.list || list.list.length === 0) break;
-            
+
             for (const file of list.list) {
                 if (file.dir) {
                     // 递归子目录
@@ -121,11 +121,11 @@ class QuarkScanner {
                     });
                 }
             }
-            
+
             if (list.list.length < pageSize) break;
             page++;
         }
-        
+
         return result;
     }
 
@@ -138,22 +138,22 @@ class QuarkScanner {
         if (!['.epub', '.pdf', '.cbz', '.cbr'].includes(ext)) {
             return false;
         }
-        
+
         // 解析文件名
         const { title, volume, author } = this.parseComicFileName(file.file_name);
-        
+
         // 生成唯一的filePath（使用fid）
         const filePath = `quark://comic/${file.fid}`;
-        
+
         // 检查是否已存在
         const existing = this.db.prepare('SELECT id FROM movies WHERE filePath = ?').get(filePath);
         if (existing) {
             return false;
         }
-        
+
         // 生成文件hash
         const hash = crypto.createHash('md5').update(filePath).digest('hex');
-        
+
         // 插入数据库
         const now = Date.now();
         const stmt = this.db.prepare(`
@@ -174,7 +174,7 @@ class QuarkScanner {
                 fileSize=COALESCE(@fileSize, fileSize),
                 lastScanTime=@lastScanTime
         `);
-        
+
         stmt.run({
             filePath,
             fileName: file.file_name,
@@ -202,7 +202,7 @@ class QuarkScanner {
             lastScanTime: now,
             type: 'comic'
         });
-        
+
         console.log('  ✓ 导入:', title);
         return true;
     }
@@ -221,22 +221,22 @@ class QuarkScanner {
                 return false;
             }
         }
-        
+
         // 解析文件名
         const title = this.parseNovelFileName(file.file_name);
-        
+
         // 生成唯一的filePath（使用fid）
         const filePath = `quark://novel/${file.fid}`;
-        
+
         // 检查是否已存在
         const existing = this.db.prepare('SELECT id FROM movies WHERE filePath = ?').get(filePath);
         if (existing) {
             return false;
         }
-        
+
         // 生成文件hash
         const hash = crypto.createHash('md5').update(filePath).digest('hex');
-        
+
         // 插入数据库
         const now = Date.now();
         const stmt = this.db.prepare(`
@@ -257,7 +257,7 @@ class QuarkScanner {
                 fileSize=COALESCE(@fileSize, fileSize),
                 lastScanTime=@lastScanTime
         `);
-        
+
         stmt.run({
             filePath,
             fileName: file.file_name,
@@ -285,7 +285,7 @@ class QuarkScanner {
             lastScanTime: now,
             type: 'novel'
         });
-        
+
         console.log('  ✓ 导入:', title);
         return true;
     }
@@ -297,11 +297,11 @@ class QuarkScanner {
     parseComicFileName(fileName) {
         // 去掉扩展名
         const name = fileName.replace(/\.[^.]+$/, '');
-        
+
         let title = name;
         let volume = '';
         let author = '';
-        
+
         // 匹配 [Kmoe][作品名]卷XX 格式
         const match = name.match(/\[.*?\]\[(.*?)\](卷\d+)?/);
         if (match) {
@@ -315,7 +315,7 @@ class QuarkScanner {
                 title = name.replace(/卷\d+.*/, '').trim();
             }
         }
-        
+
         return { title, volume, author };
     }
 

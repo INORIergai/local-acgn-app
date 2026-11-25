@@ -2911,7 +2911,7 @@ async function fillLibraryCounts() {
 function updateToolbarTitle(title, count) {
     const toolbar = document.getElementById('toolbarTitle');
     if (!toolbar) return;
-    const safe = escapeHtml(title == null ? '' : title);
+    const safe = escapeHtml(title == null ? '' : title).replace(/^(\p{Extended_Pictographic}|\p{Regional_Indicator})\uFE0F?\s*/u, '');
     if (count !== undefined) {
         toolbar.innerHTML = `${safe} <span class="toolbar-count" id="movieCount">共 ${Number(count) || 0} 部</span>`;
     } else {
@@ -6906,21 +6906,7 @@ async function loadSettings() {
             setTimeout(() => renderSqueezeMotionGrid(), 0);
             // 加载AI配置
             setTimeout(() => loadAIConfig(), 100);
-            // 侧栏同款：设置项 3D Remotion 动效图标错峰登场演出
-            setTimeout(() => {
-                document.querySelectorAll('#settingsView .settings-nav-item .nv-ic').forEach((wrap, idx) => {
-                    const v = wrap.querySelector('video');
-                    const img = wrap.querySelector('img');
-                    if (!v) return;
-                    setTimeout(() => {
-                        v.currentTime = 0;
-                        if (img) img.style.display = 'none';
-                        const p = v.play();
-                        if (p && p.catch) p.catch(() => {});
-                        v.onended = () => { if (img) img.style.display = 'block'; };
-                    }, idx * 45);
-                });
-            }, 80);
+            // 设置导航复用全局 SVG sprite；不为一次选中播放几十个视频。
         } else {
             /* ★ 不再静默失败。
              * 之前这里只 console.error，如果接口 401（未登录 / 会话过期），
@@ -6980,24 +6966,21 @@ function switchSettingsGroup(name) {
     document.querySelectorAll('#settingsView .settings-section').forEach(sec => {
         sec.style.display = sec.dataset.group === name ? 'block' : 'none';
     });
-    // 侧栏同款：选中项触发 3D 图标动画演出
-    const activeItem = document.querySelector(`#settingsView .settings-nav-item[data-group="${name}"]`);
+    const activeItem = document.querySelector(`#settingsNavScroll .settings-nav-item[data-group="${name}"]`);
     if (activeItem) {
-        const v = activeItem.querySelector('.nv-ic video');
-        const img = activeItem.querySelector('.nv-ic img');
-        if (v) {
-            v.currentTime = 0;
-            if (img) img.style.display = 'none';
-            const p = v.play();
-            if (p && p.catch) p.catch(() => {});
-            v.onended = () => { if (img) img.style.display = 'block'; };
-        }
+        const category = activeItem.closest('.settings-category');
+        if (category) category.open = true;
+        try { activeItem.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* 忽略 */ }
     }
     // 进入「工具维护」时同步一次女优头像覆盖率（该分组里有头像刮削入口，2026-09-29 由「外观」迁来）
     if (name === 'tools') refreshAvatarStats();
     // r60：进入 Cookie 分组时检测夸克登录脚本位置
     if (name === 'cookies') { loadQuarkBatInfo(); loadOAuthStatus(); }   // round91：+ 网盘 OAuth 状态
     if (name === 'cloudsync') loadCloudSyncPanel();   // round92：数据同步面板
+    if (name === 'jellyfin') {
+        // Jellyfin 是独立弹层；从设置分类打开时不复制它到 DOM 中。
+        if (window.JellyfinPanel) window.JellyfinPanel.open();
+    }
     if (name === 'bangumi' && window.BangumiPanel) window.BangumiPanel.render();   // round173e：Bangumi 同步面板
     // round91：进入「扫描路径」时渲染网盘目录绑定
     if (name === 'paths') renderCloudDirBindings();
@@ -8145,6 +8128,62 @@ async function initUpdateNotice() {
     } catch (e) { /* 静默：拿不到就不打扰 */ }
 }
 
+// 设置导航以完整能力目录为真源；tts/poster 的内容节点可以稍后再懒建。
+function initSettingsNavigation() {
+    const host = document.getElementById('settingsNavScroll');
+    if (!host) return;
+    const groups = [...document.querySelectorAll('#settingsGroupCatalog .settings-nav-item')].map(item => ({
+        id: item.dataset.group,
+        name: item.querySelector('.settings-nav-label')?.textContent || item.dataset.group,
+        category: item.dataset.category || '其他',
+        icon: item.dataset.icon || 'settings'
+    }));
+    const categories = [...new Set(groups.map(group => group.category))];
+    host.innerHTML = categories.map((category, index) => `
+        <details class="settings-category" ${index === 0 ? 'open' : ''}>
+            <summary>${category}<span>${groups.filter(group => group.category === category).length}</span></summary>
+            <div class="settings-category-items">${groups.filter(group => group.category === category).map(group => `
+                <button type="button" class="settings-nav-item ${group.id === 'appearance' ? 'active' : ''}" data-group="${group.id}">
+                    ${makeRemotionIcon(group.icon, 20)}
+                    <span class="settings-nav-label">${group.name}</span>${uiIcon('chevronRight', 13, 'settings-nav-arrow')}
+                </button>`).join('')}</div>
+        </details>`).join('');
+    host.querySelectorAll('.settings-nav-item').forEach(item => {
+        item.addEventListener('click', () => switchSettingsGroup(item.dataset.group));
+    });
+    /* 与侧栏同款：设置项图标错峰登场（有 webm 的播演出，没有的静帧兜底） */
+    setTimeout(() => {
+        host.querySelectorAll('.settings-nav-item .nv-ic').forEach((wrap, idx) => {
+            const v = wrap.querySelector('video');
+            const img = wrap.querySelector('img');
+            if (!v || !img) return;
+            setTimeout(() => {
+                v.currentTime = 0;
+                img.style.display = 'none';
+                const p = v.play();
+                if (p && p.catch) p.catch(() => {});
+                v.onended = () => { img.style.display = 'block'; };
+            }, idx * 45);
+        });
+    }, 80);
+    document.getElementById('settingsSearch')?.addEventListener('input', event => {
+        const query = event.target.value.trim().toLowerCase();
+        let matches = 0;
+        host.querySelectorAll('.settings-category').forEach(category => {
+            let count = 0;
+            category.querySelectorAll('.settings-nav-item').forEach(item => {
+                const show = !query || item.textContent.toLowerCase().includes(query);
+                item.hidden = !show;
+                if (show) count++;
+            });
+            category.hidden = count === 0;
+            if (query) category.open = true;
+            matches += count;
+        });
+        document.getElementById('settingsNavEmpty').hidden = matches > 0;
+    });
+}
+
 // 渲染设置页面（独立全宽页面 + 侧边分组导航）
 function renderSettings(config) {
     const view = document.getElementById('settingsView');
@@ -8176,35 +8215,39 @@ function renderSettings(config) {
     const authOn = !!(config.auth && config.auth.enabled);
     const authHasPwd = !!(config.auth && config.auth.hasPassword);
 
+    /* 图标 id 必须落在 img/nav-icons 现有资源内（22 个带 webm 动效），
+       否则 makeRemotionIcon 会退回静态 SVG。语义名只用于新加的分组。 */
     const groups = [
-        { id: 'appearance', icon: 'film', name: '外观' },
-        { id: 'customize', icon: 'settings', name: '个性化' },
-        { id: 'fxsettings', icon: 'flame', name: '动效设置' },
-        { id: 'paths', icon: 'frame', name: '扫描路径' },
-        { id: 'sources', icon: 'watch', name: '数据源' },
-        { id: 'player', icon: 'reel', name: '播放' },
-        { id: 'ai', icon: 'spark', name: 'AI 设置' },
-        { id: 'notify', icon: 'alert', name: '安全与通知' },
-        { id: 'privacy', icon: 'eye', name: '隐私内容' },
-        { id: 'tts', icon: 'headphones', name: '语音朗读' },
-        { id: 'poster', icon: 'image', name: '海报管理' },
-        { id: 'tools', icon: 'clock', name: '工具维护' },
-        { id: 'cookies', icon: 'bookmark', name: '授权 Cookie' },
-        { id: 'cloudsync', icon: 'shuffle', name: '数据同步' },
-        { id: 'bangumi', icon: 'reel', name: 'Bangumi 同步' },   // round173e：追番进度云同步
-        { id: 'version', icon: 'chart', name: '版本' },
-        { id: 'about', icon: 'home', name: '关于' }
+        { id: 'appearance', icon: 'film', name: '外观', category: '体验' },
+        { id: 'customize', icon: 'settings', name: '个性化', category: '体验' },
+        { id: 'fxsettings', icon: 'flame', name: '动效设置', category: '体验' },
+        { id: 'player', icon: 'reel', name: '播放', category: '体验' },
+        { id: 'ai', icon: 'spark', name: 'AI 设置', category: '体验' },
+        { id: 'tts', icon: 'headphones', name: '语音朗读', category: '体验' },
+        { id: 'paths', icon: 'frame', name: '扫描路径', category: '馆藏与来源' },
+        { id: 'sources', icon: 'watch', name: '数据源', category: '馆藏与来源' },
+        { id: 'poster', icon: 'image', name: '海报管理', category: '馆藏与来源' },
+        { id: 'tools', icon: 'clock', name: '工具维护', category: '馆藏与来源' },
+        { id: 'cookies', icon: 'bookmark', name: '授权 Cookie', category: '连接与同步' },
+        { id: 'cloudsync', icon: 'shuffle', name: '数据同步', category: '连接与同步' },
+        { id: 'bangumi', icon: 'reel', name: 'Bangumi 同步', category: '连接与同步' },
+        { id: 'jellyfin', icon: 'watch', name: 'Jellyfin', category: '连接与同步' },
+        { id: 'notify', icon: 'alert', name: '安全与通知', category: '安全与系统' },
+        { id: 'privacy', icon: 'eye', name: '隐私内容', category: '安全与系统' },
+        { id: 'version', icon: 'chart', name: '版本', category: '安全与系统' },
+        { id: 'about', icon: 'home', name: '关于', category: '安全与系统' }
     ];
 
     view.innerHTML = `
         <div class="settings-shell">
-            <aside class="settings-nav">
-                ${groups.map((g, i) => `
-                    <div class="settings-nav-item ${i === 0 ? 'active' : ''}" data-group="${g.id}" onclick="switchSettingsGroup('${g.id}')">
-                        ${makeRemotionIcon(g.icon, 20)}
-                        <span class="settings-nav-label">${g.name}</span>
-                    </div>
-                `).join('')}
+            <div id="settingsGroupCatalog" class="settings-group-catalog" hidden>
+                ${groups.map(group => `<div class="settings-nav-item" data-group="${group.id}" data-category="${group.category}" data-icon="${group.icon}"><span class="settings-nav-label">${group.name}</span></div>`).join('')}
+            </div>
+            <aside class="settings-nav" aria-label="设置分类">
+                <div class="settings-nav-heading">${uiIcon('settings', 18)}<strong>设置</strong></div>
+                <label class="settings-search"><span class="sr-only">查找设置</span>${uiIcon('search', 15)}<input id="settingsSearch" type="search" placeholder="查找设置" autocomplete="off"></label>
+                <div class="settings-nav-scroll" id="settingsNavScroll"></div>
+                <div class="settings-nav-empty" id="settingsNavEmpty" hidden>没有匹配的分类</div>
             </aside>
 
             <main class="settings-main">
@@ -8223,41 +8266,32 @@ function renderSettings(config) {
                          与顶栏那三个圆点切换器同一套。 -->
                     <div class="settings-group">
                         <div class="settings-group-title">主题风格</div>
-                        <div class="theme-selector">
+                        <p class="theme-selector-hint">每套皮肤有自己的排版、材质与装饰语言，点一下即可全场切换</p>
+                        <div class="theme-selector theme-selector--specimen">
                             <div class="theme-card ${getV4Skin() === 'classic' ? 'active' : ''}" data-v4skin="classic" onclick="pickV4Skin('classic')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #F7F3EA 50%, #8A5A12 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">纸 · Paper</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">奶油纸底 · 墨字 · 宋体页名</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #F7F3EA 50%, #8A5A12 50%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>纸 · Paper</b><small>奶油纸底 · 墨字 · 宋体页名</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'matinee' ? 'active' : ''}" data-v4skin="matinee" onclick="pickV4Skin('matinee')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #14110E 50%, #D99A43 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">夜 · Night</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">暖黑底 · 纸白字 · 琥珀灯</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #14110E 50%, #D99A43 50%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>夜 · Night</b><small>暖黑底 · 纸白字 · 琥珀灯</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'whale' ? 'active' : ''}" data-v4skin="whale" onclick="pickV4Skin('whale')">
-                                <div class="theme-dot" style="background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">🐋 鲸 · Deep Whale</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">深海生物光 · 月光金 · 鲸鱼娘陪伴</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>鲸 · Deep Whale</b><small>深海生物光 · 月光金 · 鲸鱼娘</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'ink' ? 'active' : ''}" data-v4skin="ink" onclick="pickV4Skin('ink')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">墨 · Ink</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">墨黑底 · 纸灰字 · 一点朱红</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>墨 · Ink</b><small>墨黑底 · 纸灰字 · 一点朱红</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'amis' ? 'active' : ''}" data-v4skin="amis" onclick="pickV4Skin('amis')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #140D10 42%, #D9B26E 42%, #E8A2B2 100%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">🌸 爱弥斯 · Amis</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">暖书房 · 玫瑰金 · 爱弥斯陪伴</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #140D10 42%, #D9B26E 42%, #E8A2B2 100%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>爱弥斯 · Amis</b><small>暖书房 · 玫瑰金 · 爱弥斯陪伴</small></span>
                             </div>
                         </div>
                     </div>
@@ -8280,6 +8314,7 @@ function renderSettings(config) {
                             </div>
                             <div class="cr-ctrl">
                                 <input type="range" id="glassAlphaRange" min="10" max="85" step="5"
+                                       aria-label="界面毛玻璃不透明度"
                                        value="${getUiCustom().glassAlpha ?? GLASS_ALPHA_DEFAULT}"
                                        style="width:170px;" oninput="setGlassAlpha(this.value)">
                                 <span style="font-family:var(--font-mono);font-size:12px;min-width:38px;text-align:right;" id="glassAlphaVal">${getUiCustom().glassAlpha ?? GLASS_ALPHA_DEFAULT}%</span>
@@ -9701,6 +9736,16 @@ function renderSettings(config) {
                 <section class="settings-section" data-group="bangumi" style="display:none;" id="bangumiSection">
                     <div id="bangumiPanel"><div style="padding:24px;color:var(--text-muted);">加载中…</div></div>
                 </section>
+                <section class="settings-section" data-group="jellyfin" style="display:none;">
+                    <div class="settings-section-head">
+                        <h3 class="settings-section-title">${uiIcon('server', 18)} Jellyfin 接入</h3>
+                        <p class="settings-section-desc">连接已有媒体服务器，只读预览片单，不写入本地馆藏。</p>
+                    </div>
+                    <div class="settings-group">
+                        <p class="settings-section-desc">在独立面板中管理服务器地址与 API Key，不会自动导入或修改影片。</p>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="window.JellyfinPanel && window.JellyfinPanel.open()">打开 Jellyfin 面板</button>
+                    </div>
+                </section>
 
                 <!-- 🆙 版本与更新 -->
                 <section class="settings-section" data-group="version" style="display:none;">
@@ -9784,6 +9829,7 @@ function renderSettings(config) {
     `;
     
     // 加载局域网访问信息
+    initSettingsNavigation();
     loadLanInfo();
     // round31：填充真实版本号。后端启动时已静默查过 GitHub 并缓存 5 分钟，
     // 所以这里通常瞬间就有结果，不必等一次网络往返。
@@ -13239,9 +13285,19 @@ function appendAIApprovalBlock(messagesDiv, approval, origMsg) {    if (!approva
     }
 }
 
-/* r75：轻量 Markdown 渲染（粗体 + 表格行转一行）—— 必须在 escapeHtml 之后跑 */
+/* r75：轻量 Markdown 渲染（粗体 + 表格行转一行）—— 必须在 escapeHtml 之后跑
+   round190：补围栏代码块。AI 常回 ```sql / ```json 片段，旧实现把反引号当普通字
+   原样铺在气泡里（首页对话卡实测整屏都是 raw SELECT）。先把围栏整段摘出来放到
+   占位符，其余行内规则跑完再还原 —— 这样代码里的 * | - 不会被误渲染。 */
 function mdLite(s) {
-    return String(s || '')
+    const codeBlocks = [];
+    const src = String(s || '').replace(/```([\w+#.-]*)[ \t]*\r?\n?([\s\S]*?)```/g, (m, lang, code) => {
+        const clean = String(code || '').replace(/\s+$/, '');
+        const label = lang ? `<span class="md-pre-lang">${lang}</span>` : '';
+        codeBlocks.push('<pre class="md-pre">' + label + '<code>' + clean + '</code></pre>');
+        return '\u0000mdpre' + (codeBlocks.length - 1) + '\u0000';
+    });
+    let out = src
         .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
         .replace(/\*\*/g, '')
         .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
@@ -13259,6 +13315,7 @@ function mdLite(s) {
         })
         .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
         .replace(/\n{3,}/g, '\n\n');
+    return out.replace(/\u0000mdpre(\d+)\u0000/g, (m, i) => codeBlocks[Number(i)] || '');
 }
 
 // 发送AI消息
@@ -14005,6 +14062,13 @@ function switchView(view) {
         const t = document.getElementById('novelCloudToggle');
         if (t) t.remove();
     }
+    /* round190：影视库的三态切片同样是「用过就挂着」。
+       审计实测：先看影视库、再切漫画库，工具条上同时出现两组「本地/网盘/全部」；
+       切到设置/收藏/追番等页面也照样留在那儿。与上面两个同一口径清理。 */
+    if (view !== 'film') {
+        const t = document.getElementById('filmCloudToggle');
+        if (t) t.remove();
+    }
 
     // 记住当前视图（刷新/返回时恢复，见 init() 的 hash 解析）
     rememberViewState(view, '');
@@ -14377,24 +14441,43 @@ function switchView(view) {
 }
 
 // ========== 数据加载 ==========
+/* round190：在线源没给封面时的手绘式占位——胶片框 + 首字，比一个孤零零的
+   地球 emoji 更像「藏品待入库」，也让整排卡片的版心重量一致。 */
+function obCoverArt(name, kind) {
+    const ch = escapeHtml(String(name || '').trim().charAt(0) || '影');
+    const tag = kind === 'anime' ? 'ANIME' : 'FILM';
+    const holes = [7, 19, 31, 43, 55].map(y =>
+        '<rect x="4" y="' + y + '" width="3.5" height="5" rx="1"/>' +
+        '<rect x="52.5" y="' + y + '" width="3.5" height="5" rx="1"/>').join('');
+    return '<svg class="ob-cover-art" viewBox="0 0 60 80" aria-hidden="true" focusable="false">'
+        + '<rect x="0.75" y="0.75" width="58.5" height="78.5" rx="4" fill="none" stroke="currentColor" stroke-opacity=".30" stroke-width="1.5"/>'
+        + '<g fill="currentColor" fill-opacity=".16">' + holes + '</g>'
+        + '<text x="30" y="45" text-anchor="middle" font-size="22" fill="currentColor" fill-opacity=".66"'
+        + ' font-family="Songti SC, Noto Serif SC, Georgia, serif">' + ch + '</text>'
+        + '<text x="30" y="65" text-anchor="middle" font-size="5.5" letter-spacing="2.4" fill="currentColor"'
+        + ' fill-opacity=".42" font-family="monospace">' + tag + '</text>'
+        + '</svg>';
+}
+
 /* Phase A：影视库/动漫库首页的「在线最新」卡片区（在线优先、本地兜底）。
    异步加载，失败静默隐藏，绝不影响本地库渲染。 */
 async function loadOnlineBrowse(view) {
     const bar = document.getElementById('onlineBrowseBar');
     if (!bar || !['movies', 'anime', 'movies-adult'].includes(view)) { if (bar) bar.hidden = true; return; }
     const kind = (view === 'anime') ? 'anime' : 'film';
+    const obHead = '<b>' + uiIcon('globe', 14) + ' 在线最新</b>';
     bar.hidden = false;
-    bar.innerHTML = '<div class="ob-head"><b>🌐 在线最新</b><span>正在聚合在线源…</span></div>';
+    bar.innerHTML = '<div class="ob-head">' + obHead + '<span>正在聚合在线源…</span></div>';
     try {
         const r = await fetch('/api/media-source/browse?kind=' + kind + '&limit=24');
         const j = await r.json();
         if (j.code !== 0 || !j.data || !(j.data.items || []).length) { bar.hidden = true; return; }
         const items = j.data.items;
-        bar.innerHTML = '<div class="ob-head"><b>🌐 在线最新</b><span>' + items.length
+        bar.innerHTML = '<div class="ob-head">' + obHead + '<span>' + items.length
             + ' 部 · 来自 ' + (j.data.groups || []).filter(g => g.count > 0).length + ' 个在线源</span></div>'
             + '<div class="ob-grid">' + items.map((it, i) => `
                 <button class="ob-card" data-i="${i}" title="${escapeHtml(it.name)}">
-                    <span class="ob-cover">${it.cover ? '<img src="' + escapeHtml(it.cover) + '" alt="" loading="lazy">' : '<i>🌐</i>'}</span>
+                    <span class="ob-cover">${it.cover ? '<img src="' + escapeHtml(it.cover) + '" alt="" loading="lazy">' : obCoverArt(it.name, kind)}</span>
                     <span class="ob-name">${escapeHtml(it.name)}</span>
                     <small>${escapeHtml(it.sourceName || '')}</small>
                 </button>`).join('') + '</div>';
@@ -17044,18 +17127,7 @@ async function applyBatchRename() {
 
 // ========== 深色模式 ==========
 function toggleTheme() {
-    const body = document.body;
-    const btn = document.getElementById('themeToggle');
-    
-    if (body.classList.contains('dark')) {
-        body.classList.remove('dark');
-        btn.textContent = '🌙';
-        localStorage.setItem('theme', 'light');
-    } else {
-        body.classList.add('dark');
-        btn.textContent = '☀️';
-        localStorage.setItem('theme', 'dark');
-    }
+    if (typeof toggleDarkMode === 'function') toggleDarkMode();
 }
 
 function initTheme() {
@@ -17066,15 +17138,7 @@ function initTheme() {
     // V4 皮肤（Classic / Aurora / Ambient）
     if (typeof initV4Skin === 'function') initV4Skin();
     
-    // 读取深色模式
-    const savedDarkMode = localStorage.getItem('darkMode');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (savedDarkMode === 'true' || (!savedDarkMode && prefersDark)) {
-        document.body.classList.add('dark');
-        const themeToggle = document.getElementById('themeToggle');
-        if (themeToggle) themeToggle.textContent = '☀️';
-    }
+    // 皮肤决定底色与明暗：applyV4Skin 已按皮肤挂好 body.dark，不再叠加系统偏好。
 }
 
 // ========== 主题切换相关函数 ==========
@@ -17198,7 +17262,11 @@ function applyV4Skin(skin) {
     document.body.classList.toggle('dark', wantDark);
     try { localStorage.setItem('darkMode', wantDark ? 'true' : 'false'); } catch (e) { }
     var tb = document.getElementById('themeToggle');
-    if (tb) tb.textContent = wantDark ? '☀️' : '🌙';
+    if (tb) {
+        tb.innerHTML = uiIcon(wantDark ? 'sun' : 'moon', 18);
+        tb.setAttribute('aria-label', wantDark ? '切换为浅色纸色' : '切换为深色夜色');
+        tb.title = wantDark ? '切换为浅色纸色' : '切换为深色夜色';
+    }
     var db = document.getElementById('darkModeToggle');
     if (db) db.textContent = wantDark ? '☀️ 浅色' : '🌙 深色';
 
@@ -17283,7 +17351,9 @@ function applyWhaleSkinBits(skin) {
 var V4_HERO_ART = {
     classic: ['/img/paper/hero-1.webp', '/img/paper/hero-2.webp', '/img/paper/hero-3.webp'],
     matinee: ['/img/night/hero-1.webp', '/img/night/hero-2.webp', '/img/night/hero-3.webp'],
-    whale: ['/img/whale/hero-1-v4.webp', '/img/whale/hero-2-v4.webp', '/img/whale/hero-3-v4.webp'],
+    /* 鲸鱼娘其余三张都是暖红宫墙场景，和深海色板相冲；只保留水下书房这一张，
+       身份统一，也避免每 90 秒换回一张「另一个季节」的图。 */
+    whale: ['/img/whale/hero-v2.webp'],
     ink: ['/img/ink/hero-1.webp', '/img/ink/hero-2.webp', '/img/ink/hero-3.webp'],
     amis: ['/img/amis/hero-1.webp', '/img/amis/hero-2.webp', '/img/amis/hero-3.webp']
 };
@@ -17316,7 +17386,10 @@ function pickThemeHero(skin, fade) {
 function startHeroRotation() {
     if (_heroRotateTimer) clearInterval(_heroRotateTimer);
     _heroRotateTimer = setInterval(function () {
-        if (!document.hidden) pickThemeHero(getV4Skin(), true);
+        if (document.hidden) return;
+        var list = V4_HERO_ART[getV4Skin()];
+        if (!list || list.length < 2) return; /* 单图皮肤不做无意义的重复加载 */
+        pickThemeHero(getV4Skin(), true);
     }, 90000);
 }
 
@@ -17738,8 +17811,9 @@ async function checkScanStatus(force = false) {
         const enrich = status.enrich || null;
 
         if (status.running) {
-            btn.textContent = '扫描中...';
+            btn.querySelector('.shell-scan-label') ? btn.querySelector('.shell-scan-label').textContent = '扫描中…' : btn.textContent = '扫描中…';
             btn.disabled = true;
+            btn.setAttribute('aria-label', '正在扫描影片库');
             const percent = status.total > 0 ? (status.current / status.total * 100) : 0;
             progressBar.style.width = percent + '%';
             const stats = status.stats || {};
@@ -17750,8 +17824,9 @@ async function checkScanStatus(force = false) {
             };
         } else if (enrich && enrich.running) {
             // 入库已经完成，封面在后台补（不联网，纯本地取图）
-            btn.textContent = '补封面中...';
+            btn.querySelector('.shell-scan-label') ? btn.querySelector('.shell-scan-label').textContent = '补封面中…' : btn.textContent = '补封面中…';
             btn.disabled = true;
+            btn.setAttribute('aria-label', '正在补充封面');
             const percent = enrich.total > 0 ? (enrich.done / enrich.total * 100) : 0;
             progressBar.style.width = percent + '%';
             scanState = {
@@ -17759,8 +17834,9 @@ async function checkScanStatus(force = false) {
                 text: `入库已完成 · 补封面 ${enrich.done}/${enrich.total}（成功 ${enrich.ok} 失败 ${enrich.failed}）`
             };
         } else {
-            btn.textContent = '开始扫描';
+            btn.querySelector('.shell-scan-label') ? btn.querySelector('.shell-scan-label').textContent = '开始扫描' : btn.textContent = '开始扫描';
             btn.disabled = false;
+            btn.setAttribute('aria-label', '扫描影片库');
             const stats = status.stats || {};
             const seen = stats.localHit || stats.webScraped || stats.failed || stats.skipped || stats.added || stats.removed;
             if (!seen) {
@@ -17831,7 +17907,13 @@ async function refreshWatchStatus() {
     try {
         const st = await api.getWatchStatus();
         const btn = document.getElementById('watchToggleBtn');
-        if (btn) btn.textContent = st.enabled ? '监控 开' : '监控 关';
+        const label = btn ? btn.querySelector('#watchToggleLabel') : null;
+        if (label) label.textContent = st.enabled ? '监控 开' : '监控 关';
+        else if (btn) btn.textContent = st.enabled ? '监控 开' : '监控 关';
+        if (btn) {
+            btn.setAttribute('aria-pressed', String(!!st.enabled));
+            btn.setAttribute('aria-label', st.enabled ? '暂停目录监控' : '开启目录监控');
+        }
         if (!st.enabled) {
             watchState = { enabled: false, running: false, text: '', title: '' };
             renderScanStatusUI();
@@ -17859,7 +17941,12 @@ async function refreshWatchStatus() {
 
 async function runWatchNow() {
     const btn = document.getElementById('watchNowBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '检查中...'; }
+    if (btn) {
+        btn.disabled = true;
+        const label = btn.querySelector('#watchNowLabel');
+        if (label) label.textContent = '检查中…'; else btn.textContent = '检查中…';
+        btn.setAttribute('aria-label', '正在检查新增文件');
+    }
     try {
         const data = await api.watchNow();
         if (data.code === 0) {
@@ -17876,7 +17963,12 @@ async function runWatchNow() {
     } catch (e) {
         showNotification('检查失败', e.message);
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '🔄 检查新增'; }
+        if (btn) {
+            btn.disabled = false;
+            const label = btn.querySelector('#watchNowLabel');
+            if (label) label.textContent = '检查新增'; else btn.textContent = '检查新增';
+            btn.setAttribute('aria-label', '检查新增文件');
+        }
         refreshWatchStatus();
     }
 }
@@ -18211,8 +18303,9 @@ function applySidebarRail() {
     sb.classList.toggle('rail', rail);
     const btn = document.getElementById('sbCollapseBtn');
     if (btn) {
-        btn.textContent = rail ? '»' : '«';
         btn.title = rail ? '展开侧栏（Ctrl+B）' : '收起侧栏（Ctrl+B）';
+        btn.setAttribute('aria-label', btn.title);
+        btn.setAttribute('aria-expanded', String(!rail));
     }
     // 收起时条目只剩图标，hover 靠 title 提示全名
     sb.querySelectorAll('.nav-item').forEach(it => {

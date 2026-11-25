@@ -1,0 +1,409 @@
+/* ============================================================================
+   Workspace · 页面任务路径：标题 → 检索/筛选 → 内容
+   不新建主题；以语义令牌收敛首页、媒体筛选与设置的组件尺度。
+   ========================================================================== */
+
+/* 页头不再是一个需要单独占用大量纵向空间的营销横幅。 */
+html body .content > .toolbar {
+    position: relative;
+    top: auto;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 68px;
+    min-height: 68px;
+    margin: 0 0 var(--s-3);
+    padding: var(--s-2) 0 var(--s-3);
+    border-bottom: 1px solid var(--border);
+}
+html body .content > .toolbar #toolbarTitle {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-3);
+    min-width: 0;
+    font-family: var(--font-display);
+    font-size: clamp(22px, 2vw, 28px);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -.01em;
+}
+.toolbar-title .tt-ic { align-self: center; width: 20px; height: 20px; margin: 0; }
+.content > .toolbar .toolbar-count {
+    font-family: var(--font-ui);
+    font-size: var(--t-caption);
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--text-muted);
+}
+.content > .toolbar .toolbar-right { display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
+.content > .toolbar #globalRefreshBtn { min-height: 32px; }
+html body[data-view="home"] .content > .toolbar,
+html body[data-view="settings"] .content > .toolbar,
+html body[data-view="comic"] .content > .toolbar,
+html body[data-view="novel"] .content > .toolbar,
+html body[data-view="series"] .content > .toolbar { display: none; }
+
+/* 媒体筛选：多个深色胶囊合并为一个可扫读的过滤工具条。 */
+.facet-filter-bar {
+    margin: 0 0 var(--s-4);
+    padding: var(--s-2) 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+}
+.facet-filter-bar:hover { border-color: var(--border); }
+.facet-wrap { gap: var(--s-3) var(--s-5); }
+.facet-group {
+    gap: var(--s-1);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+.facet-label {
+    padding: 0 var(--s-2) 0 0;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .06em;
+}
+.facet-group .f-pill {
+    position: relative;
+    z-index: 1;
+    min-height: 32px;
+    padding: 4px 9px;
+    border: 1px solid transparent;
+    border-radius: var(--r-1);
+    color: var(--text-muted);
+    font-size: var(--t-caption);
+    font-weight: 450;
+}
+.facet-group .f-pill:hover { background: var(--primary-soft); color: var(--text); }
+.facet-group .f-pill.active {
+    border-color: var(--border);
+    background: var(--bg-elevated) !important;
+    color: var(--primary) !important;
+    font-weight: 550 !important;
+    box-shadow: none;
+}
+.facet-group .mv-slide-pill { display: none; }
+.facet-reset-btn { min-height: 32px; font-size: var(--t-caption); border-radius: var(--r-1); }
+body[data-view="comic"] .facet-group[data-dim="layout"],
+body[data-view="novel"] .facet-group[data-dim="layout"] { margin-left: auto; }
+
+/* 首页：保留角色氛围，缩小连续大卡片；让「继续」成为第一主动作。 */
+#homeView .th-hero,
+#homeView .wh-hero {
+    min-height: 176px;
+    height: 176px;
+    border-radius: var(--r-2);
+}
+#homeView .th-hero-inner,
+#homeView .wh-hero-inner { padding: var(--s-5) var(--s-6); }
+#homeView .th-hero-title { margin-bottom: var(--s-3); font-size: 28px; }
+#homeView .th-hero-stats { gap: var(--s-5); }
+#homeView .th-hero-stats b { font-size: var(--t-head); }
+#homeView .th-hero-kicker { margin-bottom: var(--s-2); font-size: 9px; }
+#homeView .th-hero-greet { margin-bottom: var(--s-2); font-size: var(--t-caption); }
+#homeView .wh-hero-title { margin-bottom: var(--s-2); font-size: 28px; }
+#homeView .wh-depth-row { font-size: 10px; }
+#homeView .home-curated-stage { z-index: 1; }
+#homeView .hcs-shell { border-radius: var(--r-2); box-shadow: none; }
+#homeView .hcs-body { gap: var(--s-5); padding: var(--s-4) var(--s-5); }
+#homeView .hcs-cover-stage { flex-basis: 88px; width: 88px; height: 124px; box-shadow: -3px 0 0 #4A3822; }
+#homeView .hcs-main { gap: var(--s-4); }
+#homeView .hcs-title { font-size: clamp(17px, 1.65vw, 24px); }
+#homeView .hcs-kicker-row { margin-bottom: var(--s-2); }
+#homeView .hcs-reason { -webkit-line-clamp: 1; margin-bottom: var(--s-2); }
+#homeView .hcs-actions { gap: var(--s-2); }
+#homeView .hcs-btn { min-height: 32px; padding: 6px 10px; font-size: var(--t-caption); }
+#homeView .hcs-pulse-card { padding: var(--s-2); }
+#homeView .hcs-pulse-num { font-size: var(--t-title); }
+#homeView .hcs-pulse-name { font-size: 10px; }
+#homeView .hcs-reel-item { height: 42px; flex: 0 0 42px; width: 42px; }
+#homeView .hcs-side-link { min-height: 28px; padding: 3px 0; }
+#homeView .home-rank-title { font-size: var(--t-title); font-weight: 550; }
+#homeView .rank-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--r-1);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+#homeView .rank-refresh:hover { background: var(--primary-soft); color: var(--primary); }
+#homeView .home-chat-card { box-shadow: none; }
+#homeView .home-chat-input textarea { line-height: 1.5; }
+#homeView .home-quick-prompts { gap: var(--s-2); }
+#homeView .hqp-pill { line-height: 1.4; min-height: 32px; }
+#homeView .home-chat-empty { line-height: 1.7; }
+#homeView .home-chat-messages { overflow-wrap: anywhere; }
+
+/* 设置：类别 + 搜索 + 语义按钮，而不是另一套图标视频墙。 */
+#settingsView { padding-top: var(--s-2); }
+#settingsGroupCatalog[hidden] { display: none !important; }
+#settingsView .settings-shell { gap: var(--s-6); align-items: flex-start; }
+
+/* 桌面：设置分类栏不再浮在内容中间，而是贴着主导航“吹出”，
+   接管左侧栏旁边的一段，内容紧随其后，中间不留空白。 */
+@media (min-width: 861px) {
+    html body[data-view="settings"] .content {
+        padding-left: 0;
+        padding-right: var(--s-5);
+    }
+    html body[data-view="settings"] #settingsView { padding-top: 0; }
+    /* 设置视图：主导航右缘不再画分隔线，两列连成一片，设置分类像从主导航吹出 */
+    html body[data-view="settings"] .sidebar { border-right-color: transparent; }
+    html body[data-view="settings"] #settingsView .settings-shell {
+        max-width: none;
+        margin: 0;
+        gap: var(--s-5);
+    }
+    html body[data-view="settings"] #settingsView .settings-nav {
+        flex: 0 0 236px;
+        width: 236px !important;
+        min-width: 236px !important;
+        padding: 6px 14px 0 20px !important;
+        background: transparent;
+        border: 0;
+        border-right: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+        animation: settingsNavBlow .36s cubic-bezier(.16, 1, .3, 1) both;
+    }
+    html body[data-view="settings"] #settingsView .settings-main {
+        min-width: 0;
+        padding-left: 0;
+        padding-right: var(--s-2);
+    }
+}
+@media (min-width: 861px) and (max-width: 1080px) {
+    html body[data-view="settings"] #settingsView .settings-nav {
+        flex-basis: 210px;
+        width: 210px !important;
+        min-width: 210px !important;
+        padding-left: 16px !important;
+    }
+}
+@keyframes settingsNavBlow {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    html body[data-view="settings"] #settingsView .settings-nav { animation: none; }
+}
+#settingsView .settings-nav {
+    position: sticky;
+    top: calc(var(--nav-h) + var(--s-4));
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 224px;
+    width: 224px !important;
+    min-width: 224px !important;
+    max-height: calc(100dvh - var(--nav-h) - var(--s-6));
+    padding: 0 !important;
+    overflow: hidden;
+    gap: var(--s-3);
+}
+.settings-nav-heading { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2); }
+.settings-nav-heading strong { font: 600 26px/1.25 var(--font-display); }
+.settings-search {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    height: 40px;
+    padding: 0 var(--s-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-1);
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+}
+.settings-search:focus-within { border-color: var(--primary); }
+.settings-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font: var(--t-body) var(--font-ui); }
+.settings-nav-scroll { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.settings-category { border-bottom: 1px solid var(--border); }
+.settings-category summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 36px;
+    padding: 0 var(--s-2);
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: .08em;
+    cursor: pointer;
+    list-style: none;
+}
+.settings-category summary::-webkit-details-marker { display: none; }
+.settings-category summary::before { content: '＋'; margin-right: var(--s-2); color: var(--text-muted); }
+.settings-category[open] summary::before { content: '−'; }
+.settings-category summary span { margin-left: auto; font-family: var(--font-num); }
+.settings-category-items { padding-bottom: var(--s-2); }
+#settingsView .settings-nav .settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    width: 100%;
+    min-height: 36px;
+    padding: 7px var(--s-3) !important;
+    border: 0;
+    border-radius: var(--r-1) !important;
+    background: transparent;
+    color: var(--text-muted);
+    font: 450 var(--t-body)/1.3 var(--font-ui);
+    text-align: left;
+    cursor: pointer;
+}
+#settingsView .settings-nav .settings-nav-item:hover { background: var(--primary-soft); color: var(--text); }
+#settingsView .settings-nav .settings-nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 550; }
+#settingsView .settings-nav .settings-nav-label { flex: 1; font-size: var(--t-body) !important; font-weight: inherit !important; }
+.settings-nav-arrow { opacity: 0; transition: opacity var(--motion-fast) ease, transform var(--motion-fast) ease; }
+.settings-nav-item:hover .settings-nav-arrow,
+.settings-nav-item.active .settings-nav-arrow { opacity: 1; }
+.settings-nav-empty { padding: var(--s-4); color: var(--text-muted); font-size: var(--t-caption); }
+#settingsView .settings-section-head { margin-bottom: var(--s-5); padding-bottom: var(--s-3); border-bottom: 1px solid var(--border); }
+#settingsView .settings-section-title { margin-bottom: var(--s-2); font-size: 24px; font-weight: 600; }
+#settingsView .settings-section-desc { margin: 0; font-size: var(--t-body); line-height: 1.6; }
+#settingsView .settings-group {
+    margin-bottom: var(--s-4);
+    padding: var(--s-5);
+    border-color: var(--border);
+    border-radius: var(--r-2);
+    box-shadow: none;
+}
+#settingsView .settings-group-title { font-size: var(--t-title); font-weight: 550; }
+#settingsView .settings-group input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+#settingsView .settings-group select,
+#settingsView .settings-group textarea { font-size: var(--t-body); line-height: 1.5; }
+#settingsView .settings-group p,
+#settingsView .settings-group label { line-height: 1.55; }
+#settingsView .settings-group :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* 网格密度随可用宽度变化；不再以卡片数换取首屏信息密度。 */
+#movieGrid:not([data-book-layout="placard"]):not(.tree-mode) { gap: var(--s-4); }
+#movieGrid .mtb-main-title { overflow-wrap: anywhere; }
+#movieGrid .mtb-meta { overflow-wrap: anywhere; }
+
+@media (min-width: 861px) and (max-width: 1240px) {
+    #homeView .hcs-side { display: none; }
+    #homeView .hcs-body { grid-template-columns: minmax(0, 1fr); }
+    #homeView .th-hero,
+    #homeView .wh-hero { height: 152px; min-height: 152px; }
+    #homeView .th-hero-inner { padding: var(--s-4) var(--s-5); }
+    #homeView .th-hero-title { font-size: 24px; }
+    #settingsView .settings-shell { gap: var(--s-4); }
+    #settingsView .settings-nav { flex-basis: 192px; width: 192px !important; min-width: 192px !important; }
+    #settingsView .settings-group { padding: var(--s-4); }
+}
+@media (min-width: 861px) and (max-width: 1080px) {
+    .facet-wrap { gap: var(--s-2) var(--s-3); }
+    .facet-label { font-size: 9px; }
+    .facet-group .f-pill { padding-left: 7px; padding-right: 7px; font-size: 11px; }
+}
+@media (max-width: 860px) {
+    .content > .toolbar { min-height: 40px; margin-bottom: var(--s-2); padding-bottom: var(--s-2); }
+    html body .content > .toolbar #toolbarTitle { font-size: 22px; }
+    .facet-filter-bar { margin: 0 calc(-1 * var(--m-pad)) var(--s-3); padding: 4px var(--m-pad) var(--s-3) !important; border-bottom: 1px solid var(--border); }
+    .facet-group .f-pill { font-size: var(--t-caption) !important; }
+    body[data-view="comic"] .facet-group[data-dim="layout"],
+    body[data-view="novel"] .facet-group[data-dim="layout"] { margin-left: 0; }
+    #homeView .th-hero,
+    #homeView .wh-hero { min-height: 144px !important; height: 144px; }
+    #homeView .th-hero-inner,
+    #homeView .wh-hero-inner { padding: var(--s-4) !important; }
+    #homeView .th-hero-title { font-size: 24px !important; }
+    #homeView .th-hero-greet { font-size: 10px !important; }
+    #homeView .th-hero-stats b { font-size: var(--t-title) !important; }
+    #homeView .hcs-body { padding: var(--s-3) !important; }
+    #homeView .hcs-cover-stage { flex-basis: 76px !important; width: 76px !important; height: 108px !important; }
+    #homeView .hcs-title { font-size: var(--t-title) !important; }
+    #homeView .hcs-kicker { font-size: 9px !important; }
+    #homeView .hcs-reason { -webkit-line-clamp: 2; }
+    #homeView .hcs-actions { flex-wrap: wrap; }
+    #homeView .hcs-btn { min-height: 36px !important; }
+    #homeView .hcs-side { padding-top: var(--s-3) !important; }
+    #homeView .home-chat-card { border-radius: var(--r-2); }
+    #settingsView .settings-shell { flex-direction: column; gap: var(--s-4); }
+    #settingsView .settings-nav {
+        position: static;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-height: none;
+        flex-basis: auto;
+        gap: var(--s-2);
+    }
+    .settings-nav-heading { padding: 0; }
+    .settings-nav-heading strong { font-size: 24px; }
+    .settings-nav-scroll {
+        display: flex;
+        gap: var(--s-2);
+        overflow-x: auto;
+        padding-bottom: var(--s-2);
+        scrollbar-width: none;
+    }
+    .settings-category { flex: 0 0 auto; border: 0; }
+    .settings-category summary { display: none; }
+    .settings-category-items { display: flex; gap: var(--s-2); padding: 0; }
+    #settingsView .settings-nav .settings-nav-item {
+        flex: 0 0 auto;
+        width: auto;
+        min-height: 40px;
+        padding: 8px var(--s-3) !important;
+        border: 1px solid var(--border);
+        white-space: nowrap;
+    }
+    .settings-nav-arrow { display: none; }
+    #settingsView .settings-section-title { font-size: 22px; }
+    #settingsView .settings-group { padding: var(--s-4); }
+}
+@media (max-width: 480px) {
+    #homeView .hcs-side .hcs-pulse-grid { display: none; }
+    #homeView .hcs-reel-head { margin-top: 0; }
+    #homeView .th-hero-stats { gap: var(--s-4); }
+    #homeView .th-hero-stats i { font-size: 9px !important; }
+}
+@media (max-width: 860px) and (max-height: 500px) and (orientation: landscape) {
+    #homeView .th-hero,
+    #homeView .wh-hero { display: none !important; }
+    #homeView .hcs-side { display: none; }
+    #homeView .hcs-body { grid-template-columns: 1fr; }
+}
+#homeView .rank-go {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+}
+.svh-hero-dot { position: relative; }
+.svh-hero-dot::before { content: ''; position: absolute; inset: -10px -4px; }
+.svh-follow { min-height: 32px; padding: 5px 8px; }
+.rw-tree-tog {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+}
+.rw-tree-tog.leaf { visibility: hidden; pointer-events: none; }
+#settingsView .settings-search { min-height: 40px; }
+#settingsView #glassAlphaRange { min-height: 24px; }
+
+@media (max-width: 860px) {
+    #homeView .hqp-pill { min-height: 40px; }
+    #homeView .rank-go { width: 40px; height: 40px; flex-basis: 40px; }
+    .rw-tree-tog { width: 36px; height: 36px; flex-basis: 36px; }
+    .svh-follow { min-height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .settings-nav-arrow { transition: none; }
+}

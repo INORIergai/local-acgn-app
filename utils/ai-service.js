@@ -648,10 +648,10 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
   if (!ollamaConfig.enableTranslate && !aiConfig.provider) {
     throw new Error('AI功能未启用，请在设置中开启');
   }
-  
+
   const baseUrl = ollamaConfig.baseUrl || 'http://127.0.0.1:11434';
   const model = ollamaConfig.model || 'qwen2.5:3b';
-  
+
   try {
     const messages = [];
     if (systemPrompt) {
@@ -660,10 +660,10 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
     // v3.0-c：会话历史（多轮上下文注入）
     for (const h of historyMessages(history)) messages.push(h);
     messages.push({ role: 'user', content: prompt });
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
-    
+
     const res = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -674,13 +674,13 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
       }),
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     }
-    
+
     const data = await res.json();
     return data.message?.content || '';
   } catch (e) {
@@ -700,10 +700,10 @@ async function callOllama(prompt, systemPrompt = '', history = null) {
 async function getAvailableModels(provider = null, apiKey = null, baseUrl = null) {
   const targetProvider = provider || aiConfig.provider || 'ollama';
   const providerConfig = aiConfig[targetProvider] || {};
-  
+
   const targetApiKey = apiKey || providerConfig.apiKey || '';
   const targetBaseUrl = baseUrl || providerConfig.baseUrl || '';
-  
+
   if (targetProvider === 'ollama') {
     try {
       const ollamaBaseUrl = ollamaConfig.baseUrl || 'http://127.0.0.1:11434';
@@ -728,18 +728,18 @@ async function getAvailableModels(provider = null, apiKey = null, baseUrl = null
     if (!targetBaseUrl) {
       return { success: false, error: 'API Base URL 未配置', models: [] };
     }
-    
+
     try {
       const res = await fetch(`${targetBaseUrl}/models`, {
         method: 'GET',
         headers: buildAIHeaders(targetBaseUrl, targetApiKey),
         signal: AbortSignal.timeout(15000)
       });
-      
+
       if (!res.ok) {
         return { success: false, error: `HTTP ${res.status}: ${await res.text()}`, models: [] };
       }
-      
+
       const data = await res.json();
       return {
         success: true,
@@ -767,7 +767,7 @@ async function testApiKey(provider, apiKey, baseUrl, model = null) {
         models: result.models
       };
     }
-    
+
     if (!apiKey) return { success: false, message: 'API Key 不能为空' };
     if (!baseUrl) return { success: false, message: 'API Base URL 不能为空' };
 
@@ -830,7 +830,7 @@ async function translateMovie(movie) {
     title: movie.title,
     overview: movie.overview
   };
-  
+
   if (movie.title && /[\u3040-\u309f\u30a0-\u30ff]/.test(movie.title)) {
     try {
       result.title = await translateText(movie.title);
@@ -838,7 +838,7 @@ async function translateMovie(movie) {
       console.log(`翻译标题失败: ${e.message}`);
     }
   }
-  
+
   if (movie.overview && /[\u3040-\u309f\u30a0-\u30ff]/.test(movie.overview)) {
     try {
       result.overview = await translateText(movie.overview);
@@ -846,7 +846,7 @@ async function translateMovie(movie) {
       console.log(`翻译简介失败: ${e.message}`);
     }
   }
-  
+
   return result;
 }
 
@@ -861,20 +861,20 @@ async function translateMovie(movie) {
 function extractActressFromFilename(movie) {
   const actresses = [];
   const candidates = [movie.title, movie.fileName].filter(Boolean);
-  
+
   for (const text of candidates) {
     if (!text || !text.includes(' - ')) continue;
-    
+
     const parts = text.split(' - ');
     let name = parts[parts.length - 1].trim();
-    
+
     // 去掉扩展名
     name = name.replace(/\.(mp4|mkv|avi|wmv|mov|flv|rmvb|ts|m4v)$/i, '').trim();
     // 去掉括号内容
     name = name.replace(/[（(].*?[)）]/g, '').trim();
     // 去掉特殊字符，只保留中日英文和数字
     name = name.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '').trim();
-    
+
     // 过滤条件：2-20个字符，不是纯数字
     if (name.length >= 2 && name.length <= 20 && !/^\d+$/.test(name)) {
       // 支持多个女优（用逗号、顿号、&分隔）
@@ -885,7 +885,7 @@ function extractActressFromFilename(movie) {
       if (actresses.length > 0) break;
     }
   }
-  
+
   return actresses;
 }
 
@@ -894,7 +894,7 @@ function extractActressFromFilename(movie) {
  */
 async function generateGenreTagsOnly(movie) {
   const systemPrompt = '你是一个影片标签专家，只负责生成精准的题材索引标签。请严格按格式输出，不要任何解释。';
-  
+
   const prompt = `
 请根据以下影片信息生成2-3个精准的题材索引标签。
 
@@ -936,7 +936,7 @@ async function generateGenreTagsOnly(movie) {
 async function generateTags(movie) {
   // ========== 女优名优先从文件名提取 ==========
   const extractedActresses = extractActressFromFilename(movie);
-  
+
   // 如果从文件名提取到了女优名，直接使用（不依赖AI识别女优）
   if (extractedActresses.length > 0) {
     console.log(`[AI标签] 从文件名提取女优: ${extractedActresses.join(', ')}`);
@@ -1076,29 +1076,29 @@ function parseTagsOutput(result) {
  */
 async function recommendMovies(userHistory, allMovies, count = 10, searchKeywords = []) {
   const systemPrompt = '你是一个影片推荐专家，擅长根据用户观看历史和搜索历史推荐相似的影片。请直接输出推荐的影片ID，用逗号分隔，不要添加任何解释。';
-  
+
   const recentMovies = userHistory.slice(0, 5).map(m => ({
     id: m.id,
     title: m.title,
     tags: m.tags ? m.tags.map(t => t.name).join(', ') : '',
     actresses: m.actresses ? m.actresses.map(a => a.name).join(', ') : ''
   }));
-  
+
   const watchedIds = new Set(userHistory.map(m => m.id));
   const candidates = allMovies.filter(m => !watchedIds.has(m.id)).slice(0, 50);
-  
+
   let prompt = `
 用户最近观看的影片：
 ${recentMovies.map(m => `- ${m.title} (标签: ${m.tags}, 演员: ${m.actresses})`).join('\n')}
 `;
-  
+
   // 如果有搜索历史，也加进去
   if (searchKeywords && searchKeywords.length > 0) {
     prompt += `
 用户最近搜索的关键词：${searchKeywords.join(', ')}
 `;
   }
-  
+
   prompt += `
 候选影片列表：
 ${candidates.map(m => `- ID:${m.id}, 标题:${m.title}, 标签:${m.tags ? m.tags.map(t => t.name).slice(0, 5).join(', ') : '无'}, 演员:${m.actresses ? m.actresses.map(a => a.name).slice(0, 3).join(', ') : '无'}`).join('\n')}
@@ -1106,14 +1106,14 @@ ${candidates.map(m => `- ID:${m.id}, 标题:${m.title}, 标签:${m.tags ? m.tags
 请根据用户的观看历史和搜索历史，从候选影片中推荐 ${count} 部最符合用户喜好的影片。
 只输出影片ID，用逗号分隔，例如：1, 5, 12, 23
   `.trim();
-  
+
   try {
     const result = await callAI(prompt, systemPrompt);
     const ids = result.split(/[,，、]/).map(id => {
       const match = id.match(/\d+/);
       return match ? parseInt(match[0]) : null;
     }).filter(id => id && candidates.some(c => c.id === id));
-    
+
     return ids.slice(0, count);
   } catch (e) {
     console.log('AI推荐失败，使用热门推荐:', e.message);
@@ -1684,7 +1684,7 @@ function parseMovieRefs(content, movies) {
  */
 async function checkAIStatus() {
   const { provider } = getAIConfig();
-  
+
   if (provider === 'ollama') {
     try {
       const baseUrl = ollamaConfig.baseUrl || 'http://127.0.0.1:11434';

@@ -93,14 +93,14 @@ router.post('/', (req, res) => {
     try {
         const newConfig = req.body;
         const currentConfig = readConfig();
-        
+
         // 合并配置，保留tmdbApiKey等敏感字段
         const merged = {
             ...currentConfig,
             ...newConfig,
             tmdbApiKey: currentConfig.tmdbApiKey // 保留API key
         };
-        
+
         // 合并sources，保留baseUrl、cookie等字段
         if (newConfig.sources && currentConfig.sources) {
             merged.sources = { ...currentConfig.sources };
@@ -122,7 +122,7 @@ router.post('/', (req, res) => {
                 appSecret: (secret && secret !== '........') ? secret : (cd.appSecret || '')
             };
         }
-        
+
         writeConfig(merged);
         res.json({ code: 0, msg: '保存成功' });
     } catch (e) {
@@ -135,7 +135,7 @@ router.get('/folders/:module', (req, res) => {
     try {
         const { module } = req.params;
         const cfg = readConfig();
-        
+
         let folders = [];
         switch (module) {
             case 'movie':
@@ -172,16 +172,16 @@ router.post('/folders/:module', (req, res) => {
     try {
         const { module } = req.params;
         const { folderPath } = req.body;
-        
+
         if (!folderPath) return res.json({ code: -1, msg: '路径不能为空' });
-        
+
         // 检查路径是否存在
         if (!fs.existsSync(folderPath)) {
             return res.json({ code: -1, msg: '路径不存在' });
         }
-        
+
         const cfg = readConfig();
-        
+
         let folderKey = '';
         switch (module) {
             case 'movie':
@@ -208,18 +208,18 @@ router.post('/folders/:module', (req, res) => {
         }
 
         if (!cfg[folderKey]) cfg[folderKey] = [];
-        
+
         if (cfg[folderKey].includes(folderPath)) {
             return res.json({ code: -1, msg: '该路径已存在' });
         }
-        
+
         cfg[folderKey].push(folderPath);
         writeConfig(cfg);
-        
-        res.json({ 
-            code: 0, 
-            msg: '添加成功，重启服务后生效', 
-            data: cfg[folderKey] 
+
+        res.json({
+            code: 0,
+            msg: '添加成功，重启服务后生效',
+            data: cfg[folderKey]
         });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
@@ -231,9 +231,9 @@ router.delete('/folders/:module', (req, res) => {
     try {
         const { module } = req.params;
         const { folderPath } = req.body;
-        
+
         const cfg = readConfig();
-        
+
         let folderKey = '';
         switch (module) {
             case 'movie':
@@ -261,11 +261,11 @@ router.delete('/folders/:module', (req, res) => {
 
         cfg[folderKey] = (cfg[folderKey] || []).filter(f => f !== folderPath);
         writeConfig(cfg);
-        
-        res.json({ 
-            code: 0, 
-            msg: '删除成功，重启服务后生效', 
-            data: cfg[folderKey] 
+
+        res.json({
+            code: 0,
+            msg: '删除成功，重启服务后生效',
+            data: cfg[folderKey]
         });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
@@ -298,7 +298,7 @@ router.post('/test-path', (req, res) => {
         const { folderPath } = req.body;
         const exists = fs.existsSync(folderPath);
         const isDir = exists && fs.statSync(folderPath).isDirectory();
-        
+
         res.json({
             code: 0,
             data: {
@@ -317,9 +317,9 @@ router.get('/cookies', (req, res) => {
     try {
         const cfg = readConfig();
         const sources = cfg.sources || {};
-        
+
         const result = {};
-        
+
         // Kmoe Cookie
         if (sources.kmoe) {
             const cookie = sources.kmoe.cookie || '';
@@ -329,7 +329,7 @@ router.get('/cookies', (req, res) => {
                 username: sources.kmoe.username || ''
             };
         }
-        
+
         // 夸克网盘 Cookie
         if (sources.quark) {
             const cookie = sources.quark.cookie || '';
@@ -338,7 +338,7 @@ router.get('/cookies', (req, res) => {
                 cookieLength: cookie.length
             };
         }
-        
+
         res.json({ code: 0, data: result });
     } catch (e) {
         res.json({ code: -1, msg: e.message });
@@ -395,17 +395,17 @@ router.post('/cookies/:source/test', async (req, res) => {
     try {
         const { source } = req.params;
         const cfg = readConfig();
-        
+
         // 优先使用请求体中传入的cookie（用于测试未保存的新cookie）
         // 如果请求体没有，则使用配置文件中已保存的cookie
         const cookie = req.body?.cookie || cfg.sources?.[source]?.cookie || '';
-        
+
         if (!cookie) {
             return res.json({ code: -1, msg: '未设置Cookie' });
         }
         let valid = false;
         let message = '';
-        
+
         if (source === 'kmoe') {
             // 测试Kmoe Cookie —— 判据与 kmoe.js checkLogin() 一致（两个标记必须同时出现，
             // 只用 || 的话首页任意一处静态 '/u/' 字样就会把无效 cookie 误判成已登录）
@@ -453,10 +453,10 @@ router.post('/cookies/:source/test', async (req, res) => {
         } else {
             return res.json({ code: -1, msg: '不支持的数据源' });
         }
-        
-        res.json({ 
-            code: 0, 
-            data: { valid, message } 
+
+        res.json({
+            code: 0,
+            data: { valid, message }
         });
     } catch (e) {
         res.json({ code: -1, msg: e.message });

@@ -110,15 +110,15 @@
           <button class="f-pill ${state.watchStatus === 'all' ? 'active' : ''}" data-val="all">全部</button>
           <button class="f-pill ${state.watchStatus === 'unwatched' ? 'active' : ''}" data-val="unwatched">未看</button>
           <button class="f-pill ${state.watchStatus === 'watched' ? 'active' : ''}" data-val="watched">已看</button>
-          <button class="f-pill ${state.watchStatus === 'favorite' ? 'active' : ''}" data-val="favorite">⭐ 收藏</button>
+          <button class="f-pill ${state.watchStatus === 'favorite' ? 'active' : ''}" data-val="favorite">收藏</button>
         </div>
 
         ${!isAdultView ? `
         <div class="facet-group" data-dim="layout" title="切换书籍与综合卡片的美化展示版式">
           <span class="facet-label">版式</span>
-          <button class="f-pill ${(state.cardLayout === 'auto' || state.cardLayout === 'portrait') ? 'active' : ''}" data-val="portrait" title="3:4 满幅精装立书架（封面 100% 撑满 + 拟真书脊折痕）">📚 竖版书架</button>
-          <button class="f-pill ${state.cardLayout === 'placard' ? 'active' : ''}" data-val="placard" title="左书右笺 · 博物馆典藏展签横卡（左侧 3:4 立体书封 + 右侧作者/书名/规格展签）">🎫 左书右笺</button>
-          <button class="f-pill ${state.cardLayout === 'stage' ? 'active' : ''}" data-val="stage" title="16:9 宽幅毛玻璃景深舞台">🎬 宽幅舞台</button>
+          <button class="f-pill ${(state.cardLayout === 'auto' || state.cardLayout === 'portrait') ? 'active' : ''}" data-val="portrait" title="竖版封面网格，适合漫画与小说">竖版</button>
+          <button class="f-pill ${state.cardLayout === 'placard' ? 'active' : ''}" data-val="placard" title="左侧封面、右侧书籍信息的横向展签">展签</button>
+          <button class="f-pill ${state.cardLayout === 'stage' ? 'active' : ''}" data-val="stage" title="宽幅封面网格，适合影片">宽幅</button>
         </div>
         ` : ''}
 

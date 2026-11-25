@@ -36,7 +36,15 @@
     'settings': 'settings', 'ms': 'settings',
     'watch': 'watch', 'watch-hub': 'watch',
     'hot-adult': 'flame', 'random-adult': 'shuffle',      /* 隐私口径：同图标 */
-    'scrape-failures': 'alert', 'poster-health': 'image'  /* round48 补齐 */
+    'scrape-failures': 'alert', 'poster-health': 'image', /* round48 补齐 */
+    /* 2026-11：补齐此前没有映射、只能退化成 emoji 的入口。
+       全部复用已有 webm/png 资源，不新增不存在的文件。 */
+    'series': 'watch',                                     /* 追番：电视屏幕 */
+    'novel-records': 'book',                               /* 阅读记录：与书库同源，靠文字区分 */
+    'comic-records': 'comic',
+    'wiki': 'book',                                        /* 百科：翻开的书 */
+    'gamekee': 'image',                                    /* 图文攻略 */
+    'galgame': 'spark'                                     /* 心动/特色 */
   };
   /* 无 data-view 的导航项按文本匹配（AI助手 = 弹窗触发器，不能加 data-view） */
   var TEXT_MAP = [{ re: /AI助手/, id: 'spark' }];

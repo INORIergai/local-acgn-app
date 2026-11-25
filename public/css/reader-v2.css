@@ -43,6 +43,7 @@ body.nv-v2 .reader-container {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     height: 100vh;
+    height: 100dvh;
     width: 100%;
     gap: 0;
 }
@@ -69,7 +70,15 @@ body.nv-v2 .toolbar {
 }
 body.chrome-hidden.cr-v2 .toolbar,
 body.chrome-hidden.nv-v2 .toolbar {
-    transform: translateY(-140%);
+    display: none;
+    transform: none;
+    opacity: 0;
+    pointer-events: none;
+}
+body.chrome-hidden.cr-v2 .progress-bar,
+body.chrome-hidden.nv-v2 .progress-bar {
+    display: none;
+    transform: none;
     opacity: 0;
     pointer-events: none;
 }
@@ -118,11 +127,15 @@ body.nv-v2 .toolbar .btn.on {
     border-color: rgba(127, 182, 232, .35);
 }
 
+body.chrome-hidden.cr-v2 .reader-container,
+body.chrome-hidden.nv-v2 .reader-container { grid-template-rows: minmax(0, 1fr); }
+
 /* ---------------- 阅读区 ---------------- */
 body.cr-v2 .reader-area,
 body.nv-v2 .reader-area {
     position: relative;
     z-index: var(--rv-z-content);
+    height: 100%;
     min-height: 0;
     padding: 0 !important;
     margin: 0 !important;
@@ -462,7 +475,7 @@ body.nv-v2 .reader-toast.show { opacity: 1; transform: translateX(-50%) translat
     body.cr-v2 .toolbar,
     body.nv-v2 .toolbar { margin: 6px 6px 0; padding: 6px; min-height: 48px; }
     body.cr-v2 .toolbar .btn,
-    body.nv-v2 .toolbar .btn { height: 30px; padding: 0 8px; font-size: 11.5px; }
+    body.nv-v2 .toolbar .btn { height: 36px; padding: 0 10px; font-size: 12px; }
     body.cr-v2 .progress-bar,
     body.nv-v2 .progress-bar { margin: 0 6px 6px; padding: 6px 8px; }
     body.cr-v2 .thumbnail-sidebar { width: 84vw; }

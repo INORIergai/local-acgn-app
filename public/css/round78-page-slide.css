@@ -41,8 +41,12 @@
     opacity var(--page-duration) var(--page-ease),
     filter var(--page-duration) var(--page-ease);
 }
-/* 转场结束后收起离场页 —— 让容器高度收敛到当前页（grid 同格时高度取 max） */
-.t-page[hidden] { display: none; }
+/* 转场结束后收起离场页 —— 让容器高度收敛到当前页（grid 同格时高度取 max）
+   ★ round190：下面「布局语境」的 `> .t-page` 规则权重是 (0,3,0)，
+     会压过本条 (0,2,0) —— 离场页虽然带 hidden，display 仍是 grid；
+     它又被 translateX(100%) 推出右边界，于是整页出现横向滚动（实测宽 1258px 的空白）。
+     所以布局规则全部限定 `:not([hidden])`，这里再用子选择器抬一档权重，双保险。 */
+.t-page-slide > .t-page[hidden] { display: none; }
 
 /* --- 在场页：原位、完全不透明、不模糊 --- */
 .t-page-slide[data-page="1"] > .t-page[data-page="1"],
@@ -74,23 +78,23 @@
    board —— av-board 书架（章节卡，列数由 --av-cols 控制）
    ============================================================ */
 
-.t-page-slide[data-layout="grid"] > .t-page {
+.t-page-slide[data-layout="grid"] > .t-page:not([hidden]) {
   display: grid;
   gap: 18px;
   align-content: start;
 }
 @media (min-width: 861px) {
-  .t-page-slide[data-layout="grid"] > .t-page {
+  .t-page-slide[data-layout="grid"] > .t-page:not([hidden]) {
     grid-template-columns: repeat(auto-fill, minmax(calc(253px * var(--card-w-scale, 1)), 1fr));
   }
 }
 @media (max-width: 860px) {
-  .t-page-slide[data-layout="grid"] > .t-page {
+  .t-page-slide[data-layout="grid"] > .t-page:not([hidden]) {
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   }
 }
 @media (max-width: 760px) {
-  .t-page-slide[data-layout="grid"] > .t-page { gap: 12px; }
+  .t-page-slide[data-layout="grid"] > .t-page:not([hidden]) { gap: 12px; }
 }
 
 /* 嵌套进 .t-page 后不再是 #movieGrid 直接子，

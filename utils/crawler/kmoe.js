@@ -36,7 +36,7 @@ class KmoeCrawler {
       // base.js 的默认 3 次重试 —— 站点不通时单次搜索要烧 3×10s。改成正确的 retry。
       retry: options.retry || config.network?.retryCount || 2
     });
-    
+
     // 如果有cookie，直接设置
     if (this.cookie) {
       this.setCookie(this.cookie);
@@ -516,7 +516,7 @@ class KmoeCrawler {
         { name: '輕小說改編', value: 'CAT*輕改' },
         { name: '連環畫', value: 'CAT*連環畫' }
       ];
-      
+
       return categories;
     } catch (e) {
       return [];
@@ -596,7 +596,7 @@ class KmoeCrawler {
       // 用正则表达式匹配 disp_divinfo 调用
       // disp_divinfo( "div_info_"+"1", "url", "cover", "color", "tag_jp", "tag_en", "tag_end", "tag_brk", "score", "name", "author", "status", "update" )
       const regex = /disp_divinfo\(\s*[^,]+,\s*["']([^"']+)["'],\s*["']([^"']+)["'],\s*[^,]+,\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["'],\s*["']([^"']+)["'],\s*["']([^"']+)["'],\s*["']([^"']*)["'],\s*["']([^"']*)["']\s*\)/g;
-      
+
       let match;
       while ((match = regex.exec(html)) !== null) {
         const bookUrl = match[1];
@@ -610,17 +610,17 @@ class KmoeCrawler {
         const bookAuthor = match[9];
         const wordStatus = match[10];
         const wordUpdate = match[11];
-        
+
         if (bookName && bookUrl) {
           // 去掉标题里的HTML标签
           const cleanTitle = bookName.replace(/<[^>]+>/g, '').trim();
-          
+
           // 判断状态
           let status = '连载中';
           if (tagEnd === '' || tagEnd === 'none') {
             status = '已完结';
           }
-          
+
           // 判断语言
           let language = '中文';
           if (tagJp !== 'none') {
@@ -628,7 +628,7 @@ class KmoeCrawler {
           } else if (tagEn !== 'none') {
             language = '英语';
           }
-          
+
           results.push({
             title: cleanTitle,
             cover: coverUrl,
@@ -642,7 +642,7 @@ class KmoeCrawler {
           });
         }
       }
-      
+
       return results;
     } catch (e) {
       console.log('[Kmoe] 解析条目失败:', e.message);
@@ -657,9 +657,9 @@ class KmoeCrawler {
     try {
       const fullUrl = chapterUrl.startsWith('http') ? chapterUrl : this.baseUrl + chapterUrl;
       const $ = await this.request.getHtml(fullUrl);
-      
+
       const images = [];
-      
+
       // 查找所有图片
       $('img.comic_img, img.read_img, #images img').each((i, el) => {
         const src = $(el).attr('src') || $(el).attr('data-src') || '';
@@ -667,7 +667,7 @@ class KmoeCrawler {
           images.push(src.startsWith('http') ? src : this.baseUrl + src);
         }
       });
-      
+
       // 如果没找到，尝试从JS里提取
       if (images.length === 0) {
         const scriptText = $('script').text();
@@ -680,7 +680,7 @@ class KmoeCrawler {
           }
         }
       }
-      
+
       return images;
     } catch (e) {
       console.log('[Kmoe] 获取章节图片失败:', e.message);
@@ -980,13 +980,13 @@ class KmoeCrawler {
     try {
       const detail = await this.getDetail(comicUrl);
       if (!detail || !detail.chapters) return null;
-      
+
       // 找下载链接
       const downloadChapter = detail.chapters.find(c => c.type === 'download');
       if (downloadChapter) {
         return downloadChapter.url;
       }
-      
+
       return null;
     } catch (e) {
       console.log('[Kmoe] 获取下载链接失败:', e.message);
