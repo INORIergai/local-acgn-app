@@ -342,12 +342,23 @@ async function restartBackend() {
  * 总等待上限 15s（含 restartBackend 内部等待），不堆叠两个 40s 循环（review #3c）。 */
 async function verifiedRestartForSwitch() {
     const oldProc = serverProc;
-    if (oldProc && oldProc.exitCode === null && !oldProc.killed) {
+    if (oldProc && oldProc.exitCode === null) {
+        /* 先发终止信号再等 —— 旧实现只等奖、没杀，等于在等一个永远不退出的进程，
+         * 必然 3s 超时；增量切换每次都被误判失败并回滚（boot 日志反复可见）。 */
+        try { oldProc.kill(); } catch (e) { /* 忽略：进程可能刚好自己退出 */ }
         await Promise.race([
             new Promise((resolve) => oldProc.once('exit', resolve)),
             new Promise((resolve) => setTimeout(resolve, 3000)),   // 最多等 3s
         ]);
-        if (oldProc.exitCode === null) throw new Error('增量切换：旧后端进程未在 3s 内退出');
+        if (oldProc.exitCode === null) {
+            // 后端退出钩子里有 DB checkpoint，SIGTERM 未必能在窗口内完成；超时强杀
+            try { oldProc.kill('SIGKILL'); } catch (e) { /* 忽略 */ }
+            await Promise.race([
+                new Promise((resolve) => oldProc.once('exit', resolve)),
+                new Promise((resolve) => setTimeout(resolve, 3000)),
+            ]);
+        }
+        if (oldProc.exitCode === null) throw new Error('增量切换：旧后端进程无法退出');
     }
     await restartBackend();
     if (!BASE) throw new Error('重启后端后无可用 BASE');
