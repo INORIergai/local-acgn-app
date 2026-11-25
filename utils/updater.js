@@ -629,8 +629,11 @@ let lastUpdateNotified = null;
 
 /** 更新包落盘目录：数据目录下 updates/（不进 runtime，避免被同步脚本扫到） */
 function updateDir() {
-    // __dirname = <DATA_ROOT>/runtime，数据目录是它的上一级
-    const dir = path.join(__dirname, '..', 'updates');
+    /* __dirname = <DATA_ROOT>/runtime/utils，所以数据根要回退两级。
+     * 旧实现只回退一级（runtime/../），把 pending-switch.json 写进了
+     * <DATA_ROOT>/runtime/updates/ —— 而主进程轮询的是 <DATA_ROOT>/updates/，
+     * 信号永远到不了，增量包停在 ready 不切换（boot 日志反复「无 pending-switch」）。 */
+    const dir = path.join(__dirname, '..', '..', 'updates');
     try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* 由下载时报出 */ }
     return dir;
 }
