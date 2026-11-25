@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.29'
-TAG = 'v6.8.29'
+VER = '6.8.30'
+TAG = 'v6.8.30'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,12 +92,11 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.29 · 图标体系回归与动效补齐
+## v6.8.30 · 设置页导航吹出融合
 
-- 侧栏与设置导航恢复为 Remotion 实心光体动效图标（webm 演出 + png 静帧），撤回上一版的纯线性 SVG 图标。
-- 补齐此前只能显示 emoji 的入口：追番、小说/漫画阅读记录、萌娘百科、GameKee、Galgame 资料库，全部使用已有动效图标。
-- 修正侧栏图标被旧样式拉伸的问题，图标恢复 20px 并与文字对齐。
-- 五套皮肤底色、排版与外壳重构保持不变。
+- 进入设置时，设置分类栏紧贴主导航滑出接管左侧，中间不再留突兀空白。
+- 设置分类栏去掉了独立卡片外观，与主导航连成一片，只保留一条发丝分隔线。
+- 设置内容紧随分类栏，宽度随窗口自适应；手机端仍是横向分类条。
 
 内置 Android v5.2.0 安装包。首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 

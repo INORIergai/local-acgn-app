@@ -149,6 +149,55 @@ body[data-view="novel"] .facet-group[data-dim="layout"] { margin-left: auto; }
 #settingsView { padding-top: var(--s-2); }
 #settingsGroupCatalog[hidden] { display: none !important; }
 #settingsView .settings-shell { gap: var(--s-6); align-items: flex-start; }
+
+/* 桌面：设置分类栏不再浮在内容中间，而是贴着主导航“吹出”，
+   接管左侧栏旁边的一段，内容紧随其后，中间不留空白。 */
+@media (min-width: 861px) {
+    html body[data-view="settings"] .content {
+        padding-left: 0;
+        padding-right: var(--s-5);
+    }
+    html body[data-view="settings"] #settingsView { padding-top: 0; }
+    /* 设置视图：主导航右缘不再画分隔线，两列连成一片，设置分类像从主导航吹出 */
+    html body[data-view="settings"] .sidebar { border-right-color: transparent; }
+    html body[data-view="settings"] #settingsView .settings-shell {
+        max-width: none;
+        margin: 0;
+        gap: var(--s-5);
+    }
+    html body[data-view="settings"] #settingsView .settings-nav {
+        flex: 0 0 236px;
+        width: 236px !important;
+        min-width: 236px !important;
+        padding: 6px 14px 0 20px !important;
+        background: transparent;
+        border: 0;
+        border-right: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+        animation: settingsNavBlow .36s cubic-bezier(.16, 1, .3, 1) both;
+    }
+    html body[data-view="settings"] #settingsView .settings-main {
+        min-width: 0;
+        padding-left: 0;
+        padding-right: var(--s-2);
+    }
+}
+@media (min-width: 861px) and (max-width: 1080px) {
+    html body[data-view="settings"] #settingsView .settings-nav {
+        flex-basis: 210px;
+        width: 210px !important;
+        min-width: 210px !important;
+        padding-left: 16px !important;
+    }
+}
+@keyframes settingsNavBlow {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    html body[data-view="settings"] #settingsView .settings-nav { animation: none; }
+}
 #settingsView .settings-nav {
     position: sticky;
     top: calc(var(--nav-h) + var(--s-4));
