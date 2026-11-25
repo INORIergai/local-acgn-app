@@ -90,7 +90,6 @@ html.mv-on .pld-poster-item img.mv-loaded {
 .nr-tabs,
 .r34-slice-bar {
     position: relative !important;
-    display: inline-flex !important;
     align-items: center !important;
     background: rgba(18, 14, 10, 0.78) !important;
     border: 1px solid rgba(255, 255, 255, 0.16) !important;
@@ -99,6 +98,11 @@ html.mv-on .pld-poster-item img.mv-loaded {
     box-sizing: border-box !important;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35) !important;
 }
+/* ★ round190：display 不再带 !important。
+   JS 用行内 display:none 隐藏切片条，而 `display:inline-flex !important`
+   会压过行内样式 —— 结果是「隐藏」的 10×8 空胶囊留在设置/影片页左上角（审计实拍）。
+   说明：同规则里的装饰属性继续保留 !important，只把「显隐」控制权还给业务层。 */
+.nr-tabs, .r34-slice-bar { display: inline-flex; }
 .facet-group { position: relative; }
 
 .mv-slide-pill {

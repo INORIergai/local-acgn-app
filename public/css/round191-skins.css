@@ -1,0 +1,428 @@
+/* ============================================================================
+   round191 · 五套皮肤「语言分化」+ 主题卡重制
+   ----------------------------------------------------------------------------
+   问题：五套皮肤此前主要靠 CSS 变量换色，组件形状与材质几乎一致，
+         切过去像「同一个页面换了底色」；设置页主题卡更只有正在使用的那张
+         有主视觉（原规则写成 html[data-v4skin="x"] .theme-card[data-v4skin="x"]，
+         等于「用了这套皮肤才看得到这张卡的图」），其余四张全是色块。
+
+   本层做两件事：
+   一、主题卡重做成「藏品标本卡」：五张卡永远显示自己的主视觉，
+       深色卡用底部渐变承托文字，纸卡用奶油渐变，选中卡带主题色描边与「使用中」。
+   二、给每套皮肤补上只属于自己的签名（只改颜色/材质/装饰，不动布局尺寸）：
+       · 纸 · Paper     铅字压痕：青铜细线、纸面内光、克制的抬升
+       · 夜 · Night     午夜放映厅：片孔导轨、幕布顶光、投影光束、琥珀底光
+       · 鲸 · Deep Whale 深海生物光：水光漂移、月光金细线、发光数字
+       · 墨 · Ink       宣纸墨池：朱印、方角、纸纹、一点朱红
+       · 爱弥斯 · Amis  暖书房：烛光呼吸、玫瑰金细线、柔圆角
+
+   加载位置：round174-amis-theme.css 之后、mobile.css 之前（让手机端覆盖层继续兜底）。
+   ========================================================================== */
+
+/* ============================================================================
+   一、主题卡：五张标本卡
+   ============================================================================ */
+html body .theme-selector { display: flex; gap: 12px; }
+/* 五张卡用网格排：宽屏一排五张，中等窗口三张、两张，再窄两张，手机一张 ——
+   卡片宽度始终够放下「鲸 · Deep Whale」与一行小字，不再挤成一团。 */
+html body .theme-selector--specimen {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+html body .theme-selector-hint {
+    margin: -2px 0 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+/* 旧皮肤层把主视觉直接写在 .theme-card 的 background-image 上，
+   现在改由子元素 .thm-art 承担，这里把卡面背景清干净。 */
+html body .theme-selector--specimen > .theme-card[data-v4skin] {
+    background: var(--card-bg) !important;
+    background-image: none !important;
+}
+
+html body .theme-selector--specimen > .theme-card {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 158px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: stretch;
+    padding: 12px 13px 13px;
+    overflow: hidden;
+    isolation: isolate;
+    text-align: left;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    --thm-accent: var(--primary);
+    --thm-badge-ink: #1B140C;
+    transition:
+        transform .26s cubic-bezier(.22, .68, .28, 1),
+        border-color .2s ease,
+        box-shadow .26s ease;
+}
+
+html body .theme-selector--specimen > .theme-card .thm-art {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-repeat: no-repeat;
+    background-size: cover;
+    transform: scale(1.02);
+    pointer-events: none;
+    transition: transform .7s cubic-bezier(.22, .68, .28, 1);
+}
+html body .theme-selector--specimen > .theme-card:hover { transform: translateY(-3px); border-color: var(--thm-accent); }
+html body .theme-selector--specimen > .theme-card:hover .thm-art { transform: scale(1.07); }
+html body .theme-selector--specimen > .theme-card.active {
+    border-color: var(--thm-accent);
+    box-shadow: 0 0 0 1px var(--thm-accent), 0 18px 36px -24px rgba(0, 0, 0, .55);
+}
+
+html body .theme-selector--specimen > .theme-card .thm-head,
+html body .theme-selector--specimen > .theme-card .thm-body { position: relative; z-index: 1; }
+
+html body .theme-selector--specimen > .theme-card .thm-head { display: flex; align-items: center; gap: 8px; }
+html body .theme-selector--specimen > .theme-card .theme-dot {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25), 0 0 0 2px rgba(255, 255, 255, .14);
+}
+html body .theme-selector--specimen > .theme-card .thm-now {
+    display: none;
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--thm-accent);
+    color: var(--thm-badge-ink);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .10em;
+}
+html body .theme-selector--specimen > .theme-card.active .thm-now { display: inline-block; }
+
+html body .theme-selector--specimen > .theme-card .thm-body { display: flex; flex-direction: column; gap: 3px; }
+html body .theme-selector--specimen > .theme-card .thm-body b {
+    font-size: 14.5px;
+    font-weight: 700;
+    letter-spacing: .01em;
+    color: inherit;
+}
+html body .theme-selector--specimen > .theme-card .thm-body small {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: inherit;
+    opacity: .84;
+}
+
+/* ---------- 五张卡各自的底图与文字色 ---------- */
+html body .theme-selector--specimen > .theme-card[data-v4skin="classic"] {
+    --thm-accent: #8A5A12;
+    --thm-badge-ink: #FFF8EC;
+    color: #2B2118;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="classic"] .thm-art {
+    background-image:
+        linear-gradient(180deg, rgba(249, 243, 231, 0) 20%, rgba(249, 243, 231, .86) 58%, rgba(249, 243, 231, .985) 84%),
+        url("/img/paper/closeup-v2.webp");
+    background-position: center 24%, center 26%;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="classic"] .thm-body small { color: #6C583C; opacity: 1; }
+
+html body .theme-selector--specimen > .theme-card[data-v4skin="matinee"] {
+    --thm-accent: #D99A43;
+    --thm-badge-ink: #1B140C;
+    color: #F6EEDF;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="matinee"] .thm-art {
+    background-image:
+        linear-gradient(180deg, rgba(20, 17, 14, .04) 10%, rgba(20, 17, 14, .74) 56%, rgba(20, 17, 14, .97) 86%),
+        url("/img/night/closeup-v2.webp");
+    background-position: center 20%, center 24%;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="matinee"] .thm-body small { color: #CBB48F; opacity: 1; }
+
+html body .theme-selector--specimen > .theme-card[data-v4skin="whale"] {
+    --thm-accent: #D3B074;
+    --thm-badge-ink: #04101E;
+    color: #F2F7FF;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="whale"] .thm-art {
+    /* 其余鲸鱼图都是暖红宫墙场景，只有 hero-v2 是深海蓝水下书房，用它才对得上「深潜」。
+       原图是 16:9 全景，整张塞进小卡时人物太小；放大到 190% 并偏向鲸鱼娘，
+       让卡片和另外四张「半身像」保持同一构图密度。 */
+    background-image:
+        linear-gradient(180deg, rgba(5, 12, 24, .06) 0%, rgba(5, 12, 24, .22) 44%, rgba(5, 12, 24, .78) 74%, rgba(5, 12, 24, .96) 92%),
+        url("/img/whale/hero-v2.webp");
+    background-size: cover, 190% auto;
+    background-position: center 30%, 64% 30%;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="whale"] .thm-body small { color: #A9C2DC; opacity: 1; }
+
+html body .theme-selector--specimen > .theme-card[data-v4skin="ink"] {
+    --thm-accent: #C8443C;
+    --thm-badge-ink: #FFF3EF;
+    color: #F5F1E9;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="ink"] .thm-art {
+    background-image:
+        linear-gradient(180deg, rgba(8, 8, 10, .02) 10%, rgba(8, 8, 10, .76) 56%, rgba(8, 8, 10, .97) 86%),
+        url("/img/ink/card.webp");
+    background-position: center 22%, center 24%;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="ink"] .thm-body small { color: #A9A39A; opacity: 1; }
+
+html body .theme-selector--specimen > .theme-card[data-v4skin="amis"] {
+    --thm-accent: #E8A2B2;
+    --thm-badge-ink: #2A1016;
+    color: #FFF6F1;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="amis"] .thm-art {
+    background-image:
+        linear-gradient(180deg, rgba(20, 13, 16, .02) 10%, rgba(20, 13, 16, .74) 56%, rgba(20, 13, 16, .97) 86%),
+        url("/img/amis/card.webp");
+    background-position: center 20%, center 28%;
+}
+html body .theme-selector--specimen > .theme-card[data-v4skin="amis"] .thm-body small { color: #C0A8A6; opacity: 1; }
+
+/* ============================================================================
+   二、皮肤签名
+   ============================================================================ */
+
+/* ---------- 公共：品牌副标自报家门（宽屏顶栏可见） ----------
+   CINEMA VAULT · NIGHT SHOW / DEEP WHALE / INK ARCHIVE / AMIS STUDY */
+html[data-v4skin="classic"] .brand-type small::after { content: " · PAPER ARCHIVE"; }
+html[data-v4skin="matinee"] .brand-type small::after { content: " · NIGHT SHOW"; }
+html[data-v4skin="whale"] .brand-type small::after { content: " · DEEP WHALE"; }
+html[data-v4skin="ink"] .brand-type small::after { content: " · INK ARCHIVE"; }
+html[data-v4skin="amis"] .brand-type small::after { content: " · AMIS STUDY"; }
+
+/* ---------- 纸张：铅字压痕 ---------- */
+html[data-v4skin="classic"] .settings-section-title::after,
+html[data-v4skin="classic"] .gallery-title::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    margin-left: 14px;
+    background: linear-gradient(90deg, rgba(138, 90, 18, .34), rgba(138, 90, 18, .06) 72%, transparent);
+}
+html[data-v4skin="classic"] .movie-card:hover,
+html[data-v4skin="classic"] .movie-card-compact:hover {
+    box-shadow: 0 18px 38px -26px rgba(74, 51, 20, .5), 0 0 0 1px rgba(138, 90, 18, .12);
+}
+
+/* ---------- 夜：午夜放映厅 ---------- */
+/* 顶栏上沿一条幕布灯光，下沿一条胶片齿孔导轨（sticky 顶栏本身就是定位元素） */
+html[data-v4skin="matinee"] .navbar::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(217, 154, 67, .55) 18%, rgba(217, 154, 67, .10) 50%, rgba(217, 154, 67, .55) 82%, transparent);
+    opacity: .55;
+}
+html[data-v4skin="matinee"] .navbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
+    pointer-events: none;
+    background-image: radial-gradient(circle, rgba(217, 154, 67, .55) 1.2px, transparent 1.7px);
+    background-size: 14px 4px;
+    background-position: 0 50%;
+    background-repeat: repeat-x;
+    opacity: .45;
+}
+/* 章节标题后的「片头虚线」 */
+html[data-v4skin="matinee"] .settings-section-title::after,
+html[data-v4skin="matinee"] .gallery-title::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    margin-left: 14px;
+    background-image: repeating-linear-gradient(90deg, rgba(217, 154, 67, .55) 0 6px, transparent 6px 13px);
+    opacity: .55;
+}
+/* 首屏：放映机斜向光束 */
+html[data-v4skin="matinee"] .nt-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: conic-gradient(from 205deg at 16% -12%, rgba(217, 154, 67, .16), transparent 36%);
+    mix-blend-mode: screen;
+}
+/* 卡片：琥珀底光 + 海报提亮 */
+html[data-v4skin="matinee"] .movie-card:hover,
+html[data-v4skin="matinee"] .movie-card-compact:hover {
+    box-shadow: 0 20px 44px -24px rgba(217, 154, 67, .5), 0 0 0 1px rgba(217, 154, 67, .28);
+}
+html[data-v4skin="matinee"] .movie-card:hover .movie-poster,
+html[data-v4skin="matinee"] .movie-card-compact:hover .movie-poster {
+    filter: saturate(1.06) brightness(1.05);
+}
+
+/* ---------- 鲸：深海生物光 ---------- */
+/* 水光漂移层压在背景与内容之间（ink / amis 也是同样的层序） */
+html[data-v4skin="whale"] .navbar,
+html[data-v4skin="whale"] .main-container { position: relative; z-index: 1; }
+html[data-v4skin="whale"] body::after {
+    content: "";
+    position: fixed;
+    inset: -8vh -4vw;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(46% 32% at 18% 14%, rgba(127, 182, 232, .10), transparent 70%),
+        radial-gradient(40% 28% at 84% 30%, rgba(211, 176, 116, .05), transparent 72%);
+    animation: whCaustic 26s ease-in-out infinite alternate;
+}
+@keyframes whCaustic {
+    from { transform: translate3d(-1.5%, 0, 0) scale(1); opacity: .8; }
+    to   { transform: translate3d(1.5%, 1.5%, 0) scale(1.06); opacity: 1; }
+}
+html[data-v4skin="whale"] .settings-section-title::after,
+html[data-v4skin="whale"] .gallery-title::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    margin-left: 14px;
+    background: linear-gradient(90deg, rgba(211, 176, 116, .55), rgba(127, 182, 232, .22) 55%, transparent 90%);
+    opacity: .8;
+}
+html[data-v4skin="whale"] .hcs-pulse-num { text-shadow: 0 0 18px rgba(127, 182, 232, .35); }
+/* 首屏：只留深海书房那张 —— 左侧本来就是暗水，文字压得住，
+   面纱不必再把画面压死，让鲸鱼娘、水母和月光透出来。 */
+html[data-v4skin="whale"] .wh-hero-art { object-position: 52% 10%; }
+html[data-v4skin="whale"] .wh-hero-veil {
+    background:
+        linear-gradient(90deg, rgba(4, 10, 20, .93) 0%, rgba(4, 10, 20, .70) 32%, rgba(4, 10, 20, .10) 62%, rgba(4, 10, 20, .26) 100%),
+        linear-gradient(0deg, rgba(4, 10, 20, .78), transparent 56%);
+}
+html[data-v4skin="whale"] .movie-card:hover,
+html[data-v4skin="whale"] .movie-card-compact:hover {
+    box-shadow: 0 22px 48px -26px rgba(0, 0, 0, .9), 0 0 0 1px rgba(127, 182, 232, .26);
+}
+html[data-v4skin="whale"] .movie-card:hover .movie-poster {
+    filter: brightness(1.05) saturate(1.06);
+}
+
+/* ---------- 墨：宣纸墨池 ---------- */
+html[data-v4skin="ink"] .settings-section-title::after,
+html[data-v4skin="ink"] .gallery-title::after {
+    content: "藏";
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin-left: 10px;
+    border-radius: 3px;
+    background: #C8443C;
+    color: #FFF3EF;
+    font-family: "Songti SC", "Noto Serif SC", serif;
+    font-size: 12px;
+    line-height: 1;
+    transform: rotate(-4deg);
+    box-shadow: 0 0 0 1px rgba(200, 68, 60, .45), 0 4px 10px -4px rgba(200, 68, 60, .55);
+    opacity: .92;
+}
+html[data-v4skin="ink"] .gallery-title::after { content: "选"; }
+html[data-v4skin="ink"] .hcs-shell {
+    box-shadow: inset 0 1px 0 rgba(237, 233, 225, .05);
+}
+html[data-v4skin="ink"] .movie-card:hover,
+html[data-v4skin="ink"] .movie-card-compact:hover {
+    box-shadow: 0 20px 42px -26px rgba(0, 0, 0, .9), 0 0 0 1px rgba(200, 68, 60, .28);
+}
+
+/* ---------- 爱弥斯：暖书房烛光 ---------- */
+html[data-v4skin="amis"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(40% 30% at 84% 2%, rgba(232, 162, 178, .10), transparent 70%),
+        radial-gradient(36% 26% at 6% 96%, rgba(217, 178, 110, .06), transparent 72%);
+    animation: amisCandle 9s ease-in-out infinite alternate;
+}
+@keyframes amisCandle {
+    from { opacity: .55; }
+    to   { opacity: 1; }
+}
+html[data-v4skin="amis"] .settings-section-title::after,
+html[data-v4skin="amis"] .gallery-title::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    margin-left: 14px;
+    background: linear-gradient(90deg, rgba(232, 162, 178, .55), rgba(217, 178, 110, .30) 55%, transparent 90%);
+}
+html[data-v4skin="amis"] .movie-card,
+html[data-v4skin="amis"] .movie-card-compact { border-radius: 12px; }
+html[data-v4skin="amis"] .movie-card:hover,
+html[data-v4skin="amis"] .movie-card-compact:hover {
+    box-shadow: 0 20px 42px -26px rgba(0, 0, 0, .85), 0 0 0 1px rgba(232, 162, 178, .26);
+}
+html[data-v4skin="amis"] .hcs-shell {
+    box-shadow: inset 0 1px 0 rgba(217, 178, 110, .22);
+}
+
+/* ============================================================================
+   三、窄屏 / 减动效
+   ============================================================================ */
+@media (min-width: 861px) and (max-width: 1519px) {
+    html body .theme-selector--specimen { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    html body .theme-selector--specimen > .theme-card { height: 150px; }
+}
+@media (min-width: 861px) and (max-width: 1149px) {
+    html body .theme-selector--specimen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+    html body .theme-selector { flex-direction: column; }
+    html body .theme-selector--specimen {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+    }
+    /* 纵排后必须放开 flex-basis，否则 height 会被 flex-basis:0 吞掉，卡片塌成一条 */
+    html body .theme-selector--specimen > .theme-card {
+        flex: 0 0 auto;
+        height: 124px;
+    }
+    /* 手机端卡片是接近 3:1 的宽条，竖构图按「居中」取景只剩半截身子；
+       统一把取景框抬到人物头肩，脸部留在渐变之外。 */
+    html body .theme-selector--specimen > .theme-card .thm-art { background-position: center 30%, center 10%; }
+    /* 纸卡是奶油渐变，宽条里脸会整片被米粉洗掉；把渐变起点下移，脸留在干净的上半区 */
+    html body .theme-selector--specimen > .theme-card[data-v4skin="classic"] .thm-art {
+        background-image:
+            linear-gradient(180deg, rgba(249, 243, 231, 0) 36%, rgba(249, 243, 231, .86) 66%, rgba(249, 243, 231, .985) 90%),
+            url("/img/paper/closeup-v2.webp");
+    }
+    html body .theme-selector--specimen > .theme-card[data-v4skin="matinee"] .thm-art { background-position: center 30%, center 8%; }
+    html body .theme-selector--specimen > .theme-card[data-v4skin="whale"] .thm-art { background-position: center 30%, 64% 6%; }
+    html body .theme-selector--specimen > .theme-card[data-v4skin="ink"] .thm-art { background-position: center 30%, center 12%; }
+    html body .theme-selector--specimen > .theme-card[data-v4skin="amis"] .thm-art { background-position: center 30%, center 4%; }
+    html[data-v4skin="matinee"] .navbar::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html body .theme-selector--specimen > .theme-card .thm-art { transition: none; }
+    html[data-v4skin="whale"] body::after,
+    html[data-v4skin="amis"] body::before { animation: none !important; }
+}

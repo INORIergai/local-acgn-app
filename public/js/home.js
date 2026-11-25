@@ -58,9 +58,18 @@
     }
 
     /* r75：轻量 Markdown 渲染 —— AI 常回 **粗体** 和 | 表格 |，
-       原样 innerHTML 会满屏星号竖线。必须在 esc() 之后跑，无 XSS 面。 */
+       原样 innerHTML 会满屏星号竖线。必须在 esc() 之后跑，无 XSS 面。
+       round190：补围栏代码块（```sql 等）。与 app.js 的同名实现保持同一口径：
+       先把围栏整段摘成占位符，其余行内规则跑完再还原。 */
     function mdLite(s) {
-        return String(s || '')
+        const codeBlocks = [];
+        const src = String(s || '').replace(/```([\w+#.-]*)[ \t]*\r?\n?([\s\S]*?)```/g, (m, lang, code) => {
+            const clean = String(code || '').replace(/\s+$/, '');
+            const label = lang ? `<span class="md-pre-lang">${lang}</span>` : '';
+            codeBlocks.push('<pre class="md-pre">' + label + '<code>' + clean + '</code></pre>');
+            return '\u0000mdpre' + (codeBlocks.length - 1) + '\u0000';
+        });
+        let out = src
             .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
             .replace(/\*\*/g, '')
             .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
@@ -78,6 +87,7 @@
             })
             .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
             .replace(/\n{3,}/g, '\n\n');
+        return out.replace(/\u0000mdpre(\d+)\u0000/g, (m, i) => codeBlocks[Number(i)] || '');
     }
 
     function addMsg(role, text, opts) {

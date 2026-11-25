@@ -1765,7 +1765,12 @@ kbd {
     position: fixed;
     left: 50%;
     bottom: 24px;
-    transform: translateX(-50%) translateY(80px);
+    /* ★ round190：原来固定 translateY(80px)。批量栏在中等宽度会换行长到 ~100px 高，
+       80px 推不完 ⇒ 未选中任何影片时，屏幕底部仍露出半截「已选 0 部」（审计实拍）。
+       改成按自身高度整体推出视口，再用 visibility 彻底兜底。 */
+    transform: translateX(-50%) translateY(calc(100% + 40px));
+    visibility: hidden;
+    pointer-events: none;
     z-index: 300;
     display: flex;
     align-items: center;
@@ -1775,9 +1780,16 @@ kbd {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-2);
-    transition: transform var(--mv2-d2, 0.25s) var(--mv2-snap, ease);
+    transition: transform var(--mv2-d2, 0.25s) var(--mv2-snap, ease),
+                visibility 0s var(--mv2-d2, 0.25s);
 }
-.batch-toolbar.show { transform: translateX(-50%) translateY(0); }
+.batch-toolbar.show {
+    transform: translateX(-50%) translateY(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform var(--mv2-d2, 0.25s) var(--mv2-snap, ease),
+                visibility 0s 0s;
+}
 .batch-count { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 
 /* ============================================================

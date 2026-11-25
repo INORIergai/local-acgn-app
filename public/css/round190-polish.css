@@ -1,0 +1,178 @@
+/* ==========================================================================
+   round190 · 中窗口排版 + 细节打磨层
+   --------------------------------------------------------------------------
+   本层只做「后写覆盖」，不改任何旧补丁文件；加载顺序：workspace.css 之后、
+   palette.css 之前。所有规则 = 桌面中窗口（861~1400px）与零星控件修补。
+
+   ① 馆藏脉搏台账：round151 用 !important 钉死 4 列，1420px 以下每列只剩
+      ~90px，「典藏小说」被 ellipsis 截成「典藏…」；中窗口改 2×2 台账。
+   ② 首页聊天头部副标题（CURATOR SALON · 选片 / 找书 / 导读）在 ≤1400px
+      与右侧按钮抢宽，整行被迫换行；收起副标题，保留主标题与工具组。
+   ③ AI 气泡围栏代码块（mdLite / md-pre）配色，与既有 .md-code 同一色系。
+   ④ 通知「✕ 关闭」等小按钮的可点面积抬到 ≥26px（WCAG 2.2 目标尺寸）。
+   ⑤ 空的三态切片条不占位（JS 内联 display 之外的最后一道保险）。
+   ========================================================================== */
+
+/* --- ① 馆藏脉搏：中窗口 2×2 台账 --------------------------------------- */
+@media (min-width: 861px) and (max-width: 1400px) {
+    html body .hcs-pulse-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+    /* 两列时偶数位不再画右分隔线，第二行补一条横线维持台账质感 */
+    html body .hcs-pulse-card:nth-child(2n) {
+        border-right: none !important;
+    }
+    html body .hcs-pulse-card:nth-child(n + 3) {
+        border-top: 1px solid rgba(138, 90, 18, 0.16) !important;
+        margin-top: 6px !important;
+        padding-top: 9px !important;
+    }
+    html[data-v4skin="matinee"] body .hcs-pulse-card:nth-child(n + 3),
+    body.dark .hcs-pulse-card:nth-child(n + 3) {
+        border-top-color: rgba(229, 169, 60, 0.16) !important;
+    }
+    /* 两列宽度足够，把 10px 的标签字号还给正文（workspace.css 的打包压缩规则） */
+    #homeView .hcs-pulse-name {
+        font-size: 11px;
+    }
+}
+
+/* --- ② 首页聊天头部：≤1400px 收起副标题 -------------------------------- */
+@media (max-width: 1400px) {
+    .home-chat-head .hch-sub {
+        display: none;
+    }
+}
+
+/* --- ③ AI 气泡围栏代码块 ------------------------------------------------ */
+.md-pre {
+    position: relative;
+    margin: 8px 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(138, 90, 18, 0.14);
+    border-radius: 8px;
+    background: rgba(138, 90, 18, 0.07);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.md-pre code {
+    display: block;
+    padding: 0;
+    background: none;
+    border: none;
+    font-family: var(--font-mono, monospace);
+    font-size: 12.5px;
+    line-height: 1.62;
+    white-space: pre;
+    color: inherit;
+    tab-size: 4;
+}
+.md-pre .md-pre-lang {
+    display: block;
+    margin-bottom: 6px;
+    padding-bottom: 5px;
+    border-bottom: 1px dashed rgba(138, 90, 18, 0.18);
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #9A6518;
+    user-select: none;
+}
+html[data-v4skin="matinee"] .md-pre,
+body.dark .md-pre {
+    border-color: rgba(255, 248, 235, 0.12);
+    background: rgba(255, 248, 235, 0.06);
+}
+html[data-v4skin="matinee"] .md-pre .md-pre-lang,
+body.dark .md-pre .md-pre-lang {
+    border-bottom-color: rgba(255, 248, 235, 0.16);
+    color: #EBC374;
+}
+
+/* --- ④ 小按钮可点面积 --------------------------------------------------- */
+.notification-item-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+}
+
+/* --- ⑤ 空切片条不占位 --------------------------------------------------- */
+.r34-slice-bar:empty,
+.nr-tabs:empty {
+    display: none !important;
+}
+
+/* --- ⑥ 在线最新：标题地球矢量图标 + 无海报占位 ------------------------- */
+.ob-head b {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.ob-head b .ic { flex: none; opacity: .78; }
+.ob-cover svg.ob-cover-art {
+    width: 100%;
+    height: 100%;
+    display: block;
+    color: var(--primary, #8A5A12);
+}
+
+/* --- ⑦ 画廊箭头 SVG 尺寸（替换 ‹ › 字形后保持 40px 圆钮内的视觉重量） --- */
+.gallery-arrow svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+}
+.gallery-arrow.prev svg { margin-right: 1px; }
+.gallery-arrow.next svg { margin-left: 1px; }
+
+/* --- ⑧ 漫画 / 追番：小控件抬到 28~30px 触控基线 ----------------------- */
+/* 侧栏折叠、面板关闭 */
+.sb-fold,
+.ssb-close,
+.sb-collapse-btn {
+    min-width: 28px;
+    min-height: 28px;
+}
+/* 漫画书架：树节点 24 → 28，打开按钮 27 → 30，筛选片 25 → 28 */
+.rw-tree-node { min-height: 28px; }
+.rw-open { min-height: 30px; }
+.rw-chip { min-height: 28px; }
+/* AI 工作台底部操作条 */
+.dsn-act-btn { min-height: 30px; }
+/* 追番首屏轮播圆点：视觉不变，热区补到 28×28 */
+html body .svh-hero-dot::before { inset: -10px -10px; }
+
+/* --- ⑨ 过小字号统一 +0.5~1px（10 / 9.5 / 9 → 10.5，10.5 已是下限） ----- */
+.sidebar .nav-item .count,
+.sidebar-caption,
+.facet-label { font-size: 10.5px; }
+.rw-rail-h { font-size: 10.5px; }
+.rw-st { font-size: 10px; }
+
+/* --- ⑩ 鲸鱼娘首屏：workspace 把首屏钉死 176px，三行「下潜台账」被裁掉一行 ---
+   内容实测需要 208px；纸 / 夜首屏没有第三行，维持 176px 不动。 */
+html body #homeView .wh-hero {
+    height: auto;
+    min-height: 210px;
+}
+
+/* --- ⑪ 纸 / 夜 / 墨 / 爱弥斯首屏：16:9 角色图塞进 7:1 的横条里 -------------- */
+/* workspace 把首屏统一压成 176px 后，取景框只剩图片高度的四分之一，
+   人物常常被裁到只剩下巴。首屏抬到 200px，并把取景框上移到头部。 */
+/* 墨的首屏多一块「ACCESSION」档案条，爱弥斯的内容也比纸 / 夜高一行：
+   这两套用 auto 让内容自己撑开（实测 294 / 213px），否则底部的馆藏数字会被裁掉。 */
+html body #homeView .pp-hero,
+html body #homeView .nt-hero {
+    height: 200px;
+}
+html body #homeView .ik-hero,
+html body #homeView .am-hero {
+    height: auto;
+}
+html body #homeView .pp-hero .th-hero-art { object-position: center 12%; }
+html body #homeView .nt-hero .th-hero-art { object-position: center 10%; }
+html body #homeView .ik-hero .th-hero-art { object-position: 68% 8%; }
+html body #homeView .am-hero .th-hero-art { object-position: center 6%; }

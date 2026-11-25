@@ -8266,41 +8266,32 @@ function renderSettings(config) {
                          与顶栏那三个圆点切换器同一套。 -->
                     <div class="settings-group">
                         <div class="settings-group-title">主题风格</div>
-                        <div class="theme-selector">
+                        <p class="theme-selector-hint">每套皮肤有自己的排版、材质与装饰语言，点一下即可全场切换</p>
+                        <div class="theme-selector theme-selector--specimen">
                             <div class="theme-card ${getV4Skin() === 'classic' ? 'active' : ''}" data-v4skin="classic" onclick="pickV4Skin('classic')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #F7F3EA 50%, #8A5A12 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">纸 · Paper</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">奶油纸底 · 墨字 · 宋体页名</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #F7F3EA 50%, #8A5A12 50%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>纸 · Paper</b><small>奶油纸底 · 墨字 · 宋体页名</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'matinee' ? 'active' : ''}" data-v4skin="matinee" onclick="pickV4Skin('matinee')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #14110E 50%, #D99A43 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">夜 · Night</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">暖黑底 · 纸白字 · 琥珀灯</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #14110E 50%, #D99A43 50%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>夜 · Night</b><small>暖黑底 · 纸白字 · 琥珀灯</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'whale' ? 'active' : ''}" data-v4skin="whale" onclick="pickV4Skin('whale')">
-                                <div class="theme-dot" style="background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">🐋 鲸 · Deep Whale</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">深海生物光 · 月光金 · 鲸鱼娘陪伴</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: radial-gradient(circle at 36% 32%, #A9D2F5 0 26%, #2F6FB8 54%, #070F1E 100%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>鲸 · Deep Whale</b><small>深海生物光 · 月光金 · 鲸鱼娘</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'ink' ? 'active' : ''}" data-v4skin="ink" onclick="pickV4Skin('ink')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">墨 · Ink</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">墨黑底 · 纸灰字 · 一点朱红</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #0B0B0D 50%, #C8443C 50%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>墨 · Ink</b><small>墨黑底 · 纸灰字 · 一点朱红</small></span>
                             </div>
                             <div class="theme-card ${getV4Skin() === 'amis' ? 'active' : ''}" data-v4skin="amis" onclick="pickV4Skin('amis')">
-                                <div class="theme-dot" style="background: linear-gradient(135deg, #140D10 42%, #D9B26E 42%, #E8A2B2 100%);"></div>
-                                <div class="theme-card-info">
-                                    <div style="font-weight: 600; font-size: 14px;">🌸 爱弥斯 · Amis</div>
-                                    <div style="font-size: 12px; color: var(--text-muted);">暖书房 · 玫瑰金 · 爱弥斯陪伴</div>
-                                </div>
+                                <span class="thm-art" aria-hidden="true"></span>
+                                <span class="thm-head"><span class="theme-dot" style="background: linear-gradient(135deg, #140D10 42%, #D9B26E 42%, #E8A2B2 100%);"></span><span class="thm-now">使用中</span></span>
+                                <span class="thm-body"><b>爱弥斯 · Amis</b><small>暖书房 · 玫瑰金 · 爱弥斯陪伴</small></span>
                             </div>
                         </div>
                     </div>
@@ -13294,9 +13285,19 @@ function appendAIApprovalBlock(messagesDiv, approval, origMsg) {    if (!approva
     }
 }
 
-/* r75：轻量 Markdown 渲染（粗体 + 表格行转一行）—— 必须在 escapeHtml 之后跑 */
+/* r75：轻量 Markdown 渲染（粗体 + 表格行转一行）—— 必须在 escapeHtml 之后跑
+   round190：补围栏代码块。AI 常回 ```sql / ```json 片段，旧实现把反引号当普通字
+   原样铺在气泡里（首页对话卡实测整屏都是 raw SELECT）。先把围栏整段摘出来放到
+   占位符，其余行内规则跑完再还原 —— 这样代码里的 * | - 不会被误渲染。 */
 function mdLite(s) {
-    return String(s || '')
+    const codeBlocks = [];
+    const src = String(s || '').replace(/```([\w+#.-]*)[ \t]*\r?\n?([\s\S]*?)```/g, (m, lang, code) => {
+        const clean = String(code || '').replace(/\s+$/, '');
+        const label = lang ? `<span class="md-pre-lang">${lang}</span>` : '';
+        codeBlocks.push('<pre class="md-pre">' + label + '<code>' + clean + '</code></pre>');
+        return '\u0000mdpre' + (codeBlocks.length - 1) + '\u0000';
+    });
+    let out = src
         .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
         .replace(/\*\*/g, '')
         .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
@@ -13314,6 +13315,7 @@ function mdLite(s) {
         })
         .replace(/(<\/div>|<hr class="md-hr">)\r?\n/g, '$1')
         .replace(/\n{3,}/g, '\n\n');
+    return out.replace(/\u0000mdpre(\d+)\u0000/g, (m, i) => codeBlocks[Number(i)] || '');
 }
 
 // 发送AI消息
@@ -14060,6 +14062,13 @@ function switchView(view) {
         const t = document.getElementById('novelCloudToggle');
         if (t) t.remove();
     }
+    /* round190：影视库的三态切片同样是「用过就挂着」。
+       审计实测：先看影视库、再切漫画库，工具条上同时出现两组「本地/网盘/全部」；
+       切到设置/收藏/追番等页面也照样留在那儿。与上面两个同一口径清理。 */
+    if (view !== 'film') {
+        const t = document.getElementById('filmCloudToggle');
+        if (t) t.remove();
+    }
 
     // 记住当前视图（刷新/返回时恢复，见 init() 的 hash 解析）
     rememberViewState(view, '');
@@ -14432,24 +14441,43 @@ function switchView(view) {
 }
 
 // ========== 数据加载 ==========
+/* round190：在线源没给封面时的手绘式占位——胶片框 + 首字，比一个孤零零的
+   地球 emoji 更像「藏品待入库」，也让整排卡片的版心重量一致。 */
+function obCoverArt(name, kind) {
+    const ch = escapeHtml(String(name || '').trim().charAt(0) || '影');
+    const tag = kind === 'anime' ? 'ANIME' : 'FILM';
+    const holes = [7, 19, 31, 43, 55].map(y =>
+        '<rect x="4" y="' + y + '" width="3.5" height="5" rx="1"/>' +
+        '<rect x="52.5" y="' + y + '" width="3.5" height="5" rx="1"/>').join('');
+    return '<svg class="ob-cover-art" viewBox="0 0 60 80" aria-hidden="true" focusable="false">'
+        + '<rect x="0.75" y="0.75" width="58.5" height="78.5" rx="4" fill="none" stroke="currentColor" stroke-opacity=".30" stroke-width="1.5"/>'
+        + '<g fill="currentColor" fill-opacity=".16">' + holes + '</g>'
+        + '<text x="30" y="45" text-anchor="middle" font-size="22" fill="currentColor" fill-opacity=".66"'
+        + ' font-family="Songti SC, Noto Serif SC, Georgia, serif">' + ch + '</text>'
+        + '<text x="30" y="65" text-anchor="middle" font-size="5.5" letter-spacing="2.4" fill="currentColor"'
+        + ' fill-opacity=".42" font-family="monospace">' + tag + '</text>'
+        + '</svg>';
+}
+
 /* Phase A：影视库/动漫库首页的「在线最新」卡片区（在线优先、本地兜底）。
    异步加载，失败静默隐藏，绝不影响本地库渲染。 */
 async function loadOnlineBrowse(view) {
     const bar = document.getElementById('onlineBrowseBar');
     if (!bar || !['movies', 'anime', 'movies-adult'].includes(view)) { if (bar) bar.hidden = true; return; }
     const kind = (view === 'anime') ? 'anime' : 'film';
+    const obHead = '<b>' + uiIcon('globe', 14) + ' 在线最新</b>';
     bar.hidden = false;
-    bar.innerHTML = '<div class="ob-head"><b>🌐 在线最新</b><span>正在聚合在线源…</span></div>';
+    bar.innerHTML = '<div class="ob-head">' + obHead + '<span>正在聚合在线源…</span></div>';
     try {
         const r = await fetch('/api/media-source/browse?kind=' + kind + '&limit=24');
         const j = await r.json();
         if (j.code !== 0 || !j.data || !(j.data.items || []).length) { bar.hidden = true; return; }
         const items = j.data.items;
-        bar.innerHTML = '<div class="ob-head"><b>🌐 在线最新</b><span>' + items.length
+        bar.innerHTML = '<div class="ob-head">' + obHead + '<span>' + items.length
             + ' 部 · 来自 ' + (j.data.groups || []).filter(g => g.count > 0).length + ' 个在线源</span></div>'
             + '<div class="ob-grid">' + items.map((it, i) => `
                 <button class="ob-card" data-i="${i}" title="${escapeHtml(it.name)}">
-                    <span class="ob-cover">${it.cover ? '<img src="' + escapeHtml(it.cover) + '" alt="" loading="lazy">' : '<i>🌐</i>'}</span>
+                    <span class="ob-cover">${it.cover ? '<img src="' + escapeHtml(it.cover) + '" alt="" loading="lazy">' : obCoverArt(it.name, kind)}</span>
                     <span class="ob-name">${escapeHtml(it.name)}</span>
                     <small>${escapeHtml(it.sourceName || '')}</small>
                 </button>`).join('') + '</div>';
@@ -17323,7 +17351,9 @@ function applyWhaleSkinBits(skin) {
 var V4_HERO_ART = {
     classic: ['/img/paper/hero-1.webp', '/img/paper/hero-2.webp', '/img/paper/hero-3.webp'],
     matinee: ['/img/night/hero-1.webp', '/img/night/hero-2.webp', '/img/night/hero-3.webp'],
-    whale: ['/img/whale/hero-1-v4.webp', '/img/whale/hero-2-v4.webp', '/img/whale/hero-3-v4.webp'],
+    /* 鲸鱼娘其余三张都是暖红宫墙场景，和深海色板相冲；只保留水下书房这一张，
+       身份统一，也避免每 90 秒换回一张「另一个季节」的图。 */
+    whale: ['/img/whale/hero-v2.webp'],
     ink: ['/img/ink/hero-1.webp', '/img/ink/hero-2.webp', '/img/ink/hero-3.webp'],
     amis: ['/img/amis/hero-1.webp', '/img/amis/hero-2.webp', '/img/amis/hero-3.webp']
 };
@@ -17356,7 +17386,10 @@ function pickThemeHero(skin, fade) {
 function startHeroRotation() {
     if (_heroRotateTimer) clearInterval(_heroRotateTimer);
     _heroRotateTimer = setInterval(function () {
-        if (!document.hidden) pickThemeHero(getV4Skin(), true);
+        if (document.hidden) return;
+        var list = V4_HERO_ART[getV4Skin()];
+        if (!list || list.length < 2) return; /* 单图皮肤不做无意义的重复加载 */
+        pickThemeHero(getV4Skin(), true);
     }, 90000);
 }
 
