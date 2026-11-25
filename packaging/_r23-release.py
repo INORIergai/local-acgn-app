@@ -11,8 +11,8 @@ import subprocess
 
 OWNER = 'INORIergai'
 REPO = 'local-acgn-app'
-VER = '6.8.28'
-TAG = 'v6.8.28'
+VER = '6.8.29'
+TAG = 'v6.8.29'
 # 按脚本位置推导（round24）：与 _r23-publish.py 同理，不写死开发机绝对路径。
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
@@ -92,14 +92,12 @@ GIT = os.environ.get('GIT_EXE') or 'C:/Program Files/Git/cmd/git.EXE'
 
 BODY = """本地优先的私人媒体库：AV / 里番 / 影视 / 动漫 / 漫画 / 小说 六库合一。数据全部留在本机。
 
-## v6.8.28 · 五套皮肤分化与前端系统重构
+## v6.8.29 · 图标体系回归与动效补齐
 
-- 五套皮肤真正拥有独立底色、表面色与文字配色：宣纸、炭黑、深海蓝、档案黑、暖玫瑰书房。
-- 全新几何 SVG 图标系统：统一 24px 网格、1.7px 描边，移除渐变、发光与装饰性视频图标。
-- 重构桌面与移动应用外壳：搜索、库务、通知、继续浏览分层；小窗、手机横屏与触控操作适配。
-- 设置页支持分类与搜索；媒体筛选、书架、阅读器和动效细节统一；继续浏览可恢复最近内容。
-- Android：五个频道独立返回栈、宽屏导航、窗口宽度自适应网格、AI 键盘避让。
-- 保留既有媒体库、阅读、播放、AI、在线源与隐私门禁能力。
+- 侧栏与设置导航恢复为 Remotion 实心光体动效图标（webm 演出 + png 静帧），撤回上一版的纯线性 SVG 图标。
+- 补齐此前只能显示 emoji 的入口：追番、小说/漫画阅读记录、萌娘百科、GameKee、Galgame 资料库，全部使用已有动效图标。
+- 修正侧栏图标被旧样式拉伸的问题，图标恢复 20px 并与文字对齐。
+- 五套皮肤底色、排版与外壳重构保持不变。
 
 内置 Android v5.2.0 安装包。首次升级到本版仍需全量一次；之后可增量。如有 bug 欢迎提 issue。"""
 
@@ -171,7 +169,7 @@ else:
     print('创建 release %s ...' % TAG)
     s, rel = api('POST', '/repos/%s/%s/releases' % (OWNER, REPO), {
         'tag_name': TAG,
-        'target_commitish': 'main',
+        'target_commitish': 'android-native-v5-handoff',
         'name': 'Cinema Vault %s · 午夜场' % TAG,
         'body': BODY,
         'draft': False,

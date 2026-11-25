@@ -242,6 +242,14 @@ html body .sb-collapse-btn {
     gap: 10px;
     line-height: 1.4;
 }
+/* 旧 style.css 里有 `.nav-item span:first-child { flex: 1 }`，它也会命中
+   现在插在 label 里的 .nv-ic，把 20px 的动效图标拉成整行宽。
+   图标是固定尺寸的装饰件，必须不可伸缩。 */
+.sidebar .nav-item .nv-ic {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+}
 .sidebar .nav-item .nv-ic-svg {
     display: inline-flex;
     align-items: center;

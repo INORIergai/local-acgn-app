@@ -2939,11 +2939,8 @@ function updateToolbarTitleIcon(iconId, label, count) {
  *   用户原话「点进去左上角的图标全都是同一个」。这里改成直接插入各自的 96px 图标，
  *   与侧栏同一份资源（img/nav-icons/adult-*.png），不会出现两边长相不一致。 */
 function ttIcon(id) {
-    const names = {
-        'adult-all': 'reel', 'adult-history': 'clock', 'adult-unwatched': 'eye',
-        'adult-hot': 'flame', 'adult-random': 'shuffle', 'adult-guess': 'spark'
-    };
-    return uiIcon(names[id] || id || 'reel', 20, 'tt-ic');
+    if (!id) return '';
+    return `<img class="tt-ic" src="img/nav-icons/${id}.png" alt="" draggable="false">`;
 }
 
 // ========== 收藏夹（round53：原「播放列表」升级而来） ==========
@@ -8147,13 +8144,28 @@ function initSettingsNavigation() {
             <summary>${category}<span>${groups.filter(group => group.category === category).length}</span></summary>
             <div class="settings-category-items">${groups.filter(group => group.category === category).map(group => `
                 <button type="button" class="settings-nav-item ${group.id === 'appearance' ? 'active' : ''}" data-group="${group.id}">
-                    ${uiIcon(groups.find(g => g.id === group.id)?.icon || 'settings', 17)}
+                    ${makeRemotionIcon(group.icon, 20)}
                     <span class="settings-nav-label">${group.name}</span>${uiIcon('chevronRight', 13, 'settings-nav-arrow')}
                 </button>`).join('')}</div>
         </details>`).join('');
     host.querySelectorAll('.settings-nav-item').forEach(item => {
         item.addEventListener('click', () => switchSettingsGroup(item.dataset.group));
     });
+    /* 与侧栏同款：设置项图标错峰登场（有 webm 的播演出，没有的静帧兜底） */
+    setTimeout(() => {
+        host.querySelectorAll('.settings-nav-item .nv-ic').forEach((wrap, idx) => {
+            const v = wrap.querySelector('video');
+            const img = wrap.querySelector('img');
+            if (!v || !img) return;
+            setTimeout(() => {
+                v.currentTime = 0;
+                img.style.display = 'none';
+                const p = v.play();
+                if (p && p.catch) p.catch(() => {});
+                v.onended = () => { img.style.display = 'block'; };
+            }, idx * 45);
+        });
+    }, 80);
     document.getElementById('settingsSearch')?.addEventListener('input', event => {
         const query = event.target.value.trim().toLowerCase();
         let matches = 0;
@@ -8203,25 +8215,27 @@ function renderSettings(config) {
     const authOn = !!(config.auth && config.auth.enabled);
     const authHasPwd = !!(config.auth && config.auth.hasPassword);
 
+    /* 图标 id 必须落在 img/nav-icons 现有资源内（22 个带 webm 动效），
+       否则 makeRemotionIcon 会退回静态 SVG。语义名只用于新加的分组。 */
     const groups = [
-        { id: 'appearance', icon: 'paint', name: '外观', category: '体验' },
+        { id: 'appearance', icon: 'film', name: '外观', category: '体验' },
         { id: 'customize', icon: 'settings', name: '个性化', category: '体验' },
-        { id: 'fxsettings', icon: 'spark', name: '动效设置', category: '体验' },
-        { id: 'player', icon: 'play', name: '播放', category: '体验' },
-        { id: 'ai', icon: 'ai', name: 'AI 设置', category: '体验' },
+        { id: 'fxsettings', icon: 'flame', name: '动效设置', category: '体验' },
+        { id: 'player', icon: 'reel', name: '播放', category: '体验' },
+        { id: 'ai', icon: 'spark', name: 'AI 设置', category: '体验' },
         { id: 'tts', icon: 'headphones', name: '语音朗读', category: '体验' },
-        { id: 'paths', icon: 'folder', name: '扫描路径', category: '馆藏与来源' },
-        { id: 'sources', icon: 'globe', name: '数据源', category: '馆藏与来源' },
+        { id: 'paths', icon: 'frame', name: '扫描路径', category: '馆藏与来源' },
+        { id: 'sources', icon: 'watch', name: '数据源', category: '馆藏与来源' },
         { id: 'poster', icon: 'image', name: '海报管理', category: '馆藏与来源' },
-        { id: 'tools', icon: 'tool', name: '工具维护', category: '馆藏与来源' },
-        { id: 'cookies', icon: 'key', name: '授权 Cookie', category: '连接与同步' },
-        { id: 'cloudsync', icon: 'cloud', name: '数据同步', category: '连接与同步' },
-        { id: 'bangumi', icon: 'refresh', name: 'Bangumi 同步', category: '连接与同步' },
-        { id: 'jellyfin', icon: 'server', name: 'Jellyfin', category: '连接与同步' },
-        { id: 'notify', icon: 'bell', name: '安全与通知', category: '安全与系统' },
-        { id: 'privacy', icon: 'lock', name: '隐私内容', category: '安全与系统' },
-        { id: 'version', icon: 'download', name: '版本', category: '安全与系统' },
-        { id: 'about', icon: 'info', name: '关于', category: '安全与系统' }
+        { id: 'tools', icon: 'clock', name: '工具维护', category: '馆藏与来源' },
+        { id: 'cookies', icon: 'bookmark', name: '授权 Cookie', category: '连接与同步' },
+        { id: 'cloudsync', icon: 'shuffle', name: '数据同步', category: '连接与同步' },
+        { id: 'bangumi', icon: 'reel', name: 'Bangumi 同步', category: '连接与同步' },
+        { id: 'jellyfin', icon: 'watch', name: 'Jellyfin', category: '连接与同步' },
+        { id: 'notify', icon: 'alert', name: '安全与通知', category: '安全与系统' },
+        { id: 'privacy', icon: 'eye', name: '隐私内容', category: '安全与系统' },
+        { id: 'version', icon: 'chart', name: '版本', category: '安全与系统' },
+        { id: 'about', icon: 'home', name: '关于', category: '安全与系统' }
     ];
 
     view.innerHTML = `
