@@ -188,6 +188,30 @@ const APP_VERSION = {
     writtenAt: new Date().toISOString(),
 };
 const VERSION_FILE = path.join(RUNTIME, 'app-version.json');
+
+/* 语义化版本比较（这里只需要「谁更新」）。
+ * ★ round192：增量热更新只替换 runtime 文件，EXE 本体的 app.getVersion() 仍是旧版；
+ *   启动时若无条件把 EXE 版本写回 app-version.json，会把刚升上去的版本号打回旧值 ——
+ *   界面一直显示旧版、更新检查永远「有新版本」、下次增量还会按旧 baseline 算。
+ *   所以这里取 max(EXE, 已有文件)，并在增量切换成功后由主进程主动抬版本号。 */
+function cmpVersionNum(a, b) {
+    const pa = String(a || '0').trim().replace(/^[vV]/, '').split(/[.\-+]/);
+    const pb = String(b || '0').trim().replace(/^[vV]/, '').split(/[.\-+]/);
+    const n = Math.max(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+        const x = parseInt(pa[i], 10), y = parseInt(pb[i], 10);
+        const xv = Number.isFinite(x) ? x : 0, yv = Number.isFinite(y) ? y : 0;
+        if (xv !== yv) return xv > yv ? 1 : -1;
+    }
+    return 0;
+}
+try {
+    const prev = readJson(VERSION_FILE);
+    if (prev && prev.version && cmpVersionNum(prev.version, APP_VERSION.version) > 0) {
+        blog(`保留增量更新后的版本号 v${prev.version}（EXE 本体 v${APP_VERSION.version}）`);
+        APP_VERSION.version = String(prev.version);
+    }
+} catch (e) { /* 读不到就按 EXE 版本走 */ }
 try {
     fs.mkdirSync(RUNTIME, { recursive: true });
     fs.writeFileSync(VERSION_FILE, JSON.stringify(APP_VERSION, null, 2));
@@ -314,7 +338,8 @@ function showBackendGaveUpDialog() {
     }).catch(() => {});
 }
 
-async function restartBackend() {
+async function restartBackend(opts) {
+    const o = opts || {};
     if (_restartingBackend) return;
     _restartingBackend = true;
     try {
@@ -326,10 +351,36 @@ async function restartBackend() {
         startServer();
         try { await waitServer(40000); } catch (e) { blog('重启后端后等待就绪失败: ' + e.message); }
         intentionalStop = false;
-        if (win && !win.isDestroyed()) win.reload();
+        /* ★ round192：切网页面的 reload 由调用方决定。增量切换失败时若也 reload，
+         *   用户看到的就是「页面每 15 秒强制刷新一次」—— 失败路径必须保持安静。 */
+        if (o.reload !== false && win && !win.isDestroyed()) win.reload();
     } finally {
         _restartingBackend = false;
     }
+}
+
+/* 等一个子进程真正退出，返回 true/false。
+ * ★ round192 关键修复：不能拿 child.exitCode 判断「是否退出」—— 被 signal 终止的
+ *   进程在 Node 里 exitCode === null、signalCode === 'SIGTERM'/'SIGKILL'。旧代码在
+ *   'exit' 事件之后仍检查 exitCode === null，于是**即使进程已经退出**也判失败：
+ *   每次增量切换都以「旧后端进程无法退出」回滚，回滚重启再次失败 → pending 保留 →
+ *   15s 轮询无限重试 + 每轮 reload（用户侧：更新装不上、版本不变、界面反复刷新）。 */
+function waitChildExit(child, ms) {
+    return new Promise((resolve) => {
+        if (!child) return resolve(true);
+        if (child.exitCode !== null || child.signalCode !== null) return resolve(true);
+        let settled = false;
+        const done = (v) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            try { child.removeListener('exit', onExit); } catch (e) { /* 忽略 */ }
+            resolve(v);
+        };
+        const onExit = () => done(true);
+        const timer = setTimeout(() => done(false), ms);
+        child.once('exit', onExit);
+    });
 }
 
 /* restartBackend() 内部把 waitServer 失败只记日志、不抛出（菜单重启可以容忍
@@ -337,30 +388,32 @@ async function restartBackend() {
  * 一套已覆盖、却跑不起来的 runtime。这里包一层：
  *   1) 等旧后端进程真正退出（Windows 上文件占用释放后才能安全覆盖；也避免旧进程
  *      残留导致「旧后端还在应答 → 误判健康」）；
- *   2) 重启；
+ *   2) 重启（不在这里 reload，健康检查通过后由主流程刷新一次）；
  *   3) 独立 ping 健康接口（2xx 才算健康），单请求 2.5s 超时。
  * 总等待上限 15s（含 restartBackend 内部等待），不堆叠两个 40s 循环（review #3c）。 */
 async function verifiedRestartForSwitch() {
     const oldProc = serverProc;
-    if (oldProc && oldProc.exitCode === null) {
-        /* 先发终止信号再等 —— 旧实现只等奖、没杀，等于在等一个永远不退出的进程，
-         * 必然 3s 超时；增量切换每次都被误判失败并回滚（boot 日志反复可见）。 */
+    if (oldProc && oldProc.exitCode === null && oldProc.signalCode === null) {
+        /* 先发终止信号再等；这次退出是我们主动的，必须标记 intentionalStop，
+         * 否则 exit 钩子会把它当成后端崩溃，累计 5 次后「放弃自愈」把后端永久停掉
+         * （进而所有 API、包括「检查更新」都失败）。 */
+        intentionalStop = true;
         try { oldProc.kill(); } catch (e) { /* 忽略：进程可能刚好自己退出 */ }
-        await Promise.race([
-            new Promise((resolve) => oldProc.once('exit', resolve)),
-            new Promise((resolve) => setTimeout(resolve, 3000)),   // 最多等 3s
-        ]);
-        if (oldProc.exitCode === null) {
+        let exited = await waitChildExit(oldProc, 3000);
+        if (!exited) {
             // 后端退出钩子里有 DB checkpoint，SIGTERM 未必能在窗口内完成；超时强杀
             try { oldProc.kill('SIGKILL'); } catch (e) { /* 忽略 */ }
-            await Promise.race([
-                new Promise((resolve) => oldProc.once('exit', resolve)),
-                new Promise((resolve) => setTimeout(resolve, 3000)),
-            ]);
+            exited = await waitChildExit(oldProc, 3000);
         }
-        if (oldProc.exitCode === null) throw new Error('增量切换：旧后端进程无法退出');
+        if (!exited) {
+            intentionalStop = false;
+            throw new Error('增量切换：旧后端进程无法退出');
+        }
+        /* 切换失败会把计数留给下一次自愈；这里清零，避免多次切换把额度耗尽。 */
+        serverRestarts = 0;
+        backendGaveUp = false;
     }
-    await restartBackend();
+    await restartBackend({ reload: false });
     if (!BASE) throw new Error('重启后端后无可用 BASE');
     const t0 = Date.now();
     while (Date.now() - t0 < 15000) {
@@ -407,7 +460,38 @@ function checkPendingSwitch() {
         updatesDir: UPDATES_DIR,
         restart: verifiedRestartForSwitch,
         blog,
+    }).then((r) => {
+        if (r && r.applied) {
+            /* 增量完成后立刻抬版本号：否则后端仍报旧版，界面显示旧版本、
+             * 「检查更新」永远提示有新版本，下一次增量的 baseline 也会算错。 */
+            const target = String(r.target || '').trim();
+            if (target && cmpVersionNum(target, APP_VERSION.version) > 0) {
+                APP_VERSION.version = target;
+                try {
+                    fs.writeFileSync(VERSION_FILE, JSON.stringify(APP_VERSION, null, 2), 'utf8');
+                    blog(`增量切换完成 → 版本号更新为 v${target}`);
+                } catch (e) { blog('增量完成后写版本文件失败: ' + e.message); }
+            }
+            /* 注意：成功分支**不停轮询**。停掉的话，本次会话里再来的新 patch 就不会被消费，
+             * 用户得手动重启应用；而失败分支有 3 次上限兜底，不会出现历史那种无限刷新。 */
+            if (win && !win.isDestroyed()) {
+                blog('增量切换完成 → 刷新界面一次（让新前端生效）');
+                try { win.reload(); } catch (e) { /* 忽略 */ }
+            }
+        } else if (r && r.exhausted) {
+            /* 多次重试仍失败：必须停掉轮询。旧行为是 pending 永远保留、每 15s
+             * 重来一次并 reload 窗口，用户侧就是「界面被反复强制刷新」。 */
+            stopSwitchPolling();
+            blog('[switch] 已达重试上限，停止自动重试；请在设置页下载全量安装包');
+        }
+        return r;
     }).catch((e) => blog('!!! 增量切换未捕获异常: ' + (e && (e.stack || e.message || e))));
+}
+function stopSwitchPolling() {
+    if (switchTimer) {
+        clearInterval(switchTimer);
+        switchTimer = null;
+    }
 }
 function startSwitchPolling() {
     if (switchTimer) return;

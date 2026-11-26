@@ -7916,7 +7916,7 @@ async function downloadIncrementalUpdate() {
     const out = document.getElementById('updInstallMsg');
     if (wrap) wrap.style.display = '';
     if (text) text.textContent = '正在准备增量更新…';
-    if (out) out.innerHTML = '整个过程约几秒到十几秒，分四步：检查版本 → 下载增量包 → 校验完整性 → 自动完成更新。全程无需操作，完成后应用会自动重启。';
+    if (out) out.innerHTML = '分四步：检查版本 → 下载增量包 → 校验完整性 → 自动完成。完成后会重启后端并刷新当前界面一次（约 5–15 秒空白属正常），无需手动操作。';
     const incStarted = Date.now();
     // 发起请求后就开始轮询阶段状态（不 await），让用户实时看到进行到哪一步
     const poll = async () => {
@@ -7948,11 +7948,11 @@ async function downloadIncrementalUpdate() {
         if (j.code !== 0) throw new Error(j.msg || '增量更新失败');
         const d = j.data || {};
         if (d.mode === 'incremental') {
-            if (text) text.innerHTML = '<span class="upd-ok">增量包已就绪（' + updEsc(d.target || '') + '）</span> —— 正在自动完成更新，稍后会自动重启';
-            showNotification('增量更新', 'patch 已下载并校验通过，应用将自动完成升级');
-            // 等主进程切换（15s 轮询）；到点还没重启就提示用户手动重启
+            if (text) text.innerHTML = '<span class="upd-ok">增量包已就绪（' + updEsc(d.target || '') + '）</span> —— 正在自动完成更新，稍后会重启后端并刷新界面一次';
+            showNotification('增量更新', 'patch 已下载并校验通过，接下来会重启后端并刷新界面一次，请稍候（约 5–15 秒）');
+            // 等主进程切换（15s 轮询）；到点还没刷新就提示用户手动重启
             setTimeout(() => {
-                if (out) out.innerHTML = '<span class="upd-warn">若应用仍未自动重启，请手动关闭并重新打开即可完成升级。</span>';
+                if (out) out.innerHTML = '<span class="upd-warn">若 20 秒后界面仍未自动刷新，请手动关闭并重新打开应用即可完成升级。</span>';
             }, 20000);
         } else {
             stopIncPolling();
@@ -9779,12 +9779,16 @@ function renderSettings(config) {
                             <div id="updProgressText" style="font-size:12.5px;color:var(--text);margin-top:6px;font-family:var(--font-mono);font-weight:600;"></div>
                         </div>
                         <div class="upd-action-row">
-                            <button class="btn btn-sm upd-btn-dl" onclick="downloadIncrementalUpdate()" title="只下载变化文件，通常几 MB；失败自动回退全量">⚡ 增量更新</button>
+                            <button class="btn btn-sm upd-btn-dl" onclick="downloadIncrementalUpdate()" title="只下载变化文件，通常几 MB；完成后会重启后端并刷新界面一次；失败自动回退全量">⚡ 增量更新</button>
                             <button class="btn btn-sm upd-btn-dl" onclick="downloadAppUpdate()">${uiIcon('download', 14)} 下载更新</button>
                             <button class="btn btn-sm btn-secondary" onclick="cancelUpdateDownload()">${uiIcon('close', 14)} 取消下载</button>
                             <button class="btn btn-sm upd-btn-inst" onclick="installAppUpdate()">${uiIcon('check', 14)} 立即安装</button>
                             <button class="btn btn-sm btn-secondary" onclick="openUpdateFolder()">${uiIcon('folder', 14)} 打开下载目录</button>
                         </div>
+                        <p class="upd-hint" style="font-size:12px;color:var(--text-muted);margin:8px 0 0;line-height:1.6;">
+                            ⚡ 增量更新会重启后端并<b>刷新当前界面一次</b>（约 5–15 秒，窗口可能短暂空白，属正常现象）。
+                            资料库与设置不会丢，但未保存的编辑、正在播放的进度状态会重置。全量安装包则会关闭应用后重新启动。
+                        </p>
                         <div id="updInstallMsg" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></div>
                     </div>
                 </section>

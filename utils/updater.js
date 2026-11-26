@@ -98,8 +98,9 @@ function updaterConfig() {
  *   （开发模式 node server.js 时 __dirname 是项目 utils/，所以还要往上一级找 packaging/）
  */
 function localVersion() {
-    if (process.env.CINEMAVAULT_VERSION) return String(process.env.CINEMAVAULT_VERSION).trim();
-
+    /* ★ round192：增量热更新只换 runtime 文件，EXE 注入的 CINEMAVAULT_VERSION 仍是旧版。
+     *   旧实现直接 return 环境变量 → 增量成功后界面/更新检查依旧认为自己是旧版，
+     *   「更新明明装了却一直提示有新版本」。这里改成取所有来源里的最高版本。 */
     const readJson = (f) => {
         try {
             if (!fs.existsSync(f)) return null;
@@ -108,6 +109,10 @@ function localVersion() {
             return v ? String(v) : null;
         } catch (e) { return null; }
     };
+
+    let best = null;
+    const envVer = process.env.CINEMAVAULT_VERSION && String(process.env.CINEMAVAULT_VERSION).trim();
+    if (envVer) best = envVer;
 
     // 按「最可能正确 -> 兜底」的顺序试
     const candidates = [
@@ -119,9 +124,10 @@ function localVersion() {
     ];
     for (const f of candidates) {
         const v = readJson(f);
-        if (v && v !== '0.0.0') return v;
+        if (!v || v === '0.0.0') continue;
+        if (!best || cmpVersion(v, best) > 0) best = v;
     }
-    return '0.0.0';
+    return best || '0.0.0';
 }
 
 /** 当前是便携版还是安装版 */
@@ -245,10 +251,16 @@ async function assertSafeUrl(rawUrl) {
     }
 }
 
+/* 代理「短路」缓存：本机代理软件时开时关，配了代理但没起时每次请求都要先
+ * 吃一次 ECONNREFUSED 再直连重试（检查更新因此被拖慢十几秒）。失败后 5 分钟内
+ * 直接用直连，过期再给代理一次机会。 */
+let proxyDeadUntil = 0;
+
 function makeAgent(opts = {}) {
     if (opts.noProxy) return { agent: null, proxy: null };
     const proxy = config.network && config.network.proxyServer;
     if (!proxy || !HttpsProxyAgent) return { agent: null, proxy: null };
+    if (Date.now() < proxyDeadUntil) return { agent: null, proxy: null };
     try {
         return { agent: new HttpsProxyAgent(proxy), proxy };
     } catch (e) {
@@ -355,6 +367,8 @@ function request(url, opts = {}, stream = false, onData = null, attempt = 1) {
         const onErr = (e) => {
             if (proxy && isTransientNetError(e)) {
                 console.log('[更新] 代理不可用（' + ((e && e.message) || e) + '），改为直连重试');
+                /* 记住这次失败，短时间内别再让后续请求白等一轮代理超时 */
+                proxyDeadUntil = Date.now() + 5 * 60 * 1000;
                 return resolve(request(url, Object.assign({}, opts, { noProxy: true }), stream, onData, 1));
             }
             if (!stream && attempt < maxAttempts && isTransientNetError(e)) {
@@ -412,7 +426,8 @@ async function fetchLatestViaHtml(cfg) {
      *   JS 渲染壳 —— 拿得到 HTML 但里面既没有 tag 也没有资产直链，解析必失败。
      *   而 releases.atom 是服务端渲染的静态 XML，同一个仓库实测 200、
      *   首个 entry 就是最新 Release，且**不受 API 限流影响**。 */
-    const atom = await request(`https://github.com/${cfg.repo}/releases.atom`, {}, false);
+    const atom = await request(`https://github.com/${cfg.repo}/releases.atom`,
+        { timeout: 7000, retry: 1 }, false);
     if (atom.status !== 200) throw new Error('GitHub Atom 返回 ' + atom.status);
 
     const xml = atom.body || '';
@@ -444,7 +459,8 @@ async function fetchLatestViaHtml(cfg) {
     /* ② 资产直链：expanded_assets/<tag>
      *   正式页面把资产区做成懒加载片段，只有这个 fragment 里才有真实直链。 */
     const exp = await request(
-        `https://github.com/${cfg.repo}/releases/expanded_assets/${encodeURIComponent(tag)}`, {}, false);
+        `https://github.com/${cfg.repo}/releases/expanded_assets/${encodeURIComponent(tag)}`,
+        { timeout: 7000, retry: 1 }, false);
     const html = exp.status === 200 ? (exp.body || '') : '';
 
     const assets = [];
@@ -511,36 +527,56 @@ async function checkUpdate(force = false) {
     const headers = { 'Accept': 'application/vnd.github+json' };
     if (cfg.token) headers['Authorization'] = 'Bearer ' + cfg.token;
 
-    /* 主通道：GitHub API（信息最全：精确大小、发布时间、更新说明）。
-     * 限流或拿不到时自动降级到网页通道，不让「配额用完」变成功能不可用。 */
-    let rel = null;
-    let apiNote = '';
-    try {
-        const r = await request(repoApi(cfg, '/releases/latest'), { headers, timeout: 15000 });
+    /* 两条通道**并行**跑：
+     * 旧实现是「API 失败才试网页」，而国内直连 GitHub 时 API 每个请求都要等满
+     * 10s 超时再重试 —— 一次「检查更新」实测要 46s，用户体感就是「卡住了」。
+     * 并行后总耗时 ≈ 较慢那条通道；API 通了仍然优先用 API（信息最全）。 */
+    const apiTry = async () => {
+        const r = await request(repoApi(cfg, '/releases/latest'),
+            { headers, timeout: 7000, retry: 1 });
         if (r.status === 403 || r.status === 429) {
-            base.rateLimited = true;
-            apiNote = 'GitHub 接口限流（未配置 token 时每小时 60 次）';
-        } else if (r.status !== 200) {
-            apiNote = `GitHub 接口返回 ${r.status}`;
-        } else {
-            rel = JSON.parse(r.body);
-            base.source = 'api';
+            const e = new Error('GitHub 接口限流（未配置 token 时每小时 60 次）');
+            e.rateLimited = true;
+            throw e;
         }
-    } catch (e) {
-        apiNote = '无法连接 GitHub：' + (e && e.message);
-    }
+        if (r.status !== 200) throw new Error('GitHub 接口返回 ' + r.status);
+        return JSON.parse(r.body);
+    };
+    const htmlTry = () => fetchLatestViaHtml(cfg);
 
-    if (!rel) {
-        console.log('[更新] API 通道不可用（' + apiNote + '），改用网页通道');
-        try {
-            rel = await fetchLatestViaHtml(cfg);
-            base.source = 'html';
-        } catch (e2) {
-            base.error = apiNote + '；网页通道也失败：' + (e2 && e2.message)
-                + '（可在「设置 → 数据源」配置代理后重试）';
-            lastCheck = { at: Date.now(), result: base };
-            return base;
+    let apiNote = '';
+    let apiErr = null;
+    let htmlErr = null;
+    let picked = null;
+    try {
+        /* Promise.any：哪条通道先成功就用哪条，绝不为了「等另一条也结束」而白等。
+         * 旧实现串行（API 超时 → 网页兜底），国内直连时实测一次检查要 46s。 */
+        picked = await Promise.any([
+            apiTry().then((rel2) => ({ rel: rel2, source: 'api' }),
+                (e) => { apiErr = e; throw e; }),
+            htmlTry().then((rel2) => ({ rel: rel2, source: 'html' }),
+                (e) => { htmlErr = e; throw e; }),
+        ]);
+    } catch (e) { /* 两条都失败：下面统一拼错误信息 */ }
+
+    let rel = null;
+    if (picked && picked.rel) {
+        rel = picked.rel;
+        base.source = picked.source;
+    } else {
+        if (apiErr) {
+            base.rateLimited = !!apiErr.rateLimited;
+            apiNote = '无法连接 GitHub：' + (apiErr.message || apiErr);
         }
+    }
+    if (!rel) {
+        const htmlNote = htmlErr
+            ? ('网页通道也失败：' + (htmlErr.message || htmlErr))
+            : '网页通道无结果';
+        base.error = (apiNote ? apiNote + '；' : '') + htmlNote
+            + '（可在「设置 → 数据源」配置代理后重试）';
+        lastCheck = { at: Date.now(), result: base };
+        return base;
     }
 
     const latest = String(rel.tag_name || rel.name || '').trim();
